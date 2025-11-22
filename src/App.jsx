@@ -13,7 +13,7 @@ function App() {
     currentAge: 30,
     retirementStartAge: 50,
     retirementEndAge: 67,
-    currentSavings: 50000,
+    currentSavings: 0,
     monthlyContribution: 1000,
     monthlyNetIncomeDesired: 4000,
     annualReturnRate: 5,

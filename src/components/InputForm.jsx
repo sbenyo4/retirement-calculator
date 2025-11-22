@@ -105,7 +105,7 @@ export default function InputForm({ inputs, setInputs, t, language, grossWithdra
                     value={inputs.monthlyNetIncomeDesired}
                     onChange={handleChange}
                     prefix={currency}
-                    icon="💲"
+                    icon={<span className="text-green-400">{currency}</span>}
                     extraLabel={grossWithdrawal ? `(${t('gross')}: ${formatCurrency(grossWithdrawal)})` : null}
                 />
 
