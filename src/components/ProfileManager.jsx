@@ -52,30 +52,30 @@ export function ProfileManager({ currentInputs, onLoad, t, language }) {
     };
 
     return (
-        <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 shadow-xl mb-6">
-            <div className="flex flex-col gap-4">
+        <div className="mb-2">
+            <div className="flex flex-col gap-2">
                 <div className="flex gap-2 items-center">
                     <input
                         type="text"
                         value={newProfileName}
                         onChange={(e) => setNewProfileName(e.target.value)}
                         placeholder={t('profileName')}
-                        className="flex-1 bg-black/20 border border-white/10 rounded-lg py-2 px-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="flex-1 bg-black/20 border border-white/10 rounded-lg py-1.5 px-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     />
                     <button
                         onClick={saveProfile}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors text-sm"
                     >
                         <Save className="w-4 h-4" /> {t('save')}
                     </button>
                 </div>
 
                 {profiles.length > 0 && (
-                    <div className="flex gap-2 items-center flex-wrap">
+                    <div className="flex gap-2 items-center">
                         <select
                             value={selectedProfileId}
                             onChange={(e) => loadProfile(e.target.value)}
-                            className="flex-1 bg-black/20 border border-white/10 rounded-lg py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="flex-1 bg-black/20 border border-white/10 rounded-lg py-1.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                         >
                             <option value="">{t('loadProfile')}...</option>
                             {profiles.map(p => (
@@ -87,14 +87,14 @@ export function ProfileManager({ currentInputs, onLoad, t, language }) {
                             <>
                                 <button
                                     onClick={updateProfile}
-                                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors"
                                     title={t('updateProfile')}
                                 >
                                     <RefreshCw className="w-4 h-4" />
                                 </button>
                                 <button
                                     onClick={() => deleteProfile(selectedProfileId)}
-                                    className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors"
                                     title={t('delete')}
                                 >
                                     <Trash2 className="w-4 h-4" />

@@ -53,13 +53,14 @@ function App() {
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          <div className="lg:col-span-4 space-y-4">
+          <div className="lg:col-span-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 shadow-xl h-fit">
             <ProfileManager
               currentInputs={inputs}
               onLoad={setInputs}
               t={t}
               language={language}
             />
+            <div className="my-4 border-t border-white/10"></div>
             <InputForm
               inputs={inputs}
               setInputs={setInputs}
