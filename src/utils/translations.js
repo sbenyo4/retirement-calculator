@@ -14,10 +14,10 @@ export const translations = {
         taxRate: "Tax Rate (%)",
         balanceAtRetirement: "Balance at Retirement",
         projectedSavings: "Projected savings",
-        requiredCapital: "Required Capital",
+        requiredCapital: "Required Capital at Retirement Age",
         toEndWithZero: "To end with $0",
         surplus: "Surplus",
-        deficit: "Deficit",
+        deficit: "Additional Capital Needed at Retirement Age",
         onTrack: "You are on track!",
         capitalNeeded: "Additional capital needed",
         estGrossWithdrawal: "Est. Gross Withdrawal",
@@ -37,7 +37,10 @@ export const translations = {
         dir: "ltr",
         balanceAtEnd: "Balance at end of period",
         projectedBalanceAtAge: "Projected balance at age",
-        gross: "Gross"
+        gross: "Gross",
+        yearsUntilRetirement: "Years until Retirement",
+        yearsOfRetirement: "Years of Retirement",
+        timeHorizon: "Time Horizon"
     },
     he: {
         appTitle: "מחשבון פרישה",
@@ -54,10 +57,10 @@ export const translations = {
         taxRate: "מס רווחי הון (%)",
         balanceAtRetirement: "יתרה בפרישה",
         projectedSavings: "חסכונות צפויים",
-        requiredCapital: "הון נדרש",
+        requiredCapital: "הון נדרש בגיל פרישה",
         toEndWithZero: "כדי לסיים עם 0 ש\"ח",
         surplus: "עודף",
-        deficit: "גירעון",
+        deficit: "הון נוסף נדרש בגיל פרישה",
         onTrack: "אתה במסלול הנכון!",
         capitalNeeded: "הון נוסף נדרש",
         estGrossWithdrawal: "משיכה ברוטו משוערת",
@@ -77,6 +80,9 @@ export const translations = {
         dir: "rtl",
         balanceAtEnd: "יתרה בסוף התקופה",
         projectedBalanceAtAge: "יתרה צפויה בגיל",
-        gross: "ברוטו"
+        gross: "ברוטו",
+        yearsUntilRetirement: "שנים עד הפרישה",
+        yearsOfRetirement: "שנות פרישה",
+        timeHorizon: "אופק זמן"
     }
 };

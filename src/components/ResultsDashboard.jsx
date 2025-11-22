@@ -152,6 +152,12 @@ export function ResultsDashboard({ results, inputs, t, language }) {
                     subtext={t('monthlyPreTaxNeeded')}
                     color="text-yellow-400"
                 />
+                <SummaryCard
+                    label={t('timeHorizon')}
+                    value={`${(inputs.retirementStartAge - inputs.currentAge).toFixed(1)} / ${(inputs.retirementEndAge - inputs.retirementStartAge).toFixed(1)}`}
+                    subtext={`${t('yearsUntilRetirement')} / ${t('yearsOfRetirement')}`}
+                    color="text-orange-400"
+                />
             </div>
 
             {/* Chart */}
