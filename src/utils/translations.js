@@ -37,10 +37,9 @@ export const translations = {
         dir: "ltr",
         balanceAtEnd: "Balance at end of period",
         projectedBalanceAtAge: "Projected balance at age",
-        gross: "Gross",
-        yearsUntilRetirement: "Years until Retirement",
         yearsOfRetirement: "Years of Retirement",
-        timeHorizon: "Time Horizon"
+        timeHorizon: "Time Horizon",
+        neededToday: "Needed Today"
     },
     he: {
         appTitle: "מחשבון פרישה",
@@ -83,6 +82,7 @@ export const translations = {
         gross: "ברוטו",
         yearsUntilRetirement: "שנים עד הפרישה",
         yearsOfRetirement: "שנות פרישה",
-        timeHorizon: "אופק זמן"
+        timeHorizon: "אופק זמן",
+        neededToday: "נדרש היום"
     }
 };

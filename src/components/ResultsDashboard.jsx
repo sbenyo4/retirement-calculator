@@ -34,6 +34,7 @@ export function ResultsDashboard({ results, inputs, t, language }) {
         requiredCapitalAtRetirement,
         requiredCapitalForPerpetuity,
         surplus,
+        pvOfDeficit,
         initialGrossWithdrawal
     } = results;
 
@@ -143,7 +144,7 @@ export function ResultsDashboard({ results, inputs, t, language }) {
                 <SummaryCard
                     label={surplus >= 0 ? t('surplus') : t('deficit')}
                     value={formatCurrency(Math.abs(surplus))}
-                    subtext={surplus >= 0 ? t('onTrack') : t('capitalNeeded')}
+                    subtext={surplus >= 0 ? t('onTrack') : `${t('capitalNeeded')} (${t('neededToday')}: ${formatCurrency(pvOfDeficit)})`}
                     color={surplus >= 0 ? "text-green-400" : "text-red-400"}
                 />
                 <SummaryCard

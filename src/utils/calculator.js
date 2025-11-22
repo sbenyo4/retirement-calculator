@@ -152,7 +152,32 @@ export function calculateRetirementProjection(inputs) {
         ranOutAtAge,
         requiredCapitalAtRetirement,
         requiredCapitalForPerpetuity,
-        surplus: balanceAtRetirement - requiredCapitalAtRetirement,
-        initialGrossWithdrawal
-    };
-}
+        // --- PV of Deficit Calculation ---
+        // How much needed TODAY to cover the deficit at retirement?
+        // PV = FV / (1 + r)^n
+        let pvOfDeficit = 0;
+        const surplus = balanceAtRetirement - requiredCapitalAtRetirement;
+
+        if(surplus < 0) {
+            // We need to cover the deficit amount
+            const deficitAmount = Math.abs(surplus);
+            // Discount it back to today using the monthly rate
+            if (monthlyRate > 0) {
+                pvOfDeficit = deficitAmount / Math.pow(1 + monthlyRate, monthsToRetirement);
+            } else {
+                pvOfDeficit = deficitAmount;
+            }
+        }
+
+    return {
+            history,
+            balanceAtRetirement,
+            balanceAtEnd: Math.max(0, retirementBalance),
+            ranOutAtAge,
+            requiredCapitalAtRetirement,
+            requiredCapitalForPerpetuity,
+            surplus,
+            pvOfDeficit,
+            initialGrossWithdrawal
+        };
+    }
