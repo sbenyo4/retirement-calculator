@@ -144,8 +144,14 @@ export function ResultsDashboard({ results, inputs, t, language }) {
                 <SummaryCard
                     label={surplus >= 0 ? t('surplus') : t('deficit')}
                     value={formatCurrency(Math.abs(surplus))}
-                    subtext={surplus >= 0 ? t('onTrack') : `${t('capitalNeeded')} (${t('neededToday')}: ${formatCurrency(pvOfDeficit)})`}
+                    subtext={surplus >= 0 ? t('onTrack') : t('capitalNeeded')}
                     color={surplus >= 0 ? "text-green-400" : "text-red-400"}
+                    extraContent={surplus < 0 && (
+                        <div className="mt-1 pt-1 border-t border-white/10">
+                            <span className="text-xs text-orange-300 font-medium block">{t('neededToday')}:</span>
+                            <span className="text-lg font-bold text-orange-300">{formatCurrency(pvOfDeficit)}</span>
+                        </div>
+                    )}
                 />
                 <SummaryCard
                     label={t('estGrossWithdrawal')}
@@ -172,12 +178,13 @@ export function ResultsDashboard({ results, inputs, t, language }) {
     );
 }
 
-function SummaryCard({ label, value, subtext, color }) {
+function SummaryCard({ label, value, subtext, color, extraContent }) {
     return (
         <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-3">
             <p className="text-gray-400 text-sm">{label}</p>
             <p className={`text-2xl font-bold ${color} my-1`}>{value}</p>
             <p className="text-xs text-gray-500">{subtext}</p>
+            {extraContent}
         </div>
     );
 }
