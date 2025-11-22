@@ -95,9 +95,9 @@ export function ResultsDashboard({ results, inputs, t, language }) {
     };
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-3">
             {/* Status Message - Hero Card */}
-            <div className={`p-6 rounded-2xl border-2 shadow-lg transition-all ${ranOutAtAge ? 'bg-red-500/20 border-red-500/50' : 'bg-green-500/20 border-green-500/50'}`}>
+            <div className={`p-4 rounded-2xl border-2 shadow-lg transition-all ${ranOutAtAge ? 'bg-red-500/20 border-red-500/50' : 'bg-green-500/20 border-green-500/50'}`}>
                 <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-start">
                     <div>
                         <h3 className={`text-2xl font-bold ${ranOutAtAge ? 'text-red-200' : 'text-green-200'}`}>
@@ -121,7 +121,7 @@ export function ResultsDashboard({ results, inputs, t, language }) {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                 <SummaryCard
                     label={t('balanceAtRetirement')}
                     value={formatCurrency(balanceAtRetirement)}
@@ -155,9 +155,9 @@ export function ResultsDashboard({ results, inputs, t, language }) {
             </div>
 
             {/* Chart */}
-            <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-6 shadow-xl">
+            <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 shadow-xl">
                 <h3 className="text-lg font-semibold text-white mb-4">{t('wealthProjection')}</h3>
-                <div className="h-64">
+                <div className="h-52">
                     <Line data={data} options={options} />
                 </div>
             </div>
@@ -167,7 +167,7 @@ export function ResultsDashboard({ results, inputs, t, language }) {
 
 function SummaryCard({ label, value, subtext, color }) {
     return (
-        <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-4">
+        <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-3">
             <p className="text-gray-400 text-sm">{label}</p>
             <p className={`text-2xl font-bold ${color} my-1`}>{value}</p>
             <p className="text-xs text-gray-500">{subtext}</p>
