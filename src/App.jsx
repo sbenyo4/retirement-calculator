@@ -67,6 +67,8 @@ function App() {
               t={t}
               language={language}
               grossWithdrawal={results?.initialGrossWithdrawal}
+              neededToday={results?.pvOfDeficit}
+              capitalPreservation={results?.requiredCapitalForPerpetuity}
             />
           </div>
 

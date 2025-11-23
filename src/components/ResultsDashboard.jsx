@@ -156,7 +156,6 @@ export function ResultsDashboard({ results, inputs, t, language }) {
                 <SummaryCard
                     label={t('estGrossWithdrawal')}
                     value={formatCurrency(initialGrossWithdrawal)}
-                    subtext={t('monthlyPreTaxNeeded')}
                     color="text-yellow-400"
                 />
                 <SummaryCard
