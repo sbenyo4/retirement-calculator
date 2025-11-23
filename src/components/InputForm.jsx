@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function InputForm({ inputs, setInputs, t, language, grossWithdrawal }) {
+export default function InputForm({ inputs, setInputs, t, language, grossWithdrawal, neededToday, capitalPreservation }) {
     const currency = t('currency');
 
     const formatCurrency = (value) => {
@@ -90,6 +90,32 @@ export default function InputForm({ inputs, setInputs, t, language, grossWithdra
                         onChange={handleChange}
                         prefix={currency}
                         icon="💰"
+                        extraContent={
+                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1 z-10">
+                                {neededToday > 0 && (
+                                    <button
+                                        onClick={() => setInputs(prev => ({ ...prev, currentSavings: Math.round(neededToday) }))}
+                                        className="p-1 hover:bg-white/10 rounded text-orange-400 hover:text-orange-300 transition-colors"
+                                        title={t('neededToday')}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                                        </svg>
+                                    </button>
+                                )}
+                                {capitalPreservation > 0 && (
+                                    <button
+                                        onClick={() => setInputs(prev => ({ ...prev, currentSavings: Math.round(capitalPreservation) }))}
+                                        className="p-1 hover:bg-white/10 rounded text-emerald-400 hover:text-emerald-300 transition-colors"
+                                        title={t('capitalPreservation')}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    </button>
+                                )}
+                            </div>
+                        }
                     />
                     <InputGroup
                         label={t('monthlyContribution')}
@@ -132,7 +158,7 @@ export default function InputForm({ inputs, setInputs, t, language, grossWithdra
     );
 }
 
-function InputGroup({ label, name, value, onChange, icon, prefix, type = "text", extraLabel }) {
+function InputGroup({ label, name, value, onChange, icon, prefix, type = "text", extraLabel, extraContent }) {
     return (
         <div className="flex flex-col gap-1">
             <div className="flex justify-between items-center">
@@ -156,8 +182,9 @@ function InputGroup({ label, name, value, onChange, icon, prefix, type = "text",
                     name={name}
                     value={value}
                     onChange={onChange}
-                    className={`w-full bg-black/20 border border-white/10 rounded-lg py-1.5 px-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${prefix ? 'pl-7' : ''}`}
+                    className={`w-full bg-black/20 border border-white/10 rounded-lg py-1.5 px-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${prefix ? 'pl-7' : ''} ${extraContent ? 'pr-16' : ''}`}
                 />
+                {extraContent}
             </div>
         </div>
     );
