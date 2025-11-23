@@ -140,6 +140,12 @@ export function ResultsDashboard({ results, inputs, t, language }) {
                     value={formatCurrency(requiredCapitalForPerpetuity)}
                     subtext={t('preservePrincipal')}
                     color="text-emerald-400"
+                    extraContent={
+                        <div className="mt-1 pt-1 border-t border-white/10">
+                            <span className="text-xs text-emerald-300 font-medium block">{t('neededToday')}:</span>
+                            <span className="text-lg font-bold text-emerald-300">{formatCurrency(results.pvOfCapitalPreservation)}</span>
+                        </div>
+                    }
                 />
                 <SummaryCard
                     label={surplus >= 0 ? t('surplus') : t('deficit')}

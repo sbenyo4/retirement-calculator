@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function InputForm({ inputs, setInputs, t, language, grossWithdrawal, neededToday, capitalPreservation }) {
+export default function InputForm({ inputs, setInputs, t, language, grossWithdrawal, neededToday, capitalPreservation, capitalPreservationNeededToday }) {
     const currency = t('currency');
 
     const formatCurrency = (value) => {
@@ -105,7 +105,7 @@ export default function InputForm({ inputs, setInputs, t, language, grossWithdra
                                 )}
                                 {capitalPreservation > 0 && (
                                     <button
-                                        onClick={() => setInputs(prev => ({ ...prev, currentSavings: Math.round(capitalPreservation) }))}
+                                        onClick={() => setInputs(prev => ({ ...prev, currentSavings: Math.round(capitalPreservationNeededToday || capitalPreservation) }))}
                                         className="p-1 hover:bg-white/10 rounded text-emerald-400 hover:text-emerald-300 transition-colors"
                                         title={t('capitalPreservation')}
                                     >

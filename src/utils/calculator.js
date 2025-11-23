@@ -162,6 +162,40 @@ export function calculateRetirementProjection(inputs) {
         }
     }
 
+    // --- PV of Capital Preservation Calculation ---
+    // How much needed TODAY to reach the required capital for perpetuity at retirement?
+    // We need to account for the fact that we are also contributing monthly.
+    // FV_needed = RequiredCapitalForPerpetuity
+    // FV_current_savings = CurrentSavings * (1+r)^n
+    // FV_contributions = PMT * ((1+r)^n - 1) / r
+    // Total FV = FV_current_savings + FV_contributions
+    // Shortfall = FV_needed - Total FV
+    // PV_Shortfall = Shortfall / (1+r)^n
+    // Needed Today = Current Savings + PV_Shortfall (if Shortfall > 0)
+    // Or simply: PV_needed = (RequiredCapitalForPerpetuity - FV_contributions) / (1+r)^n
+    // If PV_needed < 0, it means contributions alone are enough (or too much), so needed today is 0 (or negative surplus).
+    // However, the user wants "Needed Today" to replace Current Savings.
+    // So we want to find X such that:
+    // X * (1+r)^n + FV_contributions = RequiredCapitalForPerpetuity
+    // X * (1+r)^n = RequiredCapitalForPerpetuity - FV_contributions
+    // X = (RequiredCapitalForPerpetuity - FV_contributions) / (1+r)^n
+
+    let pvOfCapitalPreservation = 0;
+    if (monthlyRate > 0) {
+        const fvContributions = monthlyContribution * (Math.pow(1 + monthlyRate, monthsToRetirement) - 1) / monthlyRate;
+        pvOfCapitalPreservation = (requiredCapitalForPerpetuity - fvContributions) / Math.pow(1 + monthlyRate, monthsToRetirement);
+    } else {
+        const fvContributions = monthlyContribution * monthsToRetirement;
+        pvOfCapitalPreservation = requiredCapitalForPerpetuity - fvContributions;
+    }
+
+    // If negative, it means contributions cover it all and we don't need any starting capital (actually we have surplus capacity)
+    // But for the "Needed Today" display, we usually show the positive amount required. 
+    // If it's negative, it implies 0 is needed today (and we can even reduce contributions).
+    // Let's keep the raw number for now, but in UI we might want to handle negative differently if needed.
+    // For the copy button, if it's negative, setting savings to negative doesn't make sense. 
+    // But the math X is correct for "what should be in the bank today".
+
     return {
         history,
         balanceAtRetirement,
@@ -171,6 +205,7 @@ export function calculateRetirementProjection(inputs) {
         requiredCapitalForPerpetuity,
         surplus,
         pvOfDeficit,
+        pvOfCapitalPreservation,
         initialGrossWithdrawal
     };
 }

@@ -69,6 +69,7 @@ function App() {
               grossWithdrawal={results?.initialGrossWithdrawal}
               neededToday={results?.pvOfDeficit}
               capitalPreservation={results?.requiredCapitalForPerpetuity}
+              capitalPreservationNeededToday={results?.pvOfCapitalPreservation}
             />
           </div>
 
