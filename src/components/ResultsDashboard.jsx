@@ -142,8 +142,8 @@ export function ResultsDashboard({ results, inputs, t, language }) {
                     color="text-emerald-400"
                     extraContent={
                         <div className="mt-1 pt-1 border-t border-white/10">
-                            <span className="text-xs text-emerald-300 font-medium block">{t('neededToday')}:</span>
-                            <span className="text-lg font-bold text-emerald-300">{formatCurrency(results.pvOfCapitalPreservation)}</span>
+                            <span className="text-xs text-orange-300 font-medium block">{t('neededToday')}:</span>
+                            <span className="text-lg font-bold text-orange-300">{formatCurrency(results.pvOfCapitalPreservation)}</span>
                         </div>
                     }
                 />
