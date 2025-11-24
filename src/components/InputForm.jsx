@@ -1,7 +1,17 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 
 export default function InputForm({ inputs, setInputs, t, language, grossWithdrawal, neededToday, capitalPreservation, capitalPreservationNeededToday }) {
     const currency = t('currency');
+
+    // Store whether buttons should be visible (persist across re-renders)
+    const showNeededTodayBtn = useRef(false);
+    const showCapitalPreservationBtn = useRef(false);
+
+    // Update button visibility based on values
+    useEffect(() => {
+        if (neededToday > 0) showNeededTodayBtn.current = true;
+        if (capitalPreservationNeededToday > 0 || capitalPreservation > 0) showCapitalPreservationBtn.current = true;
+    }, [neededToday, capitalPreservationNeededToday, capitalPreservation]);
 
     const formatCurrency = (value) => {
         return new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
@@ -110,18 +120,18 @@ export default function InputForm({ inputs, setInputs, t, language, grossWithdra
                         icon="💰"
                         titleActions={
                             <>
-                                {neededToday > 0 && (
+                                {showNeededTodayBtn.current && (
                                     <button
                                         onClick={() => setInputs(prev => ({ ...prev, currentSavings: Math.round(neededToday) }))}
                                         className="p-1 hover:bg-white/10 rounded text-orange-400 hover:text-orange-300 transition-colors"
                                         title={t('neededToday')}
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                                         </svg>
                                     </button>
                                 )}
-                                {(capitalPreservationNeededToday > 0 || capitalPreservation > 0) && (
+                                {showCapitalPreservationBtn.current && (
                                     <button
                                         onClick={() => setInputs(prev => ({ ...prev, currentSavings: Math.round(Math.max(0, capitalPreservationNeededToday || 0) || capitalPreservation) }))}
                                         className="p-1 hover:bg-white/10 rounded text-emerald-400 hover:text-emerald-300 transition-colors"
