@@ -7,24 +7,40 @@ const AuthContext = createContext();
 export function useAuth() {
     return useContext(AuthContext);
 }
-useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-        setCurrentUser(user);
-        setLoading(false);
-    });
 
-    return unsubscribe;
-}, []);
+export function AuthProvider({ children }) {
+    const [currentUser, setCurrentUser] = useState(null);
+    const [loading, setLoading] = useState(true);
 
-const value = {
-    currentUser,
-    login,
-    logout
-};
+    function login() {
+        googleProvider.setCustomParameters({
+            prompt: 'select_account'
+        });
+        return signInWithPopup(auth, googleProvider);
+    }
 
-return (
-    <AuthContext.Provider value={value}>
-        {!loading && children}
-    </AuthContext.Provider>
-);
+    function logout() {
+        return signOut(auth);
+    }
+
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            setCurrentUser(user);
+            setLoading(false);
+        });
+
+        return unsubscribe;
+    }, []);
+
+    const value = {
+        currentUser,
+        login,
+        logout
+    };
+
+    return (
+        <AuthContext.Provider value={value}>
+            {!loading && children}
+        </AuthContext.Provider>
+    );
 }
