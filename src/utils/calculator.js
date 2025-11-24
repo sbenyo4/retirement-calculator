@@ -143,8 +143,30 @@ export function calculateRetirementProjection(inputs) {
     }
 
     // --- Capital Preservation Calculation ---
-    // Required Capital = Net Income / (Monthly Rate * (1 - Tax Rate))
-    // This assumes you live off the interest AFTER tax, keeping principal intact.
+    // Required Capital to preserve principal over the retirement period.
+    // We want to find P such that after N months of withdrawals, we end with P again.
+    // This uses the annuity formula with FV = P (instead of FV = 0)
+    // 
+    // Formula: P = PMT * ((1+r)^n - 1) / (r * (1+r)^n - r)
+    // Where PMT is the monthly net income, r is effective monthly rate, n is months in retirement
+    // 
+    // Rearranging the annuity formula:
+    // PV = (PMT / r) * (1 - (1 + r)^-n) for ending at 0
+    // For ending at PV (preserving principal):
+    // PV * (1+r)^n = PV + PMT * ((1+r)^n - 1) / r
+    // PV * ((1+r)^n - 1) = PMT * ((1+r)^n - 1) / r
+    // PV = PMT / r
+    // 
+    // Wait, that's the perpetuity formula again... Let me reconsider.
+    // Actually, if we want to END with the same amount we STARTED with:
+    // We withdraw each month and reinvest the remainder.
+    // This is equivalent to the perpetuity case where the principal never changes.
+    // 
+    // The calculation IS independent of the period if we truly preserve principal!
+    // The monthly withdrawal limit is: Principal * effective_rate
+    // If we withdraw exactly this amount each month, the principal stays constant.
+    //
+    // So requiredCapitalForPerpetuity is correct - it doesn't depend on the period.
     let requiredCapitalForPerpetuity = 0;
     if (effectiveMonthlyRate > 0) {
         requiredCapitalForPerpetuity = monthlyNetIncomeDesired / effectiveMonthlyRate;
