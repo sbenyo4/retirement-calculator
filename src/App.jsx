@@ -36,9 +36,38 @@ function MainApp() {
   const [results, setResults] = useState(null);
 
   useEffect(() => {
-    const projection = calculateRetirementProjection(inputs);
-    setResults(projection);
+    // Validate age is reasonable before calculating
+    const age = parseFloat(inputs.currentAge);
+    const retirementStart = parseFloat(inputs.retirementStartAge);
+    const retirementEnd = parseFloat(inputs.retirementEndAge);
+
+    // Only calculate if all ages are in reasonable range (0-120) and valid
+    if (
+      !isNaN(age) && age >= 0 && age <= 120 &&
+      !isNaN(retirementStart) && retirementStart >= 0 && retirementStart <= 120 &&
+      !isNaN(retirementEnd) && retirementEnd >= 0 && retirementEnd <= 120
+    ) {
+      const projection = calculateRetirementProjection(inputs);
+      setResults(projection);
+    }
   }, [inputs]);
+
+  // Reset inputs to default when user changes
+  useEffect(() => {
+    if (currentUser) {
+      setInputs({
+        currentAge: 30,
+        retirementStartAge: 50,
+        retirementEndAge: 67,
+        currentSavings: 0,
+        monthlyContribution: 0,
+        monthlyNetIncomeDesired: 4000,
+        annualReturnRate: 5,
+        taxRate: 25,
+        birthdate: ''
+      });
+    }
+  }, [currentUser]);
 
   const toggleLanguage = () => {
     setLanguage(prev => prev === 'en' ? 'he' : 'en');

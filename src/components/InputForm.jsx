@@ -15,9 +15,18 @@ export default function InputForm({ inputs, setInputs, t, language, grossWithdra
         const { name, value } = e.target;
         // Allow empty string or valid number/decimal input
         if (value === '' || /^\d*\.?\d*$/.test(value)) {
+            // For age-related fields, cap at 120
+            let finalValue = value;
+            if ((name === 'currentAge' || name === 'retirementStartAge' || name === 'retirementEndAge') && value !== '') {
+                const numValue = parseFloat(value);
+                if (numValue > 120) {
+                    finalValue = '120';
+                }
+            }
+
             setInputs(prev => ({
                 ...prev,
-                [name]: value
+                [name]: finalValue
             }));
         }
     };
@@ -30,11 +39,20 @@ export default function InputForm({ inputs, setInputs, t, language, grossWithdra
         // Calculate precise age including decimals
         let age = (today - birthDateObj) / (1000 * 60 * 60 * 24 * 365.25);
 
-        setInputs(prev => ({
-            ...prev,
-            birthdate: date,
-            currentAge: age.toFixed(2) // Keep as string for input
-        }));
+        // Only update if age is reasonable (0-120)
+        if (age >= 0 && age <= 120) {
+            setInputs(prev => ({
+                ...prev,
+                birthdate: date,
+                currentAge: age.toFixed(2) // Keep as string for input
+            }));
+        } else {
+            // Just update birthdate but don't update age
+            setInputs(prev => ({
+                ...prev,
+                birthdate: date
+            }));
+        }
     };
 
     return (
