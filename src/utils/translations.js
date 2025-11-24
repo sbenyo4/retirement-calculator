@@ -40,7 +40,9 @@ export const translations = {
         yearsOfRetirement: "Years of Retirement",
         timeHorizon: "Time Horizon",
         neededToday: "Needed Today",
-        accumulatedWithdrawals: "Accumulated Withdrawals"
+        accumulatedWithdrawals: "Accumulated Withdrawals",
+        signInWithGoogle: "Sign in with Google",
+        logout: "Logout"
     },
     he: {
         appTitle: "מחשבון פרישה",
@@ -85,6 +87,8 @@ export const translations = {
         yearsOfRetirement: "שנות פרישה",
         timeHorizon: "אופק זמן",
         neededToday: "נדרש היום",
-        accumulatedWithdrawals: "משיכות מצטברות"
+        accumulatedWithdrawals: "משיכות מצטברות",
+        signInWithGoogle: "התחבר עם גוגל",
+        logout: "התנתק"
     }
 };
