@@ -29,7 +29,19 @@ export function AuthProvider({ children }) {
             setLoading(false);
         });
 
-        return unsubscribe;
+        // Logout on page refresh or close
+        const handleBeforeUnload = () => {
+            if (auth.currentUser) {
+                signOut(auth);
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+
+        return () => {
+            unsubscribe();
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+        };
     }, []);
 
     const value = {
