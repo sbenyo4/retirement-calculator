@@ -1,17 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { Save, FolderOpen, Trash2, RefreshCw } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 export function ProfileManager({ currentInputs, onLoad, t, language }) {
+    const { currentUser } = useAuth();
     const [profiles, setProfiles] = useState([]);
     const [newProfileName, setNewProfileName] = useState('');
     const [selectedProfileId, setSelectedProfileId] = useState('');
 
+    const storageKey = currentUser ? `retirementProfiles_${currentUser.uid}` : 'retirementProfiles_guest';
+
     useEffect(() => {
-        const saved = localStorage.getItem('retirementProfiles');
+        const saved = localStorage.getItem(storageKey);
         if (saved) {
             setProfiles(JSON.parse(saved));
+        } else {
+            setProfiles([]);
         }
-    }, []);
+    }, [currentUser, storageKey]);
 
     const saveProfile = () => {
         if (!newProfileName.trim()) return;
@@ -22,7 +28,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language }) {
         };
         const updated = [...profiles, newProfile];
         setProfiles(updated);
-        localStorage.setItem('retirementProfiles', JSON.stringify(updated));
+        localStorage.setItem(storageKey, JSON.stringify(updated));
         setNewProfileName('');
         setSelectedProfileId(newProfile.id);
     };
@@ -33,13 +39,13 @@ export function ProfileManager({ currentInputs, onLoad, t, language }) {
             p.id === selectedProfileId ? { ...p, data: currentInputs } : p
         );
         setProfiles(updated);
-        localStorage.setItem('retirementProfiles', JSON.stringify(updated));
+        localStorage.setItem(storageKey, JSON.stringify(updated));
     };
 
     const deleteProfile = (id) => {
         const updated = profiles.filter(p => p.id !== id);
         setProfiles(updated);
-        localStorage.setItem('retirementProfiles', JSON.stringify(updated));
+        localStorage.setItem(storageKey, JSON.stringify(updated));
         if (selectedProfileId === id) setSelectedProfileId('');
     };
 
