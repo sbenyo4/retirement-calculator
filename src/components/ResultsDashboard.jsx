@@ -59,6 +59,16 @@ export function ResultsDashboard({ results, inputs, t, language }) {
                 tension: 0.4,
                 pointRadius: 0,
                 pointHitRadius: 10,
+            },
+            {
+                label: t('accumulatedWithdrawals'),
+                data: history.map(h => h.accumulatedWithdrawals),
+                borderColor: '#facc15', // Yellow-400
+                backgroundColor: 'rgba(250, 204, 21, 0.1)',
+                fill: true,
+                tension: 0.4,
+                pointRadius: 0,
+                pointHitRadius: 10,
             }
         ]
     };

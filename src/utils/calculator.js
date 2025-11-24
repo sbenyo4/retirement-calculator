@@ -44,6 +44,7 @@ export function calculateRetirementProjection(inputs) {
         month: 0,
         age: currentAge,
         balance: balance,
+        accumulatedWithdrawals: 0,
         phase: 'accumulation'
     });
 
@@ -62,6 +63,7 @@ export function calculateRetirementProjection(inputs) {
                 month: currentMonth,
                 age: currentAge + (i / 12),
                 balance: balance,
+                accumulatedWithdrawals: 0,
                 phase: 'accumulation'
             });
         }
@@ -80,6 +82,7 @@ export function calculateRetirementProjection(inputs) {
     let retirementBalance = balanceAtRetirement;
     let ranOutAtAge = null;
     let initialGrossWithdrawal = 0;
+    let accumulatedWithdrawals = 0;
 
     for (let i = 1; i <= monthsInRetirement; i++) {
         const interest = retirementBalance * monthlyRate;
@@ -102,6 +105,7 @@ export function calculateRetirementProjection(inputs) {
         }
 
         retirementBalance = retirementBalance + interest - grossWithdrawal;
+        accumulatedWithdrawals += grossWithdrawal;
 
         currentMonth++;
         if (i % 12 === 0 || retirementBalance <= 0) {
@@ -109,6 +113,7 @@ export function calculateRetirementProjection(inputs) {
                 month: currentMonth,
                 age: retirementStartAge + (i / 12),
                 balance: Math.max(0, retirementBalance),
+                accumulatedWithdrawals: accumulatedWithdrawals,
                 phase: 'decumulation'
             });
         }

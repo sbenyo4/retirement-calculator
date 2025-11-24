@@ -39,7 +39,8 @@ export const translations = {
         projectedBalanceAtAge: "Projected balance at age",
         yearsOfRetirement: "Years of Retirement",
         timeHorizon: "Time Horizon",
-        neededToday: "Needed Today"
+        neededToday: "Needed Today",
+        accumulatedWithdrawals: "Accumulated Withdrawals"
     },
     he: {
         appTitle: "מחשבון פרישה",
@@ -64,7 +65,7 @@ export const translations = {
         capitalNeeded: "הון נוסף נדרש",
         estGrossWithdrawal: "משיכה ברוטו משוערת חודשית",
         monthlyPreTaxNeeded: "",
-        capitalPreservation: "הון למחייה מריבית",
+        capitalPreservation: "הון למחייה מריבית בלבד",
         preservePrincipal: "כדי לחיות מריבית בלבד",
         wealthProjection: "תחזית עושר",
         warningRunOut: "אזהרה: החסכונות צפויים להסתיים בגיל",
@@ -83,6 +84,7 @@ export const translations = {
         yearsUntilRetirement: "שנים עד הפרישה",
         yearsOfRetirement: "שנות פרישה",
         timeHorizon: "אופק זמן",
-        neededToday: "נדרש היום"
+        neededToday: "נדרש היום",
+        accumulatedWithdrawals: "משיכות מצטברות"
     }
 };

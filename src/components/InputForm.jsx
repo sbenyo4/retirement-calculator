@@ -90,8 +90,8 @@ export default function InputForm({ inputs, setInputs, t, language, grossWithdra
                         onChange={handleChange}
                         prefix={currency}
                         icon="💰"
-                        extraContent={
-                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1 z-10">
+                        titleActions={
+                            <>
                                 {neededToday > 0 && (
                                     <button
                                         onClick={() => setInputs(prev => ({ ...prev, currentSavings: Math.round(neededToday) }))}
@@ -114,7 +114,7 @@ export default function InputForm({ inputs, setInputs, t, language, grossWithdra
                                         </svg>
                                     </button>
                                 )}
-                            </div>
+                            </>
                         }
                     />
                     <InputGroup
@@ -158,7 +158,7 @@ export default function InputForm({ inputs, setInputs, t, language, grossWithdra
     );
 }
 
-function InputGroup({ label, name, value, onChange, icon, prefix, type = "text", extraLabel, extraContent }) {
+function InputGroup({ label, name, value, onChange, icon, prefix, type = "text", extraLabel, extraContent, titleActions }) {
     return (
         <div className="flex flex-col gap-1">
             <div className="flex justify-between items-center">
@@ -169,6 +169,11 @@ function InputGroup({ label, name, value, onChange, icon, prefix, type = "text",
                     <span className="text-xs text-yellow-400 font-medium">
                         {extraLabel}
                     </span>
+                )}
+                {titleActions && (
+                    <div className="flex items-center gap-1">
+                        {titleActions}
+                    </div>
                 )}
             </div>
             <div className="relative">
