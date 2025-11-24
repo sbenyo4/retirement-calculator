@@ -7,11 +7,35 @@ export default function InputForm({ inputs, setInputs, t, language, grossWithdra
     const showNeededTodayBtn = useRef(false);
     const showCapitalPreservationBtn = useRef(false);
 
+    // Store the ORIGINAL target values (when savings are low/zero)
+    const originalNeededToday = useRef(0);
+    const originalCapitalPreservation = useRef(0);
+
     // Update button visibility based on values
     useEffect(() => {
-        if (neededToday > 0) showNeededTodayBtn.current = true;
-        if (capitalPreservationNeededToday > 0 || capitalPreservation > 0) showCapitalPreservationBtn.current = true;
-    }, [neededToday, capitalPreservationNeededToday, capitalPreservation]);
+        if (neededToday > 0) {
+            if (!showNeededTodayBtn.current) {
+                // First time seeing this button - store the original value
+                showNeededTodayBtn.current = true;
+                originalNeededToday.current = neededToday;
+            }
+            // If savings are very low, update the target (allows recalculation)
+            if (parseFloat(inputs.currentSavings) < 100) {
+                originalNeededToday.current = neededToday;
+            }
+        }
+
+        const capitalTarget = capitalPreservationNeededToday || capitalPreservation;
+        if (capitalTarget > 0) {
+            if (!showCapitalPreservationBtn.current) {
+                showCapitalPreservationBtn.current = true;
+                originalCapitalPreservation.current = capitalTarget;
+            }
+            if (parseFloat(inputs.currentSavings) < 100) {
+                originalCapitalPreservation.current = capitalTarget;
+            }
+        }
+    }, [neededToday, capitalPreservationNeededToday, capitalPreservation, inputs.currentSavings]);
 
     const formatCurrency = (value) => {
         return new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
@@ -64,6 +88,11 @@ export default function InputForm({ inputs, setInputs, t, language, grossWithdra
             }));
         }
     };
+
+    // Check if buttons should be disabled (target reached)
+    const currentSavingsNum = parseFloat(inputs.currentSavings) || 0;
+    const isNeededTodayReached = currentSavingsNum >= originalNeededToday.current;
+    const isCapitalPreservationReached = currentSavingsNum >= originalCapitalPreservation.current;
 
     return (
         <div>
@@ -122,8 +151,12 @@ export default function InputForm({ inputs, setInputs, t, language, grossWithdra
                             <>
                                 {showNeededTodayBtn.current && (
                                     <button
-                                        onClick={() => setInputs(prev => ({ ...prev, currentSavings: Math.round(neededToday) }))}
-                                        className="p-1 hover:bg-white/10 rounded text-orange-400 hover:text-orange-300 transition-colors"
+                                        onClick={() => setInputs(prev => ({ ...prev, currentSavings: Math.round(originalNeededToday.current) }))}
+                                        disabled={isNeededTodayReached}
+                                        className={`p-1 hover:bg-white/10 rounded transition-colors ${isNeededTodayReached
+                                            ? 'text-gray-600 cursor-not-allowed opacity-50'
+                                            : 'text-orange-400 hover:text-orange-300'
+                                            }`}
                                         title={t('neededToday')}
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -133,8 +166,12 @@ export default function InputForm({ inputs, setInputs, t, language, grossWithdra
                                 )}
                                 {showCapitalPreservationBtn.current && (
                                     <button
-                                        onClick={() => setInputs(prev => ({ ...prev, currentSavings: Math.round(Math.max(0, capitalPreservationNeededToday || 0) || capitalPreservation) }))}
-                                        className="p-1 hover:bg-white/10 rounded text-emerald-400 hover:text-emerald-300 transition-colors"
+                                        onClick={() => setInputs(prev => ({ ...prev, currentSavings: Math.round(originalCapitalPreservation.current) }))}
+                                        disabled={isCapitalPreservationReached}
+                                        className={`p-1 hover:bg-white/10 rounded transition-colors ${isCapitalPreservationReached
+                                                ? 'text-gray-600 cursor-not-allowed opacity-50'
+                                                : 'text-emerald-400 hover:text-emerald-300'
+                                            }`}
                                         title={t('capitalPreservation')}
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
