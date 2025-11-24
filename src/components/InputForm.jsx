@@ -121,9 +121,9 @@ export default function InputForm({ inputs, setInputs, t, language, grossWithdra
                                         </svg>
                                     </button>
                                 )}
-                                {capitalPreservation > 0 && (
+                                {(capitalPreservationNeededToday > 0 || capitalPreservation > 0) && (
                                     <button
-                                        onClick={() => setInputs(prev => ({ ...prev, currentSavings: Math.round(capitalPreservationNeededToday || capitalPreservation) }))}
+                                        onClick={() => setInputs(prev => ({ ...prev, currentSavings: Math.round(Math.max(0, capitalPreservationNeededToday || 0) || capitalPreservation) }))}
                                         className="p-1 hover:bg-white/10 rounded text-emerald-400 hover:text-emerald-300 transition-colors"
                                         title={t('capitalPreservation')}
                                     >
