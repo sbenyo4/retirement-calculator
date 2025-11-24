@@ -124,11 +124,14 @@ export default function InputForm({ inputs, setInputs, t, language, grossWithdra
                             <>
                                 {showNeededTodayBtn.current && (
                                     <button
-                                        onClick={() => setInputs(prev => ({ ...prev, currentSavings: Math.round(neededToday) }))}
+                                        onClick={() => {
+                                            const current = parseFloat(inputs.currentSavings) || 0;
+                                            setInputs(prev => ({ ...prev, currentSavings: Math.round(current + neededToday) }));
+                                        }}
                                         disabled={neededToday <= 0}
                                         className={`p-1 hover:bg-white/10 rounded transition-colors ${neededToday <= 0
-                                                ? 'text-gray-600 cursor-not-allowed opacity-50'
-                                                : 'text-orange-400 hover:text-orange-300'
+                                            ? 'text-gray-600 cursor-not-allowed opacity-50'
+                                            : 'text-orange-400 hover:text-orange-300'
                                             }`}
                                         title={t('neededToday')}
                                     >
@@ -139,11 +142,15 @@ export default function InputForm({ inputs, setInputs, t, language, grossWithdra
                                 )}
                                 {showCapitalPreservationBtn.current && (
                                     <button
-                                        onClick={() => setInputs(prev => ({ ...prev, currentSavings: Math.round(Math.max(0, capitalPreservationNeededToday || 0) || capitalPreservation) }))}
+                                        onClick={() => {
+                                            const current = parseFloat(inputs.currentSavings) || 0;
+                                            const target = Math.max(0, capitalPreservationNeededToday || 0) || capitalPreservation;
+                                            setInputs(prev => ({ ...prev, currentSavings: Math.round(current + target) }));
+                                        }}
                                         disabled={(capitalPreservationNeededToday || capitalPreservation) <= 0}
                                         className={`p-1 hover:bg-white/10 rounded transition-colors ${(capitalPreservationNeededToday || capitalPreservation) <= 0
-                                                ? 'text-gray-600 cursor-not-allowed opacity-50'
-                                                : 'text-emerald-400 hover:text-emerald-300'
+                                            ? 'text-gray-600 cursor-not-allowed opacity-50'
+                                            : 'text-emerald-400 hover:text-emerald-300'
                                             }`}
                                         title={t('capitalPreservation')}
                                     >
