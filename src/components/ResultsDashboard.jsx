@@ -183,7 +183,7 @@ export function ResultsDashboard({ results, inputs, t, language }) {
             </div>
 
             {/* Chart */}
-            <div className="bg-white/10 backdrop-blur-md border border-white/30 rounded-2xl p-4 shadow-xl">
+            <div className="bg-white/10 backdrop-blur-md border border-white/40 rounded-2xl p-4 shadow-xl">
                 {/* Chart Title with Custom Legend */}
                 <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-semibold text-white">{t('wealthProjection')}</h3>
@@ -208,7 +208,7 @@ export function ResultsDashboard({ results, inputs, t, language }) {
 
 function SummaryCard({ label, value, subtext, color, extraContent }) {
     return (
-        <div className="bg-white/10 backdrop-blur-md border border-white/30 rounded-xl p-3">
+        <div className="bg-white/10 backdrop-blur-md border border-white/40 rounded-xl p-3">
             <p className="text-gray-400 text-sm">{label}</p>
             <p className={`text-2xl font-bold ${color} my-1`}>{value}</p>
             <p className="text-xs text-gray-500">{subtext}</p>

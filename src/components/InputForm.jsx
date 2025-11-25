@@ -232,7 +232,7 @@ function InputGroup({ label, name, value, onChange, icon, prefix, type = "text",
                     name={name}
                     value={value}
                     onChange={onChange}
-                    className={`w-full bg-black/20 border border-white/30 rounded-lg py-1.5 px-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${prefix ? 'pl-7' : ''} ${extraContent ? 'pr-16' : ''}`}
+                    className={`w-full bg-black/20 border border-white/50 rounded-lg py-1.5 px-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${prefix ? 'pl-7' : ''} ${extraContent ? 'pr-16' : ''}`}
                 />
                 {extraContent}
             </div>

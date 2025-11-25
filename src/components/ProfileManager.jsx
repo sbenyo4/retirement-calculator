@@ -66,7 +66,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language }) {
                         value={newProfileName}
                         onChange={(e) => setNewProfileName(e.target.value)}
                         placeholder={t('profileName')}
-                        className="flex-1 bg-black/20 border border-white/10 rounded-lg py-1.5 px-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        className="flex-1 bg-black/20 border border-white/50 rounded-lg py-1.5 px-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     />
                     <button
                         onClick={saveProfile}
@@ -81,7 +81,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language }) {
                         <select
                             value={selectedProfileId}
                             onChange={(e) => loadProfile(e.target.value)}
-                            className="flex-1 bg-black/20 border border-white/10 rounded-lg py-1.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            className="flex-1 bg-black/20 border border-white/50 rounded-lg py-1.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                         >
                             <option value="">{t('loadProfile')}...</option>
                             {profiles.map(p => (
