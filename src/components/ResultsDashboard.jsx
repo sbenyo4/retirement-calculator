@@ -78,7 +78,18 @@ export function ResultsDashboard({ results, inputs, t, language }) {
         maintainAspectRatio: false,
         plugins: {
             legend: {
-                display: false
+                display: true,
+                position: language === 'he' ? 'left' : 'right',
+                align: 'start',
+                labels: {
+                    color: '#9ca3af',
+                    usePointStyle: true,
+                    pointStyle: 'line',
+                    padding: 15,
+                    font: {
+                        size: 12
+                    }
+                }
             },
             tooltip: {
                 mode: 'index',
