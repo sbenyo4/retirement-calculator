@@ -195,7 +195,20 @@ export function ResultsDashboard({ results, inputs, t, language }) {
 
             {/* Chart */}
             <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 shadow-xl">
-                <h3 className="text-lg font-semibold text-white mb-4">{t('wealthProjection')}</h3>
+                {/* Chart Title with Custom Legend */}
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-white">{t('wealthProjection')}</h3>
+                    <div className="flex space-x-4">
+                        <div className="flex items-center">
+                            <span className="w-3 h-3 bg-[#60a5fa] mr-1 inline-block"></span>
+                            <span className="text-sm text-white">{t('wealthProjection')}</span>
+                        </div>
+                        <div className="flex items-center">
+                            <span className="w-3 h-3 bg-[#facc15] mr-1 inline-block"></span>
+                            <span className="text-sm text-white">{t('accumulatedWithdrawals')}</span>
+                        </div>
+                    </div>
+                </div>
                 <div className="h-52">
                     <Line data={data} options={options} />
                 </div>
