@@ -78,18 +78,7 @@ export function ResultsDashboard({ results, inputs, t, language }) {
         maintainAspectRatio: false,
         plugins: {
             legend: {
-                display: true,
-                position: language === 'he' ? 'left' : 'right',
-                align: 'start',
-                labels: {
-                    color: '#9ca3af',
-                    usePointStyle: true,
-                    pointStyle: 'line',
-                    padding: 15,
-                    font: {
-                        size: 12
-                    }
-                }
+                display: false
             },
             tooltip: {
                 mode: 'index',
@@ -199,12 +188,12 @@ export function ResultsDashboard({ results, inputs, t, language }) {
                 <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-semibold text-white">{t('wealthProjection')}</h3>
                     <div className="flex space-x-4">
-                        <div className="flex items-center">
-                            <span className="w-3 h-3 bg-[#60a5fa] mr-1 inline-block"></span>
+                        <div className="flex items-center gap-2">
+                            <span className="w-3 h-3 bg-[#60a5fa] inline-block"></span>
                             <span className="text-sm text-white">{t('wealthProjection')}</span>
                         </div>
-                        <div className="flex items-center">
-                            <span className="w-3 h-3 bg-[#facc15] mr-1 inline-block"></span>
+                        <div className="flex items-center gap-2">
+                            <span className="w-3 h-3 bg-[#facc15] inline-block"></span>
                             <span className="text-sm text-white">{t('accumulatedWithdrawals')}</span>
                         </div>
                     </div>
