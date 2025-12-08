@@ -348,10 +348,10 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
         <div className="space-y-3">
             {/* Status Message - Hero Card - Fixed height for consistent UI */}
             {!isCompareMode && (
-                <div className={`px-4 py-3 rounded-xl border shadow-lg h-[72px] flex items-center ${ranOutAtAge ? 'bg-red-500/20 border-red-500/50' : 'bg-green-500/20 border-green-500/50'}`}>
+                <div className={`mx-1 md:mx-0 px-3 md:px-4 py-3 rounded-xl border shadow-lg min-h-[72px] flex items-center ${ranOutAtAge ? 'bg-red-500/20 border-red-500/50' : 'bg-green-500/20 border-green-500/50'}`}>
                     <div className="flex justify-between items-center w-full gap-4">
                         <div className="flex items-center gap-2">
-                            <span className={`text-lg font-bold ${ranOutAtAge ? 'text-red-200' : 'text-green-200'}`}>
+                            <span className={`text-sm md:text-lg font-bold ${ranOutAtAge ? 'text-red-200' : 'text-green-200'}`}>
                                 {ranOutAtAge ? `⚠️ ${t('warningRunOut')} ${ranOutAtAge.toFixed(1)}` : `✓ ${t('onTrack')}`}
                             </span>
                             {(isAiMode || isSimMode) && (
@@ -462,7 +462,7 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                             {/* Saved Profiles */}
                             <div className="flex-1 min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-gray-400 text-xs font-medium uppercase tracking-wider whitespace-nowrap">{t('selectProfilesToCompare')}</span>
+                                    <span className="text-gray-400 text-xs font-medium uppercase tracking-wider">{t('selectProfiles')}</span>
                                     <div className="flex flex-wrap gap-1">
                                         {profiles && profiles.map(profile => (
                                             <button
