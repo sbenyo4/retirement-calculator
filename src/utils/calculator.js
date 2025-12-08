@@ -44,6 +44,8 @@ export function calculateRetirementProjection(inputs) {
         month: 0,
         age: currentAge,
         balance: balance,
+        contribution: 0,
+        withdrawal: 0,
         accumulatedWithdrawals: 0,
         phase: 'accumulation'
     });
@@ -63,6 +65,8 @@ export function calculateRetirementProjection(inputs) {
                 month: currentMonth,
                 age: currentAge + (i / 12),
                 balance: balance,
+                contribution: monthlyContribution * 12, // Annual contribution
+                withdrawal: 0,
                 accumulatedWithdrawals: 0,
                 phase: 'accumulation'
             });
@@ -113,6 +117,8 @@ export function calculateRetirementProjection(inputs) {
                 month: currentMonth,
                 age: retirementStartAge + (i / 12),
                 balance: Math.max(0, retirementBalance),
+                contribution: 0,
+                withdrawal: initialGrossWithdrawal * 12, // Annual withdrawal
                 accumulatedWithdrawals: accumulatedWithdrawals,
                 phase: 'decumulation'
             });

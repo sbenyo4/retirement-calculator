@@ -2,30 +2,350 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Default dark theme */
+:root {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-card: rgba(255, 255, 255, 0.1);
+  --text-primary: #ffffff;
+  --text-secondary: #94a3b8;
+  --border-color: rgba(255, 255, 255, 0.2);
+  --gradient-from: #1e3a5f;
+  --gradient-to: #1e40af;
+}
+
+/* Light theme */
+.light {
+  --bg-primary: #c9d1d9;
+  --bg-secondary: #9ca3af;
+  --bg-card: #f8f8f6;
+  --text-primary: #1e293b;
+  --text-secondary: #475569;
+  --border-color: rgba(0, 0, 0, 0.15);
+  --gradient-from: #c9d1d9;
+  --gradient-to: #93c5fd;
+}
+
 body {
   margin: 0;
   font-family: 'Inter', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #0f172a;
+  background-color: var(--bg-primary);
+  transition: background-color 0.3s ease;
 }
 
-/* Custom Scrollbar */
+/* ===== LIGHT MODE ===== */
+
+/* Main gradient background */
+.light .bg-gradient-to-br {
+  background: linear-gradient(135deg, var(--gradient-from) 0%, var(--gradient-to) 100%) !important;
+}
+
+/* All text defaults */
+.light .text-white {
+  color: var(--text-primary) !important;
+}
+
+.light .text-gray-300,
+.light .text-gray-400,
+.light .text-gray-500,
+.light .text-gray-600 {
+  color: var(--text-secondary) !important;
+}
+
+/* All cards/containers - cream background */
+.light .bg-white\/10,
+.light .bg-white\/5,
+.light .backdrop-blur-md,
+.light .backdrop-blur-sm,
+.light .rounded-2xl,
+.light .rounded-xl,
+.light .overflow-x-auto,
+.light .overflow-y-auto {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+.light .border-white\/10,
+.light .border-white\/20,
+.light .border-white\/40 {
+  border-color: var(--border-color) !important;
+}
+
+/* Input fields */
+.light input,
+.light select {
+  background-color: #ffffff !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Labels */
+.light label {
+  color: var(--text-primary) !important;
+}
+
+.light .text-xs {
+  color: var(--text-secondary) !important;
+}
+
+/* ===== BUTTONS - LIGHTER COLORS ===== */
+.light .bg-blue-600 {
+  background-color: #60a5fa !important;
+  color: white !important;
+}
+
+.light .bg-emerald-600 {
+  background-color: #34d399 !important;
+  color: white !important;
+}
+
+.light .bg-purple-600 {
+  background-color: #a78bfa !important;
+  color: white !important;
+}
+
+.light .bg-pink-600 {
+  background-color: #f472b6 !important;
+  color: white !important;
+}
+
+.light .bg-red-500 {
+  background-color: #f87171 !important;
+  color: white !important;
+}
+
+.light .bg-green-500 {
+  background-color: #4ade80 !important;
+  color: white !important;
+}
+
+.light .bg-orange-500 {
+  background-color: #fb923c !important;
+  color: white !important;
+}
+
+.light .bg-yellow-500 {
+  background-color: #fbbf24 !important;
+  color: #1e293b !important;
+}
+
+/* Profile management buttons */
+.light .bg-red-600 {
+  background-color: #f87171 !important;
+  color: white !important;
+}
+
+.light .bg-red-600:hover,
+.light .hover\:bg-red-700:hover {
+  background-color: #ef4444 !important;
+}
+
+.light .bg-green-600 {
+  background-color: #4ade80 !important;
+  color: white !important;
+}
+
+.light .bg-green-600:hover,
+.light .hover\:bg-green-700:hover {
+  background-color: #22c55e !important;
+}
+
+.light .bg-yellow-600 {
+  background-color: #fcd34d !important;
+  color: #1e293b !important;
+}
+
+.light .bg-yellow-600:hover,
+.light .hover\:bg-yellow-700:hover {
+  background-color: #fbbf24 !important;
+}
+
+/* Blue button hover */
+.light .bg-blue-600:hover,
+.light .hover\:bg-blue-700:hover {
+  background-color: #3b82f6 !important;
+}
+
+/* Emerald button hover */
+.light .bg-emerald-600:hover,
+.light .hover\:bg-emerald-700:hover {
+  background-color: #10b981 !important;
+}
+
+/* Purple button hover */
+.light .bg-purple-600:hover,
+.light .hover\:bg-purple-700:hover {
+  background-color: #8b5cf6 !important;
+}
+
+/* Pink button hover */
+.light .bg-pink-600:hover,
+.light .hover\:bg-pink-700:hover {
+  background-color: #ec4899 !important;
+}
+
+/* Login button gradient */
+.light .bg-gradient-to-r {
+  background: linear-gradient(to right, #818cf8, #a78bfa) !important;
+  color: white !important;
+}
+
+/* ===== COLORED TEXT - LIGHTER FOR LIGHT MODE ===== */
+.light .text-blue-400,
+.light .text-blue-200 {
+  color: #3b82f6 !important;
+}
+
+.light .text-green-400,
+.light .text-green-200 {
+  color: #22c55e !important;
+}
+
+.light .text-red-400,
+.light .text-red-200,
+.light .text-red-300 {
+  color: #ef4444 !important;
+}
+
+.light .text-purple-400,
+.light .text-purple-200 {
+  color: #a78bfa !important;
+}
+
+.light .text-emerald-400,
+.light .text-emerald-300 {
+  color: #34d399 !important;
+}
+
+.light .text-orange-400,
+.light .text-orange-300 {
+  color: #f97316 !important;
+}
+
+.light .text-yellow-400 {
+  color: #eab308 !important;
+}
+
+.light .text-cyan-400,
+.light .text-cyan-300 {
+  color: #22d3ee !important;
+}
+
+.light .text-pink-400,
+.light .text-pink-200 {
+  color: #f472b6 !important;
+}
+
+/* ===== TABLES - UNIFORM BACKGROUND ===== */
+.light table {
+  background-color: var(--bg-card) !important;
+}
+
+.light table tr {
+  background-color: var(--bg-card) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+.light table th {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.15) !important;
+}
+
+.light table td {
+  background-color: var(--bg-card) !important;
+  color: inherit !important;
+}
+
+/* Override column color backgrounds INSIDE tables */
+.light table .bg-blue-500\/5,
+.light table .bg-purple-500\/5,
+.light table .bg-pink-500\/5,
+.light table .bg-white\/5 {
+  background-color: transparent !important;
+}
+
+/* Keep styled cells colors (text) */
+.light table td[style] {
+  color: inherit !important;
+}
+
+/* ===== PROFILE BUTTONS ===== */
+.light button.bg-white\/5 {
+  background-color: #e5e7eb !important;
+  color: var(--text-primary) !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+/* ===== BACKGROUNDS FOR STATUS/HIGHLIGHTS ===== */
+.light .bg-green-500\/20 {
+  background-color: rgba(74, 222, 128, 0.3) !important;
+}
+
+.light .bg-red-500\/20 {
+  background-color: rgba(248, 113, 113, 0.3) !important;
+}
+
+.light .bg-blue-500\/5 {
+  background-color: rgba(96, 165, 250, 0.2) !important;
+}
+
+.light .bg-purple-500\/5 {
+  background-color: rgba(167, 139, 250, 0.2) !important;
+}
+
+.light .bg-pink-500\/5 {
+  background-color: rgba(244, 114, 182, 0.2) !important;
+}
+
+.light .bg-orange-500\/10,
+.light .bg-orange-500\/5 {
+  background-color: rgba(251, 146, 60, 0.25) !important;
+}
+
+.light .bg-emerald-500\/10 {
+  background-color: rgba(52, 211, 153, 0.25) !important;
+}
+
+.light .bg-cyan-500\/10 {
+  background-color: rgba(34, 211, 238, 0.25) !important;
+}
+
+.light .bg-black\/20,
+.light .bg-black\/50 {
+  background-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Toggle switch track */
+.light .peer+div {
+  background-color: #d1d5db !important;
+}
+
+.light .peer:checked+div {
+  background-color: #34d399 !important;
+}
+
+/* ===== SCROLLBAR ===== */
 ::-webkit-scrollbar {
   width: 8px;
 }
+
 ::-webkit-scrollbar-track {
-  background: #1e293b; 
-}
-::-webkit-scrollbar-thumb {
-  background: #475569; 
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #64748b; 
+  background: var(--bg-secondary);
 }
 
-/* Force 2 columns on mobile for summary cards */
+::-webkit-scrollbar-thumb {
+  background: #64748b;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Mobile summary grid */
 @media (max-width: 767px) {
   .summary-grid {
     display: grid !important;

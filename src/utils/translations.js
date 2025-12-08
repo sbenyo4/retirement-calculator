@@ -85,10 +85,21 @@ export const translations = {
         incomeSensitivity: 'Income Sensitivity (+/- 1000)',
         incomeMinus1000: 'Income -1000',
         incomePlus1000: 'Income +1000',
+        ageSensitivity: 'Retirement Age (+/- 1 yr)',
+        retireMinus1: 'Retire -1 yr',
+        retirePlus1: 'Retire +1 yr',
         sensitivityAnalysis: 'Sensitivity Analysis',
         currentInputs: 'Current',
         provider: 'Provider',
-        model: 'Model'
+        model: 'Model',
+        // Amortization table
+        showYearlyProgress: 'Year-by-Year Progress',
+        year: 'Year',
+        balance: 'Balance',
+        contributionHeader: 'Contribution',
+        withdrawalHeader: 'Withdrawal',
+        interestEarned: 'Interest Earned',
+        age: 'Age'
     },
     he: {
         appTitle: "מתכנן פרישה",
@@ -176,9 +187,20 @@ export const translations = {
         incomeSensitivity: 'רגישות הכנסה (+/- 1000)',
         incomeMinus1000: 'הכנסה 1000-',
         incomePlus1000: 'הכנסה 1000+',
+        ageSensitivity: 'גיל פרישה (+/- 1 שנה)',
+        retireMinus1: 'פרישה -1 שנה',
+        retirePlus1: 'פרישה +1 שנה',
         sensitivityAnalysis: 'ניתוח רגישות',
         currentInputs: 'נוכחי',
         provider: 'ספק',
-        model: 'מודל'
+        model: 'מודל',
+        // Amortization table
+        showYearlyProgress: 'התקדמות שנה אחרי שנה',
+        year: 'שנה',
+        balance: 'יתרה',
+        contributionHeader: 'הפקדה',
+        withdrawalHeader: 'משיכה',
+        interestEarned: 'ריבית',
+        age: 'גיל'
     }
 };

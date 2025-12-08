@@ -7,7 +7,9 @@ import { calculateRetirementWithAI, getAvailableModels } from './utils/ai-calcul
 import { calculateSimulation, SIMULATION_TYPES } from './utils/simulation-calculator';
 import { translations } from './utils/translations';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { UserMenu } from './components/UserMenu';
+import { ThemeToggle } from './components/ThemeToggle';
 import { LoginPage } from './components/LoginPage';
 import { useProfiles } from './hooks/useProfiles';
 import { DEFAULT_INPUTS, STORAGE_KEYS, CALCULATION_MODES } from './constants';
@@ -53,7 +55,9 @@ class ErrorBoundary extends Component {
 function App() {
   return (
     <AuthProvider>
-      <MainApp />
+      <ThemeProvider>
+        <MainApp />
+      </ThemeProvider>
     </AuthProvider>
   );
 }
@@ -117,6 +121,7 @@ function MainApp() {
   // Sensitivity analysis state (for mathematical mode)
   const [showInterestSensitivity, setShowInterestSensitivity] = useState(false);
   const [showIncomeSensitivity, setShowIncomeSensitivity] = useState(false);
+  const [showAgeSensitivity, setShowAgeSensitivity] = useState(false);
 
   // Custom hooks (must be called unconditionally at top level)
   const { profiles, saveProfile, updateProfile, deleteProfile, lastLoadedProfileId, markProfileAsLoaded, profilesLoaded } = useProfiles();
@@ -269,6 +274,7 @@ function MainApp() {
           </div>
           <div className="flex items-center gap-3">
             <UserMenu t={t} />
+            <ThemeToggle />
             <button
               onClick={toggleLanguage}
               className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg backdrop-blur-sm transition-colors font-medium h-10"
@@ -323,6 +329,8 @@ function MainApp() {
               setShowInterestSensitivity={setShowInterestSensitivity}
               showIncomeSensitivity={showIncomeSensitivity}
               setShowIncomeSensitivity={setShowIncomeSensitivity}
+              showAgeSensitivity={showAgeSensitivity}
+              setShowAgeSensitivity={setShowAgeSensitivity}
             />
           </div>
 
@@ -352,6 +360,8 @@ function MainApp() {
                   setShowInterestSensitivity={setShowInterestSensitivity}
                   showIncomeSensitivity={showIncomeSensitivity}
                   setShowIncomeSensitivity={setShowIncomeSensitivity}
+                  showAgeSensitivity={showAgeSensitivity}
+                  setShowAgeSensitivity={setShowAgeSensitivity}
                 />
               )}
             </ErrorBoundary>

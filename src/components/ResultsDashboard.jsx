@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { calculateRetirementProjection } from '../utils/calculator';
+import { AmortizationTable } from './AmortizationTable';
 import { Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -24,7 +25,7 @@ ChartJS.register(
     Filler
 );
 
-export function ResultsDashboard({ results, inputs, t, language, calculationMode, aiResults, simulationResults, aiLoading, aiError, simulationType, profiles, selectedProfileIds, setSelectedProfileIds, profileResults, showInterestSensitivity, setShowInterestSensitivity, showIncomeSensitivity, setShowIncomeSensitivity }) {
+export function ResultsDashboard({ results, inputs, t, language, calculationMode, aiResults, simulationResults, aiLoading, aiError, simulationType, profiles, selectedProfileIds, setSelectedProfileIds, profileResults, showInterestSensitivity, setShowInterestSensitivity, showIncomeSensitivity, setShowIncomeSensitivity, showAgeSensitivity, setShowAgeSensitivity }) {
     // ALL HOOKS MUST BE AT THE TOP - React rules of hooks
     // State hooks
     const [orderedSelections, setOrderedSelections] = useState([]);
@@ -102,17 +103,31 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
     // Sensitivity toggle handlers (for compare mode)
     const handleInterestToggle = (checked) => {
         setShowInterestSensitivity(checked);
-        if (checked) setShowIncomeSensitivity(false);
+        if (checked) {
+            setShowIncomeSensitivity(false);
+            setShowAgeSensitivity(false);
+        }
     };
 
     const handleIncomeToggle = (checked) => {
         setShowIncomeSensitivity(checked);
-        if (checked) setShowInterestSensitivity(false);
+        if (checked) {
+            setShowInterestSensitivity(false);
+            setShowAgeSensitivity(false);
+        }
+    };
+
+    const handleAgeToggle = (checked) => {
+        setShowAgeSensitivity(checked);
+        if (checked) {
+            setShowInterestSensitivity(false);
+            setShowIncomeSensitivity(false);
+        }
     };
 
     const sensitivityResults = useMemo(() => {
         try {
-            if (!showInterestSensitivity && !showIncomeSensitivity) return null;
+            if (!showInterestSensitivity && !showIncomeSensitivity && !showAgeSensitivity) return null;
 
             let baseInputs, baseName, color;
 
@@ -142,33 +157,45 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                 return null; // Sensitivity not supported in other modes
             }
 
-            let inputsMinus, inputsPlus, minusLabel, plusLabel;
+            let inputsMinus, inputsPlus, minusLabel, plusLabel, canShowMinus = true;
 
             if (showInterestSensitivity) {
                 inputsMinus = { ...baseInputs, annualReturnRate: parseFloat(baseInputs.annualReturnRate) - 1 };
                 inputsPlus = { ...baseInputs, annualReturnRate: parseFloat(baseInputs.annualReturnRate) + 1 };
                 minusLabel = t('returnMinus1');
                 plusLabel = t('returnPlus1');
-            } else {
+            } else if (showIncomeSensitivity) {
                 inputsMinus = { ...baseInputs, monthlyNetIncomeDesired: parseFloat(baseInputs.monthlyNetIncomeDesired) - 1000 };
                 inputsPlus = { ...baseInputs, monthlyNetIncomeDesired: parseFloat(baseInputs.monthlyNetIncomeDesired) + 1000 };
                 minusLabel = t('incomeMinus1000');
                 plusLabel = t('incomePlus1000');
+            } else if (showAgeSensitivity) {
+                const currentAge = parseFloat(baseInputs.currentAge);
+                const retireAge = parseFloat(baseInputs.retirementStartAge);
+                // Can only show -1 if retirement age - 1 > current age
+                canShowMinus = (retireAge - 1) > currentAge;
+                if (canShowMinus) {
+                    inputsMinus = { ...baseInputs, retirementStartAge: retireAge - 1 };
+                }
+                inputsPlus = { ...baseInputs, retirementStartAge: retireAge + 1 };
+                minusLabel = t('retireMinus1');
+                plusLabel = t('retirePlus1');
             }
 
             return {
-                minus: calculateRetirementProjection(inputsMinus),
+                minus: canShowMinus && inputsMinus ? calculateRetirementProjection(inputsMinus) : null,
                 plus: calculateRetirementProjection(inputsPlus),
                 baseName,
                 minusLabel,
                 plusLabel,
-                color
+                color,
+                canShowMinus
             };
         } catch (error) {
             console.error('Error in sensitivityResults:', error);
             return null;
         }
-    }, [showInterestSensitivity, showIncomeSensitivity, isCompareMode, isMathMode, orderedColumns, inputs, t]);
+    }, [showInterestSensitivity, showIncomeSensitivity, showAgeSensitivity, isCompareMode, isMathMode, orderedColumns, inputs, t]);
 
     if (isAiMode && aiResults) {
         activeResults = aiResults;
@@ -455,6 +482,22 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                                                 {t('incomeSensitivity')}
                                             </span>
                                         </label>
+
+                                        {/* Age Sensitivity Toggle */}
+                                        <label className="flex items-center gap-2 cursor-pointer group">
+                                            <div className="relative">
+                                                <input
+                                                    type="checkbox"
+                                                    className="sr-only peer"
+                                                    checked={showAgeSensitivity}
+                                                    onChange={(e) => handleAgeToggle(e.target.checked)}
+                                                />
+                                                <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                                            </div>
+                                            <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors">
+                                                {t('ageSensitivity')}
+                                            </span>
+                                        </label>
                                     </>
                                 )}
                             </div>
@@ -492,8 +535,8 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                                 <th className="p-2 text-sm font-semibold text-gray-400 border-b border-white/10">{t('metric')}</th>
                                 {orderedColumns.map((col, i) => (
                                     <React.Fragment key={col.type === 'profile' ? col.id : col.type}>
-                                        {/* Sensitivity -1% (Only for first column) */}
-                                        {i === 0 && sensitivityResults && (
+                                        {/* Sensitivity -1 (Only for first column and if canShowMinus) */}
+                                        {i === 0 && sensitivityResults && sensitivityResults.canShowMinus && sensitivityResults.minus && (
                                             <th className="p-2 text-sm font-semibold border-b border-white/10 bg-white/5 rounded-t-lg opacity-70" style={{ color: sensitivityResults.color }}>
                                                 {sensitivityResults.minusLabel}
                                             </th>
@@ -539,8 +582,8 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
 
                                         {orderedColumns.map((col, i) => (
                                             <React.Fragment key={col.type === 'profile' ? col.id : col.type}>
-                                                {/* Sensitivity -1% (Only for first column) */}
-                                                {i === 0 && sensitivityResults && (
+                                                {/* Sensitivity -1 (Only for first column and if canShowMinus) */}
+                                                {i === 0 && sensitivityResults && sensitivityResults.canShowMinus && sensitivityResults.minus && (
                                                     <td className={`p-2 text-sm font-medium ${valueTextClass} bg-white/5 opacity-70`}>
                                                         {formatCurrency(row.key === 'surplus' ? Math.abs(sensitivityResults.minus[row.key]) : sensitivityResults.minus[row.key])}
                                                     </td>
@@ -644,6 +687,11 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                     <Line data={chartData} options={options} />
                 </div>
             </div>
+
+            {/* Amortization Table */}
+            {!isCompareMode && history && (
+                <AmortizationTable history={history} t={t} language={language} />
+            )}
         </div >
     );
 }
