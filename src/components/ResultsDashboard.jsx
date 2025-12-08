@@ -648,10 +648,10 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
 
 function SummaryCard({ label, value, subtext, color, extraContent }) {
     return (
-        <div className="bg-white/10 backdrop-blur-md border border-white/40 rounded-xl p-3">
-            <p className="text-gray-400 text-sm">{label}</p>
-            <p className={`text-2xl font-bold ${color} my-1`}>{value}</p>
-            <p className="text-xs text-gray-500">{subtext}</p>
+        <div className="bg-white/10 backdrop-blur-md border border-white/40 rounded-xl p-2 md:p-3">
+            <p className="text-gray-400 text-xs md:text-sm truncate">{label}</p>
+            <p className={`text-lg md:text-2xl font-bold ${color} my-0.5 md:my-1 truncate`}>{value}</p>
+            <p className="text-[10px] md:text-xs text-gray-500 truncate">{subtext}</p>
             {extraContent}
         </div>
     );
