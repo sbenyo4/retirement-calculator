@@ -379,7 +379,7 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
 
             {/* Comparison View or Standard Summary Cards */}
             {isCompareMode ? (
-                <div className="overflow-x-auto">
+                <div className={orderedColumns.length > 1 ? "overflow-x-auto" : "overflow-x-hidden"}>
                     {/* Profile Selection for Comparison - Compact View */}
                     {/* Profile Selection for Comparison - Compact View */}
                     {/* Profile Selection for Comparison - Compact View */}
@@ -619,7 +619,8 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                         color="text-orange-400"
                     />
                 </div>
-            )}
+            )
+            }
 
             {/* Chart */}
             <div className="bg-white/10 backdrop-blur-md border border-white/40 rounded-2xl p-4 shadow-xl">
@@ -641,7 +642,7 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                     <Line data={chartData} options={options} />
                 </div>
             </div>
-        </div>
+        </div >
     );
 }
 
