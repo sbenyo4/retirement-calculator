@@ -571,12 +571,7 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                 </div>
             ) : (
                 <div
-                    className="summary-grid gap-2"
-                    style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                        gap: '0.5rem'
-                    }}
+                    className="grid grid-cols-2 lg:grid-cols-3 gap-2"
                 >
                     <SummaryCard
                         label={t('balanceAtRetirement')}
