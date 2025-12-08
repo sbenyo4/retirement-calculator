@@ -570,7 +570,7 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                     </table>
                 </div>
             ) : (
-                <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                <div className="summary-grid grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-2">
                     <SummaryCard
                         label={t('balanceAtRetirement')}
                         value={formatCurrency(balanceAtRetirement)}
