@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { calculateRetirementProjection } from '../utils/calculator';
 import { Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -23,8 +24,271 @@ ChartJS.register(
     Filler
 );
 
-export function ResultsDashboard({ results, inputs, t, language }) {
-    if (!results) return null;
+export function ResultsDashboard({ results, inputs, t, language, calculationMode, aiResults, simulationResults, aiLoading, aiError, simulationType, profiles, selectedProfileIds, setSelectedProfileIds, profileResults, showInterestSensitivity, setShowInterestSensitivity, showIncomeSensitivity, setShowIncomeSensitivity }) {
+    // ALL HOOKS MUST BE AT THE TOP - React rules of hooks
+    // State hooks
+    const [orderedSelections, setOrderedSelections] = useState([]);
+    // Note: showInterestSensitivity and showIncomeSensitivity are now received as props
+
+    // Determine which results to display
+    let activeResults = results;
+    let isAiMode = calculationMode === 'ai';
+    let isSimMode = calculationMode === 'simulations';
+    let isCompareMode = calculationMode === 'compare';
+    let isMathMode = calculationMode === 'mathematical';
+
+    // Toggle function that maintains order AND syncs selectedProfileIds for profiles
+    const toggleSelection = (type) => {
+        const isCurrentlySelected = orderedSelections.includes(type);
+
+        // Update orderedSelections
+        if (isCurrentlySelected) {
+            setOrderedSelections(prev => prev.filter(t => t !== type));
+        } else {
+            setOrderedSelections(prev => [...prev, type]);
+        }
+
+        // Sync selectedProfileIds for profiles (outside the setState callback)
+        if (type.startsWith('profile_')) {
+            const profileId = type.replace('profile_', '');
+            if (isCurrentlySelected) {
+                setSelectedProfileIds(ids => ids.filter(id => id !== profileId));
+            } else {
+                setSelectedProfileIds(ids => [...ids, profileId]);
+            }
+        }
+    };
+
+    // Check if a type is selected
+    const isSelected = (type) => orderedSelections.includes(type);
+
+    // Get ordered columns for display (combines basic selections and profile selections)
+    const orderedColumns = useMemo(() => {
+        try {
+            const columns = [];
+
+            orderedSelections.forEach(sel => {
+                if (sel === 'math') {
+                    columns.push({ type: 'math', data: results, name: t('mathematical'), color: '#60a5fa', bgClass: 'bg-blue-500/5' });
+                } else if (sel === 'sim') {
+                    columns.push({ type: 'sim', data: simulationResults, name: t('simulations'), color: '#f472b6', bgClass: 'bg-pink-500/5' });
+                } else if (sel === 'ai') {
+                    columns.push({ type: 'ai', data: aiResults, name: t('aiMode'), color: '#a78bfa', bgClass: 'bg-purple-500/5' });
+                } else if (sel.startsWith('profile_')) {
+                    const profileId = sel.replace('profile_', '');
+                    const pr = profileResults?.find(p => p.id === profileId);
+                    if (pr) {
+                        const idx = profileResults.findIndex(p => p.id === profileId);
+                        columns.push({
+                            type: 'profile',
+                            id: profileId,
+                            data: pr.results,
+                            name: pr.name,
+                            color: `hsl(${idx * 137.5 % 360}, 70%, 60%)`,
+                            bgClass: 'bg-white/5',
+                            profileData: profiles?.find(p => p.id === profileId)?.data
+                        });
+                    }
+                }
+            });
+
+            return columns;
+        } catch (error) {
+            console.error('Error in orderedColumns:', error);
+            return [];
+        }
+    }, [orderedSelections, results, simulationResults, aiResults, profileResults, profiles, t]);
+
+    // Sensitivity toggle handlers (for compare mode)
+    const handleInterestToggle = (checked) => {
+        setShowInterestSensitivity(checked);
+        if (checked) setShowIncomeSensitivity(false);
+    };
+
+    const handleIncomeToggle = (checked) => {
+        setShowIncomeSensitivity(checked);
+        if (checked) setShowInterestSensitivity(false);
+    };
+
+    const sensitivityResults = useMemo(() => {
+        try {
+            if (!showInterestSensitivity && !showIncomeSensitivity) return null;
+
+            let baseInputs, baseName, color;
+
+            if (isCompareMode) {
+                // Use the first visible column for sensitivity
+                if (orderedColumns.length === 0) return null;
+
+                const firstCol = orderedColumns[0];
+                color = firstCol.color;
+                baseName = firstCol.name;
+
+                if (firstCol.type === 'math') {
+                    baseInputs = inputs;
+                } else if (firstCol.type === 'sim' || firstCol.type === 'ai') {
+                    baseInputs = inputs; // Simulations and AI are based on same inputs
+                } else if (firstCol.type === 'profile' && firstCol.profileData) {
+                    baseInputs = firstCol.profileData;
+                } else {
+                    return null;
+                }
+            } else if (isMathMode) {
+                // Use current inputs for mathematical mode
+                baseInputs = inputs;
+                baseName = t('currentInputs') || 'Current';
+                color = '#60a5fa'; // Blue like math mode
+            } else {
+                return null; // Sensitivity not supported in other modes
+            }
+
+            let inputsMinus, inputsPlus, minusLabel, plusLabel;
+
+            if (showInterestSensitivity) {
+                inputsMinus = { ...baseInputs, annualReturnRate: parseFloat(baseInputs.annualReturnRate) - 1 };
+                inputsPlus = { ...baseInputs, annualReturnRate: parseFloat(baseInputs.annualReturnRate) + 1 };
+                minusLabel = t('returnMinus1');
+                plusLabel = t('returnPlus1');
+            } else {
+                inputsMinus = { ...baseInputs, monthlyNetIncomeDesired: parseFloat(baseInputs.monthlyNetIncomeDesired) - 1000 };
+                inputsPlus = { ...baseInputs, monthlyNetIncomeDesired: parseFloat(baseInputs.monthlyNetIncomeDesired) + 1000 };
+                minusLabel = t('incomeMinus1000');
+                plusLabel = t('incomePlus1000');
+            }
+
+            return {
+                minus: calculateRetirementProjection(inputsMinus),
+                plus: calculateRetirementProjection(inputsPlus),
+                baseName,
+                minusLabel,
+                plusLabel,
+                color
+            };
+        } catch (error) {
+            console.error('Error in sensitivityResults:', error);
+            return null;
+        }
+    }, [showInterestSensitivity, showIncomeSensitivity, isCompareMode, isMathMode, orderedColumns, inputs, t]);
+
+    if (isAiMode && aiResults) {
+        activeResults = aiResults;
+    } else if (isSimMode && simulationResults) {
+        activeResults = simulationResults;
+    }
+    // In compare mode, we stick with 'results' (Math) as the primary active set for the summary cards (if shown) 
+    // or just use all 3 for the table/chart.
+
+    // IMPORTANT: All hooks must be called BEFORE any early returns!
+    // Memoized currency formatter for performance
+    const currencyFormatter = useMemo(() => {
+        return new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
+            style: 'currency',
+            currency: language === 'he' ? 'ILS' : 'USD',
+            maximumFractionDigits: 0
+        });
+    }, [language]);
+
+    const formatCurrency = useCallback((value) => {
+        return currencyFormatter.format(value);
+    }, [currencyFormatter]);
+
+    // Memoized Chart Data for performance
+    const chartData = useMemo(() => {
+        try {
+            return {
+                labels: activeResults?.history?.map(h => `Age ${Math.floor(h.age)}`) || [],
+                datasets: [
+                    // In compare mode, use orderedColumns for datasets
+                    ...(isCompareMode ? orderedColumns.map((col, i) => ({
+                        label: col.name,
+                        data: col.data?.history?.map(h => h.balance) || [],
+                        borderColor: col.color,
+                        borderDash: col.type !== 'math' ? [2, 2] : undefined,
+                        backgroundColor: i === 0 ? 'rgba(96, 165, 250, 0.1)' : 'transparent',
+                        fill: i === 0,
+                        tension: 0.4,
+                        pointRadius: 0,
+                        pointHitRadius: 10,
+                    })) : [{
+                        // Non-compare mode: single line
+                        label: t('wealthProjection'),
+                        data: activeResults?.history?.map(h => h.balance) || [],
+                        borderColor: isAiMode ? '#a78bfa' : (isSimMode ? '#f472b6' : '#60a5fa'),
+                        backgroundColor: isAiMode ? 'rgba(167, 139, 250, 0.1)' : (isSimMode ? 'rgba(244, 114, 182, 0.1)' : 'rgba(96, 165, 250, 0.1)'),
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 0,
+                        pointHitRadius: 10,
+                    }]),
+
+                    // Sensitivity Datasets
+                    ...(sensitivityResults?.minus?.history && sensitivityResults?.plus?.history ? [
+                        {
+                            label: `${sensitivityResults.baseName} (${sensitivityResults.minusLabel})`,
+                            data: sensitivityResults.minus.history.map(h => h.balance),
+                            borderColor: sensitivityResults.color,
+                            borderDash: [5, 5],
+                            backgroundColor: 'transparent',
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHitRadius: 10,
+                            borderWidth: 1
+                        },
+                        {
+                            label: `${sensitivityResults.baseName} (${sensitivityResults.plusLabel})`,
+                            data: sensitivityResults.plus.history.map(h => h.balance),
+                            borderColor: sensitivityResults.color,
+                            borderDash: [10, 5],
+                            backgroundColor: 'transparent',
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHitRadius: 10,
+                            borderWidth: 1
+                        }
+                    ] : []),
+
+                    {
+                        label: t('accumulatedWithdrawals'),
+                        data: activeResults?.history?.map(h => h.accumulatedWithdrawals) || [],
+                        borderColor: '#facc15',
+                        backgroundColor: 'rgba(250, 204, 21, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 0,
+                        pointHitRadius: 10,
+                    }
+                ]
+            };
+        } catch (error) {
+            console.error('Error in chartData:', error);
+            return { labels: [], datasets: [] };
+        }
+    }, [activeResults?.history, isCompareMode, isAiMode, isSimMode, orderedColumns, sensitivityResults, t]);
+
+    // NOW we can have early returns (after all hooks are called)
+    // Loading State
+    if (aiLoading) {
+        return (
+            <div className="p-8 text-center space-y-4 bg-white/5 rounded-2xl border border-white/10 animate-pulse">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+                <p className="text-gray-300">{t('calculatingWithAI')}</p>
+            </div>
+        );
+    }
+
+    // Error State
+    if (aiError) {
+        return (
+            <div className="p-6 text-center space-y-2 bg-red-500/10 rounded-2xl border border-red-500/30">
+                <div className="text-red-400 font-bold text-lg">{t('aiError')}</div>
+                <p className="text-red-200 text-sm">{aiError}</p>
+            </div>
+        );
+    }
+
+    if (!activeResults) return null;
 
     const {
         history,
@@ -35,43 +299,9 @@ export function ResultsDashboard({ results, inputs, t, language }) {
         requiredCapitalForPerpetuity,
         surplus,
         pvOfDeficit,
-        initialGrossWithdrawal
-    } = results;
-
-    const formatCurrency = (value) => {
-        return new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
-            style: 'currency',
-            currency: language === 'he' ? 'ILS' : 'USD',
-            maximumFractionDigits: 0
-        }).format(value);
-    };
-
-    // Chart Data
-    const data = {
-        labels: history.map(h => `Age ${Math.floor(h.age)}`),
-        datasets: [
-            {
-                label: t('wealthProjection'),
-                data: history.map(h => h.balance),
-                borderColor: '#60a5fa',
-                backgroundColor: 'rgba(96, 165, 250, 0.1)',
-                fill: true,
-                tension: 0.4,
-                pointRadius: 0,
-                pointHitRadius: 10,
-            },
-            {
-                label: t('accumulatedWithdrawals'),
-                data: history.map(h => h.accumulatedWithdrawals),
-                borderColor: '#facc15', // Yellow-400
-                backgroundColor: 'rgba(250, 204, 21, 0.1)',
-                fill: true,
-                tension: 0.4,
-                pointRadius: 0,
-                pointHitRadius: 10,
-            }
-        ]
-    };
+        initialGrossWithdrawal,
+        simulationRange // Only present in Monte Carlo
+    } = activeResults;
 
     const options = {
         responsive: true,
@@ -84,7 +314,16 @@ export function ResultsDashboard({ results, inputs, t, language }) {
                 mode: 'index',
                 intersect: false,
                 callbacks: {
-                    label: (context) => formatCurrency(context.raw)
+                    label: (context) => {
+                        let label = context.dataset.label || '';
+                        if (label) {
+                            label += ': ';
+                        }
+                        if (context.parsed.y !== null) {
+                            label += formatCurrency(context.parsed.y);
+                        }
+                        return label;
+                    }
                 }
             }
         },
@@ -107,80 +346,280 @@ export function ResultsDashboard({ results, inputs, t, language }) {
 
     return (
         <div className="space-y-3">
-            {/* Status Message - Hero Card */}
-            <div className={`p-4 rounded-2xl border-2 shadow-lg transition-all ${ranOutAtAge ? 'bg-red-500/20 border-red-500/50' : 'bg-green-500/20 border-green-500/50'}`}>
-                <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-start">
-                    <div>
-                        <h3 className={`text-2xl font-bold ${ranOutAtAge ? 'text-red-200' : 'text-green-200'}`}>
-                            {ranOutAtAge ? t('warningRunOut') + ` ${ranOutAtAge.toFixed(1)}` : t('onTrack')}
-                        </h3>
-                        {!ranOutAtAge && (
-                            <p className="text-green-100 mt-1 opacity-80">
-                                {t('projectedBalanceAtAge')} {history[history.length - 1].age.toFixed(0)}
-                            </p>
-                        )}
+            {/* Status Message - Hero Card - Fixed height for consistent UI */}
+            {!isCompareMode && (
+                <div className={`px-4 py-3 rounded-xl border shadow-lg h-[72px] flex items-center ${ranOutAtAge ? 'bg-red-500/20 border-red-500/50' : 'bg-green-500/20 border-green-500/50'}`}>
+                    <div className="flex justify-between items-center w-full gap-4">
+                        <div className="flex items-center gap-2">
+                            <span className={`text-lg font-bold ${ranOutAtAge ? 'text-red-200' : 'text-green-200'}`}>
+                                {ranOutAtAge ? `⚠️ ${t('warningRunOut')} ${ranOutAtAge.toFixed(1)}` : `✓ ${t('onTrack')}`}
+                            </span>
+                            {(isAiMode || isSimMode) && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${isAiMode ? 'bg-purple-500/20 border-purple-500/50 text-purple-200' : 'bg-pink-500/20 border-pink-500/50 text-pink-200'}`}>
+                                    {isAiMode ? 'AI' : 'SIM'}
+                                </span>
+                            )}
+                        </div>
+                        <div className="bg-black/20 rounded-lg px-4 py-2 border border-white/10">
+                            <div className="flex items-baseline gap-2">
+                                <span className="text-xs text-gray-400">{t('balanceAtEnd')}:</span>
+                                <span className={`text-2xl font-bold ${ranOutAtAge ? 'text-red-300' : 'text-white'}`}>
+                                    {formatCurrency(balanceAtEnd)}
+                                </span>
+                            </div>
+                            {simulationRange && (
+                                <div className="text-[10px] text-gray-400 mt-0.5">
+                                    {t('range')}: {formatCurrency(simulationRange.p25Balance)} - {formatCurrency(simulationRange.p75Balance)}
+                                </div>
+                            )}
+                        </div>
                     </div>
-                    {!ranOutAtAge && (
-                        <div className="bg-black/20 rounded-xl p-4 backdrop-blur-sm border border-white/10">
-                            <p className="text-sm text-green-200 mb-1">{t('balanceAtEnd')}</p>
-                            <p className="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
-                                {formatCurrency(balanceAtEnd)}
-                            </p>
-                        </div>
-                    )}
                 </div>
-            </div>
+            )}
 
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                <SummaryCard
-                    label={t('balanceAtRetirement')}
-                    value={formatCurrency(balanceAtRetirement)}
-                    subtext={t('projectedSavings')}
-                    color="text-blue-400"
-                />
-                <SummaryCard
-                    label={t('requiredCapital')}
-                    value={formatCurrency(requiredCapitalAtRetirement)}
-                    subtext={t('toEndWithZero')}
-                    color="text-purple-400"
-                />
-                <SummaryCard
-                    label={t('capitalPreservation')}
-                    value={formatCurrency(requiredCapitalForPerpetuity)}
-                    subtext={t('preservePrincipal')}
-                    color="text-emerald-400"
-                    extraContent={
-                        <div className="mt-1 pt-1 border-t border-white/10">
-                            <span className="text-xs text-orange-300 font-medium block">{t('neededToday')}:</span>
-                            <span className="text-lg font-bold text-orange-300">{formatCurrency(results.pvOfCapitalPreservation)}</span>
+            {/* Comparison View or Standard Summary Cards */}
+            {isCompareMode ? (
+                <div className="overflow-x-auto">
+                    {/* Profile Selection for Comparison - Compact View */}
+                    {/* Profile Selection for Comparison - Compact View */}
+                    {/* Profile Selection for Comparison - Compact View */}
+                    <div className="mb-2 bg-white/5 p-2 rounded-xl border border-white/10">
+                        <div className="flex gap-4 items-start">
+                            {/* Controls Column */}
+                            <div className="flex flex-col gap-2 shrink-0 border-e border-white/10 pe-4">
+                                {/* Basic Scenarios */}
+                                <div className="flex items-center gap-2">
+                                    <span className="text-gray-400 text-xs font-medium uppercase tracking-wider whitespace-nowrap">{t('basicScenarios')}</span>
+                                    <div className="flex gap-1">
+                                        <button
+                                            onClick={() => toggleSelection('math')}
+                                            className={`px-2 py-1 rounded text-xs transition-colors border ${isSelected('math')
+                                                ? 'bg-blue-600 border-blue-500 text-white'
+                                                : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10'
+                                                }`}
+                                        >
+                                            {t('mathematical')}
+                                        </button>
+                                        <button
+                                            onClick={() => toggleSelection('sim')}
+                                            className={`px-2 py-1 rounded text-xs transition-colors border ${isSelected('sim')
+                                                ? 'bg-pink-600 border-pink-500 text-white'
+                                                : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10'
+                                                }`}
+                                        >
+                                            {t('simulations')}
+                                        </button>
+                                        <button
+                                            onClick={() => toggleSelection('ai')}
+                                            disabled={!aiResults}
+                                            className={`px-2 py-1 rounded text-xs transition-colors border ${isSelected('ai')
+                                                ? 'bg-purple-600 border-purple-500 text-white'
+                                                : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10'
+                                                } ${!aiResults ? 'opacity-40 cursor-not-allowed' : ''}`}
+                                        >
+                                            {t('aiMode')}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Sensitivity Toggles - Disabled if AI is first in comparison */}
+                                {orderedSelections[0] !== 'ai' && (
+                                    <>
+                                        <label className="flex items-center gap-2 cursor-pointer group">
+                                            <div className="relative">
+                                                <input
+                                                    type="checkbox"
+                                                    className="sr-only peer"
+                                                    checked={showInterestSensitivity}
+                                                    onChange={(e) => handleInterestToggle(e.target.checked)}
+                                                />
+                                                <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                                            </div>
+                                            <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors">
+                                                {t('interestSensitivity')}
+                                            </span>
+                                        </label>
+
+                                        {/* Income Sensitivity Toggle */}
+                                        <label className="flex items-center gap-2 cursor-pointer group">
+                                            <div className="relative">
+                                                <input
+                                                    type="checkbox"
+                                                    className="sr-only peer"
+                                                    checked={showIncomeSensitivity}
+                                                    onChange={(e) => handleIncomeToggle(e.target.checked)}
+                                                />
+                                                <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                                            </div>
+                                            <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors">
+                                                {t('incomeSensitivity')}
+                                            </span>
+                                        </label>
+                                    </>
+                                )}
+                            </div>
+
+                            {/* Saved Profiles */}
+                            <div className="flex-1 min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-gray-400 text-xs font-medium uppercase tracking-wider whitespace-nowrap">{t('selectProfilesToCompare')}</span>
+                                    <div className="flex flex-wrap gap-1">
+                                        {profiles && profiles.map(profile => (
+                                            <button
+                                                key={profile.id}
+                                                onClick={() => toggleSelection(`profile_${profile.id}`)}
+                                                title={profile.name}
+                                                className={`px-2 py-1 rounded text-xs transition-colors border max-w-[120px] truncate ${isSelected(`profile_${profile.id}`)
+                                                    ? 'bg-emerald-600 border-emerald-500 text-white'
+                                                    : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10'
+                                                    }`}
+                                            >
+                                                {profile.name}
+                                            </button>
+                                        ))}
+                                        {(!profiles || profiles.length === 0) && (
+                                            <span className="text-gray-500 text-xs italic">{t('noSavedProfiles')}</span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                    }
-                />
-                <SummaryCard
-                    label={surplus >= 0 ? t('surplus') : t('deficit')}
-                    value={formatCurrency(Math.abs(surplus))}
-                    subtext={surplus >= 0 ? t('onTrack') : t('capitalNeeded')}
-                    color={surplus >= 0 ? "text-green-400" : "text-red-400"}
-                    extraContent={surplus < 0 && (
-                        <div className="mt-1 pt-1 border-t border-white/10">
-                            <span className="text-xs text-orange-300 font-medium block">{t('neededToday')}:</span>
-                            <span className="text-lg font-bold text-orange-300">{formatCurrency(pvOfDeficit)}</span>
-                        </div>
-                    )}
-                />
-                <SummaryCard
-                    label={t('estGrossWithdrawal')}
-                    value={formatCurrency(initialGrossWithdrawal)}
-                    color="text-yellow-400"
-                />
-                <SummaryCard
-                    label={t('timeHorizon')}
-                    value={`${(inputs.retirementStartAge - inputs.currentAge).toFixed(1)} / ${(inputs.retirementEndAge - inputs.retirementStartAge).toFixed(1)}`}
-                    subtext={`${t('yearsUntilRetirement')} / ${t('yearsOfRetirement')}`}
-                    color="text-orange-400"
-                />
-            </div>
+                    </div>
+
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr>
+                                <th className="p-2 text-sm font-semibold text-gray-400 border-b border-white/10">{t('metric')}</th>
+                                {orderedColumns.map((col, i) => (
+                                    <React.Fragment key={col.type === 'profile' ? col.id : col.type}>
+                                        {/* Sensitivity -1% (Only for first column) */}
+                                        {i === 0 && sensitivityResults && (
+                                            <th className="p-2 text-sm font-semibold border-b border-white/10 bg-white/5 rounded-t-lg opacity-70" style={{ color: sensitivityResults.color }}>
+                                                {sensitivityResults.minusLabel}
+                                            </th>
+                                        )}
+
+                                        {/* Column Header */}
+                                        <th className={`p-2 text-sm font-semibold border-b border-white/10 ${col.bgClass} rounded-t-lg`} style={{ color: col.color }}>
+                                            {col.name}
+                                        </th>
+
+                                        {/* Sensitivity +1% (Only for first column) */}
+                                        {i === 0 && sensitivityResults && (
+                                            <th className="p-2 text-sm font-semibold border-b border-white/10 bg-white/5 rounded-t-lg opacity-70" style={{ color: sensitivityResults.color }}>
+                                                {sensitivityResults.plusLabel}
+                                            </th>
+                                        )}
+                                    </React.Fragment>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                            {[
+                                { label: t('balanceAtRetirement'), key: 'balanceAtRetirement' },
+                                { label: t('requiredCapital'), key: 'requiredCapitalAtRetirement' },
+                                { label: t('surplus') + '/' + t('deficit'), key: 'surplus' },
+                                { label: t('neededToday'), key: 'pvOfDeficit', highlightColor: 'orange' },
+                                { label: t('balanceAtEnd'), key: 'balanceAtEnd', highlightColor: 'emerald' },
+                                { label: t('capitalPreservation'), key: 'requiredCapitalForPerpetuity', highlightColor: 'cyan' },
+                                { label: t('neededToday'), key: 'pvOfCapitalPreservation', highlightColor: 'orange' },
+                            ].map((row, idx) => {
+                                const getRowStyles = (color) => {
+                                    if (color === 'orange') return { bg: 'bg-orange-500/10', text: 'text-orange-300 font-bold' };
+                                    if (color === 'emerald') return { bg: 'bg-emerald-500/10', text: 'text-emerald-300 font-bold' };
+                                    if (color === 'cyan') return { bg: 'bg-cyan-500/10', text: 'text-cyan-300 font-bold' };
+                                    return { bg: 'hover:bg-white/5', text: 'text-gray-300' };
+                                };
+                                const styles = getRowStyles(row.highlightColor);
+                                const valueTextClass = row.highlightColor ? styles.text : 'text-white';
+
+                                return (
+                                    <tr key={idx} className={`transition-colors ${styles.bg}`}>
+                                        <td className={`p-2 text-sm ${styles.text}`}>{row.label}</td>
+
+                                        {orderedColumns.map((col, i) => (
+                                            <React.Fragment key={col.type === 'profile' ? col.id : col.type}>
+                                                {/* Sensitivity -1% (Only for first column) */}
+                                                {i === 0 && sensitivityResults && (
+                                                    <td className={`p-2 text-sm font-medium ${valueTextClass} bg-white/5 opacity-70`}>
+                                                        {formatCurrency(row.key === 'surplus' ? Math.abs(sensitivityResults.minus[row.key]) : sensitivityResults.minus[row.key])}
+                                                    </td>
+                                                )}
+
+                                                {/* Column Data */}
+                                                <td className={`p-2 text-sm font-medium ${valueTextClass} ${col.bgClass}`}>
+                                                    {col.data ? (
+                                                        formatCurrency(row.key === 'surplus' ? Math.abs(col.data[row.key]) : col.data[row.key])
+                                                    ) : (
+                                                        <span className="text-gray-600">-</span>
+                                                    )}
+                                                </td>
+
+                                                {/* Sensitivity +1% (Only for first column) */}
+                                                {i === 0 && sensitivityResults && (
+                                                    <td className={`p-2 text-sm font-medium ${valueTextClass} bg-white/5 opacity-70`}>
+                                                        {formatCurrency(row.key === 'surplus' ? Math.abs(sensitivityResults.plus[row.key]) : sensitivityResults.plus[row.key])}
+                                                    </td>
+                                                )}
+                                            </React.Fragment>
+                                        ))}
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                    <SummaryCard
+                        label={t('balanceAtRetirement')}
+                        value={formatCurrency(balanceAtRetirement)}
+                        subtext={t('projectedSavings')}
+                        color="text-blue-400"
+                    />
+                    <SummaryCard
+                        label={t('requiredCapital')}
+                        value={formatCurrency(requiredCapitalAtRetirement)}
+                        subtext={t('toEndWithZero')}
+                        color="text-purple-400"
+                    />
+                    <SummaryCard
+                        label={t('capitalPreservation')}
+                        value={formatCurrency(requiredCapitalForPerpetuity)}
+                        subtext={t('preservePrincipal')}
+                        color="text-emerald-400"
+                        extraContent={
+                            <div className="mt-1 pt-1 border-t border-white/10">
+                                <span className="text-xs text-orange-300 font-medium block">{t('neededToday')}:</span>
+                                <span className="text-lg font-bold text-orange-300">{formatCurrency(activeResults.pvOfCapitalPreservation)}</span>
+                            </div>
+                        }
+                    />
+                    <SummaryCard
+                        label={surplus >= 0 ? t('surplus') : t('deficit')}
+                        value={formatCurrency(Math.abs(surplus))}
+                        subtext={surplus >= 0 ? t('onTrack') : t('capitalNeeded')}
+                        color={surplus >= 0 ? "text-green-400" : "text-red-400"}
+                        extraContent={surplus < 0 && (
+                            <div className="mt-1 pt-1 border-t border-white/10">
+                                <span className="text-xs text-orange-300 font-medium block">{t('neededToday')}:</span>
+                                <span className="text-lg font-bold text-orange-300">{formatCurrency(pvOfDeficit)}</span>
+                            </div>
+                        )}
+                    />
+                    <SummaryCard
+                        label={t('estGrossWithdrawal')}
+                        value={formatCurrency(initialGrossWithdrawal)}
+                        color="text-yellow-400"
+                    />
+                    <SummaryCard
+                        label={t('timeHorizon')}
+                        value={`${(inputs.retirementStartAge - inputs.currentAge).toFixed(1)} / ${(inputs.retirementEndAge - inputs.retirementStartAge).toFixed(1)}`}
+                        subtext={`${t('yearsUntilRetirement')} / ${t('yearsOfRetirement')}`}
+                        color="text-orange-400"
+                    />
+                </div>
+            )}
 
             {/* Chart */}
             <div className="bg-white/10 backdrop-blur-md border border-white/40 rounded-2xl p-4 shadow-xl">
@@ -189,7 +628,7 @@ export function ResultsDashboard({ results, inputs, t, language }) {
                     <h3 className="text-lg font-semibold text-white">{t('wealthProjection')}</h3>
                     <div className="flex gap-6">
                         <div className="flex items-center gap-1.5">
-                            <span className="w-3 h-3 bg-[#60a5fa] inline-block"></span>
+                            <span className={`w-3 h-3 inline-block ${isAiMode ? 'bg-[#a78bfa]' : (isSimMode ? 'bg-[#f472b6]' : 'bg-[#60a5fa]')}`}></span>
                             <span className="text-sm text-white">{t('wealthProjection')}</span>
                         </div>
                         <div className="flex items-center gap-1.5">
@@ -199,7 +638,7 @@ export function ResultsDashboard({ results, inputs, t, language }) {
                     </div>
                 </div>
                 <div className="h-52">
-                    <Line data={data} options={options} />
+                    <Line data={chartData} options={options} />
                 </div>
             </div>
         </div>

@@ -226,7 +226,9 @@ export function calculateRetirementProjection(inputs) {
     return {
         history,
         balanceAtRetirement,
-        balanceAtEnd: Math.max(0, retirementBalance),
+        balanceAtEnd: surplus > 0
+            ? surplus * Math.pow(1 + monthlyRate, monthsInRetirement)
+            : Math.max(0, retirementBalance),
         ranOutAtAge,
         requiredCapitalAtRetirement,
         requiredCapitalForPerpetuity,

@@ -1,51 +1,48 @@
 import React, { useState, useEffect } from 'react';
-import { Save, FolderOpen, Trash2, RefreshCw } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { Save, Trash2, Upload, RotateCcw } from 'lucide-react';
 
-export function ProfileManager({ currentInputs, onLoad, t, language }) {
-    const { currentUser } = useAuth();
-    const [profiles, setProfiles] = useState([]);
+export function ProfileManager({ currentInputs, onLoad, t, language, profiles, onSaveProfile, onUpdateProfile, onDeleteProfile, onProfileLoad, lastLoadedProfileId }) {
     const [newProfileName, setNewProfileName] = useState('');
     const [selectedProfileId, setSelectedProfileId] = useState('');
+    const [saveMessage, setSaveMessage] = useState('');
 
-    const storageKey = currentUser ? `retirementProfiles_${currentUser.uid}` : 'retirementProfiles_guest';
-
+    // Sync selectedProfileId with lastLoadedProfileId on mount/change
     useEffect(() => {
-        const saved = localStorage.getItem(storageKey);
-        if (saved) {
-            setProfiles(JSON.parse(saved));
-        } else {
-            setProfiles([]);
+        if (lastLoadedProfileId) {
+            setSelectedProfileId(lastLoadedProfileId);
         }
-    }, [currentUser, storageKey]);
+    }, [lastLoadedProfileId]);
 
     const saveProfile = () => {
         if (!newProfileName.trim()) return;
-        const newProfile = {
-            id: Date.now().toString(),
-            name: newProfileName,
-            data: currentInputs
-        };
-        const updated = [...profiles, newProfile];
-        setProfiles(updated);
-        localStorage.setItem(storageKey, JSON.stringify(updated));
+        const newProfile = onSaveProfile(newProfileName, currentInputs);
         setNewProfileName('');
         setSelectedProfileId(newProfile.id);
+        showMessage(language === 'he' ? 'פרופיל נשמר!' : 'Profile saved!');
     };
 
     const updateProfile = () => {
         if (!selectedProfileId) return;
-        const updated = profiles.map(p =>
-            p.id === selectedProfileId ? { ...p, data: currentInputs } : p
-        );
-        setProfiles(updated);
-        localStorage.setItem(storageKey, JSON.stringify(updated));
+        onUpdateProfile(selectedProfileId, currentInputs);
+        showMessage(language === 'he' ? 'פרופיל עודכן!' : 'Profile updated!');
+    };
+
+    const reloadProfile = () => {
+        if (!selectedProfileId) return;
+        const profile = profiles.find(p => p.id === selectedProfileId);
+        if (profile) {
+            onLoad(profile.data);
+            showMessage(language === 'he' ? 'פרופיל נטען מחדש!' : 'Profile reloaded!');
+        }
+    };
+
+    const showMessage = (msg) => {
+        setSaveMessage(msg);
+        setTimeout(() => setSaveMessage(''), 2000);
     };
 
     const deleteProfile = (id) => {
-        const updated = profiles.filter(p => p.id !== id);
-        setProfiles(updated);
-        localStorage.setItem(storageKey, JSON.stringify(updated));
+        onDeleteProfile(id);
         if (selectedProfileId === id) setSelectedProfileId('');
     };
 
@@ -54,12 +51,18 @@ export function ProfileManager({ currentInputs, onLoad, t, language }) {
         if (profile) {
             onLoad(profile.data);
             setSelectedProfileId(id);
+            // Persist this as the last loaded profile
+            if (onProfileLoad) {
+                onProfileLoad(id);
+            }
         }
     };
 
     return (
         <div className="mb-2">
             <div className="flex flex-col gap-2">
+
+
                 <div className="flex gap-2 items-center">
                     <input
                         type="text"
@@ -91,12 +94,21 @@ export function ProfileManager({ currentInputs, onLoad, t, language }) {
 
                         {selectedProfileId && (
                             <>
+                                {/* Reload profile (discard changes) */}
+                                <button
+                                    onClick={reloadProfile}
+                                    className="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors"
+                                    title={language === 'he' ? 'טען מחדש (בטל שינויים)' : 'Reload (discard changes)'}
+                                >
+                                    <RotateCcw className="w-4 h-4" />
+                                </button>
+                                {/* Update/save changes to profile */}
                                 <button
                                     onClick={updateProfile}
                                     className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors"
-                                    title={t('updateProfile')}
+                                    title={language === 'he' ? 'שמור שינויים לפרופיל' : 'Save changes to profile'}
                                 >
-                                    <RefreshCw className="w-4 h-4" />
+                                    <Upload className="w-4 h-4" />
                                 </button>
                                 <button
                                     onClick={() => deleteProfile(selectedProfileId)}
@@ -109,6 +121,15 @@ export function ProfileManager({ currentInputs, onLoad, t, language }) {
                         )}
                     </div>
                 )}
+
+                {/* Message area - fixed height to prevent shifting */}
+                <div className="h-6">
+                    {saveMessage && (
+                        <div className="bg-green-600/20 border border-green-500 text-green-300 px-2 py-0.5 rounded text-xs text-center">
+                            {saveMessage}
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );

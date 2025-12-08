@@ -1,0 +1,338 @@
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
+
+// Helper to check available providers
+export const getAvailableProviders = () => {
+    const providers = [];
+
+    if (import.meta.env.VITE_GEMINI_API_KEY) {
+        providers.push({ id: 'gemini', name: 'Google Gemini' });
+    }
+    if (import.meta.env.VITE_OPENAI_API_KEY) {
+        providers.push({ id: 'openai', name: 'OpenAI' });
+    }
+    if (import.meta.env.VITE_ANTHROPIC_API_KEY) {
+        providers.push({ id: 'anthropic', name: 'Anthropic (Claude)' });
+    }
+
+    return providers;
+};
+
+export const getAvailableModels = (providerId) => {
+    switch (providerId) {
+        case 'gemini':
+            return [
+                { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro Preview' },
+                { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+                { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+                { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite' },
+                { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite' }
+            ];
+        case 'openai':
+            return [
+                { id: 'gpt-4o', name: 'GPT-4o' },
+                { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
+                { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' }
+            ];
+        case 'anthropic':
+            return [
+                { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5' },
+                { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5' },
+                { id: 'claude-opus-4-20250514', name: 'Claude Opus 4' },
+                { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4' },
+                { id: 'claude-haiku-4-20250110', name: 'Claude Haiku 4' },
+                { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet (New)' },
+                { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku' }
+            ];
+        default:
+            return [];
+    }
+};
+
+export const generatePrompt = (inputs) => {
+    return `
+    Act as a financial retirement expert. Calculate the retirement projection based on the following inputs:
+    
+    - Current Age: ${inputs.currentAge}
+    - Retirement Start Age: ${inputs.retirementStartAge}
+    - Retirement End Age: ${inputs.retirementEndAge}
+    - Current Savings: ${inputs.currentSavings}
+    - Monthly Contribution (until retirement age only): ${inputs.monthlyContribution}
+    - Monthly Net Income Desired in Retirement: ${inputs.monthlyNetIncomeDesired}
+    - Annual Return Rate (Investment): ${inputs.annualReturnRate}%
+    - Tax Rate on Profits: ${inputs.taxRate}%
+
+    Specific Calculation Instructions:
+    1. **Balance at Retirement (Projected Savings)**: Calculate the Future Value of the "Current Savings" plus the Future Value of the "Monthly Contribution" (invested until retirement age).
+       - **Calculation**: Use standard compound interest formula with the *Monthly Rate* (Annual Return / 12).
+       - **Note**: This is your *actual* projected savings, independent of what you *need*.
+    2. **Required Capital at Retirement**: Calculate the total capital required at the start of retirement to fully fund the "Monthly Net Income Desired" for the entire duration (until End Age), such that the balance reaches exactly 0 at the end.
+       - **Independence**: This value depends ONLY on the desired income, the duration of retirement, the annual return rate, and the tax rate. It is NOT affected by "Current Savings" or "Monthly Contribution".
+       - **Accounting**: You must account for the fact that the remaining capital continues to earn interest during retirement, and that tax is paid on the profits component of the withdrawals.
+    2. **Needed Today (Deficit)**: Calculate what is needed TODAY to reach that "Required Capital at Retirement".
+       - First, calculate the Projected Savings at retirement (Future Value of "Current Savings" + Future Value of "Monthly Contribution").
+       - Then, compare: If Projected Savings < Required Capital, calculate the difference (Deficit) and discount it to Present Value (Needed Today).
+       - If Projected Savings > Required Capital, then "Needed Today" is 0 (surplus).
+    3. **Balance at End**: Calculate the projected balance at the end of the retirement period.
+       - **Scenario A (Deficit)**: If the funds run out before "Retirement End Age", this value MUST be 0.
+       - **Scenario B (Surplus)**: If there is a surplus (Projected Savings > Required Capital), this surplus amount remains untouched during retirement (as the Required Capital covers all income needs).
+         - **Calculation**: Simply calculate the future value of this surplus at the "Retirement End Age" by applying the compound interest (Annual Return Rate) for the entire duration of retirement (from Start Age to End Age).
+         - **Constraints**: Do NOT deduct any withdrawals from this surplus. Do NOT apply any tax to this final balance (tax is assumed to be paid on the monthly interest generated, or the rate is net, but no lump-sum tax applies at the end).
+         - **Logic**: It is simply: Surplus + Accumulated Interest on Surplus.
+    4. **Required Capital for Perpetuity (Preservation)**: Calculate the capital needed at retirement age to generate the desired monthly net income indefinitely (living off interest only, preserving the principal).
+       - **Logic**: The monthly interest generated by this capital, *after* deducting the tax on that interest, must exactly equal the "Monthly Net Income Desired".
+    5. **Needed Today for Preservation**: Calculate the amount needed TODAY (as a lump sum replacing Current Savings) to reach the "Required Capital for Perpetuity" at retirement age, taking into account the "Monthly Contribution".
+       - **Logic**: You need to find the starting sum (Present Value) that, when growing at the "Annual Return Rate" until retirement, AND adding the accumulated value of the "Monthly Contribution" (growing at the same rate), will result in the "Required Capital for Perpetuity".
+       - **Consider**: The Future Value of the Monthly Contributions reduces the amount needed from the starting sum.
+       - **Result**: If the contributions alone are sufficient or more than enough, the "Needed Today" value should be negative (indicating a surplus). Do NOT default to zero.
+    6. **Initial Gross Withdrawal**: Calculate the monthly gross withdrawal needed to get the desired net income (Net = Gross - Tax).
+
+    Return the result strictly in the following JSON format (no markdown, no extra text):
+    {
+        "balanceAtRetirement": number,
+        "balanceAtEnd": number,
+        "ranOutAtAge": number or null,
+        "requiredCapitalAtRetirement": number,
+        "requiredCapitalForPerpetuity": number,
+        "surplus": number (positive if surplus, negative if deficit),
+        "pvOfDeficit": number (0 if surplus),
+        "pvOfCapitalPreservation": number (0 if surplus),
+        "initialGrossWithdrawal": number
+    }
+    `;
+};
+
+// Helper to generate history locally based on AI summary
+function generateHistoryFromSummary(inputs, aiResult) {
+    const history = [];
+    const currentAge = parseFloat(inputs.currentAge);
+    const retirementStartAge = parseFloat(inputs.retirementStartAge);
+    const retirementEndAge = parseFloat(inputs.retirementEndAge);
+
+    // 1. Accumulation Phase
+    // We need to grow from currentSavings to aiResult.balanceAtRetirement
+    // We'll use a simple CAGR or linear interpolation if the math doesn't perfectly align, 
+    // but ideally we simulate the growth.
+    // To ensure we hit the EXACT AI target, we can just interpolate the balance.
+
+    const accumulationYears = retirementStartAge - currentAge;
+    const startBalance = parseFloat(inputs.currentSavings);
+    const targetRetirementBalance = aiResult.balanceAtRetirement;
+
+    // Calculate CAGR to hit the target exactly
+    // FV = PV * (1 + r)^n  =>  r = (FV / PV)^(1/n) - 1
+    // If startBalance is 0, we can't use CAGR directly, so we fallback to linear or just adding contributions.
+    // But here we are just interpolating the *total* balance.
+
+    let cagr = 0;
+    if (startBalance > 0 && targetRetirementBalance > startBalance && accumulationYears > 0) {
+        cagr = Math.pow(targetRetirementBalance / startBalance, 1 / accumulationYears) - 1;
+    }
+
+    for (let i = 0; i <= accumulationYears; i++) {
+        const age = currentAge + i;
+        let balance;
+
+        if (accumulationYears === 0) {
+            balance = startBalance;
+        } else if (startBalance > 0 && cagr > 0) {
+            // Exponential growth
+            balance = startBalance * Math.pow(1 + cagr, i);
+        } else {
+            // Linear fallback (e.g. if starting from 0)
+            balance = startBalance + (targetRetirementBalance - startBalance) * (i / accumulationYears);
+        }
+
+        history.push({
+            age: age,
+            balance: balance,
+            accumulatedWithdrawals: 0,
+            phase: "accumulation"
+        });
+    }
+
+    // 2. Decumulation Phase
+    const decumulationYears = retirementEndAge - retirementStartAge;
+    let currentBalance = targetRetirementBalance;
+    let accumulatedWithdrawals = 0;
+    const monthlyWithdrawal = aiResult.initialGrossWithdrawal;
+    const annualWithdrawal = monthlyWithdrawal * 12;
+    // We need to hit aiResult.balanceAtEnd (or 0 if ran out)
+
+    // If ranOutAtAge is set, we need to hit 0 at that age.
+    const actualEndAge = aiResult.ranOutAtAge || retirementEndAge;
+
+    for (let i = 1; i <= decumulationYears; i++) {
+        const age = retirementStartAge + i;
+
+        // Stop if we pass the AI's predicted run-out age
+        if (age > actualEndAge) {
+            break;
+        }
+
+        // Apply return
+        currentBalance = currentBalance * (1 + inputs.annualReturnRate / 100);
+        // Subtract withdrawal
+        currentBalance -= annualWithdrawal;
+        accumulatedWithdrawals += annualWithdrawal;
+
+        if (currentBalance <= 0) {
+            currentBalance = 0;
+            history.push({
+                age: age,
+                balance: 0,
+                accumulatedWithdrawals: accumulatedWithdrawals,
+                phase: "decumulation"
+            });
+            break; // Stop generating history when money runs out
+        }
+
+        history.push({
+            age: age,
+            balance: currentBalance,
+            accumulatedWithdrawals: accumulatedWithdrawals,
+            phase: "decumulation"
+        });
+    }
+
+    return history;
+}
+
+export async function calculateRetirementWithAI(inputs, provider, model, apiKeyOverride = null, mathematicalBaseline = null) {
+    let prompt = generatePrompt(inputs);
+
+    if (mathematicalBaseline) {
+        // We only provide the balance at retirement as a sanity check, but let the AI do the rest.
+        prompt += `\n    Reference Value (Sanity Check): Balance at Retirement should be approx ${mathematicalBaseline.balanceAtRetirement}.`;
+    }
+
+    // Add explicit formulas to guide the AI's logic without giving the answer
+    prompt += `
+    
+    `;
+
+    try {
+        let responseText = "";
+
+        if (provider === 'gemini') {
+            // Use override if provided, otherwise fallback to env var
+            const apiKey = apiKeyOverride?.trim() || import.meta.env.VITE_GEMINI_API_KEY?.trim();
+
+            console.log("Gemini API Key Status:", apiKey ? "Present (" + apiKey.slice(0, 4) + "...)" : "Missing");
+
+            if (!apiKey) throw new Error("Gemini API Key is missing. Please enter it in the settings.");
+
+            const genAI = new GoogleGenerativeAI(apiKey);
+
+            // Helper to try generating content with a specific model
+            const tryGenerate = async (modelId) => {
+                try {
+                    console.log(`Attempting Gemini with model: ${modelId}`);
+                    const genModel = genAI.getGenerativeModel({
+                        model: modelId,
+                        generationConfig: { temperature: 0 }
+                    });
+                    const result = await genModel.generateContent(prompt);
+                    const response = await result.response;
+                    return response.text();
+                } catch (e) {
+                    console.warn(`Failed with model ${modelId}:`, e.message);
+                    throw e;
+                }
+            };
+
+            try {
+                responseText = await tryGenerate(model);
+            } catch (primaryError) {
+                // If primary model fails with 404, try fallbacks
+                if (primaryError.message.includes('404') || primaryError.message.includes('not found')) {
+                    const fallbacks = ['gemini-1.5-flash', 'gemini-1.5-flash-001', 'gemini-pro', 'gemini-1.0-pro'];
+                    const alternative = fallbacks.find(m => m !== model);
+
+                    if (alternative) {
+                        console.log(`Retrying with fallback model: ${alternative}`);
+                        try {
+                            responseText = await tryGenerate(alternative);
+                        } catch (secondaryError) {
+                            throw primaryError; // Throw original error if fallback fails
+                        }
+                    } else {
+                        throw primaryError;
+                    }
+                } else {
+                    throw primaryError;
+                }
+            }
+
+        } else if (provider === 'openai') {
+            const apiKey = apiKeyOverride?.trim() || import.meta.env.VITE_OPENAI_API_KEY?.trim();
+            const openai = new OpenAI({
+                apiKey: apiKey,
+                dangerouslyAllowBrowser: true // Client-side usage
+            });
+            const completion = await openai.chat.completions.create({
+                messages: [{ role: "user", content: prompt }],
+                model: model,
+                temperature: 0,
+                response_format: { type: "json_object" }
+            });
+            responseText = completion.choices[0].message.content;
+        } else if (provider === 'anthropic') {
+            const apiKey = apiKeyOverride?.trim() || import.meta.env.VITE_ANTHROPIC_API_KEY?.trim();
+            const anthropic = new Anthropic({
+                apiKey: apiKey,
+                dangerouslyAllowBrowser: true // Client-side usage
+            });
+            const message = await anthropic.messages.create({
+                model: model,
+                max_tokens: 4096,
+                temperature: 0,
+                messages: [{ role: "user", content: prompt }]
+            });
+            responseText = message.content[0].text;
+        }
+
+        // Clean up response if it contains markdown code blocks
+        // Robust JSON extraction: Find the first '{' and the last '}'
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            responseText = jsonMatch[0];
+        } else {
+            // Fallback cleanup if regex fails (unlikely for valid JSON)
+            responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        }
+
+        const parsed = JSON.parse(responseText);
+
+        // Generate history locally
+        parsed.history = generateHistoryFromSummary(inputs, parsed);
+
+        parsed.source = 'ai';
+        return parsed;
+
+    } catch (error) {
+        console.error("AI Calculation Error:", error);
+        throw error;
+    }
+}
+
+export async function listModelsFromAPI(apiKeyOverride = null) {
+    const apiKey = apiKeyOverride?.trim() || import.meta.env.VITE_GEMINI_API_KEY?.trim();
+    if (!apiKey) throw new Error("API Key is missing");
+
+    try {
+        // We use fetch directly to avoid SDK version issues for listing models
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+        const data = await response.json();
+
+        if (data.error) {
+            throw new Error(data.error.message);
+        }
+
+        return data.models || [];
+    } catch (error) {
+        console.error("List Models Error:", error);
+        throw error;
+    }
+}
