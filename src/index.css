@@ -254,6 +254,11 @@ body {
   border-bottom: 2px solid rgba(0, 0, 0, 0.15) !important;
 }
 
+/* Sticky table header background for light mode */
+.light .bg-slate-900 {
+  background-color: var(--bg-card) !important;
+}
+
 .light table td {
   background-color: var(--bg-card) !important;
   color: inherit !important;

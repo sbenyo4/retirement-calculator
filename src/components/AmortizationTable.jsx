@@ -13,7 +13,8 @@ export function AmortizationTable({ history, t, language }) {
             maximumFractionDigits: 0
         });
         const currency = language === 'he' ? '₪' : '$';
-        return `${currency} ${formatted}`;
+        // Use non-breaking space to prevent wrapping on mobile
+        return `${formatted}\u00A0${currency}`;
     };
 
     // Calculate yearly data with interest earned
@@ -61,7 +62,7 @@ export function AmortizationTable({ history, t, language }) {
             {isExpanded && (
                 <div className="max-h-80 overflow-y-auto border-t border-white/10">
                     <table className="w-full text-sm">
-                        <thead className="bg-white/5 sticky top-0">
+                        <thead className="bg-slate-900 sticky top-0 z-10">
                             <tr>
                                 <th className="p-2 text-left text-xs font-medium text-gray-400">{t('age') || 'Age'}</th>
                                 <th className="p-2 text-left text-xs font-medium text-gray-400">{t('year') || 'Year'}</th>
@@ -79,16 +80,16 @@ export function AmortizationTable({ history, t, language }) {
                                 >
                                     <td className="p-2 text-gray-300">{row.age.toFixed(0)}</td>
                                     <td className="p-2 text-gray-400">{row.year}</td>
-                                    <td className={`p-2 text-right font-medium ${row.balance < 0 ? 'text-red-400' : 'text-green-400'}`}>
+                                    <td className={`p-2 text-right font-medium whitespace-nowrap ${row.balance < 0 ? 'text-red-400' : 'text-green-400'}`}>
                                         {formatCurrency(row.balance)}
                                     </td>
-                                    <td className="p-2 text-right text-blue-400">
+                                    <td className="p-2 text-right text-blue-400 whitespace-nowrap">
                                         {row.contribution > 0 ? formatCurrency(row.contribution) : '-'}
                                     </td>
-                                    <td className="p-2 text-right text-orange-400">
+                                    <td className="p-2 text-right text-orange-400 whitespace-nowrap">
                                         {row.withdrawal > 0 ? formatCurrency(row.withdrawal) : '-'}
                                     </td>
-                                    <td className={`p-2 text-right ${row.interest >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    <td className={`p-2 text-right whitespace-nowrap ${row.interest >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                         {formatCurrency(row.interest)}
                                     </td>
                                 </tr>
