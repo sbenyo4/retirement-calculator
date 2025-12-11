@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { calculateRetirementProjection } from '../utils/calculator';
-import { AmortizationTable } from './AmortizationTable';
+import { AmortizationTable, AmortizationTableButton, AmortizationTableModal } from './AmortizationTable';
+import { SensitivityRangeChart, SensitivityRangeButton, SensitivityRangeModal } from './SensitivityRangeChart';
+import { SensitivityHeatmapButton, SensitivityHeatmapModal } from './SensitivityHeatmap';
 import { Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -29,6 +31,9 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
     // ALL HOOKS MUST BE AT THE TOP - React rules of hooks
     // State hooks
     const [orderedSelections, setOrderedSelections] = useState([]);
+    const [showSensitivityModal, setShowSensitivityModal] = useState(false);
+    const [showHeatmapModal, setShowHeatmapModal] = useState(false);
+    const [showAmortizationModal, setShowAmortizationModal] = useState(false);
     // Note: showInterestSensitivity and showIncomeSensitivity are now received as props
 
     // Determine which results to display
@@ -446,6 +451,16 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                                         >
                                             {t('aiMode')}
                                         </button>
+
+                                        {/* Sensitivity Range Chart Button */}
+                                        <SensitivityRangeButton
+                                            onClick={() => setShowSensitivityModal(true)}
+                                            t={t}
+                                        />
+                                        <SensitivityHeatmapButton
+                                            onClick={() => setShowHeatmapModal(true)}
+                                            t={t}
+                                        />
                                     </div>
                                 </div>
 
@@ -671,7 +686,16 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
             <div className="bg-white/10 backdrop-blur-md border border-white/40 rounded-2xl p-4 shadow-xl">
                 {/* Chart Title with Custom Legend */}
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-white">{t('wealthProjection')}</h3>
+                    <div className="flex items-center gap-3">
+                        <h3 className="text-lg font-semibold text-white">{t('wealthProjection')}</h3>
+                        {/* Year-by-Year Progress Button */}
+                        {!isCompareMode && history && (
+                            <AmortizationTableButton
+                                onClick={() => setShowAmortizationModal(true)}
+                                t={t}
+                            />
+                        )}
+                    </div>
                     <div className="flex gap-6">
                         <div className="flex items-center gap-1.5">
                             <span className={`w-3 h-3 inline-block ${isAiMode ? 'bg-[#a78bfa]' : (isSimMode ? 'bg-[#f472b6]' : 'bg-[#60a5fa]')}`}></span>
@@ -688,10 +712,30 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                 </div>
             </div>
 
-            {/* Amortization Table */}
-            {!isCompareMode && history && (
-                <AmortizationTable history={history} t={t} language={language} />
-            )}
+            {/* Amortization Table Modal */}
+            <AmortizationTableModal
+                isOpen={showAmortizationModal}
+                onClose={() => setShowAmortizationModal(false)}
+                history={history}
+                t={t}
+                language={language}
+            />
+
+            <SensitivityRangeModal
+                isOpen={showSensitivityModal}
+                onClose={() => setShowSensitivityModal(false)}
+                inputs={inputs}
+                t={t}
+                language={language}
+            />
+
+            <SensitivityHeatmapModal
+                isOpen={showHeatmapModal}
+                onClose={() => setShowHeatmapModal(false)}
+                inputs={inputs}
+                t={t}
+                language={language}
+            />
         </div >
     );
 }

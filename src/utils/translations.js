@@ -99,7 +99,25 @@ export const translations = {
         contributionHeader: 'Contribution',
         withdrawalHeader: 'Withdrawal',
         interestEarned: 'Interest Earned',
-        age: 'Age'
+        age: 'Age',
+        // Sensitivity Range Chart
+        sensitivityRangeChart: 'Sensitivity Range Chart',
+        selectParameter: 'Parameter',
+        rangeMin: 'Min',
+        rangeMax: 'Max',
+        step: 'Step',
+        interestRate: 'Interest Rate',
+        monthlyIncome: 'Monthly Income',
+        retirementAge: 'Retirement Age',
+        currentValue: 'Current Value',
+        balanceAtEndShort: 'End Balance',
+        years: 'years',
+        // Sensitivity Heatmap
+        sensitivityHeatmap: 'Sensitivity Heatmap',
+        heatmapDesc: 'Balance at End of Period (Green = Surplus, Red = Deficit)',
+        heatmapXAxis: 'Annual Return Rate (%)',
+        heatmapYAxis: 'Monthly Income Desired',
+        reset: 'Reset View'
     },
     he: {
         appTitle: "מתכנן פרישה",
@@ -201,6 +219,24 @@ export const translations = {
         contributionHeader: 'הפקדה',
         withdrawalHeader: 'משיכה',
         interestEarned: 'ריבית',
-        age: 'גיל'
+        age: 'גיל',
+        // Sensitivity Range Chart
+        sensitivityRangeChart: 'גרף טווח רגישות',
+        selectParameter: 'פרמטר',
+        rangeMin: 'מינימום',
+        rangeMax: 'מקסימום',
+        step: 'צעד',
+        interestRate: 'ריבית שנתית',
+        monthlyIncome: 'הכנסה חודשית',
+        retirementAge: 'גיל פרישה',
+        currentValue: 'ערך נוכחי',
+        balanceAtEndShort: 'יתרה סופית',
+        years: 'שנים',
+        // Sensitivity Heatmap
+        sensitivityHeatmap: 'מפת חום - רגישות',
+        heatmapDesc: 'יתרה בסוף התקופה (ירוק = עודף, אדום = חוסר)',
+        heatmapXAxis: 'תשואה שנתית (%)',
+        heatmapYAxis: 'הכנסה חודשית רצויה',
+        reset: 'אפס תצוגה'
     }
 };

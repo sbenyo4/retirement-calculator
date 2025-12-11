@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { useTheme } from '../contexts/ThemeContext';
 import { Save, Trash2, Upload, RotateCcw } from 'lucide-react';
+import { CustomSelect } from './common/CustomSelect';
 
 export function ProfileManager({ currentInputs, onLoad, t, language, profiles, onSaveProfile, onUpdateProfile, onDeleteProfile, onProfileLoad, lastLoadedProfileId }) {
     const [newProfileName, setNewProfileName] = useState('');
@@ -12,6 +14,20 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
             setSelectedProfileId(lastLoadedProfileId);
         }
     }, [lastLoadedProfileId]);
+
+    const { theme } = useTheme();
+    const isLight = theme === 'light';
+
+    // Theme-aware styles
+    const inputClass = isLight
+        ? "bg-white border border-slate-400 text-gray-900 placeholder-gray-500 shadow-sm focus:ring-blue-500"
+        : "bg-black/20 border border-white/50 text-white placeholder-gray-500 focus:ring-blue-500";
+
+    const selectClass = isLight
+        ? "bg-white border border-slate-400 text-gray-900 shadow-sm focus:ring-blue-500"
+        : "bg-black/20 border border-white/50 text-white focus:ring-blue-500";
+
+    const optionClass = isLight ? "bg-white text-gray-900" : "bg-gray-800 text-white";
 
     const saveProfile = () => {
         if (!newProfileName.trim()) return;
@@ -69,7 +85,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                         value={newProfileName}
                         onChange={(e) => setNewProfileName(e.target.value)}
                         placeholder={t('profileName')}
-                        className="flex-1 bg-black/20 border border-white/50 rounded-lg py-1.5 px-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        className={`flex-1 rounded-lg py-1.5 px-3 focus:outline-none focus:ring-2 text-sm ${inputClass}`}
                     />
                     <button
                         onClick={saveProfile}
@@ -81,16 +97,15 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
 
                 {profiles.length > 0 && (
                     <div className="flex gap-2 items-center">
-                        <select
+                        <CustomSelect
                             value={selectedProfileId}
-                            onChange={(e) => loadProfile(e.target.value)}
-                            className="flex-1 bg-black/20 border border-white/50 rounded-lg py-1.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                        >
-                            <option value="">{t('loadProfile')}...</option>
-                            {profiles.map(p => (
-                                <option key={p.id} value={p.id}>{p.name}</option>
-                            ))}
-                        </select>
+                            onChange={(val) => loadProfile(val)}
+                            options={[
+                                { value: "", label: `${t('loadProfile')}...` },
+                                ...profiles.map(p => ({ value: p.id, label: p.name }))
+                            ]}
+                            className="flex-1"
+                        />
 
                         {selectedProfileId && (
                             <>

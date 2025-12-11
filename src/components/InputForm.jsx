@@ -1,7 +1,9 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { useTheme } from '../contexts/ThemeContext';
 import { getAvailableProviders, getAvailableModels, generatePrompt } from '../utils/ai-calculator';
 import { SIMULATION_TYPES } from '../utils/simulation-calculator';
-import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check } from 'lucide-react';
+import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, Coins, BarChart3, Landmark } from 'lucide-react';
+import { CustomSelect } from './common/CustomSelect';
 
 export default function InputForm({
     inputs, setInputs, t, language,
@@ -15,7 +17,23 @@ export default function InputForm({
     showInterestSensitivity, setShowInterestSensitivity,
     showIncomeSensitivity, setShowIncomeSensitivity
 }) {
+    const { theme } = useTheme();
+    const isLight = theme === 'light';
     const currency = t('currency');
+
+    // Theme-aware styles
+    const containerClass = isLight ? "bg-white border border-gray-200 shadow-sm" : "bg-white/5 border border-white/10";
+    const labelClass = isLight ? "text-gray-600" : "text-gray-400"; // For secondary labels
+    const headerLabelClass = isLight ? "text-gray-900" : "text-white";
+    // SIMPLIFIED SELECT CLASS: Removed ring/border color classes here as they are handled by global CSS '!important'
+    const selectClass = isLight
+        ? "bg-white text-gray-900"
+        : "bg-black/20 border border-white/30 text-white";
+    const optionClass = isLight ? "bg-white text-gray-900" : "bg-gray-800 text-white";
+    const iconClass = isLight ? "text-gray-500" : "text-gray-400";
+    const inputClass = isLight
+        ? "bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:ring-blue-500 shadow-sm"
+        : "bg-black/20 border border-white/50 text-white placeholder-gray-500";
 
     // Store whether buttons should be visible (persist across re-renders)
     const showNeededTodayBtn = useRef(false);
@@ -88,11 +106,11 @@ export default function InputForm({
             {/* Calculation Mode Selector */}
             <div className="mb-1 space-y-2">
                 <div className="flex items-center gap-2 mb-1">
-                    <Cpu className="h-4 w-4 text-purple-400" />
-                    <h2 className="text-sm font-semibold text-white">{t('calculationMode')}</h2>
+                    <Cpu className={`h-4 w-4 ${isLight ? 'text-purple-600' : 'text-purple-400'}`} />
+                    <h2 className={`text-sm font-semibold ${headerLabelClass}`}>{t('calculationMode')}</h2>
                 </div>
 
-                <div className="grid grid-cols-4 gap-2 bg-black/20 p-1 rounded-lg">
+                <div className={`grid grid-cols-4 gap-2 p-1 rounded-lg ${isLight ? 'bg-slate-200' : 'bg-black/20'}`}>
                     {[
                         { id: 'mathematical', icon: Calculator, label: t('mathematical') },
                         { id: 'ai', icon: Sparkles, label: t('aiMode') },
@@ -103,8 +121,10 @@ export default function InputForm({
                             key={mode.id}
                             onClick={() => setCalculationMode(mode.id)}
                             className={`flex flex-col items-center justify-center p-2 rounded-lg transition-all ${calculationMode === mode.id
-                                ? 'bg-blue-600 text-white shadow-lg'
-                                : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
+                                ? 'bg-blue-600 shadow-lg mode-btn-active text-white'
+                                : (isLight
+                                    ? 'bg-white text-slate-700 shadow-sm hover:bg-slate-50'
+                                    : 'text-gray-400 hover:bg-white/5 hover:text-gray-200')
                                 }`}
                             title={mode.label}
                         >
@@ -116,53 +136,69 @@ export default function InputForm({
 
                 {/* Combined Settings for Compare Mode */}
                 {calculationMode === 'compare' && (
-                    <div className="bg-white/5 rounded-xl p-2 border border-white/10 animate-in fade-in slide-in-from-top-2 relative z-[50]">
+                    <div className={`${containerClass} rounded-xl p-2 animate-in fade-in slide-in-from-top-2 relative z-[50]`}>
                         <div className="grid grid-cols-1 gap-2">
                             {/* AI Section */}
                             <div className="space-y-1">
                                 <div className="flex justify-between items-center">
-                                    <label className="text-[10px] text-purple-300 flex items-center gap-1 font-medium">
+                                    <label className={`text-[10px] ${isLight ? 'text-purple-600' : 'text-purple-300'} flex items-center gap-1 font-medium`}>
                                         <Sparkles size={10} /> {t('aiMode')}
                                     </label>
                                     <div className="flex gap-1">
-                                        <button onClick={() => { const prompt = generatePrompt(inputs); alert(prompt); }} className="text-gray-500 hover:text-white" title="Show Prompt"><Eye size={10} /></button>
+                                        <button onClick={() => { const prompt = generatePrompt(inputs); alert(prompt); }} className={`${iconClass} hover:text-blue-500`} title="Show Prompt"><Eye size={10} /></button>
                                         <div className="relative group">
-                                            <button className="text-gray-500 hover:text-white" title="API Key"><Settings size={10} /></button>
-                                            <div className="absolute right-0 top-full mt-1 w-48 bg-gray-900 border border-white/20 rounded-lg p-2 shadow-xl hidden group-hover:block z-[100]">
-                                                <input type="password" value={apiKeyOverride} onChange={(e) => setApiKeyOverride(e.target.value)} placeholder="API Key" className="w-full bg-black/20 border border-white/30 rounded py-0.5 px-1 text-[10px] text-white" />
+                                            <button className={`${iconClass} hover:text-blue-500`} title="API Key"><Settings size={10} /></button>
+                                            <div className={`absolute right-0 top-full mt-1 w-48 border rounded-lg p-2 shadow-xl hidden group-hover:block z-[100] ${isLight ? 'bg-white border-gray-200' : 'bg-gray-900 border-white/20'}`}>
+                                                <input type="password" value={apiKeyOverride} onChange={(e) => setApiKeyOverride(e.target.value)} placeholder="API Key" className={`w-full rounded py-0.5 px-1 text-[10px] ${inputClass}`} />
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                                 <div className="flex gap-1">
-                                    <select value={aiProvider} onChange={(e) => { setAiProvider(e.target.value); const models = getAvailableModels(e.target.value); if (models.length > 0) setAiModel(models[0].id); }} className="w-1/3 min-w-0 truncate bg-black/20 border border-white/30 rounded py-0.5 px-1 text-[10px] text-white focus:outline-none">
-                                        {availableProviders.map(p => <option key={p.id} value={p.id} className="bg-gray-800">{p.name}</option>)}
-                                    </select>
-                                    <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="flex-1 min-w-0 truncate bg-black/20 border border-white/30 rounded py-0.5 px-1 text-[10px] text-white focus:outline-none" disabled={!aiProvider}>
-                                        {availableModels.map(m => <option key={m.id} value={m.id} className="bg-gray-800">{m.name}</option>)}
-                                    </select>
-                                    <button onClick={onAiCalculate} disabled={aiLoading} className={`p-1 rounded transition-all ${aiInputsChanged ? 'bg-purple-600 text-white' : 'bg-white/5 text-green-400'}`} title={t('generate')}>
-                                        {aiLoading ? <div className="w-2 h-2 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Sparkles size={10} />}
+                                    <CustomSelect
+                                        value={aiProvider}
+                                        onChange={(val) => {
+                                            setAiProvider(val);
+                                            const models = getAvailableModels(val);
+                                            if (models.length > 0) setAiModel(models[0].id);
+                                        }}
+                                        options={availableProviders.map(p => ({ value: p.id, label: p.name }))}
+                                        className="w-1/3 min-w-0"
+                                    />
+                                    <CustomSelect
+                                        value={aiModel}
+                                        onChange={(val) => setAiModel(val)}
+                                        options={availableModels.map(m => ({ value: m.id, label: m.name }))}
+                                        disabled={!aiProvider}
+                                        className="flex-1 min-w-0"
+                                    />
+                                    <button onClick={onAiCalculate} disabled={aiLoading} className={`p-1 rounded transition-all ${aiInputsChanged ? 'bg-purple-600 text-white' : (isLight ? 'bg-gray-100 text-green-600' : 'bg-white/5 text-green-400')}`} title={t('generate')}>
+                                        {aiLoading ? <div className={`w-2 h-2 border-2 ${isLight ? 'border-gray-300 border-t-blue-600' : 'border-white/30 border-t-white'} rounded-full animate-spin`} /> : <Sparkles size={10} />}
                                     </button>
                                 </div>
                             </div>
 
                             {/* Divider */}
-                            <div className="border-t border-white/5"></div>
+                            <div className={`border-t ${isLight ? 'border-gray-200' : 'border-white/5'}`}></div>
 
                             {/* Simulation Section */}
                             <div className="flex flex-col gap-1">
                                 <div className="flex items-center justify-between gap-2">
-                                    <label className="text-[10px] text-pink-300 flex items-center gap-1 font-medium whitespace-nowrap">
+                                    <label className={`text-[10px] ${isLight ? 'text-pink-600' : 'text-pink-300'} flex items-center gap-1 font-medium whitespace-nowrap`}>
                                         <Dices size={10} /> {t('simulationType')}
                                     </label>
-                                    <select value={simulationType} onChange={(e) => setSimulationType(e.target.value)} className="flex-1 bg-black/20 border border-white/30 rounded py-0.5 px-1 text-[10px] text-white focus:outline-none">
-                                        <option value={SIMULATION_TYPES.MONTE_CARLO} className="bg-gray-800">{t('monteCarlo')}</option>
-                                        <option value={SIMULATION_TYPES.CONSERVATIVE} className="bg-gray-800">{t('conservative')}</option>
-                                        <option value={SIMULATION_TYPES.OPTIMISTIC} className="bg-gray-800">{t('optimistic')}</option>
-                                    </select>
+                                    <CustomSelect
+                                        value={simulationType}
+                                        onChange={(val) => setSimulationType(val)}
+                                        options={[
+                                            { value: SIMULATION_TYPES.MONTE_CARLO, label: t('monteCarlo') },
+                                            { value: SIMULATION_TYPES.CONSERVATIVE, label: t('conservative') },
+                                            { value: SIMULATION_TYPES.OPTIMISTIC, label: t('optimistic') }
+                                        ]}
+                                        className="flex-1"
+                                    />
                                 </div>
-                                <p className="text-[9px] text-gray-400 text-right px-1">
+                                <p className={`text-[9px] text-right px-1 ${labelClass}`}>
                                     {simulationType === SIMULATION_TYPES.CONSERVATIVE && t('conservativeDesc')}
                                     {simulationType === SIMULATION_TYPES.OPTIMISTIC && t('optimisticDesc')}
                                     {simulationType === SIMULATION_TYPES.MONTE_CARLO && t('monteCarloDesc')}
@@ -174,16 +210,16 @@ export default function InputForm({
 
                 {/* Individual Settings (Only when NOT in Compare Mode) */}
                 {calculationMode === 'ai' && (
-                    <div className="bg-white/5 rounded-xl p-2 space-y-1 border border-white/10 animate-in fade-in slide-in-from-top-2 relative z-[50]">
+                    <div className={`${containerClass} rounded-xl p-2 space-y-1 animate-in fade-in slide-in-from-top-2 relative z-[50]`}>
                         {/* Headers Row with Labels and Actions */}
                         <div className="flex items-center px-1 gap-2">
                             <div className="flex flex-[1.2] min-w-0">
-                                <label className="text-[10px] text-gray-400 flex items-center gap-1">
+                                <label className={`text-[10px] ${labelClass} flex items-center gap-1`}>
                                     <Server size={10} /> {t('selectProvider')}
                                 </label>
                             </div>
                             <div className="flex flex-1 min-w-0">
-                                <label className="text-[10px] text-gray-400 flex items-center gap-1">
+                                <label className={`text-[10px] ${labelClass} flex items-center gap-1`}>
                                     <Bot size={10} /> {t('selectModel')}
                                 </label>
                             </div>
@@ -193,7 +229,7 @@ export default function InputForm({
                                         const prompt = generatePrompt(inputs);
                                         alert(prompt);
                                     }}
-                                    className="text-gray-400 hover:text-white transition-colors"
+                                    className={`${iconClass} hover:text-blue-500 transition-colors`}
                                     title="Show Prompt"
                                 >
                                     <Eye size={12} />
@@ -201,19 +237,19 @@ export default function InputForm({
                                 <div className="relative">
                                     <button
                                         onClick={() => setShowApiKey(!showApiKey)}
-                                        className={`transition-colors ${showApiKey ? 'text-white' : 'text-gray-400 hover:text-white'}`}
+                                        className={`transition-colors ${showApiKey ? 'text-blue-500' : `${iconClass} hover:text-blue-500`}`}
                                         title="API Key Settings"
                                     >
                                         <Settings size={12} />
                                     </button>
                                     {/* Dropdown for API Key - High Z-Index */}
                                     {showApiKey && (
-                                        <div className="absolute right-0 top-full mt-1 w-64 bg-gray-900 border border-white/20 rounded-xl p-3 shadow-xl z-[100]">
+                                        <div className={`absolute right-0 top-full mt-1 w-64 border rounded-xl p-3 shadow-xl z-[100] ${isLight ? 'bg-white border-gray-200' : 'bg-gray-900 border-white/20'}`}>
                                             <div className="flex justify-between items-center mb-2">
-                                                <label className="text-[10px] text-gray-400 flex items-center gap-1">
+                                                <label className={`text-[10px] ${labelClass} flex items-center gap-1`}>
                                                     <span className="text-yellow-400">🔑</span> API Key Override
                                                 </label>
-                                                <button onClick={() => setShowApiKey(false)} className="text-gray-500 hover:text-white">
+                                                <button onClick={() => setShowApiKey(false)} className={`${iconClass} hover:text-blue-500`}>
                                                     <X size={12} />
                                                 </button>
                                             </div>
@@ -223,7 +259,7 @@ export default function InputForm({
                                                     value={apiKeyOverride}
                                                     onChange={(e) => setApiKeyOverride(e.target.value)}
                                                     placeholder="Override .env key"
-                                                    className="flex-1 bg-black/20 border border-white/30 rounded-lg py-1 px-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                    className={`flex-1 rounded-lg py-1 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputClass}`}
                                                 />
                                                 <button
                                                     onClick={() => setShowApiKey(false)}
@@ -241,30 +277,24 @@ export default function InputForm({
 
                         {/* Controls Row */}
                         <div className="flex items-center gap-2">
-                            <select
+                            <CustomSelect
                                 value={aiProvider}
-                                onChange={(e) => {
-                                    setAiProvider(e.target.value);
-                                    const models = getAvailableModels(e.target.value);
+                                onChange={(val) => {
+                                    setAiProvider(val);
+                                    const models = getAvailableModels(val);
                                     if (models.length > 0) setAiModel(models[0].id);
                                 }}
-                                className="flex-[1.2] min-w-0 truncate bg-black/20 border border-white/30 rounded-lg py-1 px-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            >
-                                {availableProviders.map(p => (
-                                    <option key={p.id} value={p.id} className="bg-gray-800">{p.name}</option>
-                                ))}
-                            </select>
+                                options={availableProviders.map(p => ({ value: p.id, label: p.name }))}
+                                className="flex-[1.2] min-w-0"
+                            />
 
-                            <select
+                            <CustomSelect
                                 value={aiModel}
-                                onChange={(e) => setAiModel(e.target.value)}
-                                className="flex-1 min-w-0 truncate bg-black/20 border border-white/30 rounded-lg py-1 px-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                onChange={(val) => setAiModel(val)}
+                                options={availableModels.map(m => ({ value: m.id, label: m.name }))}
                                 disabled={!aiProvider}
-                            >
-                                {availableModels.map(m => (
-                                    <option key={m.id} value={m.id} className="bg-gray-800">{m.name}</option>
-                                ))}
-                            </select>
+                                className="flex-1 min-w-0"
+                            />
 
                             {/* Compact Calculate Button/Icon */}
                             <button
@@ -272,12 +302,12 @@ export default function InputForm({
                                 disabled={aiLoading}
                                 className={`p-1.5 rounded-lg transition-all flex items-center justify-center self-end ${aiInputsChanged
                                     ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white shadow-lg'
-                                    : 'bg-white/5 text-green-400 hover:bg-white/10'
+                                    : (isLight ? 'bg-gray-100 text-green-600 hover:bg-gray-200' : 'bg-white/5 text-green-400 hover:bg-white/10')
                                     }`}
                                 title={t('generate')}
                             >
                                 {aiLoading ? (
-                                    <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    <div className={`w-3 h-3 border-2 ${isLight ? 'border-gray-300 border-t-blue-600' : 'border-white/30 border-t-white'} rounded-full animate-spin`} />
                                 ) : (
                                     <Sparkles size={14} className={!aiInputsChanged ? "opacity-70" : ""} />
                                 )}
@@ -288,21 +318,22 @@ export default function InputForm({
 
                 {/* Simulation Settings (Only when NOT in Compare Mode) */}
                 {calculationMode === 'simulations' && (
-                    <div className="bg-white/5 rounded-xl p-2 space-y-1 border border-white/10 animate-in fade-in slide-in-from-top-2">
+                    <div className={`${containerClass} rounded-xl p-2 space-y-1 animate-in fade-in slide-in-from-top-2`}>
                         <div className="space-y-1">
-                            <label className="text-[10px] text-gray-400 flex items-center gap-1">
+                            <label className={`text-[10px] ${labelClass} flex items-center gap-1`}>
                                 <Dices size={10} /> {t('simulationType')}
                             </label>
-                            <select
+                            <CustomSelect
                                 value={simulationType}
-                                onChange={(e) => setSimulationType(e.target.value)}
-                                className="w-full bg-black/20 border border-white/30 rounded-lg py-1 px-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            >
-                                <option value={SIMULATION_TYPES.MONTE_CARLO} className="bg-gray-800">{t('monteCarlo')}</option>
-                                <option value={SIMULATION_TYPES.CONSERVATIVE} className="bg-gray-800">{t('conservative')}</option>
-                                <option value={SIMULATION_TYPES.OPTIMISTIC} className="bg-gray-800">{t('optimistic')}</option>
-                            </select>
-                            <p className="text-[10px] text-gray-400 text-right px-1">
+                                onChange={(val) => setSimulationType(val)}
+                                options={[
+                                    { value: SIMULATION_TYPES.MONTE_CARLO, label: t('monteCarlo') },
+                                    { value: SIMULATION_TYPES.CONSERVATIVE, label: t('conservative') },
+                                    { value: SIMULATION_TYPES.OPTIMISTIC, label: t('optimistic') }
+                                ]}
+                                className="w-full"
+                            />
+                            <p className={`text-[10px] ${labelClass} text-right px-1`}>
                                 {simulationType === SIMULATION_TYPES.CONSERVATIVE && t('conservativeDesc')}
                                 {simulationType === SIMULATION_TYPES.OPTIMISTIC && t('optimisticDesc')}
                                 {simulationType === SIMULATION_TYPES.MONTE_CARLO && t('monteCarloDesc')}
@@ -327,14 +358,14 @@ export default function InputForm({
                         type="date"
                         value={inputs.birthdate}
                         onChange={handleBirthdateChange}
-                        icon="📅"
+                        icon={<Calendar size={14} />}
                     />
                     <InputGroup
                         label={t('currentAge')}
                         name="currentAge"
                         value={inputs.currentAge}
                         onChange={handleChange}
-                        icon="📅"
+                        icon={<Calendar size={14} />}
                     />
                 </div>
 
@@ -344,14 +375,14 @@ export default function InputForm({
                         name="retirementStartAge"
                         value={inputs.retirementStartAge}
                         onChange={handleChange}
-                        icon="📈"
+                        icon={<TrendingUp size={14} />}
                     />
                     <InputGroup
                         label={t('endAge')}
                         name="retirementEndAge"
                         value={inputs.retirementEndAge}
                         onChange={handleChange}
-                        icon="🗓️"
+                        icon={<Calendar size={14} />}
                     />
                 </div>
 
@@ -362,7 +393,7 @@ export default function InputForm({
                         value={inputs.currentSavings}
                         onChange={handleChange}
                         prefix={currency}
-                        icon="💰"
+                        icon={<Coins size={14} />}
                         titleActions={
                             <>
                                 {showNeededTodayBtn.current && (
@@ -411,7 +442,7 @@ export default function InputForm({
                         value={inputs.monthlyContribution}
                         onChange={handleChange}
                         prefix={currency}
-                        icon="💰"
+                        icon={<Coins size={14} />}
                     />
                 </div>
 
@@ -431,14 +462,14 @@ export default function InputForm({
                         name="annualReturnRate"
                         value={inputs.annualReturnRate}
                         onChange={handleChange}
-                        icon="📊"
+                        icon={<BarChart3 size={14} />}
                     />
                     <InputGroup
                         label={t('taxRate')}
                         name="taxRate"
                         value={inputs.taxRate}
                         onChange={handleChange}
-                        icon="🏛️"
+                        icon={<Landmark size={14} />}
                     />
                 </div>
             </div>
@@ -447,10 +478,13 @@ export default function InputForm({
 }
 
 function InputGroup({ label, name, value, onChange, icon, prefix, type = "text", extraLabel, extraContent, titleActions }) {
+    const { theme } = useTheme();
+    const isLight = theme === 'light';
+
     return (
         <div className="flex flex-col gap-0.5">
             <div className="flex justify-between items-center min-h-6">
-                <label className="text-xs font-medium text-gray-200 flex items-center gap-1 h-4">
+                <label className={`text-xs font-medium flex items-center gap-1 h-4 ${isLight ? 'text-gray-700' : 'text-gray-200'}`}>
                     {icon} {label}
                 </label>
                 {extraLabel && (
@@ -475,7 +509,9 @@ function InputGroup({ label, name, value, onChange, icon, prefix, type = "text",
                     name={name}
                     value={value}
                     onChange={onChange}
-                    className={`w-full bg-black/20 border border-white/50 rounded-lg py-1 px-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${prefix ? 'pl-5' : ''} ${extraContent ? 'pr-16' : ''}`}
+                    className={`w-full rounded-lg py-1 px-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${prefix ? 'pl-5' : ''} ${extraContent ? 'pr-16' : ''} ${isLight
+                        ? 'bg-white border border-gray-300 text-gray-900 placeholder-gray-400'
+                        : 'bg-black/20 border border-white/50 text-white placeholder-gray-500'}`}
                 />
                 {extraContent}
             </div>

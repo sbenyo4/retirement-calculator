@@ -45,7 +45,7 @@ export function LoginPage({ t }) {
                 <button
                     onClick={handleLogin}
                     disabled={loading}
-                    className="w-full flex items-center justify-center gap-3 bg-white text-gray-900 px-6 py-3 rounded-xl hover:bg-gray-100 transition-all font-bold text-lg shadow-lg shadow-black/20 disabled:opacity-70 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
+                    className="w-full flex items-center justify-center gap-3 bg-white text-gray-900 px-6 py-3 rounded-xl hover:bg-gray-100 transition-all font-bold text-lg shadow-lg shadow-black/20 disabled:opacity-70 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98] border-2 border-gray-300"
                 >
                     {loading ? (
                         <svg className="animate-spin h-5 w-5 text-gray-900" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
