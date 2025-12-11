@@ -117,7 +117,11 @@ export const translations = {
         heatmapDesc: 'Balance at End of Period (Green = Surplus, Red = Deficit)',
         heatmapXAxis: 'Annual Return Rate (%)',
         heatmapYAxis: 'Monthly Income Desired',
-        reset: 'Reset View'
+        reset: 'Reset View',
+        heatmapLowerIncome: 'Lower Income',
+        heatmapHigherIncome: 'Higher Income',
+        heatmapLowerReturn: 'Lower Return',
+        heatmapHigherReturn: 'Higher Return',
     },
     he: {
         appTitle: "מתכנן פרישה",
@@ -237,6 +241,10 @@ export const translations = {
         heatmapDesc: 'יתרה בסוף התקופה (ירוק = עודף, אדום = חוסר)',
         heatmapXAxis: 'תשואה שנתית (%)',
         heatmapYAxis: 'הכנסה חודשית רצויה',
-        reset: 'אפס תצוגה'
+        reset: 'אפס תצוגה',
+        heatmapLowerIncome: 'הכנסה נמוכה יותר',
+        heatmapHigherIncome: 'הכנסה גבוהה יותר',
+        heatmapLowerReturn: 'תשואה נמוכה יותר',
+        heatmapHigherReturn: 'תשואה גבוהה יותר',
     }
 };
