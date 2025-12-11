@@ -163,7 +163,7 @@ export default function InputForm({
                                             if (models.length > 0) setAiModel(models[0].id);
                                         }}
                                         options={availableProviders.map(p => ({ value: p.id, label: p.name }))}
-                                        className="w-1/3 min-w-0"
+                                        className="flex-[1.2] min-w-0"
                                     />
                                     <CustomSelect
                                         value={aiModel}

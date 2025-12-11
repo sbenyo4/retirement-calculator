@@ -416,43 +416,44 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                     {/* Profile Selection for Comparison - Compact View */}
                     {/* Profile Selection for Comparison - Compact View */}
                     <div className="mb-2 bg-white/5 p-2 rounded-xl border border-white/10">
-                        <div className="flex gap-4 items-start">
+                        <div className="flex flex-col md:flex-row gap-4 items-start">
                             {/* Controls Column */}
-                            <div className="flex flex-col gap-2 shrink-0 border-e border-white/10 pe-4">
+                            <div className="flex flex-col gap-2 shrink-0 border-b md:border-b-0 md:border-e border-white/10 pb-4 md:pb-0 md:pe-4 w-full md:w-auto">
                                 {/* Basic Scenarios */}
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
                                     <span className="text-gray-400 text-xs font-medium uppercase tracking-wider whitespace-nowrap">{t('basicScenarios')}</span>
-                                    <div className="flex gap-1">
-                                        <button
-                                            onClick={() => toggleSelection('math')}
-                                            className={`px-2 py-1 rounded text-xs transition-colors border ${isSelected('math')
-                                                ? 'bg-blue-600 border-blue-500 text-white'
-                                                : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10'
-                                                }`}
-                                        >
-                                            {t('mathematical')}
-                                        </button>
-                                        <button
-                                            onClick={() => toggleSelection('sim')}
-                                            className={`px-2 py-1 rounded text-xs transition-colors border ${isSelected('sim')
-                                                ? 'bg-pink-600 border-pink-500 text-white'
-                                                : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10'
-                                                }`}
-                                        >
-                                            {t('simulations')}
-                                        </button>
-                                        <button
-                                            onClick={() => toggleSelection('ai')}
-                                            disabled={!aiResults}
-                                            className={`px-2 py-1 rounded text-xs transition-colors border ${isSelected('ai')
-                                                ? 'bg-purple-600 border-purple-500 text-white'
-                                                : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10'
-                                                } ${!aiResults ? 'opacity-40 cursor-not-allowed' : ''}`}
-                                        >
-                                            {t('aiMode')}
-                                        </button>
 
-                                        {/* Sensitivity Range Chart Button */}
+                                    <button
+                                        onClick={() => toggleSelection('math')}
+                                        className={`px-2 py-1.5 rounded-lg text-xs transition-colors border ${isSelected('math')
+                                            ? 'bg-blue-600 border-blue-500 text-white'
+                                            : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10'
+                                            }`}
+                                    >
+                                        {t('mathematical')}
+                                    </button>
+                                    <button
+                                        onClick={() => toggleSelection('sim')}
+                                        className={`px-2 py-1.5 rounded-lg text-xs transition-colors border ${isSelected('sim')
+                                            ? 'bg-pink-600 border-pink-500 text-white'
+                                            : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10'
+                                            }`}
+                                    >
+                                        {t('simulations')}
+                                    </button>
+                                    <button
+                                        onClick={() => toggleSelection('ai')}
+                                        disabled={!aiResults}
+                                        className={`px-2 py-1.5 rounded-lg text-xs transition-colors border ${isSelected('ai')
+                                            ? 'bg-purple-600 border-purple-500 text-white'
+                                            : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10'
+                                            } ${!aiResults ? 'opacity-40 cursor-not-allowed' : ''}`}
+                                    >
+                                        {t('aiMode')}
+                                    </button>
+
+                                    {/* Sensitivity Icons - Pushed to the end (Left in RTL) */}
+                                    <div className="flex gap-1 ms-auto mt-1 md:mt-0">
                                         <SensitivityRangeButton
                                             onClick={() => setShowSensitivityModal(true)}
                                             t={t}

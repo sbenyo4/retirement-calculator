@@ -8,10 +8,11 @@ export function SensitivityHeatmapButton({ onClick, t }) {
     return (
         <button
             onClick={onClick}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-gradient-to-r from-orange-500/20 to-red-500/20 border border-orange-500/30 text-orange-200 hover:from-orange-500/30 hover:to-red-500/30"
+            title={t('sensitivityHeatmap') || 'Heatmap'}
+            className="flex items-center gap-1 md:gap-1.5 px-2 md:px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-gradient-to-r from-orange-500/20 to-red-500/20 border border-orange-500/30 text-orange-200 hover:from-orange-500/30 hover:to-red-500/30"
         >
             <span>🔥</span>
-            <span>{t('sensitivityHeatmap') || 'Heatmap'}</span>
+            <span className="hidden md:inline">{t('sensitivityHeatmap') || 'Heatmap'}</span>
         </button>
     );
 }
