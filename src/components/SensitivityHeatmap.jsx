@@ -22,14 +22,34 @@ export function SensitivityHeatmapModal({ isOpen, onClose, inputs, t, language }
     const isLight = theme === 'light';
     const isRTL = language === 'he';
 
+    // Local state for "What-If" scenarios inside the modal
+    const [localInputs, setLocalInputs] = useState(inputs);
+
+    // Sync local state when modal opens or inputs change (reset)
+    React.useEffect(() => {
+        if (isOpen) {
+            setLocalInputs(inputs);
+        }
+    }, [isOpen, inputs]);
+
     if (!isOpen) return null;
+
+    const handleAgeChange = (e) => {
+        setLocalInputs(prev => ({ ...prev, retirementStartAge: parseFloat(e.target.value) }));
+    };
+
+    const handleEndAgeChange = (e) => {
+        let val = parseFloat(e.target.value);
+        if (val <= localInputs.retirementStartAge) val = localInputs.retirementStartAge + 1;
+        setLocalInputs(prev => ({ ...prev, retirementEndAge: val }));
+    };
 
     return createPortal(
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" dir={isRTL ? 'rtl' : 'ltr'}>
-            <div className={`relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl border shadow-2xl animate-in zoom-in-95 duration-200 ${isLight ? 'bg-white border-slate-300 text-slate-800' : 'bg-slate-900 border-white/10 text-white'}`}>
+            <div className={`relative w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl animate-in zoom-in-95 duration-200 ${isLight ? 'bg-white border-slate-300 text-slate-800' : 'bg-slate-900 border-white/10 text-white'}`}>
 
                 {/* Header */}
-                <div className={`flex items-center justify-between p-3 border-b ${isLight ? 'border-slate-300' : 'border-white/10'}`}>
+                <div className={`flex items-center justify-between p-3 border-b shrink-0 ${isLight ? 'border-slate-300' : 'border-white/10'}`}>
                     <div>
                         <h2 className="text-lg font-bold flex items-center gap-2">
                             <span>🔥</span>
@@ -44,9 +64,82 @@ export function SensitivityHeatmapModal({ isOpen, onClose, inputs, t, language }
                     </button>
                 </div>
 
+                {/* Scenarios Controls (Sliders) */}
+                <div className={`px-4 py-3 border-b shrink-0 flex flex-col md:flex-row gap-4 md:items-center ${isLight ? 'bg-slate-100/50 border-slate-200' : 'bg-slate-800/50 border-white/5'}`}>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold whitespace-nowrap">{t('heatmapScenarioControls')}:</span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-6 md:gap-8">
+                        {/* Retirement Age Slider */}
+                        <div className="flex flex-col gap-1 w-40">
+                            <div className="flex justify-between text-xs">
+                                <span className={isLight ? 'text-slate-600' : 'text-gray-400'}>{t('adjustRetirementAge')}</span>
+                                <span className={`font-bold ${isLight ? 'text-orange-600' : 'text-orange-400'}`}>{localInputs.retirementStartAge}</span>
+                            </div>
+                            <input
+                                type="range"
+                                min={Math.ceil(inputs.currentAge || 20)}
+                                max="70"
+                                step="1"
+                                value={localInputs.retirementStartAge}
+                                onChange={handleAgeChange}
+                                className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-blue-500"
+                            />
+                        </div>
+
+                        {/* End Age Slider */}
+                        <div className="flex flex-col gap-1 w-40">
+                            <div className="flex justify-between text-xs">
+                                <span className={isLight ? 'text-slate-600' : 'text-gray-400'}>{t('adjustRetirementEndAge')}</span>
+                                <span className={`font-bold ${isLight ? 'text-orange-600' : 'text-orange-400'}`}>{localInputs.retirementEndAge}</span>
+                            </div>
+                            <input
+                                type="range"
+                                min={Math.floor(localInputs.retirementStartAge) + 1}
+                                max="70"
+                                step="1"
+                                value={localInputs.retirementEndAge}
+                                onChange={handleEndAgeChange}
+                                className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-blue-500"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Legend */}
+                    <div className="flex items-center gap-3 mt-4 md:mt-0 md:ms-auto border-t md:border-t-0 md:border-s pt-3 md:pt-0 md:ps-4 border-slate-300/50 dark:border-white/10">
+                        <span className="text-[10px] font-bold uppercase tracking-wider opacity-60">{t('heatmapLegend')}:</span>
+                        <div className="flex gap-2">
+                            <div className="flex items-center gap-1.5" title="Perpetuity">
+                                <div className={`w-3 h-3 rounded ${isLight ? 'bg-teal-400' : 'bg-teal-500'}`}></div>
+                                <span className="text-[10px] font-medium opacity-80">{t('livingOffInterest')}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5" title="> 2M">
+                                <div className={`w-3 h-3 rounded ${isLight ? 'bg-emerald-400' : 'bg-emerald-500'}`}></div>
+                                <span className="text-[10px] font-medium opacity-80">{t('surplusHigh')}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5" title="0.5M - 2M">
+                                <div className={`w-3 h-3 rounded ${isLight ? 'bg-emerald-300' : 'bg-emerald-700'}`}></div>
+                                <span className="text-[10px] font-medium opacity-80">{t('surplusMedium')}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5" title="< 0.5M">
+                                <div className={`w-3 h-3 rounded ${isLight ? 'bg-emerald-100' : 'bg-emerald-900'}`}></div>
+                                <span className="text-[10px] font-medium opacity-80">{t('surplusLow')}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 {/* Content */}
-                <div className="p-2 md:p-4">
-                    <SensitivityHeatmapGrid inputs={inputs} t={t} language={language} isLight={isLight} />
+                <div className="p-2 md:p-4 overflow-y-auto flex-1 min-h-0">
+                    <SensitivityHeatmapGrid
+                        inputs={localInputs}
+                        originalInputs={inputs}
+                        onReset={() => setLocalInputs(inputs)}
+                        t={t}
+                        language={language}
+                        isLight={isLight}
+                    />
                 </div>
             </div>
         </div>,
@@ -54,7 +147,7 @@ export function SensitivityHeatmapModal({ isOpen, onClose, inputs, t, language }
     );
 }
 
-function SensitivityHeatmapGrid({ inputs, t, language, isLight }) {
+function SensitivityHeatmapGrid({ inputs, originalInputs, onReset, t, language, isLight }) {
     // Configuration
     const xSteps = 7; // Number of columns (Interest Rate)
     const ySteps = 7; // Number of rows (Income)
@@ -120,6 +213,14 @@ function SensitivityHeatmapGrid({ inputs, t, language, isLight }) {
     const formatExactCurrency = (val) => detailedFormatter.format(val);
     const isRTL = language === 'he';
 
+    // Check if reset is needed
+    const isModified = xOffsetState !== 0 ||
+        yOffsetState !== 0 ||
+        (originalInputs && (
+            inputs.retirementStartAge !== originalInputs.retirementStartAge ||
+            inputs.retirementEndAge !== originalInputs.retirementEndAge
+        ));
+
     return (
         <div className="flex flex-col items-center w-full h-full">
             {/* 1. Top Controls for Y-Axis (Income) - Unified Bar */}
@@ -155,9 +256,13 @@ function SensitivityHeatmapGrid({ inputs, t, language, isLight }) {
                 <div className={`flex flex-col shrink-0 z-20 border-e ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-white/10'}`}>
                     {/* Corner Spacer */}
                     <div className="h-8 flex items-center justify-center border-b border-transparent">
-                        {(xOffsetState !== 0 || yOffsetState !== 0) && (
+                        {isModified && (
                             <button
-                                onClick={() => { setXOffsetState(0); setYOffsetState(0); }}
+                                onClick={() => {
+                                    setXOffsetState(0);
+                                    setYOffsetState(0);
+                                    if (onReset) onReset();
+                                }}
                                 className={`p-1 rounded-full transition-colors ${isLight ? 'text-blue-500 hover:bg-blue-50' : 'text-blue-400 hover:bg-white/10'}`}
                                 title={t('reset')}
                             >
@@ -195,15 +300,21 @@ function SensitivityHeatmapGrid({ inputs, t, language, isLight }) {
                         {gridData.grid.map((row, rowIndex) => (
                             <React.Fragment key={`row-frag-${rowIndex}`}>
                                 {row.map((cell, colIndex) => {
-                                    const { balanceAtEnd, surplus } = cell.result;
+                                    const { balanceAtEnd, surplus, balanceAtRetirement, requiredCapitalForPerpetuity } = cell.result;
                                     const isPositive = balanceAtEnd > 0;
+                                    const isPerpetuity = balanceAtRetirement >= requiredCapitalForPerpetuity;
 
                                     // Color Logic
                                     let bgClass = '';
                                     if (isPositive) {
-                                        if (surplus > 2000000) bgClass = isLight ? 'bg-emerald-500' : 'bg-emerald-900';
-                                        else if (surplus > 500000) bgClass = isLight ? 'bg-emerald-400' : 'bg-emerald-800/80';
-                                        else bgClass = isLight ? 'bg-emerald-300' : 'bg-emerald-700/60';
+                                        if (isPerpetuity) {
+                                            bgClass = isLight ? 'bg-teal-400' : 'bg-teal-500';
+                                        } else {
+                                            // Use balanceAtEnd for positive values to match the displayed numbers
+                                            if (balanceAtEnd > 2000000) bgClass = isLight ? 'bg-emerald-400' : 'bg-emerald-500';
+                                            else if (balanceAtEnd > 500000) bgClass = isLight ? 'bg-emerald-300' : 'bg-emerald-700';
+                                            else bgClass = isLight ? 'bg-emerald-100' : 'bg-emerald-900';
+                                        }
                                     } else {
                                         const deficit = Math.abs(surplus);
                                         if (deficit > 2000000) bgClass = isLight ? 'bg-red-500' : 'bg-red-950/90';
@@ -214,10 +325,8 @@ function SensitivityHeatmapGrid({ inputs, t, language, isLight }) {
                                     const isCurrentInput = Math.abs(cell.x - parseFloat(inputs.annualReturnRate)) < 0.01 &&
                                         Math.abs(cell.y - parseFloat(inputs.monthlyNetIncomeDesired)) < 1;
 
-                                    if (isCurrentInput) {
-                                        if (isPositive) bgClass = isLight ? 'bg-emerald-600' : 'bg-emerald-950';
-                                        else bgClass = isLight ? 'bg-red-600' : 'bg-red-950';
-                                    }
+                                    // REMOVED: isCurrentInput background override. 
+                                    // Selection is now handled purely via border/ring to preserve heatmap data visualization.
 
                                     const borderClass = isCurrentInput
                                         ? 'ring-2 ring-blue-500 z-10'
@@ -248,7 +357,7 @@ function SensitivityHeatmapGrid({ inputs, t, language, isLight }) {
                                                 relative h-9 md:h-12 flex flex-col items-center justify-center p-0.5
                                                 transition-all hover:brightness-110 cursor-help group hover:z-[60]
                                                 ${bgClass} ${borderClass}
-                                                ${isLight ? (isCurrentInput ? 'text-slate-900' : 'text-white') : (isCurrentInput ? 'text-white/70' : 'text-white/60')}
+                                                ${isLight ? (isCurrentInput ? 'text-slate-900' : 'text-white') : (isCurrentInput ? 'text-white' : 'text-white/60')}
                                             `}
                                         >
                                             <span
@@ -274,6 +383,13 @@ function SensitivityHeatmapGrid({ inputs, t, language, isLight }) {
 
                                                     <span className={`${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{t('monthlyIncome')}:</span>
                                                     <span className="font-bold ltr:text-right rtl:text-left">{formatExactCurrency(cell.y)}</span>
+
+                                                    {/* Age & Duration in Tooltip */}
+                                                    <span className={`${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{t('adjustRetirementAge')}:</span>
+                                                    <span className="font-bold ltr:text-right rtl:text-left">{inputs.retirementStartAge}</span>
+
+                                                    <span className={`${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{t('adjustRetirementEndAge')}:</span>
+                                                    <span className="font-bold ltr:text-right rtl:text-left">{inputs.retirementEndAge}</span>
                                                 </div>
                                                 <div className="mb-0.5 flex justify-between items-center gap-2">
                                                     <span className={`${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{t('balanceAtEndShort')}:</span>

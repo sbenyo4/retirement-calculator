@@ -122,6 +122,14 @@ export const translations = {
         heatmapHigherIncome: 'Higher Income',
         heatmapLowerReturn: 'Lower Return',
         heatmapHigherReturn: 'Higher Return',
+        heatmapScenarioControls: 'Age Scenarios',
+        adjustRetirementAge: 'Retirement Age',
+        adjustRetirementEndAge: 'End Age',
+        heatmapLegend: 'Legend',
+        livingOffInterest: 'Living off Interest',
+        surplusHigh: '> 2M',
+        surplusMedium: '0.5M - 2M',
+        surplusLow: '< 0.5M',
     },
     he: {
         appTitle: "מתכנן פרישה",
@@ -246,5 +254,13 @@ export const translations = {
         heatmapHigherIncome: 'הכנסה גבוהה יותר',
         heatmapLowerReturn: 'תשואה נמוכה יותר',
         heatmapHigherReturn: 'תשואה גבוהה יותר',
+        heatmapScenarioControls: 'תרחישי גיל',
+        adjustRetirementAge: 'גיל פרישה',
+        adjustRetirementEndAge: 'עד גיל',
+        heatmapLegend: 'מקרא',
+        livingOffInterest: 'מחיה מריבית',
+        surplusHigh: '> 2M',
+        surplusMedium: '0.5M - 2M',
+        surplusLow: '< 0.5M',
     }
 };
