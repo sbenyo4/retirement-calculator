@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback, Component } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Component } from 'react';
 import InputForm from './components/InputForm';
 import { ResultsDashboard } from './components/ResultsDashboard';
 import { ProfileManager } from './components/ProfileManager';
@@ -7,12 +7,13 @@ import { calculateRetirementWithAI, getAvailableModels } from './utils/ai-calcul
 import { calculateSimulation, SIMULATION_TYPES } from './utils/simulation-calculator';
 import { translations } from './utils/translations';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { ThemeProvider, useTheme } from './contexts/ThemeContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import { UserMenu } from './components/UserMenu';
 import { ThemeToggle } from './components/ThemeToggle';
 import { LoginPage } from './components/LoginPage';
 import { useProfiles } from './hooks/useProfiles';
-import { DEFAULT_INPUTS, STORAGE_KEYS, CALCULATION_MODES } from './constants';
+import { useDebouncedValue } from './hooks/useDebounce';
+import { DEFAULT_INPUTS, WITHDRAWAL_STRATEGIES } from './constants';
 
 // Error Boundary to catch render errors
 class ErrorBoundary extends Component {
@@ -32,10 +33,11 @@ class ErrorBoundary extends Component {
 
   render() {
     if (this.state.hasError) {
+      const { t } = this.props;
       return (
         <div className="bg-red-900/50 border border-red-500 rounded-xl p-4 text-white">
-          <h2 className="text-xl font-bold mb-2">⚠️ שגיאה בתצוגה</h2>
-          <p className="text-red-300 mb-2">{this.state.error?.message || 'Unknown error'}</p>
+          <h2 className="text-xl font-bold mb-2">⚠️ {t ? t('displayError') : 'שגיאה בתצוגה'}</h2>
+          <p className="text-red-300 mb-2">{this.state.error?.message || (t ? t('unknownError') : 'Unknown error')}</p>
           <pre className="text-xs bg-black/50 p-2 rounded overflow-auto max-h-40">
             {this.state.errorInfo?.componentStack}
           </pre>
@@ -43,7 +45,7 @@ class ErrorBoundary extends Component {
             onClick={() => this.setState({ hasError: false, error: null, errorInfo: null })}
             className="mt-2 bg-blue-600 px-4 py-2 rounded"
           >
-            נסה שוב
+            {t ? t('tryAgain') : 'נסה שוב'}
           </button>
         </div>
       );
@@ -137,22 +139,19 @@ function MainApp() {
     localStorage.setItem('simulationType', simulationType);
   }, [aiProvider, aiModel, simulationType]);
 
-  // Persistence for API Key (Per Provider)
+  // Persistence for API Key (Per Provider) - consolidated effect
+  const prevProviderRef = useRef(aiProvider);
   useEffect(() => {
-    localStorage.setItem(`apiKeyOverride_${aiProvider}`, apiKeyOverride);
+    // If provider changed, load the key for the new provider
+    if (prevProviderRef.current !== aiProvider) {
+      const savedKey = localStorage.getItem(`apiKeyOverride_${aiProvider}`) || '';
+      setApiKeyOverride(savedKey);
+      prevProviderRef.current = aiProvider;
+    } else {
+      // Provider didn't change, save the current key
+      localStorage.setItem(`apiKeyOverride_${aiProvider}`, apiKeyOverride);
+    }
   }, [apiKeyOverride, aiProvider]);
-
-  // Load API Key when Provider Changes
-  // We use a ref to track the previous provider to avoid overwriting state on initial render if not needed,
-  // but since we initialize state correctly, we just need to react to changes.
-  // However, we must ensure we don't save the *old* key to the *new* provider before loading.
-  // The order of effects matters, or we separate the "save" and "load" logic.
-
-  // Actually, the simplest way is to listen to aiProvider changes and update the state.
-  useEffect(() => {
-    const savedKey = localStorage.getItem(`apiKeyOverride_${aiProvider}`) || '';
-    setApiKeyOverride(savedKey);
-  }, [aiProvider]);
 
   // Validate AI Model on load/change (fix for persisted invalid models)
   useEffect(() => {
@@ -165,11 +164,14 @@ function MainApp() {
     }
   }, [aiProvider, aiModel]);
 
+  // Debounce inputs for heavy calculations (300ms delay)
+  const debouncedInputs = useDebouncedValue(inputs, 300);
+
   // Standard Mathematical Calculation & Simulation
   useEffect(() => {
-    const age = parseFloat(inputs.currentAge);
-    const retirementStart = parseFloat(inputs.retirementStartAge);
-    const retirementEnd = parseFloat(inputs.retirementEndAge);
+    const age = parseFloat(debouncedInputs.currentAge);
+    const retirementStart = parseFloat(debouncedInputs.retirementStartAge);
+    const retirementEnd = parseFloat(debouncedInputs.retirementEndAge);
 
     if (
       !isNaN(age) && age >= 0 && age <= 120 &&
@@ -178,27 +180,29 @@ function MainApp() {
       retirementStart > age && // Ensure retirement starts after current age
       retirementEnd > retirementStart // Ensure retirement ends after it starts
     ) {
-      const projection = calculateRetirementProjection(inputs);
+      const projection = calculateRetirementProjection(debouncedInputs);
       setResults(projection);
 
       // Handle Simulation Mode
-      if (calculationMode === 'simulations' || calculationMode === 'compare') {
+      // Also auto-trigger Monte Carlo for Dynamic strategy even in mathematical mode
+      const isDynamicStrategy = debouncedInputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC;
+      if (calculationMode === 'simulations' || calculationMode === 'compare' || isDynamicStrategy) {
         // Only calculate if inputs or type changed, or if we don't have results yet
         const shouldUpdate =
           !simulationResults ||
-          lastSimInputs.current !== inputs ||
+          lastSimInputs.current !== debouncedInputs ||
           lastSimType.current !== simulationType;
 
         if (shouldUpdate) {
-          const simResult = calculateSimulation(inputs, simulationType);
+          const simResult = calculateSimulation(debouncedInputs, simulationType);
           setSimulationResults(simResult);
-          lastSimInputs.current = inputs;
+          lastSimInputs.current = debouncedInputs;
           lastSimType.current = simulationType;
         }
       }
       // We intentionally DO NOT clear simulationResults here so they persist when switching modes
     }
-  }, [inputs, calculationMode, simulationType]);
+  }, [debouncedInputs, calculationMode, simulationType]);
 
   // Mark inputs as changed when they change
   useEffect(() => {
@@ -304,7 +308,16 @@ function MainApp() {
               setInputs={setInputs}
               t={t}
               language={language}
-              grossWithdrawal={results?.initialGrossWithdrawal}
+              grossWithdrawal={
+                inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC && simulationResults
+                  ? simulationResults.initialGrossWithdrawal
+                  : results?.initialGrossWithdrawal
+              }
+              netWithdrawal={
+                inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC && simulationResults
+                  ? simulationResults.initialNetWithdrawal
+                  : results?.initialNetWithdrawal
+              }
               neededToday={results?.pvOfDeficit}
               capitalPreservation={results?.requiredCapitalForPerpetuity}
               capitalPreservationNeededToday={results?.pvOfCapitalPreservation}
@@ -335,7 +348,7 @@ function MainApp() {
           </div>
 
           <div className="lg:col-span-8">
-            <ErrorBoundary>
+            <ErrorBoundary t={t}>
               {results && (
                 <ResultsDashboard
                   results={results}

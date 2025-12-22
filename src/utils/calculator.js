@@ -1,4 +1,6 @@
 
+import { WITHDRAWAL_STRATEGIES } from '../constants';
+
 /**
  * Calculates the future value and required capital for retirement.
  * 
@@ -11,6 +13,8 @@
  * @param {number} inputs.monthlyNetIncomeDesired
  * @param {number} inputs.annualReturnRate (percentage, e.g., 7 for 7%)
  * @param {number} inputs.taxRate (percentage, e.g., 25 for 25%)
+ * @param {string} inputs.withdrawalStrategy (optional, default: 'fixed')
+ * @param {number} inputs.withdrawalPercentage (optional, for percentage strategy, default: 4)
  * @returns {Object} result
  */
 export function calculateRetirementProjection(inputs) {
@@ -26,6 +30,13 @@ export function calculateRetirementProjection(inputs) {
     } = Object.fromEntries(
         Object.entries(inputs).map(([k, v]) => [k, parseFloat(v) || 0])
     );
+
+    // Get withdrawal strategy (default to fixed if not specified)
+    const withdrawalStrategy = inputs.withdrawalStrategy || WITHDRAWAL_STRATEGIES.FIXED;
+    const withdrawalPercentage = parseFloat(inputs.withdrawalPercentage) || 4;
+
+    // Debug: log strategy being used
+    console.log('Calculator using withdrawal strategy:', withdrawalStrategy, 'from inputs:', inputs.withdrawalStrategy);
 
     const monthlyRate = annualReturnRate / 100 / 12;
     const taxRateDecimal = taxRate / 100;
@@ -77,30 +88,84 @@ export function calculateRetirementProjection(inputs) {
     const principalAtRetirement = totalPrincipal;
 
     // --- Phase 2: Decumulation (Retirement Start -> Retirement End) ---
-    // User Defined Logic:
-    // 1. Calculate Monthly Interest.
-    // 2. Tax = Monthly Interest * Tax Rate.
-    // 3. Gross Withdrawal = Net Income + Tax.
-    // 4. Balance = Balance + Interest - Gross Withdrawal.
+    // Withdrawal strategy logic:
+    // FIXED: Fixed monthly amount (monthlyNetIncomeDesired)
+    // FOUR_PERCENT: 4% of initial balance / 12, adjusted for inflation
+    // PERCENTAGE: X% of current balance / 12
+    // DYNAMIC: Adjust based on portfolio performance
 
     let retirementBalance = balanceAtRetirement;
     let ranOutAtAge = null;
     let initialGrossWithdrawal = 0;
+    let initialNetWithdrawal = 0;
     let accumulatedWithdrawals = 0;
+
+    // Calculate base withdrawal for 4% rule (yearly amount / 12)
+    const fourPercentMonthly = (balanceAtRetirement * 0.04) / 12;
+    // Track the base for dynamic strategy
+    let dynamicBaseWithdrawal = monthlyNetIncomeDesired;
+    let previousYearReturn = 0;
 
     for (let i = 1; i <= monthsInRetirement; i++) {
         const interest = retirementBalance * monthlyRate;
         const tax = interest * taxRateDecimal;
 
-        let grossWithdrawal = monthlyNetIncomeDesired + tax;
+        // Calculate withdrawal based on strategy
+        let netWithdrawal;
+        switch (withdrawalStrategy) {
+            case WITHDRAWAL_STRATEGIES.FOUR_PERCENT:
+                // 4% rule: fixed amount based on initial balance
+                netWithdrawal = fourPercentMonthly;
+                break;
+
+            case WITHDRAWAL_STRATEGIES.PERCENTAGE:
+                // Percentage: X% of current balance annually / 12
+                netWithdrawal = (retirementBalance * (withdrawalPercentage / 100)) / 12;
+                break;
+
+            case WITHDRAWAL_STRATEGIES.DYNAMIC:
+                // Dynamic: adjust based on previous year's performance
+                if (i % 12 === 1 && i > 1) {
+                    // Calculate previous year's return
+                    const yearlyReturnRate = Math.pow(1 + monthlyRate, 12) - 1;
+                    const expectedReturn = 0.07; // 7% expected
+
+                    if (yearlyReturnRate > expectedReturn) {
+                        // Good year: increase by up to 10%
+                        dynamicBaseWithdrawal = Math.min(
+                            dynamicBaseWithdrawal * 1.1,
+                            monthlyNetIncomeDesired * 1.2 // Cap at 120% of original
+                        );
+                    } else if (yearlyReturnRate < expectedReturn - 0.05) {
+                        // Bad year (more than 5% below expected): decrease by up to 10%
+                        dynamicBaseWithdrawal = Math.max(
+                            dynamicBaseWithdrawal * 0.9,
+                            monthlyNetIncomeDesired * 0.8 // Floor at 80% of original
+                        );
+                    }
+                }
+                netWithdrawal = dynamicBaseWithdrawal;
+                break;
+
+            case WITHDRAWAL_STRATEGIES.INTEREST_ONLY:
+                netWithdrawal = interest - tax;
+                break;
+
+            case WITHDRAWAL_STRATEGIES.FIXED:
+            default:
+                // Fixed: constant monthly amount
+                netWithdrawal = monthlyNetIncomeDesired;
+                break;
+        }
+
+        let grossWithdrawal = netWithdrawal + tax;
 
         if (i === 1) {
             initialGrossWithdrawal = grossWithdrawal;
+            initialNetWithdrawal = netWithdrawal;
         }
 
         // Check if we have enough money
-        // Note: We add interest first, then withdraw.
-        // If (Balance + Interest) < GrossWithdrawal, we are bankrupt.
         if (retirementBalance + interest < grossWithdrawal) {
             grossWithdrawal = retirementBalance + interest; // Take what's left
             if (ranOutAtAge === null) {
@@ -118,9 +183,10 @@ export function calculateRetirementProjection(inputs) {
                 age: retirementStartAge + (i / 12),
                 balance: Math.max(0, retirementBalance),
                 contribution: 0,
-                withdrawal: initialGrossWithdrawal * 12, // Annual withdrawal
+                withdrawal: grossWithdrawal * 12, // Annual withdrawal (current rate)
                 accumulatedWithdrawals: accumulatedWithdrawals,
-                phase: 'decumulation'
+                phase: 'decumulation',
+                withdrawalStrategy: withdrawalStrategy
             });
         }
 
@@ -141,11 +207,12 @@ export function calculateRetirementProjection(inputs) {
     const effectiveMonthlyRate = monthlyRate * (1 - taxRateDecimal);
 
     // PV of Annuity Formula: PV = PMT * (1 - (1 + r)^-n) / r
+    // FIXED: Use the actual net withdrawal from the selected strategy, not just monthlyNetIncomeDesired
     let requiredCapitalAtRetirement = 0;
     if (effectiveMonthlyRate > 0) {
-        requiredCapitalAtRetirement = monthlyNetIncomeDesired * (1 - Math.pow(1 + effectiveMonthlyRate, -monthsInRetirement)) / effectiveMonthlyRate;
+        requiredCapitalAtRetirement = initialNetWithdrawal * (1 - Math.pow(1 + effectiveMonthlyRate, -monthsInRetirement)) / effectiveMonthlyRate;
     } else {
-        requiredCapitalAtRetirement = monthlyNetIncomeDesired * monthsInRetirement;
+        requiredCapitalAtRetirement = initialNetWithdrawal * monthsInRetirement;
     }
 
     // --- Capital Preservation Calculation ---
@@ -232,15 +299,16 @@ export function calculateRetirementProjection(inputs) {
     return {
         history,
         balanceAtRetirement,
-        balanceAtEnd: surplus > 0
-            ? surplus * Math.pow(1 + monthlyRate, monthsInRetirement)
-            : Math.max(0, retirementBalance),
+        // FIXED: Always use the simulated retirementBalance which correctly accounts for the withdrawal strategy
+        // The previous logic used a theoretical calculation when surplus > 0 which ignored the strategy
+        balanceAtEnd: Math.max(0, retirementBalance),
         ranOutAtAge,
         requiredCapitalAtRetirement,
         requiredCapitalForPerpetuity,
         surplus,
         pvOfDeficit,
         pvOfCapitalPreservation,
-        initialGrossWithdrawal
+        initialGrossWithdrawal,
+        initialNetWithdrawal
     };
 }

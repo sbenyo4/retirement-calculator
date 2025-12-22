@@ -82,11 +82,11 @@ export function SensitivityRangeButton({ onClick, t }) {
     return (
         <button
             onClick={onClick}
-            title={t('sensitivityRangeChart') || 'Sensitivity Chart'}
+            title={t('sensitivityRangeBtn') || 'Range'}
             className="px-2 md:px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-medium rounded-lg transition-all flex items-center gap-1 md:gap-1.5 shadow-lg"
         >
             <span>📊</span>
-            <span className="hidden md:inline">{t('sensitivityRangeChart') || 'Sensitivity Chart'}</span>
+            <span className="hidden md:inline">{t('sensitivityRangeBtn') || 'Range'}</span>
         </button>
     );
 }

@@ -1,4 +1,5 @@
 import { calculateRetirementProjection } from './calculator';
+import { WITHDRAWAL_STRATEGIES } from '../constants';
 
 export const SIMULATION_TYPES = {
     MONTE_CARLO: 'monte_carlo',
@@ -14,6 +15,146 @@ function randn_bm() {
     return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
 }
 
+/**
+ * Simulates retirement with year-by-year varying returns
+ * This allows dynamic withdrawal strategy to actually respond to market conditions
+ */
+function simulateRetirementWithVariance(inputs, yearlyReturns) {
+    const currentAge = parseFloat(inputs.currentAge);
+    const retirementStartAge = parseFloat(inputs.retirementStartAge);
+    const retirementEndAge = parseFloat(inputs.retirementEndAge);
+    const currentSavings = parseFloat(inputs.currentSavings) || 0;
+    const monthlyContribution = parseFloat(inputs.monthlyContribution) || 0;
+    const monthlyNetIncomeDesired = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
+    const taxRateDecimal = (parseFloat(inputs.taxRate) || 0) / 100;
+    const withdrawalStrategy = inputs.withdrawalStrategy || WITHDRAWAL_STRATEGIES.FIXED;
+    const withdrawalPercentage = parseFloat(inputs.withdrawalPercentage) || 4;
+    const baseAnnualReturn = parseFloat(inputs.annualReturnRate) || 0;
+
+    const yearsToRetirement = retirementStartAge - currentAge;
+    const yearsInRetirement = retirementEndAge - retirementStartAge;
+    const monthsToRetirement = Math.floor(yearsToRetirement * 12);
+    const monthsInRetirement = Math.floor(yearsInRetirement * 12);
+
+    // Phase 1: Accumulation (use average return for simplicity, or first year returns)
+    const avgAccumulationReturn = baseAnnualReturn / 100;
+    const monthlyAccumulationRate = Math.pow(1 + avgAccumulationReturn, 1 / 12) - 1;
+
+    let balance = currentSavings;
+    for (let i = 0; i < monthsToRetirement; i++) {
+        balance = balance * (1 + monthlyAccumulationRate) + monthlyContribution;
+    }
+    const balanceAtRetirement = balance;
+
+    // Phase 2: Retirement with year-by-year varying returns
+    let retirementBalance = balanceAtRetirement;
+    let ranOutAtAge = null;
+    let initialGrossWithdrawal = 0;
+    let initialNetWithdrawal = 0;
+
+    // For 4% rule - calculate based on initial retirement balance
+    const fourPercentMonthly = (balanceAtRetirement * 0.04) / 12;
+
+    // For dynamic strategy tracking
+    let dynamicBaseWithdrawal = monthlyNetIncomeDesired;
+    let previousYearReturn = baseAnnualReturn / 100;
+    const expectedReturn = 0.07; // 7% expected annual return
+
+    for (let month = 1; month <= monthsInRetirement; month++) {
+        // Determine which year of retirement we're in (0-indexed)
+        const yearIndex = Math.floor((month - 1) / 12);
+        const currentYearReturn = yearlyReturns[yearIndex] !== undefined
+            ? yearlyReturns[yearIndex] / 100
+            : baseAnnualReturn / 100;
+        const currentMonthlyRate = Math.pow(1 + currentYearReturn, 1 / 12) - 1;
+
+        const interest = retirementBalance * currentMonthlyRate;
+        const tax = Math.max(0, interest) * taxRateDecimal;
+
+        // Calculate withdrawal based on strategy
+        let netWithdrawal;
+        switch (withdrawalStrategy) {
+            case WITHDRAWAL_STRATEGIES.FOUR_PERCENT:
+                netWithdrawal = fourPercentMonthly;
+                break;
+
+            case WITHDRAWAL_STRATEGIES.PERCENTAGE:
+                netWithdrawal = (retirementBalance * (withdrawalPercentage / 100)) / 12;
+                break;
+
+            case WITHDRAWAL_STRATEGIES.DYNAMIC:
+                // At the start of each new year, adjust based on ACTUAL previous year's return
+                if (month % 12 === 1 && month > 1) {
+                    const lastYearReturn = yearlyReturns[yearIndex - 1] !== undefined
+                        ? yearlyReturns[yearIndex - 1] / 100
+                        : previousYearReturn;
+
+                    if (lastYearReturn > expectedReturn) {
+                        // Good year: increase by up to 10%
+                        dynamicBaseWithdrawal = Math.min(
+                            dynamicBaseWithdrawal * 1.1,
+                            monthlyNetIncomeDesired * 1.2
+                        );
+                    } else if (lastYearReturn < expectedReturn - 0.05) {
+                        // Bad year: decrease by up to 10%
+                        dynamicBaseWithdrawal = Math.max(
+                            dynamicBaseWithdrawal * 0.9,
+                            monthlyNetIncomeDesired * 0.8
+                        );
+                    }
+                    previousYearReturn = lastYearReturn;
+                }
+                netWithdrawal = dynamicBaseWithdrawal;
+                break;
+
+            case WITHDRAWAL_STRATEGIES.FIXED:
+            default:
+                netWithdrawal = monthlyNetIncomeDesired;
+                break;
+        }
+
+        let grossWithdrawal = netWithdrawal + tax;
+
+        if (month === 1) {
+            initialGrossWithdrawal = grossWithdrawal;
+            initialNetWithdrawal = netWithdrawal;
+        }
+
+        // Check if we have enough money
+        if (retirementBalance + interest < grossWithdrawal) {
+            grossWithdrawal = retirementBalance + interest;
+            if (ranOutAtAge === null) {
+                ranOutAtAge = retirementStartAge + (month / 12);
+            }
+        }
+
+        retirementBalance = retirementBalance + interest - grossWithdrawal;
+        if (retirementBalance < 0) retirementBalance = 0;
+    }
+
+    return {
+        balanceAtRetirement,
+        balanceAtEnd: Math.max(0, retirementBalance),
+        ranOutAtAge,
+        initialGrossWithdrawal,
+        initialNetWithdrawal
+    };
+}
+
+/**
+ * Generates an array of yearly returns with random variance
+ */
+function generateYearlyReturns(meanReturn, volatility, years) {
+    const returns = [];
+    for (let i = 0; i < years; i++) {
+        const randomVariation = randn_bm() * volatility;
+        // Clamp returns between -30% and +50% for realism
+        const yearReturn = Math.max(-30, Math.min(50, meanReturn + randomVariation));
+        returns.push(yearReturn);
+    }
+    return returns;
+}
+
 export function calculateSimulation(inputs, type) {
     const baseInputs = {
         ...inputs,
@@ -21,11 +162,9 @@ export function calculateSimulation(inputs, type) {
     };
 
     if (type === SIMULATION_TYPES.CONSERVATIVE) {
-        // Conservative: Reduce return rate by 2%, Increase tax by 5% (simulated via lower net return)
         const conservativeInputs = {
             ...baseInputs,
             annualReturnRate: Math.max(0, baseInputs.annualReturnRate - 2),
-            // We could also adjust inflation if we had it, or tax
         };
         const result = calculateRetirementProjection(conservativeInputs);
         result.source = 'simulation';
@@ -33,7 +172,6 @@ export function calculateSimulation(inputs, type) {
     }
 
     if (type === SIMULATION_TYPES.OPTIMISTIC) {
-        // Optimistic: Increase return rate by 1.5%
         const optimisticInputs = {
             ...baseInputs,
             annualReturnRate: baseInputs.annualReturnRate + 1.5
@@ -44,27 +182,21 @@ export function calculateSimulation(inputs, type) {
     }
 
     if (type === SIMULATION_TYPES.MONTE_CARLO) {
-        // Monte Carlo: Run 500 simulations with random volatility
-        // We assume annual return is mean, and standard deviation is say 10% of mean or fixed 5%?
-        // Let's use a simplified volatility model: Annual return +/- volatility
         const iterations = 500;
         const results = [];
-        const volatility = 5; // 5% standard deviation
+        const volatility = 15; // 15% standard deviation (realistic for equities)
+        const meanReturn = baseInputs.annualReturnRate;
+
+        const retirementStartAge = parseFloat(inputs.retirementStartAge);
+        const retirementEndAge = parseFloat(inputs.retirementEndAge);
+        const yearsInRetirement = Math.ceil(retirementEndAge - retirementStartAge);
 
         for (let i = 0; i < iterations; i++) {
-            // For each simulation, we could vary the rate PER YEAR, but for performance and simplicity in this structure
-            // we will vary the AVERAGE rate for the lifetime. 
-            // A more advanced MC would vary it year-by-year inside the calculator logic, 
-            // but that requires refactoring the core calculator to accept a rate array.
-            // For now, let's vary the average annual return.
+            // Generate year-by-year returns for this simulation
+            const yearlyReturns = generateYearlyReturns(meanReturn, volatility, yearsInRetirement);
 
-            const randomVariation = randn_bm() * volatility; // Normal distribution
-            const simulatedRate = Math.max(0, baseInputs.annualReturnRate + (randomVariation * 0.2)); // Scale down volatility impact on *average*
-
-            const simResult = calculateRetirementProjection({
-                ...baseInputs,
-                annualReturnRate: simulatedRate
-            });
+            // Run simulation with varying returns
+            const simResult = simulateRetirementWithVariance(baseInputs, yearlyReturns);
             results.push(simResult);
         }
 
@@ -75,11 +207,18 @@ export function calculateSimulation(inputs, type) {
         const median = results[Math.floor(iterations * 0.5)];
         const p75 = results[Math.floor(iterations * 0.75)];
 
-        // Return the median result structure, but attach range info
-        // Ensure pvOfDeficit is not negative (if surplus exists, deficit should be 0)
+        // Also run the standard calculation to get full result structure
+        const baseResult = calculateRetirementProjection(baseInputs);
+
+        // Merge median simulation results with base calculation structure
         const sanitizedMedian = {
-            ...median,
-            pvOfDeficit: Math.max(0, median.pvOfDeficit),
+            ...baseResult,
+            balanceAtEnd: median.balanceAtEnd,
+            balanceAtRetirement: median.balanceAtRetirement,
+            ranOutAtAge: median.ranOutAtAge,
+            initialGrossWithdrawal: median.initialGrossWithdrawal,
+            initialNetWithdrawal: median.initialNetWithdrawal,
+            pvOfDeficit: Math.max(0, baseResult.pvOfDeficit),
             simulationRange: {
                 p25Balance: p25.balanceAtEnd,
                 p75Balance: p75.balanceAtEnd,
@@ -96,3 +235,4 @@ export function calculateSimulation(inputs, type) {
     result.source = 'simulation';
     return result;
 }
+

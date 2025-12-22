@@ -46,3 +46,24 @@ export const CALCULATION_MODES = {
     SIMULATIONS: 'simulations',
     COMPARE: 'compare'
 };
+
+/**
+ * Withdrawal strategies for retirement decumulation
+ */
+export const WITHDRAWAL_STRATEGIES = {
+    FIXED: 'fixed',           // Fixed monthly amount (current behavior)
+    FOUR_PERCENT: 'fourPercent', // 4% rule - withdraw 4% of initial balance yearly
+    PERCENTAGE: 'percentage', // Fixed percentage of current balance
+    DYNAMIC: 'dynamic',       // Adjust based on market conditions
+    INTEREST_ONLY: 'interestOnly' // Withdraw only the monthly interest
+};
+
+/**
+ * Default withdrawal strategy settings
+ */
+export const DEFAULT_WITHDRAWAL_SETTINGS = {
+    strategy: WITHDRAWAL_STRATEGIES.FIXED,
+    percentageRate: 4,        // For percentage strategy
+    dynamicFloor: 0.8,        // Minimum 80% of base in bad years
+    dynamicCeiling: 1.2       // Maximum 120% of base in good years
+};

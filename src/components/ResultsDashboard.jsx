@@ -3,6 +3,8 @@ import { calculateRetirementProjection } from '../utils/calculator';
 import { AmortizationTable, AmortizationTableButton, AmortizationTableModal } from './AmortizationTable';
 import { SensitivityRangeChart, SensitivityRangeButton, SensitivityRangeModal } from './SensitivityRangeChart';
 import { SensitivityHeatmapButton, SensitivityHeatmapModal } from './SensitivityHeatmap';
+import { InflationButton, InflationModal } from './InflationRealityCheck';
+import { WITHDRAWAL_STRATEGIES } from '../constants';
 import { Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -34,6 +36,7 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
     const [showSensitivityModal, setShowSensitivityModal] = useState(false);
     const [showHeatmapModal, setShowHeatmapModal] = useState(false);
     const [showAmortizationModal, setShowAmortizationModal] = useState(false);
+    const [showInflationModal, setShowInflationModal] = useState(false);
     // Note: showInterestSensitivity and showIncomeSensitivity are now received as props
 
     // Determine which results to display
@@ -42,6 +45,12 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
     let isSimMode = calculationMode === 'simulations';
     let isCompareMode = calculationMode === 'compare';
     let isMathMode = calculationMode === 'mathematical';
+
+    // Dynamic strategy in math mode should use simulation results
+    const isDynamicInMathMode = isMathMode && inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC;
+    if (isDynamicInMathMode && simulationResults) {
+        isSimMode = true;  // Treat as simulation mode for display
+    }
 
     // Toggle function that maintains order AND syncs selectedProfileIds for profiles
     const toggleSelection = (type) => {
@@ -332,6 +341,7 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
         surplus,
         pvOfDeficit,
         initialGrossWithdrawal,
+        initialNetWithdrawal,
         simulationRange // Only present in Monte Carlo
     } = activeResults;
 
@@ -376,6 +386,22 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
         }
     };
 
+    // Calculate projected years for display
+    const currentYear = new Date().getFullYear();
+    const getProjectedYear = (targetAge) => {
+        if (!targetAge || !inputs.currentAge) return null;
+        const target = parseFloat(targetAge);
+        const current = parseFloat(inputs.currentAge);
+        if (isNaN(target) || isNaN(current)) return null;
+
+        if (inputs.birthdate) {
+            return new Date(inputs.birthdate).getFullYear() + target;
+        }
+        return Math.floor(currentYear + (target - current));
+    };
+    const startYear = getProjectedYear(inputs.retirementStartAge);
+    const endYear = getProjectedYear(inputs.retirementEndAge);
+
     return (
         <div className="space-y-3">
             {/* Status Message - Hero Card - Fixed height for consistent UI */}
@@ -399,11 +425,12 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                                     {formatCurrency(balanceAtEnd)}
                                 </span>
                             </div>
-                            {simulationRange && (
-                                <div className="text-[10px] text-gray-400 mt-0.5">
-                                    {t('range')}: {formatCurrency(simulationRange.p25Balance)} - {formatCurrency(simulationRange.p75Balance)}
-                                </div>
-                            )}
+                            <div className={`text-[10px] text-gray-400 mt-0.5 ${!simulationRange ? 'invisible' : ''}`}>
+                                {simulationRange
+                                    ? `${t('range')}: ${formatCurrency(simulationRange.p25Balance)} - ${formatCurrency(simulationRange.p75Balance)}`
+                                    : '\u00A0'
+                                }
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -460,6 +487,10 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                                         />
                                         <SensitivityHeatmapButton
                                             onClick={() => setShowHeatmapModal(true)}
+                                            t={t}
+                                        />
+                                        <InflationButton
+                                            onClick={() => setShowInflationModal(true)}
                                             t={t}
                                         />
                                     </div>
@@ -672,12 +703,24 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                         label={t('estGrossWithdrawal')}
                         value={formatCurrency(initialGrossWithdrawal)}
                         color="text-yellow-400"
+                        extraContent={
+                            <div className="mt-1 pt-1 border-t border-white/10">
+                                <span className="text-xs text-green-300 font-medium block">{t('netWithdrawal')}:</span>
+                                <span className="text-lg font-bold text-green-300">{formatCurrency(initialNetWithdrawal || 0)}</span>
+                            </div>
+                        }
                     />
                     <SummaryCard
                         label={t('timeHorizon')}
                         value={`${(inputs.retirementStartAge - inputs.currentAge).toFixed(1)} / ${(inputs.retirementEndAge - inputs.retirementStartAge).toFixed(1)}`}
                         subtext={`${t('yearsUntilRetirement')} / ${t('yearsOfRetirement')}`}
                         color="text-orange-400"
+                        extraContent={
+                            <div className="mt-1 pt-1 border-t border-white/10">
+                                <span className="text-xs text-orange-300 font-medium block">{t('years')}:</span>
+                                <span className="text-lg font-bold text-orange-300">{startYear} - {endYear}</span>
+                            </div>
+                        }
                     />
                 </div>
             )
@@ -734,6 +777,13 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                 isOpen={showHeatmapModal}
                 onClose={() => setShowHeatmapModal(false)}
                 inputs={inputs}
+                t={t}
+                language={language}
+            />
+
+            <InflationModal
+                isOpen={showInflationModal}
+                onClose={() => setShowInflationModal(false)}
                 t={t}
                 language={language}
             />

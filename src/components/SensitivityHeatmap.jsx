@@ -8,11 +8,11 @@ export function SensitivityHeatmapButton({ onClick, t }) {
     return (
         <button
             onClick={onClick}
-            title={t('sensitivityHeatmap') || 'Heatmap'}
+            title={t('sensitivityHeatmapBtn') || 'Heatmap'}
             className="flex items-center gap-1 md:gap-1.5 px-2 md:px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-gradient-to-r from-orange-500/20 to-red-500/20 border border-orange-500/30 text-orange-200 hover:from-orange-500/30 hover:to-red-500/30"
         >
             <span>🔥</span>
-            <span className="hidden md:inline">{t('sensitivityHeatmap') || 'Heatmap'}</span>
+            <span className="hidden md:inline">{t('sensitivityHeatmapBtn') || 'Heatmap'}</span>
         </button>
     );
 }
@@ -193,21 +193,21 @@ function SensitivityHeatmapGrid({ inputs, originalInputs, onReset, t, language, 
         return { xValues, yValues, grid };
     }, [inputs, xSteps, ySteps, xStepSize, yStepSize, xOffsetState, yOffsetState]);
 
-    // Formatters
-    const currencyFormatter = new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
+    // Memoized formatters for performance
+    const currencyFormatter = useMemo(() => new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
         style: 'currency',
         currency: language === 'he' ? 'ILS' : 'USD',
         maximumFractionDigits: 1,
         notation: 'compact',
         compactDisplay: 'short'
-    });
+    }), [language]);
 
     // Detailed formatter for Tooltip (Full precision, no compact)
-    const detailedFormatter = new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
+    const detailedFormatter = useMemo(() => new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
         style: 'currency',
         currency: language === 'he' ? 'ILS' : 'USD',
         maximumFractionDigits: 0,
-    });
+    }), [language]);
 
     const formatCurrency = (val) => currencyFormatter.format(val);
     const formatExactCurrency = (val) => detailedFormatter.format(val);

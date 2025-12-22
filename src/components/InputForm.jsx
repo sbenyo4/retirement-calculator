@@ -1,13 +1,14 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { getAvailableProviders, getAvailableModels, generatePrompt } from '../utils/ai-calculator';
 import { SIMULATION_TYPES } from '../utils/simulation-calculator';
-import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, Coins, BarChart3, Landmark } from 'lucide-react';
+import { WITHDRAWAL_STRATEGIES } from '../constants';
+import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, Coins, BarChart3, Landmark, PiggyBank } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 
 export default function InputForm({
     inputs, setInputs, t, language,
-    grossWithdrawal, neededToday, capitalPreservation, capitalPreservationNeededToday,
+    grossWithdrawal, netWithdrawal, neededToday, capitalPreservation, capitalPreservationNeededToday,
     calculationMode, setCalculationMode,
     aiProvider, setAiProvider,
     aiModel, setAiModel,
@@ -46,13 +47,40 @@ export default function InputForm({
         if (capitalPreservationNeededToday > 0 || capitalPreservation > 0) showCapitalPreservationBtn.current = true;
     }, [neededToday, capitalPreservationNeededToday, capitalPreservation]);
 
-    const formatCurrency = (value) => {
-        return new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
-            style: 'currency',
-            currency: language === 'he' ? 'ILS' : 'USD',
-            maximumFractionDigits: 0
-        }).format(value);
-    };
+    // Memoized currency formatter for performance
+    const currencyFormatter = useMemo(() => new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
+        style: 'currency',
+        currency: language === 'he' ? 'ILS' : 'USD',
+        maximumFractionDigits: 0
+    }), [language]);
+
+    const formatCurrency = useCallback((value) => {
+        return currencyFormatter.format(value);
+    }, [currencyFormatter]);
+
+    // Validation errors
+    const validationErrors = useMemo(() => {
+        const errors = {};
+        const currentAge = parseFloat(inputs.currentAge);
+        const retirementStart = parseFloat(inputs.retirementStartAge);
+        const retirementEnd = parseFloat(inputs.retirementEndAge);
+
+        if (!isNaN(currentAge) && !isNaN(retirementStart) && retirementStart <= currentAge) {
+            errors.retirementStartAge = language === 'he'
+                ? 'צריך להיות גדול מהגיל הנוכחי'
+                : 'Must be greater than current age';
+        }
+        if (!isNaN(retirementStart) && !isNaN(retirementEnd) && retirementEnd <= retirementStart) {
+            errors.retirementEndAge = language === 'he'
+                ? 'צריך להיות גדול מגיל הפרישה'
+                : 'Must be greater than start age';
+        }
+        if (!isNaN(currentAge) && (currentAge < 0 || currentAge > 120)) {
+            errors.currentAge = language === 'he' ? 'גיל לא תקין' : 'Invalid age';
+        }
+
+        return errors;
+    }, [inputs.currentAge, inputs.retirementStartAge, inputs.retirementEndAge, language]);
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -100,6 +128,23 @@ export default function InputForm({
 
     const availableProviders = getAvailableProviders();
     const availableModels = aiProvider ? getAvailableModels(aiProvider) : [];
+
+    // Calculate projected years
+    const currentYear = new Date().getFullYear();
+    const getProjectedYear = (targetAge) => {
+        if (!targetAge || !inputs.currentAge) return null;
+        const target = parseFloat(targetAge);
+        const current = parseFloat(inputs.currentAge);
+        if (isNaN(target) || isNaN(current)) return null;
+
+        if (inputs.birthdate) {
+            return new Date(inputs.birthdate).getFullYear() + target;
+        }
+        return Math.floor(currentYear + (target - current));
+    };
+
+    const startYear = getProjectedYear(inputs.retirementStartAge);
+    const endYear = getProjectedYear(inputs.retirementEndAge);
 
     return (
         <div>
@@ -333,7 +378,7 @@ export default function InputForm({
                                 ]}
                                 className="w-full"
                             />
-                            <p className={`text-[10px] ${labelClass} text-right px-1`}>
+                            <p className={`text-[10px] px-1 ${labelClass}`}>
                                 {simulationType === SIMULATION_TYPES.CONSERVATIVE && t('conservativeDesc')}
                                 {simulationType === SIMULATION_TYPES.OPTIMISTIC && t('optimisticDesc')}
                                 {simulationType === SIMULATION_TYPES.MONTE_CARLO && t('monteCarloDesc')}
@@ -366,6 +411,7 @@ export default function InputForm({
                         value={inputs.currentAge}
                         onChange={handleChange}
                         icon={<Calendar size={14} />}
+                        error={validationErrors.currentAge}
                     />
                 </div>
 
@@ -376,6 +422,8 @@ export default function InputForm({
                         value={inputs.retirementStartAge}
                         onChange={handleChange}
                         icon={<TrendingUp size={14} />}
+                        error={validationErrors.retirementStartAge}
+                        extraLabel={startYear ? `(${startYear})` : null}
                     />
                     <InputGroup
                         label={t('endAge')}
@@ -383,6 +431,8 @@ export default function InputForm({
                         value={inputs.retirementEndAge}
                         onChange={handleChange}
                         icon={<Calendar size={14} />}
+                        error={validationErrors.retirementEndAge}
+                        extraLabel={endYear ? `(${endYear})` : null}
                     />
                 </div>
 
@@ -449,11 +499,23 @@ export default function InputForm({
                 <InputGroup
                     label={t('monthlyNetIncomeDesired')}
                     name="monthlyNetIncomeDesired"
-                    value={inputs.monthlyNetIncomeDesired}
+                    value={
+                        // For strategies that calculate income, show calculated value
+                        (inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
+                            inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
+                            inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY)
+                            ? Math.round(netWithdrawal || 0)
+                            : inputs.monthlyNetIncomeDesired
+                    }
                     onChange={handleChange}
                     prefix={currency}
                     icon={<span className="text-green-400">{currency}</span>}
                     extraLabel={grossWithdrawal ? `(${t('gross')}: ${formatCurrency(grossWithdrawal)})` : null}
+                    disabled={
+                        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
+                        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
+                        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY
+                    }
                 />
 
                 <div className="grid grid-cols-2 gap-1">
@@ -472,12 +534,57 @@ export default function InputForm({
                         icon={<Landmark size={14} />}
                     />
                 </div>
+
+                {/* Withdrawal Strategy Selector */}
+                <div className={`${containerClass} rounded-xl p-2 space-y-1 mt-2`}>
+                    <div className="flex items-center gap-1 mb-1">
+                        <PiggyBank size={14} className={isLight ? 'text-emerald-600' : 'text-emerald-400'} />
+                        <label className={`text-xs font-medium ${headerLabelClass}`}>{t('withdrawalStrategy')}</label>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1">
+                        {[
+                            { id: WITHDRAWAL_STRATEGIES.FIXED, label: t('withdrawalFixed') },
+                            { id: WITHDRAWAL_STRATEGIES.FOUR_PERCENT, label: t('withdrawalFourPercent') },
+                            { id: WITHDRAWAL_STRATEGIES.PERCENTAGE, label: t('withdrawalPercentage') },
+                            { id: WITHDRAWAL_STRATEGIES.DYNAMIC, label: t('withdrawalDynamic') },
+                            { id: WITHDRAWAL_STRATEGIES.INTEREST_ONLY, label: t('withdrawalInterestOnly') }
+                        ].map(strategy => (
+                            <button
+                                key={strategy.id}
+                                onClick={() => setInputs(prev => ({ ...prev, withdrawalStrategy: strategy.id }))}
+                                className={`px-2 py-1.5 rounded-lg text-[10px] md:text-xs font-medium transition-all ${(inputs.withdrawalStrategy || WITHDRAWAL_STRATEGIES.FIXED) === strategy.id
+                                    ? 'bg-emerald-600 text-white shadow-md'
+                                    : (isLight ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-white/5 text-gray-400 hover:bg-white/10')
+                                    }`}
+                            >
+                                {strategy.label}
+                            </button>
+                        ))}
+                    </div>
+                    <p className={`text-[10px] px-1 ${labelClass}`}>
+                        {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT && t('withdrawalFourPercentDesc')}
+                        {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE && t('withdrawalPercentageDesc')}
+                        {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC && t('withdrawalDynamicDesc')}
+                        {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY && t('withdrawalInterestOnlyDesc')}
+                        {(!inputs.withdrawalStrategy || inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FIXED) && t('withdrawalFixedDesc')}
+                    </p>
+                    {/* Percentage Rate Input (only for percentage strategy) */}
+                    {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE && (
+                        <InputGroup
+                            label={t('withdrawalPercentageRate')}
+                            name="withdrawalPercentage"
+                            value={inputs.withdrawalPercentage || '4'}
+                            onChange={handleChange}
+                            icon={<BarChart3 size={14} />}
+                        />
+                    )}
+                </div>
             </div>
         </div >
     );
 }
 
-function InputGroup({ label, name, value, onChange, icon, prefix, type = "text", extraLabel, extraContent, titleActions }) {
+function InputGroup({ label, name, value, onChange, icon, prefix, type = "text", extraLabel, extraContent, titleActions, disabled = false, error }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
 
@@ -500,7 +607,7 @@ function InputGroup({ label, name, value, onChange, icon, prefix, type = "text",
             </div>
             <div className="relative">
                 {prefix && (
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">
+                    <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-xs ${disabled ? 'text-gray-500' : 'text-gray-400'}`}>
                         {prefix}
                     </span>
                 )}
@@ -509,12 +616,22 @@ function InputGroup({ label, name, value, onChange, icon, prefix, type = "text",
                     name={name}
                     value={value}
                     onChange={onChange}
-                    className={`w-full rounded-lg py-1 px-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${prefix ? 'pl-5' : ''} ${extraContent ? 'pr-16' : ''} ${isLight
-                        ? 'bg-white border border-gray-300 text-gray-900 placeholder-gray-400'
-                        : 'bg-black/20 border border-white/50 text-white placeholder-gray-500'}`}
+                    disabled={disabled}
+                    className={`w-full rounded-lg py-1 px-2 text-xs transition-all ${prefix ? 'pl-5' : ''} ${extraContent ? 'pr-16' : ''} ${error
+                        ? 'border-red-500 focus:ring-red-500'
+                        : ''} ${disabled
+                            ? (isLight
+                                ? 'bg-gray-100 border border-gray-200 text-gray-500 cursor-not-allowed'
+                                : 'bg-white/5 border border-white/20 text-gray-400 cursor-not-allowed')
+                            : (isLight
+                                ? 'bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                                : 'bg-black/20 border border-white/50 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500')}`}
                 />
                 {extraContent}
             </div>
+            {error && (
+                <span className="text-[10px] text-red-400">{error}</span>
+            )}
         </div>
     );
 }
