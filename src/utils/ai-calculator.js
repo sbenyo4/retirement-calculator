@@ -1,54 +1,10 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
+import { getProviderEnvKey } from '../config/ai-models';
 
-// Helper to check available providers
-export const getAvailableProviders = () => {
-    const providers = [];
-
-    if (import.meta.env.VITE_GEMINI_API_KEY) {
-        providers.push({ id: 'gemini', name: 'Google Gemini' });
-    }
-    if (import.meta.env.VITE_OPENAI_API_KEY) {
-        providers.push({ id: 'openai', name: 'OpenAI' });
-    }
-    if (import.meta.env.VITE_ANTHROPIC_API_KEY) {
-        providers.push({ id: 'anthropic', name: 'Anthropic (Claude)' });
-    }
-
-    return providers;
-};
-
-export const getAvailableModels = (providerId) => {
-    switch (providerId) {
-        case 'gemini':
-            return [
-                { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro Preview' },
-                { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
-                { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
-                { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite' },
-                { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite' }
-            ];
-        case 'openai':
-            return [
-                { id: 'gpt-4o', name: 'GPT-4o' },
-                { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
-                { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' }
-            ];
-        case 'anthropic':
-            return [
-                { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5' },
-                { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5' },
-                { id: 'claude-opus-4-20250514', name: 'Claude Opus 4' },
-                { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4' },
-                { id: 'claude-haiku-4-20250110', name: 'Claude Haiku 4' },
-                { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet (New)' },
-                { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku' }
-            ];
-        default:
-            return [];
-    }
-};
+// Re-export for backward compatibility
+export { getAvailableProviders, getAvailableModels } from '../config/ai-models';
 
 export const generatePrompt = (inputs) => {
     return `
@@ -199,7 +155,7 @@ function generateHistoryFromSummary(inputs, aiResult) {
     return history;
 }
 
-export async function calculateRetirementWithAI(inputs, provider, model, apiKeyOverride = null, mathematicalBaseline = null) {
+export async function calculateRetirementWithAI(inputs, provider, model, apiKeyOverride = null, mathematicalBaseline = null, t = null) {
     let prompt = generatePrompt(inputs);
 
     if (mathematicalBaseline) {
@@ -212,16 +168,48 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
     
     `;
 
+    // Helper function to format error messages with parameters
+    const formatError = (key, params = {}) => {
+        if (!t) {
+            // Fallback to English if no translation function
+            const fallbacks = {
+                errorRateLimit: 'Rate limit exceeded. Please try again later or use a different model.',
+                errorInvalidApiKey: 'Invalid API key. Please check your credentials in settings.',
+                errorModelNotFound: `Model "{model}" not found for {provider}. Please select a different model.`,
+                errorNetwork: 'Network error. Please check your internet connection and try again.',
+                errorJsonParse: 'Failed to parse AI response. The model may have returned invalid data. Please try again or use a different model.',
+                errorMissingApiKey: `Missing API key for provider: {provider}. Please configure your .env file or provide an API key override in settings.`,
+                errorGeneric: `AI calculation failed: {error}. Please try again or switch to mathematical mode.`
+            };
+            let message = fallbacks[key] || key;
+            // Replace parameters in the message
+            Object.keys(params).forEach(param => {
+                message = message.replace(`{${param}}`, params[param]);
+            });
+            return message;
+        }
+
+        let message = t(key);
+        // Replace parameters in the message
+        Object.keys(params).forEach(param => {
+            message = message.replace(`{${param}}`, params[param]);
+        });
+        return message;
+    };
+
+    // Validate API key before making the request
+    const envKey = getProviderEnvKey(provider);
+    const apiKey = apiKeyOverride?.trim() || (envKey ? import.meta.env[envKey]?.trim() : null);
+
+    if (!apiKey) {
+        throw new Error(formatError('errorMissingApiKey', { provider }));
+    }
+
     try {
         let responseText = "";
 
         if (provider === 'gemini') {
-            // Use override if provided, otherwise fallback to env var
-            const apiKey = apiKeyOverride?.trim() || import.meta.env.VITE_GEMINI_API_KEY?.trim();
-
             console.log("Gemini API Key Status:", apiKey ? "Present (" + apiKey.slice(0, 4) + "...)" : "Missing");
-
-            if (!apiKey) throw new Error("Gemini API Key is missing. Please enter it in the settings.");
 
             const genAI = new GoogleGenerativeAI(apiKey);
 
@@ -266,7 +254,6 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
             }
 
         } else if (provider === 'openai') {
-            const apiKey = apiKeyOverride?.trim() || import.meta.env.VITE_OPENAI_API_KEY?.trim();
             const openai = new OpenAI({
                 apiKey: apiKey,
                 dangerouslyAllowBrowser: true // Client-side usage
@@ -279,7 +266,6 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
             });
             responseText = completion.choices[0].message.content;
         } else if (provider === 'anthropic') {
-            const apiKey = apiKeyOverride?.trim() || import.meta.env.VITE_ANTHROPIC_API_KEY?.trim();
             const anthropic = new Anthropic({
                 apiKey: apiKey,
                 dangerouslyAllowBrowser: true // Client-side usage
@@ -313,7 +299,22 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
 
     } catch (error) {
         console.error("AI Calculation Error:", error);
-        throw error;
+
+        // Enhanced error handling with specific messages
+        if (error.status === 429 || error.message?.includes('429') || error.message?.includes('rate limit')) {
+            throw new Error(formatError('errorRateLimit'));
+        } else if (error.status === 401 || error.message?.includes('401') || error.message?.includes('Unauthorized') || error.message?.includes('API key')) {
+            throw new Error(formatError('errorInvalidApiKey'));
+        } else if (error.status === 404 || error.message?.includes('404') || error.message?.includes('not found')) {
+            throw new Error(formatError('errorModelNotFound', { model, provider }));
+        } else if (error.message?.toLowerCase().includes('network') || error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND' || error.message?.includes('fetch')) {
+            throw new Error(formatError('errorNetwork'));
+        } else if (error instanceof SyntaxError || error.message?.includes('JSON')) {
+            throw new Error(formatError('errorJsonParse'));
+        }
+
+        // Generic error with original message
+        throw new Error(formatError('errorGeneric', { error: error.message || 'Unknown error' }));
     }
 }
 

@@ -255,7 +255,7 @@ export default function InputForm({
 
                 {/* Individual Settings (Only when NOT in Compare Mode) */}
                 {calculationMode === 'ai' && (
-                    <div className={`${containerClass} rounded-xl p-2 space-y-1 animate-in fade-in slide-in-from-top-2 relative z-[50]`}>
+                    <div className={`${containerClass} rounded-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-top-2 relative z-[50]`}>
                         {/* Headers Row with Labels and Actions */}
                         <div className="flex items-center px-1 gap-2">
                             <div className="flex flex-[1.2] min-w-0">
@@ -345,7 +345,7 @@ export default function InputForm({
                             <button
                                 onClick={onAiCalculate}
                                 disabled={aiLoading}
-                                className={`p-1.5 rounded-lg transition-all flex items-center justify-center self-end ${aiInputsChanged
+                                className={`p-1 rounded-lg transition-all flex items-center justify-center self-end ${aiInputsChanged
                                     ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white shadow-lg'
                                     : (isLight ? 'bg-gray-100 text-green-600 hover:bg-gray-200' : 'bg-white/5 text-green-400 hover:bg-white/10')
                                     }`}

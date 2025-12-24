@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 
-export function ThemeToggle() {
+export function ThemeToggle({ t }) {
     const { theme, toggleTheme } = useTheme();
     const isDark = theme === 'dark';
 
@@ -9,7 +9,7 @@ export function ThemeToggle() {
         <button
             onClick={toggleTheme}
             className="bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-lg backdrop-blur-sm transition-colors h-10 flex items-center gap-2"
-            title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            title={t ? (isDark ? t('switchToLightMode') : t('switchToDarkMode')) : (isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode')}
         >
             {isDark ? (
                 // Sun icon for dark mode (click to go light)

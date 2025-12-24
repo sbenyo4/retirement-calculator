@@ -163,6 +163,61 @@ export const translations = {
         displayError: 'Display Error',
         unknownError: 'Unknown error',
         tryAgain: 'Try Again',
+
+        // AI Error Messages
+        errorRateLimit: 'Rate limit exceeded. Please try again later or use a different model.',
+        errorInvalidApiKey: 'Invalid API key. Please check your credentials in settings.',
+        errorModelNotFound: 'Model "{model}" not found for {provider}. Please select a different model.',
+        errorNetwork: 'Network error. Please check your internet connection and try again.',
+        errorJsonParse: 'Failed to parse AI response. The model may have returned invalid data. Please try again or use a different model.',
+        errorMissingApiKey: 'Missing API key for provider: {provider}. Please configure your .env file or provide an API key override in settings.',
+        errorGeneric: 'AI calculation failed: {error}. Please try again or switch to mathematical mode.',
+
+        // Validation Error Messages
+        validationInvalidInputs: 'Invalid inputs:',
+        validationCurrentAgeBetween: 'Current age must be between 0 and 120',
+        validationRetirementStartAgeBetween: 'Retirement start age must be between 0 and 120',
+        validationRetirementEndAgeBetween: 'Retirement end age must be between 0 and 120',
+        validationRetirementStartGreater: 'Retirement start age must be greater than current age',
+        validationRetirementEndGreater: 'Retirement end age must be greater than retirement start age',
+        validationCurrentSavingsNonNegative: 'Current savings cannot be negative',
+        validationMonthlyContributionNonNegative: 'Monthly contribution cannot be negative',
+        validationMonthlyIncomePositive: 'Monthly net income desired must be positive',
+        validationAnnualReturnBetween: 'Annual return rate must be between -100% and 100%',
+        validationTaxRateBetween: 'Tax rate must be between 0% and 100%',
+
+        // Rate Limit Messages
+        rateLimitMinute: 'Rate limit: 1 call per minute. Please wait {seconds} seconds.',
+        rateLimitHour: 'Rate limit: {limit} calls per hour. Try again at {time}.',
+        rateLimitDay: 'Daily limit reached ({limit} calls). Resets tomorrow at midnight.',
+        rateLimitReached: 'Rate limit reached',
+        callsToday: 'calls today',
+        usageStats: 'AI Usage: {today}/{dailyLimit} today',
+
+        // Models Manager
+        manageModels: 'AI Models Manager',
+        modelsManagerDesc: 'Check for available models from each AI provider and update your list.',
+        checkModels: 'Check Models',
+        checking: 'Checking...',
+        applyUpdates: 'Apply Updates',
+        resetToDefault: 'Reset to Default',
+        modelsUpdated: 'Models updated successfully!',
+        modelsReset: 'Models reset to default!',
+        updatesAvailable: 'Updates Available',
+        existing: 'Existing',
+        new: 'New',
+        removed: 'Removed',
+        hideDetails: '▼ Hide Details',
+        showDetails: '▶ Show Details',
+        newModels: 'New Models:',
+        removedModels: 'Removed Models:',
+
+        // Header Buttons
+        switchToLightMode: 'Switch to Light Mode',
+        switchToDarkMode: 'Switch to Dark Mode',
+        selected: 'selected',
+        selectAll: 'Select All',
+        deselectAll: 'Deselect All',
     },
     he: {
         appTitle: "מתכנן פרישה",
@@ -328,5 +383,60 @@ export const translations = {
         displayError: 'שגיאה בתצוגה',
         unknownError: 'שגיאה לא ידועה',
         tryAgain: 'נסה שוב',
+
+        // AI Error Messages  
+        errorRateLimit: 'חרגת ממגבלת הקריאות. אנא נסה שוב מאוחר יותר או השתמש במודל אחר.',
+        errorInvalidApiKey: 'מפתח API לא תקין. אנא בדוק את האישורים שלך בהגדרות.',
+        errorModelNotFound: 'מודל "{model}" לא נמצא עבור {provider}. אנא בחר מודל אחר.',
+        errorNetwork: 'שגיאת רשת. אנא בדוק את חיבור האינטרנט שלך ונסה שוב.',
+        errorJsonParse: 'כשל בפענוח תגובת ה-AI. המודל החזיר מידע לא תקין. אנא נסה שוב או השתמש במודל אחר.',
+        errorMissingApiKey: 'חסר מפתח API עבור ספק: {provider}. אנא הגדר את קובץ ה-.env או הוסף מפתח API בהגדרות.',
+        errorGeneric: 'חישוב AI נכשל: {error}. אנא נסה שוב או עבור למצב מתמטי.',
+
+        // Validation Error Messages
+        validationInvalidInputs: 'קלטים לא תקינים:',
+        validationCurrentAgeBetween: 'גיל נוכחי חייב להיות בין 0 ל-120',
+        validationRetirementStartAgeBetween: 'גיל פרישה חייב להיות בין 0 ל-120',
+        validationRetirementEndAgeBetween: 'גיל סיום חייב להיות בין 0 ל-120',
+        validationRetirementStartGreater: 'גיל פרישה חייב להיות גבוה מהגיל הנוכחי',
+        validationRetirementEndGreater: 'גיל סיום חייב להיות גבוה מגיל הפרישה',
+        validationCurrentSavingsNonNegative: 'חסכונות נוכחיים לא יכולים להיות שליליים',
+        validationMonthlyContributionNonNegative: 'הפקדה חודשית לא יכולה להיות שלילית',
+        validationMonthlyIncomePositive: 'הכנסה חודשית רצויה חייבת להיות חיובית',
+        validationAnnualReturnBetween: 'תשואה שנתית חייבת להיות בין -100% ל-100%',
+        validationTaxRateBetween: 'שיעור מס חייב להיות בין 0% ל-100%',
+
+        // Rate Limit Messages
+        rateLimitMinute: 'הגבלה: קריאה אחת לדקה. אנא המתן {seconds} שניות.',
+        rateLimitHour: 'הגבלה: {limit} קריאות לשעה. נסה שוב ב-{time}.',
+        rateLimitDay: 'הגעת למגבלה היומית ({limit} קריאות). מתאפס מחר בחצות.',
+        rateLimitReached: 'הגעת למגבלה',
+        callsToday: 'קריאות היום',
+        usageStats: 'שימוש AI: {today}/{dailyLimit} היום',
+
+        // Models Manager
+        manageModels: 'ניהול מודלים',
+        modelsManagerDesc: 'בדוק אילו מודלים זמינים מכל ספק AI ועדכן את הרשימה.',
+        checkModels: 'בדוק מודלים',
+        checking: 'בודק...',
+        applyUpdates: 'החל עדכונים',
+        resetToDefault: 'איפוס לברירת מחדל',
+        modelsUpdated: 'המודלים עודכנו בהצלחה!',
+        modelsReset: 'המודלים אופסו לברירת מחדל!',
+        updatesAvailable: 'עדכונים זמינים',
+        existing: 'קיימים',
+        new: 'חדש',
+        removed: 'הוסרו',
+        hideDetails: '▼ הסתר פרטים',
+        showDetails: '▶ הצג פרטים',
+        newModels: 'מודלים חדשים:',
+        removedModels: 'מודלים שהוסרו:',
+
+        // Header Buttons
+        switchToLightMode: 'החלף למצב בהיר',
+        switchToDarkMode: 'החלף למצב כהה',
+        selected: 'נבחרו',
+        selectAll: 'בחר הכל',
+        deselectAll: 'בטל הכל',
     }
 };
