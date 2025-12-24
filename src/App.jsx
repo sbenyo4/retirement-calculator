@@ -120,7 +120,8 @@ function App() {
 function MainApp() {
   const { currentUser } = useAuth();
   const [language, setLanguage] = useState('he');
-  const t = (key) => translations[language][key] || key;
+  // Wrap t in useCallback to prevent it from changing on every render
+  const t = React.useCallback((key) => translations[language][key] || key, [language]);
 
   // Settings State - using useReducer for related state
   const [settings, dispatchSettings] = useReducer(settingsReducer, null, getInitialSettings);
@@ -250,9 +251,13 @@ function MainApp() {
         const isDynamicStrategy = debouncedInputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC;
         if (settings.calculationMode === 'simulations' || settings.calculationMode === 'compare' || isDynamicStrategy) {
           // Only calculate if inputs or type changed, or if we don't have results yet
+          // Use JSON.stringify for deep equality check instead of reference comparison
+          const currentInputsStr = JSON.stringify(debouncedInputs);
+          const lastInputsStr = lastSimInputs.current ? JSON.stringify(lastSimInputs.current) : null;
+
           const shouldUpdate =
             !simulationResults ||
-            lastSimInputs.current !== debouncedInputs ||
+            currentInputsStr !== lastInputsStr ||
             lastSimType.current !== settings.simulationType;
 
           if (shouldUpdate) {
@@ -274,7 +279,7 @@ function MainApp() {
       setValidationError(null); // Don't show error for incomplete inputs
       setResults(null);
     }
-  }, [debouncedInputs, settings.calculationMode, settings.simulationType, t]);
+  }, [debouncedInputs, settings.calculationMode, settings.simulationType, language]);
 
   // Mark inputs as changed when they change
   useEffect(() => {
