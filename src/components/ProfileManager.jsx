@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { Save, Trash2, Upload, RotateCcw } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
+import { DEFAULT_INPUTS } from '../constants';
 
 export function ProfileManager({ currentInputs, onLoad, t, language, profiles, onSaveProfile, onUpdateProfile, onDeleteProfile, onProfileLoad, lastLoadedProfileId }) {
     const [newProfileName, setNewProfileName] = useState('');
@@ -47,7 +48,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         if (!selectedProfileId) return;
         const profile = profiles.find(p => p.id === selectedProfileId);
         if (profile) {
-            onLoad(profile.data);
+            onLoad({ ...DEFAULT_INPUTS, ...profile.data });
             showMessage(language === 'he' ? 'פרופיל נטען מחדש!' : 'Profile reloaded!');
         }
     };
@@ -65,7 +66,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     const loadProfile = (id) => {
         const profile = profiles.find(p => p.id === id);
         if (profile) {
-            onLoad(profile.data);
+            onLoad({ ...DEFAULT_INPUTS, ...profile.data });
             setSelectedProfileId(id);
             // Persist this as the last loaded profile
             if (onProfileLoad) {

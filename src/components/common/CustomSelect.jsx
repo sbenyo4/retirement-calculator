@@ -42,10 +42,10 @@ export function CustomSelect({ value, onChange, options, className = "", disable
                 type="button"
                 onClick={() => !disabled && setIsOpen(!isOpen)}
                 disabled={disabled}
-                className={`w-full flex items-center justify-between rounded-lg px-2 py-1.5 text-xs transition-all
+                className={`w-full flex items-center justify-between rounded px-2 py-1.5 text-sm transition-all
                     ${bgColor} ${textColor} border ${borderColor}
                     ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-blue-400'}
-                    focus:outline-none focus:ring-2 focus:ring-blue-500/50
+                    focus:outline-none focus:ring-2 focus:ring-blue-500
                 `}
             >
                 <span className="truncate">
@@ -56,8 +56,12 @@ export function CustomSelect({ value, onChange, options, className = "", disable
 
             {/* DROPDOWN LIST */}
             {isOpen && (
-                <div className={`absolute top-full left-0 right-0 mt-1 z-50 rounded-lg shadow-xl overflow-hidden max-h-60 overflow-y-auto
+                <div
+                    dir="ltr"
+                    className={`absolute top-full left-0 right-0 mt-1 z-50 rounded-lg shadow-xl overflow-hidden max-h-40 overflow-y-auto
                     ${dropdownBg} ${dropdownBorder} text-xs animate-in fade-in zoom-in-95 duration-100
+                    [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent
+                    ${isLight ? '[&::-webkit-scrollbar-thumb]:bg-gray-300 hover:[&::-webkit-scrollbar-thumb]:bg-gray-400' : '[&::-webkit-scrollbar-thumb]:bg-white/20 hover:[&::-webkit-scrollbar-thumb]:bg-white/30'}
                 `}>
                     <div className="py-1">
                         {options.map((option) => (

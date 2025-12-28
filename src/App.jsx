@@ -15,6 +15,7 @@ import { LoginPage } from './components/LoginPage';
 import { useProfiles } from './hooks/useProfiles';
 import { useDebouncedValue } from './hooks/useDebounce';
 import { useRateLimit } from './hooks/useRateLimit';
+import { useDeepCompareMemo } from './hooks/useDeepCompare';
 import { ModelsManager } from './components/ModelsManager';
 import { DEFAULT_INPUTS, WITHDRAWAL_STRATEGIES } from './constants';
 import { Settings } from 'lucide-react';
@@ -126,20 +127,22 @@ function MainApp() {
   // Settings State - using useReducer for related state
   const [settings, dispatchSettings] = useReducer(settingsReducer, null, getInitialSettings);
 
-  // Initialize inputs - load from last loaded profile if available
+  // Initialize inputs - load from last session or profile
   const [inputs, setInputs] = useState(() => {
-    // Try to load the last profile
-    const lastProfileId = localStorage.getItem('lastLoadedProfile_guest') ||
-      (() => {
-        // Try to find a user-specific key
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key?.startsWith('lastLoadedProfile_')) {
-            return localStorage.getItem(key);
-          }
-        }
-        return null;
-      })();
+    // 1. Try to load from current session persistence
+    const curId = currentUser?.uid || 'guest';
+    const sessionKey = `retirementInputs_current_${curId}`;
+    const savedSession = localStorage.getItem(sessionKey);
+    if (savedSession) {
+      try {
+        return { ...DEFAULT_INPUTS, ...JSON.parse(savedSession) };
+      } catch (e) {
+        console.error('Error loading session inputs:', e);
+      }
+    }
+
+    // 2. Fallback to last explicitly loaded profile
+    const lastProfileId = localStorage.getItem(`lastLoadedProfile_${curId}`);
 
     if (lastProfileId) {
       // Find the profiles storage key
@@ -150,7 +153,7 @@ function MainApp() {
             const profiles = JSON.parse(localStorage.getItem(key) || '[]');
             const profile = profiles.find(p => p.id === lastProfileId);
             if (profile?.data) {
-              return profile.data;
+              return { ...DEFAULT_INPUTS, ...profile.data };
             }
           } catch (e) {
             console.error('Error loading profile:', e);
@@ -227,6 +230,9 @@ function MainApp() {
   // Debounce inputs for heavy calculations (300ms delay)
   const debouncedInputs = useDebouncedValue(inputs, 300);
 
+  // Use deep comparison memo for efficient change detection (replaces JSON.stringify)
+  const memoizedDebouncedInputs = useDeepCompareMemo(debouncedInputs);
+
   // Standard Mathematical Calculation & Simulation
   useEffect(() => {
     const age = parseFloat(debouncedInputs.currentAge);
@@ -251,19 +257,16 @@ function MainApp() {
         const isDynamicStrategy = debouncedInputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC;
         if (settings.calculationMode === 'simulations' || settings.calculationMode === 'compare' || isDynamicStrategy) {
           // Only calculate if inputs or type changed, or if we don't have results yet
-          // Use JSON.stringify for deep equality check instead of reference comparison
-          const currentInputsStr = JSON.stringify(debouncedInputs);
-          const lastInputsStr = lastSimInputs.current ? JSON.stringify(lastSimInputs.current) : null;
-
+          // Use deep comparison for efficient change detection
           const shouldUpdate =
             !simulationResults ||
-            currentInputsStr !== lastInputsStr ||
+            lastSimInputs.current !== memoizedDebouncedInputs ||
             lastSimType.current !== settings.simulationType;
 
           if (shouldUpdate) {
             const simResult = calculateSimulation(debouncedInputs, settings.simulationType);
             setSimulationResults(simResult);
-            lastSimInputs.current = debouncedInputs;
+            lastSimInputs.current = memoizedDebouncedInputs;
             lastSimType.current = settings.simulationType;
           }
         }
@@ -279,7 +282,7 @@ function MainApp() {
       setValidationError(null); // Don't show error for incomplete inputs
       setResults(null);
     }
-  }, [debouncedInputs, settings.calculationMode, settings.simulationType, language]);
+  }, [debouncedInputs, memoizedDebouncedInputs, settings.calculationMode, settings.simulationType, language]);
 
   // Mark inputs as changed when they change
   useEffect(() => {
@@ -354,6 +357,10 @@ function MainApp() {
 
   // Note: Profile loading is now handled by the ProfileManager component
   // Inputs are automatically saved to localStorage whenever they change
+  useEffect(() => {
+    const curId = currentUser?.uid || 'guest';
+    localStorage.setItem(`retirementInputs_current_${curId}`, JSON.stringify(inputs));
+  }, [inputs, currentUser]);
 
   const toggleLanguage = () => {
     setLanguage(prev => prev === 'en' ? 'he' : 'en');
@@ -427,6 +434,7 @@ function MainApp() {
               neededToday={results?.pvOfDeficit}
               capitalPreservation={results?.requiredCapitalForPerpetuity}
               capitalPreservationNeededToday={results?.pvOfCapitalPreservation}
+              results={results}
 
               // Settings Props
               calculationMode={settings.calculationMode}

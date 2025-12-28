@@ -197,8 +197,8 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
             }
 
             return {
-                minus: canShowMinus && inputsMinus ? calculateRetirementProjection(inputsMinus) : null,
-                plus: calculateRetirementProjection(inputsPlus),
+                minus: canShowMinus && inputsMinus ? calculateRetirementProjection(inputsMinus, t) : null,
+                plus: calculateRetirementProjection(inputsPlus, t),
                 baseName,
                 minusLabel,
                 plusLabel,

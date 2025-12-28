@@ -155,7 +155,7 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
             }
 
             try {
-                const result = calculateRetirementProjection(modifiedInputs);
+                const result = calculateRetirementProjection(modifiedInputs, t);
                 results.push({
                     value,
                     label: config.format(value, language),

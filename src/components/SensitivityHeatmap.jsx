@@ -185,7 +185,7 @@ function SensitivityHeatmapGrid({ inputs, originalInputs, onReset, t, language, 
                     annualReturnRate: xVal,
                     monthlyNetIncomeDesired: yVal
                 };
-                const result = calculateRetirementProjection(simInputs);
+                const result = calculateRetirementProjection(simInputs, t);
                 return { x: xVal, y: yVal, result };
             });
         });

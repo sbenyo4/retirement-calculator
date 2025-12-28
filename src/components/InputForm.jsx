@@ -5,22 +5,42 @@ import { SIMULATION_TYPES } from '../utils/simulation-calculator';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
 import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, Coins, BarChart3, Landmark, PiggyBank } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
+import LifeEventsManager from './LifeEventsManager';
 
 export default function InputForm({
-    inputs, setInputs, t, language,
-    grossWithdrawal, netWithdrawal, neededToday, capitalPreservation, capitalPreservationNeededToday,
-    calculationMode, setCalculationMode,
-    aiProvider, setAiProvider,
-    aiModel, setAiModel,
-    apiKeyOverride, setApiKeyOverride,
-    simulationType, setSimulationType,
-    onAiCalculate, aiInputsChanged, aiLoading,
-    showInterestSensitivity, setShowInterestSensitivity,
-    showIncomeSensitivity, setShowIncomeSensitivity
+    inputs,
+    setInputs,
+    t,
+    language,
+    grossWithdrawal,
+    netWithdrawal,
+    neededToday,
+    capitalPreservation,
+    capitalPreservationNeededToday,
+    results,
+    calculationMode,
+    setCalculationMode,
+    aiProvider,
+    setAiProvider,
+    aiModel,
+    setAiModel,
+    apiKeyOverride,
+    setApiKeyOverride,
+    simulationType,
+    setSimulationType,
+    onAiCalculate,
+    aiInputsChanged,
+    aiLoading,
+    showInterestSensitivity,
+    setShowInterestSensitivity,
+    showIncomeSensitivity,
+    setShowIncomeSensitivity,
+    showAgeSensitivity,
+    setShowAgeSensitivity
 }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
-    const currency = t('currency');
+    const currency = language === 'he' ? '₪' : '$';
 
     // Theme-aware styles
     const containerClass = isLight ? "bg-white border border-gray-200 shadow-sm" : "bg-white/5 border border-white/10";
@@ -40,6 +60,8 @@ export default function InputForm({
     const showNeededTodayBtn = useRef(false);
     const showCapitalPreservationBtn = useRef(false);
     const [showApiKey, setShowApiKey] = useState(false);
+    // View Toggle State: 'parameters' | 'events'
+    const [activeView, setActiveView] = useState('parameters');
 
     // Update button visibility based on values
     useEffect(() => {
@@ -388,199 +410,243 @@ export default function InputForm({
                 )}
             </div>
 
-            <div className="flex items-center gap-1 mb-1">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 3.666V14m-3.75-4.333a4.5 4.5 0 00-9 0V16.5A2.25 2.25 0 005.25 18.75h13.5A2.25 2.25 0 0021 16.5v-3.833a4.5 4.5 0 00-9 0v-2.667z" />
-                </svg>
-                <h2 className="text-sm font-semibold text-white">{t('parameters')}</h2>
+            {/* View Toggle (Parameters / Events) */}
+            <div className={`flex p-1 rounded-lg mb-2 ${isLight ? 'bg-gray-100' : 'bg-white/5'}`}>
+                <button
+                    onClick={() => setActiveView('parameters')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-xs font-medium transition-all ${activeView === 'parameters'
+                        ? (isLight ? 'bg-white text-blue-600 shadow-sm' : 'bg-blue-600 text-white shadow')
+                        : (isLight ? 'text-gray-500 hover:text-gray-700' : 'text-gray-400 hover:text-gray-200')
+                        }`}
+                >
+                    <Settings size={14} />
+                    {t('parameters')}
+                </button>
+                <button
+                    onClick={() => setActiveView('events')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-xs font-medium transition-all ${activeView === 'events'
+                        ? (isLight ? 'bg-white text-blue-600 shadow-sm' : 'bg-blue-600 text-white shadow')
+                        : (isLight ? 'text-gray-500 hover:text-gray-700' : 'text-gray-400 hover:text-gray-200')
+                        }`}
+                >
+                    <Calendar size={14} />
+                    {t ? t('lifeEventsTimeline') || 'Life Events' : 'Life Events'}
+                    {inputs.lifeEvents?.length > 0 && (
+                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] ${activeView === 'events'
+                            ? 'bg-white/20 text-current'
+                            : (isLight ? 'bg-gray-200 text-gray-600' : 'bg-gray-700 text-gray-300')
+                            }`}>
+                            {inputs.lifeEvents.length}
+                        </span>
+                    )}
+                </button>
             </div>
 
-            <div className="space-y-1">
-                <div className="grid grid-cols-2 gap-1">
-                    <InputGroup
-                        label={t('birthdate')}
-                        name="birthdate"
-                        type="date"
-                        value={inputs.birthdate}
-                        onChange={handleBirthdateChange}
-                        icon={<Calendar size={14} />}
-                    />
-                    <InputGroup
-                        label={t('currentAge')}
-                        name="currentAge"
-                        value={inputs.currentAge}
-                        onChange={handleChange}
-                        icon={<Calendar size={14} />}
-                        error={validationErrors.currentAge}
-                    />
-                </div>
+            {activeView === 'parameters' ? (
+                <div className="space-y-1 animate-in fade-in slide-in-from-left-2 duration-200">
+                    <div className="grid grid-cols-2 gap-1">
+                        <InputGroup
+                            label={t('birthdate')}
+                            name="birthdate"
+                            type="date"
+                            value={inputs.birthdate}
+                            onChange={handleBirthdateChange}
+                            icon={<Calendar size={14} />}
+                        />
+                        <InputGroup
+                            label={t('currentAge')}
+                            name="currentAge"
+                            value={inputs.currentAge}
+                            onChange={handleChange}
+                            icon={<Calendar size={14} />}
+                            error={validationErrors.currentAge}
+                        />
+                    </div>
 
-                <div className="grid grid-cols-2 gap-1">
-                    <InputGroup
-                        label={t('startAge')}
-                        name="retirementStartAge"
-                        value={inputs.retirementStartAge}
-                        onChange={handleChange}
-                        icon={<TrendingUp size={14} />}
-                        error={validationErrors.retirementStartAge}
-                        extraLabel={startYear ? `(${startYear})` : null}
-                    />
-                    <InputGroup
-                        label={t('endAge')}
-                        name="retirementEndAge"
-                        value={inputs.retirementEndAge}
-                        onChange={handleChange}
-                        icon={<Calendar size={14} />}
-                        error={validationErrors.retirementEndAge}
-                        extraLabel={endYear ? `(${endYear})` : null}
-                    />
-                </div>
+                    <div className="grid grid-cols-2 gap-1">
+                        <InputGroup
+                            label={t('startAge')}
+                            name="retirementStartAge"
+                            value={inputs.retirementStartAge}
+                            onChange={handleChange}
+                            icon={<TrendingUp size={14} />}
+                            error={validationErrors.retirementStartAge}
+                            extraLabel={startYear ? `(${startYear})` : null}
+                        />
+                        <InputGroup
+                            label={t('endAge')}
+                            name="retirementEndAge"
+                            value={inputs.retirementEndAge}
+                            onChange={handleChange}
+                            icon={<Calendar size={14} />}
+                            error={validationErrors.retirementEndAge}
+                            extraLabel={endYear ? `(${endYear})` : null}
+                        />
+                    </div>
 
-                <div className="grid grid-cols-2 gap-1">
+                    <div className="grid grid-cols-2 gap-1">
+                        <InputGroup
+                            label={t('currentSavings')}
+                            name="currentSavings"
+                            value={inputs.currentSavings}
+                            onChange={handleChange}
+                            prefix={currency}
+                            icon={<Coins size={14} />}
+                            titleActions={
+                                <>
+                                    {showNeededTodayBtn.current && (
+                                        <button
+                                            onClick={() => {
+                                                const current = parseFloat(inputs.currentSavings) || 0;
+                                                setInputs(prev => ({ ...prev, currentSavings: Math.round(current + neededToday) }));
+                                            }}
+                                            disabled={neededToday <= 0}
+                                            className={`p-1 hover:bg-white/10 rounded transition-colors ${neededToday <= 0
+                                                ? 'text-gray-600 cursor-not-allowed opacity-50'
+                                                : 'text-orange-400 hover:text-orange-300'
+                                                }`}
+                                            title={t('neededToday')}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                                            </svg>
+                                        </button>
+                                    )}
+                                    {showCapitalPreservationBtn.current && (
+                                        <button
+                                            onClick={() => {
+                                                const current = parseFloat(inputs.currentSavings) || 0;
+                                                const target = Math.max(0, capitalPreservationNeededToday || 0) || capitalPreservation;
+                                                setInputs(prev => ({ ...prev, currentSavings: Math.round(current + target) }));
+                                            }}
+                                            disabled={(capitalPreservationNeededToday || capitalPreservation) <= 0}
+                                            className={`p-1 hover:bg-white/10 rounded transition-colors ${(capitalPreservationNeededToday || capitalPreservation) <= 0
+                                                ? 'text-gray-600 cursor-not-allowed opacity-50'
+                                                : 'text-emerald-400 hover:text-emerald-300'
+                                                }`}
+                                            title={t('capitalPreservation')}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                        </button>
+                                    )}
+                                </>
+                            }
+                        />
+                        <InputGroup
+                            label={t('monthlyContribution')}
+                            name="monthlyContribution"
+                            value={inputs.monthlyContribution}
+                            onChange={handleChange}
+                            prefix={currency}
+                            icon={<Coins size={14} />}
+                        />
+                    </div>
+
                     <InputGroup
-                        label={t('currentSavings')}
-                        name="currentSavings"
-                        value={inputs.currentSavings}
+                        label={t('monthlyNetIncomeDesired')}
+                        name="monthlyNetIncomeDesired"
+                        value={
+                            // For strategies that calculate income, show calculated value
+                            (inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
+                                inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
+                                inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY)
+                                ? Math.round(netWithdrawal || 0)
+                                : inputs.monthlyNetIncomeDesired
+                        }
                         onChange={handleChange}
                         prefix={currency}
-                        icon={<Coins size={14} />}
-                        titleActions={
-                            <>
-                                {showNeededTodayBtn.current && (
-                                    <button
-                                        onClick={() => {
-                                            const current = parseFloat(inputs.currentSavings) || 0;
-                                            setInputs(prev => ({ ...prev, currentSavings: Math.round(current + neededToday) }));
-                                        }}
-                                        disabled={neededToday <= 0}
-                                        className={`p-1 hover:bg-white/10 rounded transition-colors ${neededToday <= 0
-                                            ? 'text-gray-600 cursor-not-allowed opacity-50'
-                                            : 'text-orange-400 hover:text-orange-300'
-                                            }`}
-                                        title={t('neededToday')}
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                                        </svg>
-                                    </button>
-                                )}
-                                {showCapitalPreservationBtn.current && (
-                                    <button
-                                        onClick={() => {
-                                            const current = parseFloat(inputs.currentSavings) || 0;
-                                            const target = Math.max(0, capitalPreservationNeededToday || 0) || capitalPreservation;
-                                            setInputs(prev => ({ ...prev, currentSavings: Math.round(current + target) }));
-                                        }}
-                                        disabled={(capitalPreservationNeededToday || capitalPreservation) <= 0}
-                                        className={`p-1 hover:bg-white/10 rounded transition-colors ${(capitalPreservationNeededToday || capitalPreservation) <= 0
-                                            ? 'text-gray-600 cursor-not-allowed opacity-50'
-                                            : 'text-emerald-400 hover:text-emerald-300'
-                                            }`}
-                                        title={t('capitalPreservation')}
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                    </button>
-                                )}
-                            </>
+                        icon={<span className="text-green-400">{currency}</span>}
+                        extraLabel={grossWithdrawal ? `(${t('gross')}: ${formatCurrency(grossWithdrawal)})` : null}
+                        disabled={
+                            inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
+                            inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
+                            inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY
                         }
                     />
-                    <InputGroup
-                        label={t('monthlyContribution')}
-                        name="monthlyContribution"
-                        value={inputs.monthlyContribution}
-                        onChange={handleChange}
-                        prefix={currency}
-                        icon={<Coins size={14} />}
-                    />
-                </div>
 
-                <InputGroup
-                    label={t('monthlyNetIncomeDesired')}
-                    name="monthlyNetIncomeDesired"
-                    value={
-                        // For strategies that calculate income, show calculated value
-                        (inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
-                            inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
-                            inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY)
-                            ? Math.round(netWithdrawal || 0)
-                            : inputs.monthlyNetIncomeDesired
-                    }
-                    onChange={handleChange}
-                    prefix={currency}
-                    icon={<span className="text-green-400">{currency}</span>}
-                    extraLabel={grossWithdrawal ? `(${t('gross')}: ${formatCurrency(grossWithdrawal)})` : null}
-                    disabled={
-                        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
-                        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
-                        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY
-                    }
-                />
-
-                <div className="grid grid-cols-2 gap-1">
-                    <InputGroup
-                        label={t('annualReturnRate')}
-                        name="annualReturnRate"
-                        value={inputs.annualReturnRate}
-                        onChange={handleChange}
-                        icon={<BarChart3 size={14} />}
-                    />
-                    <InputGroup
-                        label={t('taxRate')}
-                        name="taxRate"
-                        value={inputs.taxRate}
-                        onChange={handleChange}
-                        icon={<Landmark size={14} />}
-                    />
-                </div>
-
-                {/* Withdrawal Strategy Selector */}
-                <div className={`${containerClass} rounded-xl p-2 space-y-1 mt-2`}>
-                    <div className="flex items-center gap-1 mb-1">
-                        <PiggyBank size={14} className={isLight ? 'text-emerald-600' : 'text-emerald-400'} />
-                        <label className={`text-xs font-medium ${headerLabelClass}`}>{t('withdrawalStrategy')}</label>
-                    </div>
-                    <div className="grid grid-cols-3 gap-1">
-                        {[
-                            { id: WITHDRAWAL_STRATEGIES.FIXED, label: t('withdrawalFixed') },
-                            { id: WITHDRAWAL_STRATEGIES.FOUR_PERCENT, label: t('withdrawalFourPercent') },
-                            { id: WITHDRAWAL_STRATEGIES.PERCENTAGE, label: t('withdrawalPercentage') },
-                            { id: WITHDRAWAL_STRATEGIES.DYNAMIC, label: t('withdrawalDynamic') },
-                            { id: WITHDRAWAL_STRATEGIES.INTEREST_ONLY, label: t('withdrawalInterestOnly') }
-                        ].map(strategy => (
-                            <button
-                                key={strategy.id}
-                                onClick={() => setInputs(prev => ({ ...prev, withdrawalStrategy: strategy.id }))}
-                                className={`px-2 py-1.5 rounded-lg text-[10px] md:text-xs font-medium transition-all ${(inputs.withdrawalStrategy || WITHDRAWAL_STRATEGIES.FIXED) === strategy.id
-                                    ? 'bg-emerald-600 text-white shadow-md'
-                                    : (isLight ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-white/5 text-gray-400 hover:bg-white/10')
-                                    }`}
-                            >
-                                {strategy.label}
-                            </button>
-                        ))}
-                    </div>
-                    <p className={`text-[10px] px-1 ${labelClass}`}>
-                        {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT && t('withdrawalFourPercentDesc')}
-                        {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE && t('withdrawalPercentageDesc')}
-                        {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC && t('withdrawalDynamicDesc')}
-                        {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY && t('withdrawalInterestOnlyDesc')}
-                        {(!inputs.withdrawalStrategy || inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FIXED) && t('withdrawalFixedDesc')}
-                    </p>
-                    {/* Percentage Rate Input (only for percentage strategy) */}
-                    {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE && (
+                    <div className="grid grid-cols-2 gap-1">
                         <InputGroup
-                            label={t('withdrawalPercentageRate')}
-                            name="withdrawalPercentage"
-                            value={inputs.withdrawalPercentage || '4'}
+                            label={t('annualReturnRate')}
+                            name="annualReturnRate"
+                            value={inputs.annualReturnRate}
                             onChange={handleChange}
                             icon={<BarChart3 size={14} />}
                         />
-                    )}
+                        <InputGroup
+                            label={t('taxRate')}
+                            name="taxRate"
+                            value={inputs.taxRate}
+                            onChange={handleChange}
+                            icon={<Landmark size={14} />}
+                        />
+                    </div>
+
+                    {/* Withdrawal Strategy Selector */}
+                    <div className={`${containerClass} rounded-xl p-2 space-y-1 mt-2`}>
+                        <div className="flex items-center gap-1 mb-1">
+                            <PiggyBank size={14} className={isLight ? 'text-emerald-600' : 'text-emerald-400'} />
+                            <label className={`text-xs font-medium ${headerLabelClass}`}>{t('withdrawalStrategy')}</label>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1">
+                            {[
+                                { id: WITHDRAWAL_STRATEGIES.FIXED, label: t('withdrawalFixed') },
+                                { id: WITHDRAWAL_STRATEGIES.FOUR_PERCENT, label: t('withdrawalFourPercent') },
+                                { id: WITHDRAWAL_STRATEGIES.PERCENTAGE, label: t('withdrawalPercentage') },
+                                { id: WITHDRAWAL_STRATEGIES.DYNAMIC, label: t('withdrawalDynamic') },
+                                { id: WITHDRAWAL_STRATEGIES.INTEREST_ONLY, label: t('withdrawalInterestOnly') }
+                            ].map(strategy => (
+                                <button
+                                    key={strategy.id}
+                                    onClick={() => setInputs(prev => ({ ...prev, withdrawalStrategy: strategy.id }))}
+                                    className={`px-2 py-1.5 rounded-lg text-[10px] md:text-xs font-medium transition-all ${(inputs.withdrawalStrategy || WITHDRAWAL_STRATEGIES.FIXED) === strategy.id
+                                        ? 'bg-emerald-600 text-white shadow-md'
+                                        : (isLight ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-white/5 text-gray-400 hover:bg-white/10')
+                                        }`}
+                                >
+                                    {strategy.label}
+                                </button>
+                            ))}
+                        </div>
+                        <p className={`text-[10px] px-1 ${labelClass}`}>
+                            {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT && t('withdrawalFourPercentDesc')}
+                            {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE && t('withdrawalPercentageDesc')}
+                            {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC && t('withdrawalDynamicDesc')}
+                            {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY && t('withdrawalInterestOnlyDesc')}
+                            {(!inputs.withdrawalStrategy || inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FIXED) && t('withdrawalFixedDesc')}
+                        </p>
+                        {/* Percentage Rate Input (only for percentage strategy) */}
+                        {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE && (
+                            <InputGroup
+                                label={t('withdrawalPercentageRate')}
+                                name="withdrawalPercentage"
+                                value={inputs.withdrawalPercentage || '4'}
+                                onChange={handleChange}
+                                icon={<BarChart3 size={14} />}
+                            />
+                        )}
+                    </div>
                 </div>
-            </div>
-        </div >
+            ) : (
+                <div className="animate-in fade-in slide-in-from-right-2 duration-200">
+                    {/* Life Events Timeline */}
+                    <LifeEventsManager
+                        events={inputs.lifeEvents || []}
+                        onChange={(newEvents) => setInputs(prev => ({ ...prev, lifeEvents: newEvents }))}
+                        t={t}
+                        language={language}
+                        currentAge={parseFloat(inputs.currentAge) || 0}
+                        retirementAge={parseFloat(inputs.retirementStartAge) || 67}
+                        retirementEndAge={parseFloat(inputs.retirementEndAge) || 100}
+                        birthDate={inputs.birthdate}
+                        results={results}
+                        setInputs={setInputs}
+                    />
+                </div>
+            )}
+        </div>
+
     );
 }
 

@@ -1,5 +1,5 @@
 
-import { WITHDRAWAL_STRATEGIES } from '../constants';
+import { WITHDRAWAL_STRATEGIES, EVENT_TYPES } from '../constants.js';
 
 /**
  * Validates retirement calculation inputs
@@ -81,6 +81,7 @@ function validateInputs(inputs, t = null) {
  * @param {number} inputs.taxRate (percentage, e.g., 25 for 25%)
  * @param {string} inputs.withdrawalStrategy (optional, default: 'fixed')
  * @param {number} inputs.withdrawalPercentage (optional, for percentage strategy, default: 4)
+ * @param {Array} inputs.lifeEvents (optional, array of life events to apply)
  * @param {Function} t - Translation function (optional)
  * @returns {Object} result
  * @throws {Error} If inputs are invalid
@@ -112,8 +113,42 @@ export function calculateRetirementProjection(inputs, t = null) {
     const withdrawalStrategy = inputs.withdrawalStrategy || WITHDRAWAL_STRATEGIES.FIXED;
     const withdrawalPercentage = parseFloat(inputs.withdrawalPercentage) || 4;
 
-    // Debug: log strategy being used
-    console.log('Calculator using withdrawal strategy:', withdrawalStrategy, 'from inputs:', inputs.withdrawalStrategy);
+    // Get life events (default to empty array if not specified)
+    const lifeEvents = inputs.lifeEvents || [];
+
+    // Helper function to convert event date to month number from current age
+    const getMonthFromDate = (date) => {
+        if (!date) return null;
+        const currentYear = new Date().getFullYear();
+        const currentMonth = new Date().getMonth() + 1;
+        const yearsFromNow = date.year - currentYear;
+        const monthsFromNow = yearsFromNow * 12 + (date.month - currentMonth);
+        return Math.max(0, monthsFromNow); // Don't allow negative months
+    };
+
+    // Helper to check if an event is active at a given month
+    const isEventActive = (event, currentMonth) => {
+        const startMonth = getMonthFromDate(event.startDate);
+        if (startMonth === null || currentMonth < startMonth) return false;
+
+        // If no end date, event is active from start onwards
+        if (!event.endDate) return true;
+
+        // If has end date, check if we're before it
+        // Note: End Date is usually "Exclusive" in our logic loop (removed when current == end)
+        // EXCEPT for this check which is "Inclusive" (<=). 
+        // We need to be careful with this usage.
+        const endMonth = getMonthFromDate(event.endDate);
+        return endMonth === null || currentMonth <= endMonth;
+    };
+
+    // Helper to safely get the monthly value (fallback to amount if monthlyChange is missing)
+    const getMonthlyAmount = (event) => {
+        return event.monthlyChange !== undefined && event.monthlyChange !== null
+            ? event.monthlyChange
+            : (event.amount || 0);
+    };
+
 
     const monthlyRate = annualReturnRate / 100 / 12;
     const taxRateDecimal = taxRate / 100;
@@ -138,22 +173,88 @@ export function calculateRetirementProjection(inputs, t = null) {
         phase: 'accumulation'
     });
 
+    // Track active monthly contribution (can be modified by INCOME_CHANGE events)
+    let activeMonthlyContribution = monthlyContribution;
+
+    // Pre-scan for events active at start (Month 0)
+    lifeEvents.forEach(event => {
+        if (!event.enabled) return;
+        const start = getMonthFromDate(event.startDate);
+        if (start <= 0 && isEventActive(event, 0)) {
+            const amount = getMonthlyAmount(event);
+            if (event.type === EVENT_TYPES.INCOME_CHANGE) {
+                activeMonthlyContribution += amount;
+            } else if (event.type === EVENT_TYPES.EXPENSE_CHANGE) {
+                activeMonthlyContribution -= amount;
+            }
+        }
+    });
+
     for (let i = 1; i <= monthsToRetirement; i++) {
+        currentMonth++;
+
+        // Apply life events for this month
+        lifeEvents.forEach(event => {
+            if (!event.enabled) return; // Skip disabled events
+
+            const eventStartMonth = getMonthFromDate(event.startDate);
+
+            // Check if this is the exact month the event starts
+            if (eventStartMonth === currentMonth) {
+                switch (event.type) {
+                    case EVENT_TYPES.ONE_TIME_INCOME:
+                        balance += event.amount;
+                        totalPrincipal += event.amount;
+                        break;
+
+                    case EVENT_TYPES.ONE_TIME_EXPENSE:
+                        balance -= event.amount;
+                        // Also reduce principal if we're spending saved money
+                        totalPrincipal = Math.max(0, totalPrincipal - event.amount);
+                        break;
+
+                    case EVENT_TYPES.INCOME_CHANGE:
+                        // This modifies monthly contribution going forward
+                        activeMonthlyContribution += getMonthlyAmount(event);
+                        break;
+
+                    case EVENT_TYPES.EXPENSE_CHANGE:
+                        // This reduces monthly contribution capacity going forward
+                        activeMonthlyContribution -= getMonthlyAmount(event);
+                        break;
+                }
+            }
+
+            // Check if recurring event should end this month
+            if (event.endDate) {
+                const eventEndMonth = getMonthFromDate(event.endDate);
+                if (eventEndMonth === currentMonth) {
+                    const amount = getMonthlyAmount(event);
+                    if (event.type === EVENT_TYPES.INCOME_CHANGE) {
+                        activeMonthlyContribution -= amount;
+                    } else if (event.type === EVENT_TYPES.EXPENSE_CHANGE) {
+                        activeMonthlyContribution += amount;
+                    }
+                }
+            }
+        });
+
         // Interest
         const interest = balance * monthlyRate;
         balance += interest;
 
-        // Contribution
-        balance += monthlyContribution;
-        totalPrincipal += monthlyContribution;
+        // Contribution (using active contribution which may have been modified by events)
+        balance += activeMonthlyContribution;
+        totalPrincipal += activeMonthlyContribution;
 
-        currentMonth++;
-        if (i % 12 === 0) { // Record yearly for chart data to keep it clean, or monthly? Let's do monthly but maybe filter for UI
+        if (i % 12 === 0) { // Record yearly for chart data to keep it clean
+
+
             history.push({
                 month: currentMonth,
                 age: currentAge + (i / 12),
                 balance: balance,
-                contribution: monthlyContribution * 12, // Annual contribution
+                contribution: activeMonthlyContribution * 12, // Annual contribution (current rate)
                 withdrawal: 0,
                 accumulatedWithdrawals: 0,
                 phase: 'accumulation'
@@ -181,9 +282,89 @@ export function calculateRetirementProjection(inputs, t = null) {
     const fourPercentMonthly = (balanceAtRetirement * 0.04) / 12;
     // Track the base for dynamic strategy
     let dynamicBaseWithdrawal = monthlyNetIncomeDesired;
+
+    // Effective monthly rate for PV calculations (growth net of tax on interest)
+    const effectiveMonthlyRate = monthlyRate * (1 - taxRateDecimal);
+
+    // Accumulator for Required Capital (NPV of all future needs)
+    let requiredCapitalPV = 0;
+
+    // Track active expense adjustments during retirement
+    let activeExpenseAdjustment = 0;
+    // Track active income adjustments during retirement (e.g. pension)
+    let activeIncomeAdjustment = 0;
+
+    // Pre-scan for EXPENSE and INCOME events active at start of retirement
+    lifeEvents.forEach(event => {
+        if (!event.enabled) return;
+        // Check if active NEXT month (first month of retirement).
+        if (isEventActive(event, monthsToRetirement + 1)) {
+            const monthlyAmount = getMonthlyAmount(event);
+            if (event.type === EVENT_TYPES.EXPENSE_CHANGE) {
+                activeExpenseAdjustment += monthlyAmount;
+            } else if (event.type === EVENT_TYPES.INCOME_CHANGE) {
+                activeIncomeAdjustment += monthlyAmount;
+            }
+        }
+    });
+
     let previousYearReturn = 0;
 
     for (let i = 1; i <= monthsInRetirement; i++) {
+        currentMonth++;
+
+        // Apply life events for this month during retirement
+        lifeEvents.forEach(event => {
+            if (!event.enabled) return; // Skip disabled events
+
+            const eventStartMonth = getMonthFromDate(event.startDate);
+
+            // Check if this is the exact month the event starts
+            if (eventStartMonth === currentMonth) {
+                switch (event.type) {
+                    case EVENT_TYPES.ONE_TIME_INCOME:
+                        retirementBalance += event.amount;
+                        // One-time income reduces the capital needed for this month
+                        // We track this separately for the PV calculation
+                        break;
+
+                    case EVENT_TYPES.ONE_TIME_EXPENSE:
+                        retirementBalance -= event.amount;
+                        // One-time expense increases the need
+                        break;
+
+                    case EVENT_TYPES.INCOME_CHANGE:
+                        // Additional income during retirement (e.g., part-time work, pension)
+                        // Treat as reduction in needed withdrawal
+                        activeIncomeAdjustment += getMonthlyAmount(event);
+                        break;
+
+                    case EVENT_TYPES.EXPENSE_CHANGE:
+                        // Adjust monthly expenses (will affect net withdrawal needed)
+                        activeExpenseAdjustment += getMonthlyAmount(event);
+                        break;
+                }
+            }
+
+            // Check if recurring events should end this month
+            if ((event.type === EVENT_TYPES.INCOME_CHANGE || event.type === EVENT_TYPES.EXPENSE_CHANGE) && event.endDate) {
+                const eventEndMonth = getMonthFromDate(event.endDate);
+                if (eventEndMonth === currentMonth) {
+                    if (event.type === EVENT_TYPES.INCOME_CHANGE) {
+                        // Stop adding this income
+                        activeIncomeAdjustment -= getMonthlyAmount(event);
+                    } else if (event.type === EVENT_TYPES.EXPENSE_CHANGE) {
+                        // Revert the expense change
+                        activeExpenseAdjustment -= getMonthlyAmount(event);
+                    }
+                }
+            }
+
+            // Apply ongoing INCOME_CHANGE during retirement
+            // REMOVED: No longer applying income directly to balance each month.
+            // Instead, it is handled via activeIncomeAdjustment reducing the withdrawal request below.
+        });
+
         const interest = retirementBalance * monthlyRate;
         const tax = interest * taxRateDecimal;
 
@@ -235,6 +416,30 @@ export function calculateRetirementProjection(inputs, t = null) {
                 break;
         }
 
+        // Apply expense adjustments from EXPENSE_CHANGE events
+        netWithdrawal += activeExpenseAdjustment;
+
+        // Apply income adjustments from INCOME_CHANGE events (reduces withdrawal needed)
+        netWithdrawal -= activeIncomeAdjustment;
+
+        // Ensure netWithdrawal doesn't go below zero (i.e. if pension > expenses, we save the excess)
+        // If netWithdrawal is negative, it means we have surplus income.
+        // We should ADD this surplus to the balance.
+        // So, if netWithdrawal is -1000, grossWithdrawal will be -1000 (ignoring tax on negative withdrawal).
+        // Let's refine logical flow:
+
+        if (netWithdrawal < 0) {
+            // Surplus income!
+            // We don't withdraw. We add to balance. 
+            // Tax? Assuming surplus income is already net or tax handled elsewhere? 
+            // Using simple logic: Add absolute surplus to retirementBalance.
+            // Set grossWithdrawal to 0 because we aren't taking money out.
+            const surplusIncome = Math.abs(netWithdrawal);
+            retirementBalance += surplusIncome;
+            netWithdrawal = 0;
+            // Note: Depending on rules, this surplus might be taxed if it's investment income, but here we treat it as cash flow.
+        }
+
         let grossWithdrawal = netWithdrawal + tax;
 
         if (i === 1) {
@@ -253,7 +458,37 @@ export function calculateRetirementProjection(inputs, t = null) {
         retirementBalance = retirementBalance + interest - grossWithdrawal;
         accumulatedWithdrawals += grossWithdrawal;
 
-        currentMonth++;
+        // --- Required Capital Accumulation (NPV) ---
+        // Calculate what we NEEDED this month to satisfy the goal.
+        // Base Need: Monthly Net Income Desired
+        // + Recurring Expenses (activeExpenseAdjustment)
+        // - Recurring Income (activeIncomeAdjustment)
+        let monthlyNeed = monthlyNetIncomeDesired + activeExpenseAdjustment - activeIncomeAdjustment;
+
+        // Apply One-Time Events for this month to the Need
+        // We need to find them again or track them? 
+        // Tracking them in the loop is cleaner but let's just re-scan for ONE-TIME acts currentMonth
+        // Optimization: checking inside the loop above is better but invasive to flow.
+        // Let's safe-scan here since simulation is fast.
+
+        lifeEvents.forEach(e => {
+            if (!e.enabled) return;
+            const startM = getMonthFromDate(e.startDate);
+            if (startM === currentMonth) {
+                if (e.type === EVENT_TYPES.ONE_TIME_EXPENSE) monthlyNeed += e.amount;
+                if (e.type === EVENT_TYPES.ONE_TIME_INCOME) monthlyNeed -= e.amount;
+            }
+        });
+
+        // Discount back to retirement start
+        // Formula: PV = PMT / (1 + r)^n
+        // If effectiveRate is 0, just add.
+        if (effectiveMonthlyRate !== 0) {
+            requiredCapitalPV += monthlyNeed / Math.pow(1 + effectiveMonthlyRate, i);
+        } else {
+            requiredCapitalPV += monthlyNeed;
+        }
+
         if (i % 12 === 0 || retirementBalance <= 0) {
             history.push({
                 month: currentMonth,
@@ -269,28 +504,14 @@ export function calculateRetirementProjection(inputs, t = null) {
 
         if (retirementBalance <= 0) {
             retirementBalance = 0;
-            break;
+            // Do NOT break here. We must continue to calculate requiredCapitalPV for the full duration.
+            // break; 
         }
     }
 
     // --- Phase 3: Required Capital Calculation ---
-    // We need to find the starting capital (at retirement age) that results in 0 balance at end age.
-    // Using the new logic:
-    // Balance(i) = Balance(i-1) * (1 + Rate) - (Net + Balance(i-1)*Rate*TaxRate)
-    // Balance(i) = Balance(i-1) * (1 + Rate - Rate*TaxRate) - Net
-    // Balance(i) = Balance(i-1) * (1 + Rate * (1 - TaxRate)) - Net
-    // This is a standard annuity formula with an effective rate = Rate * (1 - TaxRate).
-
-    const effectiveMonthlyRate = monthlyRate * (1 - taxRateDecimal);
-
-    // PV of Annuity Formula: PV = PMT * (1 - (1 + r)^-n) / r
-    // FIXED: Use the actual net withdrawal from the selected strategy, not just monthlyNetIncomeDesired
-    let requiredCapitalAtRetirement = 0;
-    if (effectiveMonthlyRate > 0) {
-        requiredCapitalAtRetirement = initialNetWithdrawal * (1 - Math.pow(1 + effectiveMonthlyRate, -monthsInRetirement)) / effectiveMonthlyRate;
-    } else {
-        requiredCapitalAtRetirement = initialNetWithdrawal * monthsInRetirement;
-    }
+    // We have calculated the NPV of the actual stream of desired needs in the loop above.
+    const requiredCapitalAtRetirement = requiredCapitalPV;
 
     // --- Capital Preservation Calculation ---
     // Required Capital to preserve principal over the retirement period.

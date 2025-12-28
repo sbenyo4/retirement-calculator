@@ -14,7 +14,8 @@ export const DEFAULT_INPUTS = {
     monthlyNetIncomeDesired: 4000,
     annualReturnRate: 5,
     taxRate: 25,
-    birthdate: ''
+    birthdate: '',
+    lifeEvents: []
 };
 
 /**
@@ -56,6 +57,14 @@ export const WITHDRAWAL_STRATEGIES = {
     PERCENTAGE: 'percentage', // Fixed percentage of current balance
     DYNAMIC: 'dynamic',       // Adjust based on market conditions
     INTEREST_ONLY: 'interestOnly' // Withdraw only the monthly interest
+};
+
+// Life Events Types
+export const EVENT_TYPES = {
+    ONE_TIME_INCOME: 'oneTimeIncome',
+    ONE_TIME_EXPENSE: 'oneTimeExpense',
+    INCOME_CHANGE: 'incomeChange',
+    EXPENSE_CHANGE: 'expenseChange'
 };
 
 /**
