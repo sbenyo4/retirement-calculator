@@ -498,7 +498,7 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
 
                                 {/* Sensitivity Toggles - Disabled if AI is first in comparison */}
                                 {orderedSelections[0] !== 'ai' && (
-                                    <>
+                                    <div className="flex flex-wrap gap-x-4 gap-y-2 mt-2 md:mt-0">
                                         <label className="flex items-center gap-2 cursor-pointer group">
                                             <div className="relative">
                                                 <input
@@ -509,7 +509,7 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                                                 />
                                                 <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
                                             </div>
-                                            <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors">
+                                            <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors whitespace-nowrap">
                                                 {t('interestSensitivity')}
                                             </span>
                                         </label>
@@ -525,7 +525,7 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                                                 />
                                                 <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
                                             </div>
-                                            <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors">
+                                            <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors whitespace-nowrap">
                                                 {t('incomeSensitivity')}
                                             </span>
                                         </label>
@@ -541,11 +541,11 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                                                 />
                                                 <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
                                             </div>
-                                            <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors">
+                                            <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors whitespace-nowrap">
                                                 {t('ageSensitivity')}
                                             </span>
                                         </label>
-                                    </>
+                                    </div>
                                 )}
                             </div>
 

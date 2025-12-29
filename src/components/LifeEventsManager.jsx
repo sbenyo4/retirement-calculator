@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useThemeClasses } from '../hooks/useThemeClasses';
 import { EVENT_TYPES } from '../constants';
 import { Calendar, Plus, Edit2, Trash2, ToggleLeft, ToggleRight, TrendingUp, TrendingDown, DollarSign, BarChart3, ChevronUp, ChevronDown } from 'lucide-react';
@@ -20,29 +20,86 @@ export default function LifeEventsManager({
     retirementAge,
     retirementEndAge,
     birthDate,
-    results, // Full results for milestone tooltips
-    setInputs // State setter for age sliders
+    results,
+    setInputs,
+    calculationMode,
+    simulationType
 }) {
     const classes = useThemeClasses();
     const [showAddModal, setShowAddModal] = useState(false);
     const [showTimelineModal, setShowTimelineModal] = useState(false);
     const [editingEvent, setEditingEvent] = useState(null);
     const [viewOffset, setViewOffset] = useState(0);
-    const ITEMS_PER_VIEW = 6;
+    const [itemsPerView, setItemsPerView] = useState(6);
+    const listContainerRef = useRef(null);
 
     // Reset offset when events change length significantly (optional safety)
-    // useEffect(() => {
-    //     if (viewOffset > Math.max(0, events.length - ITEMS_PER_VIEW)) {
-    //         setViewOffset(Math.max(0, events.length - ITEMS_PER_VIEW));
-    //     }
-    // }, [events.length]);
+    useEffect(() => {
+        if (viewOffset > Math.max(0, events.length - itemsPerView)) {
+            setViewOffset(Math.max(0, events.length - itemsPerView));
+        }
+    }, [events.length, itemsPerView]);
+
+    const calculateItems = () => {
+        const container = listContainerRef.current;
+        if (!container) return;
+
+        const rect = container.getBoundingClientRect();
+        // Calculate available space from the container's top to the bottom of the viewport
+        // Minimized buffer (4px)
+        const viewportForList = window.innerHeight - rect.top - 4;
+        const effectiveHeight = Math.max(100, viewportForList);
+
+        const ITEM_HEIGHT = 48; // Compacted: py-1.5 (6+6) + 2 lines(32) + border(2) + gap(2) = ~48px
+        const BUTTON_SPACE = 44; // 2 buttons * 22px (slightly tighter reservation)
+
+        // 1. Check if we can fit ALL events without buttons
+        const potentialCountNoButtons = Math.floor(effectiveHeight / ITEM_HEIGHT);
+
+        if (potentialCountNoButtons >= events.length) {
+            setItemsPerView(events.length);
+            return;
+        }
+
+        const availableHeight = effectiveHeight - BUTTON_SPACE;
+        const count = Math.max(1, Math.floor(availableHeight / ITEM_HEIGHT));
+
+        setItemsPerView(count);
+    };
+
+    // Calculate on resize and strict mode changes
+    useEffect(() => {
+        if (!listContainerRef.current) return;
+
+        const observer = new ResizeObserver(calculateItems);
+        observer.observe(listContainerRef.current);
+        window.addEventListener('resize', calculateItems);
+
+        // Initial calculation
+        calculateItems();
+
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('resize', calculateItems);
+        };
+    }, []);
+
+    // Recalculate when layout-shifting props change, with a delay for animations
+    useEffect(() => {
+        // Run immediately
+        calculateItems();
+
+        // And run again after animation (approx 300ms)
+        const timer = setTimeout(calculateItems, 350);
+        return () => clearTimeout(timer);
+    }, [calculationMode, simulationType]);
 
     const handleScrollUp = () => {
         setViewOffset(prev => Math.max(0, prev - 1));
     };
 
     const handleScrollDown = () => {
-        setViewOffset(prev => Math.min(Math.max(0, events.length - ITEMS_PER_VIEW), prev + 1));
+        setViewOffset(prev => Math.min(Math.max(0, events.length - itemsPerView), prev + 1));
     };
 
     const handleAddEvent = (eventData) => {
@@ -156,9 +213,9 @@ export default function LifeEventsManager({
     };
 
     return (
-        <div className="space-y-2 mt-2">
+        <div className="flex flex-col h-full space-y-2 mt-2">
             {/* Header */}
-            <div className={`${classes.container} rounded-xl p-2`}>
+            <div className={`${classes.container} rounded-xl p-2 flex-none`}>
                 <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                         <Calendar className={`w-4 h-4 ${classes.icon}`} />
@@ -166,7 +223,7 @@ export default function LifeEventsManager({
                             {t ? t('lifeEventsTimeline') : 'Life Events Timeline'}
                             {events.length > 0 && (
                                 <span dir="ltr" className="mx-2 px-2 py-0.5 bg-white/10 rounded-full text-[10px] text-gray-300 font-normal">
-                                    {viewOffset + 1}-{Math.min(events.length, viewOffset + ITEMS_PER_VIEW)} / {events.length}
+                                    {viewOffset + 1}-{Math.min(events.length, viewOffset + itemsPerView)} / {events.length}
                                 </span>
                             )}
                         </label>
@@ -175,7 +232,7 @@ export default function LifeEventsManager({
                         <button
                             onClick={() => setShowTimelineModal(true)}
                             className={`${classes.buttonSecondary} rounded px-2 py-1 text-xs flex items-center gap-1 whitespace-nowrap`}
-                            title={t ? t('viewTimeline') : 'View Timeline'}
+                            title={t ? t('viewTimeline') : 'Timeline'}
                         >
                             <BarChart3 className="w-3 h-3" />
                             <span className="hidden sm:inline">{t ? t('viewTimeline') : 'Timeline'}</span>
@@ -190,96 +247,103 @@ export default function LifeEventsManager({
                     </div>
                 </div>
 
-                {/* Events List */}
-                {events.length === 0 ? (
-                    <div className={`text-center py-4 ${classes.label} text-xs`}>
-                        {t ? t('noEventsYet') : 'No life events added yet. Click "Add" to create one.'}
-                    </div>
-                ) : (
-                    <div className="space-y-1 notranslate" translate="no">
-                        {/* Up Arrow */}
-                        {events.length > ITEMS_PER_VIEW && (
-                            <button
-                                onClick={handleScrollUp}
-                                disabled={viewOffset === 0}
-                                className={`w-full flex items-center justify-center p-1 rounded transition-colors ${viewOffset === 0
-                                    ? 'invisible'
-                                    : 'text-blue-400 hover:bg-white/10'
-                                    }`}
-                            >
-                                <ChevronUp size={16} />
-                            </button>
-                        )}
+                {/* Events List Container */}
+                <div ref={listContainerRef} className="flex-1 min-h-0">
+                    {events.length === 0 ? (
+                        <div className={`text-center py-4 ${classes.label} text-xs`}>
+                            {t ? t('noEventsYet') : 'No life events added yet. Click "Add" to create one.'}
+                        </div>
+                    ) : (
+                        <div className="space-y-0.5 notranslate h-full flex flex-col" translate="no">
+                            {/* Up Arrow - Always render but hidden if needed to preserve layout if we want, OR conditional */}
+                            {/* To keep height calculations stable, it's better if they exist or we account for them. */}
+                            {/* Since we subtracted BUTTON_SPACE, we can render them. */}
 
-                        {events.slice(viewOffset, viewOffset + ITEMS_PER_VIEW).map(event => (
-                            <div
-                                key={event.id}
-                                className={`${classes.container} border ${event.enabled ? classes.border : 'border-gray-600'} rounded-lg p-2 ${!event.enabled ? 'opacity-50' : ''} select-none`}
-                            >
-                                <div className="flex items-start justify-between gap-2">
-                                    <div className="flex items-start gap-2 flex-1 min-w-0">
-                                        {getEventIcon(event.type)}
-                                        <div className="flex-1 min-w-0">
-                                            <div className={`text-xs font-medium ${classes.headerLabel} truncate`}>
-                                                {event.description || getEventTypeLabel(event.type)}
-                                                {event.endDate && formatDuration(calculateDuration(event.startDate, event.endDate))}
+                            {events.length > itemsPerView && (
+                                <button
+                                    onClick={handleScrollUp}
+                                    disabled={viewOffset === 0}
+                                    className={`w-full flex-none flex items-center justify-center p-1 rounded transition-colors ${viewOffset === 0
+                                        ? 'invisible'
+                                        : 'text-blue-400 hover:bg-white/10'
+                                        }`}
+                                >
+                                    <ChevronUp size={16} />
+                                </button>
+                            )}
+
+                            <div className="flex-1 space-y-0.5 min-h-0">
+                                {events.slice(viewOffset, viewOffset + itemsPerView).map(event => (
+                                    <div
+                                        key={event.id}
+                                        className={`${classes.container} border ${event.enabled ? classes.border : 'border-gray-600'} rounded-lg px-2 py-1.5 ${!event.enabled ? 'opacity-50' : ''} select-none`}
+                                    >
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="flex items-start gap-2 flex-1 min-w-0">
+                                                {getEventIcon(event.type)}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className={`text-xs font-medium ${classes.headerLabel} truncate`}>
+                                                        {event.description || getEventTypeLabel(event.type)}
+                                                        {event.endDate && formatDuration(calculateDuration(event.startDate, event.endDate))}
+                                                    </div>
+                                                    <div className={`text-xs ${classes.label} flex flex-wrap items-center gap-1`}>
+                                                        <span>{formatDate(event.startDate)}</span>
+                                                        {event.endDate && (
+                                                            <>
+                                                                <span>→</span>
+                                                                <span>{formatDate(event.endDate)}</span>
+                                                            </>
+                                                        )}
+                                                        <span className="text-yellow-400 font-medium ml-1">
+                                                            {formatAmount(event)}
+                                                        </span>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div className={`text-xs ${classes.label} flex flex-wrap items-center gap-1`}>
-                                                <span>{formatDate(event.startDate)}</span>
-                                                {event.endDate && (
-                                                    <>
-                                                        <span>→</span>
-                                                        <span>{formatDate(event.endDate)}</span>
-                                                    </>
-                                                )}
-                                                <span className="text-yellow-400 font-medium ml-1">
-                                                    {formatAmount(event)}
-                                                </span>
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={() => handleToggleEvent(event.id)}
+                                                    className={`p-1 rounded hover:bg-white/10 ${classes.icon}`}
+                                                    title={event.enabled ? (t ? t('disable') : 'Disable') : (t ? t('enable') : 'Enable')}
+                                                >
+                                                    {event.enabled ? <ToggleRight className="w-4 h-4 text-green-500" /> : <ToggleLeft className="w-4 h-4" />}
+                                                </button>
+                                                <button
+                                                    onClick={() => setEditingEvent(event)}
+                                                    className={`p-1 rounded hover:bg-white/10 ${classes.icon}`}
+                                                    title={t ? t('edit') : 'Edit'}
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteEvent(event.id)}
+                                                    className={`p-1 rounded hover:bg-white/10 text-red-500`}
+                                                    title={t ? t('delete') : 'Delete'}
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-1">
-                                        <button
-                                            onClick={() => handleToggleEvent(event.id)}
-                                            className={`p-1 rounded hover:bg-white/10 ${classes.icon}`}
-                                            title={event.enabled ? (t ? t('disable') : 'Disable') : (t ? t('enable') : 'Enable')}
-                                        >
-                                            {event.enabled ? <ToggleRight className="w-4 h-4 text-green-500" /> : <ToggleLeft className="w-4 h-4" />}
-                                        </button>
-                                        <button
-                                            onClick={() => setEditingEvent(event)}
-                                            className={`p-1 rounded hover:bg-white/10 ${classes.icon}`}
-                                            title={t ? t('edit') : 'Edit'}
-                                        >
-                                            <Edit2 className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onClick={() => handleDeleteEvent(event.id)}
-                                            className={`p-1 rounded hover:bg-white/10 text-red-500`}
-                                            title={t ? t('delete') : 'Delete'}
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </div>
+                                ))}
                             </div>
-                        ))}
 
-                        {/* Down Arrow */}
-                        {events.length > ITEMS_PER_VIEW && (
-                            <button
-                                onClick={handleScrollDown}
-                                disabled={viewOffset + ITEMS_PER_VIEW >= events.length}
-                                className={`w-full flex items-center justify-center p-1 rounded transition-colors ${viewOffset + ITEMS_PER_VIEW >= events.length
-                                    ? 'invisible'
-                                    : 'text-blue-400 hover:bg-white/10'
-                                    }`}
-                            >
-                                <ChevronDown size={16} />
-                            </button>
-                        )}
-                    </div>
-                )}
+                            {/* Down Arrow */}
+                            {events.length > itemsPerView && (
+                                <button
+                                    onClick={handleScrollDown}
+                                    disabled={viewOffset + itemsPerView >= events.length}
+                                    className={`w-full flex-none flex items-center justify-center p-1 rounded transition-colors ${viewOffset + itemsPerView >= events.length
+                                        ? 'invisible'
+                                        : 'text-blue-400 hover:bg-white/10'
+                                        }`}
+                                >
+                                    <ChevronDown size={16} />
+                                </button>
+                            )}
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Timeline Modal */}

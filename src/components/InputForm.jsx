@@ -169,7 +169,7 @@ export default function InputForm({
     const endYear = getProjectedYear(inputs.retirementEndAge);
 
     return (
-        <div>
+        <div className="flex flex-col flex-1 min-h-0">
             {/* Calculation Mode Selector */}
             <div className="mb-1 space-y-2">
                 <div className="flex items-center gap-2 mb-1">
@@ -443,7 +443,7 @@ export default function InputForm({
             </div>
 
             {activeView === 'parameters' ? (
-                <div className="space-y-1 animate-in fade-in slide-in-from-left-2 duration-200">
+                <div className="space-y-1 animate-in fade-in slide-in-from-left-2 duration-200 flex-1 overflow-y-auto">
                     <div className="grid grid-cols-2 gap-1">
                         <InputGroup
                             label={t('birthdate')}
@@ -629,7 +629,7 @@ export default function InputForm({
                     </div>
                 </div>
             ) : (
-                <div className="animate-in fade-in slide-in-from-right-2 duration-200">
+                <div className="animate-in fade-in slide-in-from-right-2 duration-200 flex-1 flex flex-col min-h-0">
                     {/* Life Events Timeline */}
                     <LifeEventsManager
                         events={inputs.lifeEvents || []}
@@ -642,6 +642,8 @@ export default function InputForm({
                         birthDate={inputs.birthdate}
                         results={results}
                         setInputs={setInputs}
+                        calculationMode={calculationMode}
+                        simulationType={simulationType}
                     />
                 </div>
             )}

@@ -402,7 +402,7 @@ function MainApp() {
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          <div className="lg:col-span-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 shadow-xl h-fit relative z-20">
+          <div className="lg:col-span-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 shadow-xl flex flex-col relative z-20">
             <ProfileManager
               currentInputs={inputs}
               onLoad={setInputs}
