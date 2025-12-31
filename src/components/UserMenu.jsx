@@ -1,8 +1,11 @@
 import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 export function UserMenu({ t }) {
     const { currentUser, logout } = useAuth();
+    const { theme } = useTheme();
+    const isLight = theme === 'light';
     const [error, setError] = React.useState('');
 
     async function handleLogout() {
@@ -20,7 +23,7 @@ export function UserMenu({ t }) {
             {error && <span className="text-red-400 text-sm">{error}</span>}
 
             {currentUser && (
-                <div className="flex items-center gap-3 bg-white/10 px-3 py-1.5 rounded-full border border-white/10">
+                <div className={`flex items-center gap-3 px-3 py-1.5 rounded-full border ${isLight ? 'bg-white border-slate-300 shadow-sm' : 'bg-white/10 border-white/10'}`}>
                     {currentUser.photoURL ? (
                         <img
                             src={currentUser.photoURL}
@@ -33,8 +36,8 @@ export function UserMenu({ t }) {
                         </div>
                     )}
                     <div className="hidden md:block text-sm">
-                        <p className="text-white font-medium leading-none">{currentUser.displayName}</p>
-                        <p className="text-blue-200 text-xs">{currentUser.email}</p>
+                        <p className={`font-medium leading-none ${isLight ? 'text-slate-900' : 'text-white'}`}>{currentUser.displayName}</p>
+                        <p className={`text-xs ${isLight ? 'text-blue-600' : 'text-blue-200'}`}>{currentUser.email}</p>
                     </div>
                     <button
                         onClick={handleLogout}

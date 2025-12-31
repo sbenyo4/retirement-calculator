@@ -4,11 +4,14 @@ import { createPortal } from 'react-dom';
 import { Coffee, Car, Plane, Ticket, ShoppingCart, Beer, X, Rocket } from 'lucide-react';
 
 export function InflationButton({ onClick, t }) {
+    const { theme } = useTheme();
+    const isLight = theme === 'light';
+
     return (
         <button
             onClick={onClick}
             title={t('inflationRealityCheckTitle')}
-            className="flex items-center gap-1 md:gap-1.5 px-2 md:px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-gradient-to-r from-rose-500/20 to-pink-500/20 border border-rose-500/30 text-rose-200 hover:from-rose-500/30 hover:to-pink-500/30"
+            className={`flex items-center gap-1 md:gap-1.5 px-2 md:px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${isLight ? 'bg-rose-100 border-rose-300 text-rose-800 hover:bg-rose-200' : 'bg-gradient-to-r from-rose-500/20 to-pink-500/20 border-rose-500/30 text-rose-200 hover:from-rose-500/30 hover:to-pink-500/30'}`}
         >
             <Rocket size={14} />
             <span className="hidden md:inline">{t('inflationBtn')}</span>
@@ -111,11 +114,17 @@ export function InflationModal({ isOpen, onClose, t, language }) {
     if (!isOpen) return null;
 
     return createPortal(
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" dir={isRTL ? 'rtl' : 'ltr'}>
-            <div className={`relative w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl animate-in zoom-in-95 duration-200 ${isLight ? 'bg-white border-slate-300 text-slate-800' : 'bg-slate-900 border-white/10 text-white'}`}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200" dir={isRTL ? 'rtl' : 'ltr'}>
+            <div className={`relative w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl animate-in zoom-in-95 duration-200 ${isLight ? 'bg-white border-slate-300 text-slate-800' : 'border-white/30 text-white'}`}>
+                {!isLight && (
+                    <>
+                        <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" />
+                        <div className="absolute inset-0 bg-white/10" />
+                    </>
+                )}
 
                 {/* Header */}
-                <div className={`flex items-center justify-between p-4 border-b shrink-0 ${isLight ? 'border-slate-300' : 'border-white/10'}`}>
+                <div className={`flex items-center justify-between p-4 border-b shrink-0 relative z-10 ${isLight ? 'border-slate-300' : 'border-white/10'}`}>
                     <div>
                         <h2 className="text-xl font-bold flex items-center gap-2">
                             <span>🚀</span>
@@ -131,7 +140,7 @@ export function InflationModal({ isOpen, onClose, t, language }) {
                 </div>
 
                 {/* Controls */}
-                <div className={`px-6 py-4 border-b shrink-0 flex flex-col md:flex-row gap-8 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-800/50 border-white/5'}`}>
+                <div className={`px-6 py-4 border-b shrink-0 flex flex-col md:flex-row gap-8 relative z-10 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-800/50 border-white/5'}`}>
 
                     {/* Rate Slider */}
                     <div className="flex-1 space-y-2">
@@ -177,7 +186,7 @@ export function InflationModal({ isOpen, onClose, t, language }) {
                 </div>
 
                 {/* Grid */}
-                <div className="p-6 overflow-y-auto">
+                <div className="p-6 overflow-y-auto relative z-10">
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                         {projectedItems.map((item) => (
                             <div

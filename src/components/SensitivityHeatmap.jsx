@@ -5,11 +5,14 @@ import { X, ExternalLink, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Rot
 import { createPortal } from 'react-dom';
 
 export function SensitivityHeatmapButton({ onClick, t }) {
+    const { theme } = useTheme();
+    const isLight = theme === 'light';
+
     return (
         <button
             onClick={onClick}
             title={t('sensitivityHeatmapBtn') || 'Heatmap'}
-            className="flex items-center gap-1 md:gap-1.5 px-2 md:px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-gradient-to-r from-orange-500/20 to-red-500/20 border border-orange-500/30 text-orange-200 hover:from-orange-500/30 hover:to-red-500/30"
+            className={`flex items-center gap-1 md:gap-1.5 px-2 md:px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${isLight ? 'bg-orange-100 border-orange-300 text-orange-800 hover:bg-orange-200' : 'bg-gradient-to-r from-orange-500/20 to-red-500/20 border-orange-500/30 text-orange-200 hover:from-orange-500/30 hover:to-red-500/30'}`}
         >
             <span>🔥</span>
             <span className="hidden md:inline">{t('sensitivityHeatmapBtn') || 'Heatmap'}</span>
@@ -45,11 +48,17 @@ export function SensitivityHeatmapModal({ isOpen, onClose, inputs, t, language }
     };
 
     return createPortal(
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" dir={isRTL ? 'rtl' : 'ltr'}>
-            <div className={`relative w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl animate-in zoom-in-95 duration-200 ${isLight ? 'bg-white border-slate-300 text-slate-800' : 'bg-slate-900 border-white/10 text-white'}`}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200" dir={isRTL ? 'rtl' : 'ltr'}>
+            <div className={`relative w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl animate-in zoom-in-95 duration-200 ${isLight ? 'bg-white border-slate-300 text-slate-800' : 'border-white/30 text-white'}`}>
+                {!isLight && (
+                    <>
+                        <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" />
+                        <div className="absolute inset-0 bg-white/10" />
+                    </>
+                )}
 
                 {/* Header */}
-                <div className={`flex items-center justify-between p-3 border-b shrink-0 ${isLight ? 'border-slate-300' : 'border-white/10'}`}>
+                <div className={`flex items-center justify-between p-3 border-b shrink-0 relative z-10 ${isLight ? 'border-slate-300' : 'border-white/10'}`}>
                     <div>
                         <h2 className="text-lg font-bold flex items-center gap-2">
                             <span>🔥</span>
@@ -65,7 +74,7 @@ export function SensitivityHeatmapModal({ isOpen, onClose, inputs, t, language }
                 </div>
 
                 {/* Scenarios Controls (Sliders) */}
-                <div className={`px-4 py-3 border-b shrink-0 flex flex-col md:flex-row gap-4 md:items-center ${isLight ? 'bg-slate-100/50 border-slate-200' : 'bg-slate-800/50 border-white/5'}`}>
+                <div className={`px-4 py-3 border-b shrink-0 flex flex-col md:flex-row gap-4 md:items-center relative z-10 ${isLight ? 'bg-slate-100/50 border-slate-200' : 'bg-slate-800/50 border-white/5'}`}>
                     <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold whitespace-nowrap">{t('heatmapScenarioControls')}:</span>
                     </div>
@@ -131,7 +140,7 @@ export function SensitivityHeatmapModal({ isOpen, onClose, inputs, t, language }
                 </div>
 
                 {/* Content */}
-                <div className="p-2 md:p-4 overflow-y-auto flex-1 min-h-0">
+                <div className="p-2 md:p-4 overflow-y-auto flex-1 min-h-0 relative z-10">
                     <SensitivityHeatmapGrid
                         inputs={localInputs}
                         originalInputs={inputs}

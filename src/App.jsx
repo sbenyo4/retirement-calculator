@@ -8,7 +8,7 @@ import { getAvailableModels } from './config/ai-models';
 import { calculateSimulation, SIMULATION_TYPES } from './utils/simulation-calculator';
 import { translations } from './utils/translations';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { ThemeProvider } from './contexts/ThemeContext';
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { UserMenu } from './components/UserMenu';
 import { ThemeToggle } from './components/ThemeToggle';
 import { LoginPage } from './components/LoginPage';
@@ -120,6 +120,7 @@ function App() {
 
 function MainApp() {
   const { currentUser } = useAuth();
+  const { theme } = useTheme();
   const [language, setLanguage] = useState('he');
   // Wrap t in useCallback to prevent it from changing on every render
   const t = React.useCallback((key) => translations[language][key] || key, [language]);
@@ -289,10 +290,18 @@ function MainApp() {
     setAiInputsChanged(true);
   }, [inputs, settings.aiProvider, settings.aiModel, settings.apiKeyOverride]);
 
-  // Sync selectedProfileIds with available profiles (cleanup deleted profiles)
+  // Sync selected selectedProfileIds with available profiles (cleanup deleted profiles)
   useEffect(() => {
     setSelectedProfileIds(prev => prev.filter(id => profiles.some(p => p.id === id)));
   }, [profiles]);
+
+  // AI Insights Persistence (Lifted State)
+  const [aiInsightsData, setAiInsightsData] = useState(null);
+
+  // Clear AI Insights when inputs change
+  useEffect(() => {
+    setAiInsightsData(null);
+  }, [memoizedDebouncedInputs]);
 
   // Calculate results for selected profiles - memoized for performance
   const profileResults = useMemo(() => {
@@ -371,14 +380,14 @@ function MainApp() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-blue-900 p-2 md:p-4" dir={translations[language].dir}>
+    <div className={`min-h-screen ${theme === 'light' ? 'bg-slate-100' : 'bg-gradient-to-br from-gray-900 to-blue-900'} p-2 md:p-4`} dir={translations[language].dir}>
       <div className="max-w-7xl mx-auto">
         <header className="mb-4 flex flex-col md:flex-row justify-between items-center gap-4">
           <div>
-            <h1 className="text-4xl font-bold text-white mb-2 tracking-tight">
+            <h1 className={`text-4xl font-bold mb-2 tracking-tight ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
               {t('appTitle')}
             </h1>
-            <p className="text-blue-200 text-lg">
+            <p className={`text-lg ${theme === 'light' ? 'text-blue-600' : 'text-blue-200'}`}>
               {t('appSubtitle')}
             </p>
           </div>
@@ -387,14 +396,14 @@ function MainApp() {
             <ThemeToggle t={t} />
             <button
               onClick={() => setShowModelsManager(true)}
-              className="bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-lg backdrop-blur-sm transition-colors text-sm h-10"
+              className={`px-3 py-2 rounded-lg backdrop-blur-sm transition-colors text-sm h-10 ${theme === 'light' ? 'bg-white border border-gray-200 text-slate-700 hover:bg-gray-50 shadow-sm' : 'bg-white/10 hover:bg-white/20 text-white'}`}
               title={t('manageModels')}
             >
               <Settings size={18} />
             </button>
             <button
               onClick={toggleLanguage}
-              className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg backdrop-blur-sm transition-colors font-medium h-10"
+              className={`px-4 py-2 rounded-lg backdrop-blur-sm transition-colors font-medium h-10 ${theme === 'light' ? 'bg-white border border-gray-200 text-slate-700 hover:bg-gray-50 shadow-sm' : 'bg-white/10 hover:bg-white/20 text-white'}`}
             >
               {language === 'en' ? '🇮🇱 Hebrew' : '🇺🇸 English'}
             </button>
@@ -483,6 +492,9 @@ function MainApp() {
 
                   // Settings Props
                   calculationMode={settings.calculationMode}
+                  aiProvider={settings.aiProvider}
+                  aiModel={settings.aiModel}
+                  apiKeyOverride={settings.apiKeyOverride}
                   aiResults={aiResults}
                   simulationResults={simulationResults}
                   aiLoading={aiLoading}
@@ -499,7 +511,12 @@ function MainApp() {
                   showIncomeSensitivity={showIncomeSensitivity}
                   setShowIncomeSensitivity={setShowIncomeSensitivity}
                   showAgeSensitivity={showAgeSensitivity}
+
                   setShowAgeSensitivity={setShowAgeSensitivity}
+
+                  // AI Insights Props (Lifted State)
+                  aiInsightsData={aiInsightsData}
+                  setAiInsightsData={setAiInsightsData}
                 />
               )}
             </ErrorBoundary>

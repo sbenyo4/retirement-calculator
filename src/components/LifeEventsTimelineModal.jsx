@@ -382,13 +382,19 @@ export default function LifeEventsTimelineModal({
     if (!isOpen) return null;
 
     return ReactDOM.createPortal(
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999]" onClick={onClose} style={{ cursor: 'default' }}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose} style={{ cursor: 'default' }}>
             <div
-                className={`w-[95vw] max-w-6xl h-auto max-h-[90vh] min-h-[480px] rounded-2xl shadow-2xl flex flex-col select-none ${isLight ? 'bg-white' : 'bg-gray-900 border border-white/10'}`}
+                className={`w-[95vw] max-w-6xl h-auto max-h-[90vh] min-h-[480px] rounded-2xl shadow-2xl flex flex-col select-none relative overflow-hidden ${isLight ? 'bg-white' : 'border border-white/30'}`}
                 onClick={e => e.stopPropagation()}
                 dir={language === 'he' ? 'rtl' : 'ltr'}
                 style={{ cursor: 'default' }}
             >
+                {!isLight && (
+                    <>
+                        <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" />
+                        <div className="absolute inset-0 bg-white/10" />
+                    </>
+                )}
                 <div className={`p-4 border-b ${isLight ? 'border-gray-200' : 'border-white/10'} bg-transparent shrink-0 relative`}>
                     {/* Action Buttons - Absolutely Positioned to prevent overflow clipping */}
                     <div className={`absolute top-4 ${language === 'he' ? 'left-4' : 'right-4'} flex items-center gap-2 z-10`}>

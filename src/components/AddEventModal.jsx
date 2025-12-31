@@ -144,16 +144,16 @@ export default function AddEventModal({
     };
 
     return (
-        <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-[99999] p-4" onClick={onCancel}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999] p-4" onClick={onCancel}>
             <div
-                className={`rounded-2xl w-full max-w-lg h-[600px] shadow-xl flex flex-col ${isLight ? 'bg-white border border-gray-200' : 'relative border border-white/40'}`}
+                className={`rounded-2xl w-full max-w-lg h-[600px] shadow-xl flex flex-col relative overflow-hidden ${isLight ? 'bg-white border border-gray-200' : 'border border-white/30'}`}
                 onClick={(e) => e.stopPropagation()}
             >
                 {!isLight && (
-                    <div className="absolute inset-0 z-0 pointer-events-none rounded-2xl overflow-hidden">
+                    <>
                         <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" />
-                        <div className="absolute inset-0 bg-white/10 backdrop-blur-md" />
-                    </div>
+                        <div className="absolute inset-0 bg-white/10" />
+                    </>
                 )}
                 {/* Unified Directional Container */}
                 <div

@@ -275,8 +275,8 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
 
     // Theme-aware classes
     // Theme-aware classes
-    const modalBg = theme === 'light' ? 'bg-white' : 'bg-slate-900';
-    const borderColor = theme === 'light' ? 'border-gray-200' : 'border-white/20';
+    const modalBg = theme === 'light' ? 'bg-white' : '';
+    const borderColor = theme === 'light' ? 'border-gray-200' : 'border-white/30';
     const headerBorder = theme === 'light' ? 'border-gray-200' : 'border-white/10';
     const titleColor = theme === 'light' ? 'text-gray-900' : 'text-white';
     const labelColor = theme === 'light' ? 'text-gray-600' : 'text-gray-400';
@@ -294,9 +294,15 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
             />
 
             {/* Modal */}
-            <div className={`relative ${modalBg} border ${borderColor} rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-auto`}>
+            <div className={`relative ${modalBg} border ${borderColor} rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden`}>
+                {theme !== 'light' && (
+                    <>
+                        <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" />
+                        <div className="absolute inset-0 bg-white/10" />
+                    </>
+                )}
                 {/* Header */}
-                <div className={`flex items-center justify-between p-4 border-b ${headerBorder}`}>
+                <div className={`flex items-center justify-between p-4 border-b ${headerBorder} relative z-10 shrink-0`}>
                     <h2 className={`text-lg font-semibold ${titleColor} flex items-center gap-2`}>
                         📊 {t('sensitivityRangeChart') || 'Sensitivity Range Chart'}
                     </h2>
@@ -309,7 +315,7 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
                 </div>
 
                 {/* Content */}
-                <div className="p-4 space-y-4">
+                <div className="p-4 space-y-4 overflow-y-auto flex-1 relative z-10">
                     {/* Controls Row */}
                     <div className="flex flex-wrap gap-4 items-end">
                         {/* Parameter Selector */}

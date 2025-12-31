@@ -3,7 +3,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { getAvailableProviders, getAvailableModels, generatePrompt } from '../utils/ai-calculator';
 import { SIMULATION_TYPES } from '../utils/simulation-calculator';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
-import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, Coins, BarChart3, Landmark, PiggyBank } from 'lucide-react';
+import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, Coins, BarChart3, Landmark, PiggyBank, Wallet } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 import LifeEventsManager from './LifeEventsManager';
 
@@ -48,12 +48,12 @@ export default function InputForm({
     const headerLabelClass = isLight ? "text-gray-900" : "text-white";
     // SIMPLIFIED SELECT CLASS: Removed ring/border color classes here as they are handled by global CSS '!important'
     const selectClass = isLight
-        ? "bg-white text-gray-900"
+        ? "bg-slate-50 border border-gray-300 text-gray-900"
         : "bg-black/20 border border-white/30 text-white";
     const optionClass = isLight ? "bg-white text-gray-900" : "bg-gray-800 text-white";
     const iconClass = isLight ? "text-gray-500" : "text-gray-400";
     const inputClass = isLight
-        ? "bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:ring-blue-500 shadow-sm"
+        ? "bg-slate-50 border border-gray-300 text-gray-900 placeholder-gray-400 focus:ring-blue-500 shadow-sm"
         : "bg-black/20 border border-white/50 text-white placeholder-gray-500";
 
     // Store whether buttons should be visible (persist across re-renders)
@@ -124,23 +124,35 @@ export default function InputForm({
         }
     };
 
+    const calculateAgeFromDate = useCallback((dateString) => {
+        if (!dateString) return null;
+        const birthDateObj = new Date(dateString);
+        const today = new Date();
+        const age = (today - birthDateObj) / (1000 * 60 * 60 * 24 * 365.25);
+        return age;
+    }, []);
+
+    // Check if current age is manually set (differs from calculated age)
+    const isAgeManual = useMemo(() => {
+        if (!inputs.birthdate || !inputs.currentAge) return false;
+        const calculated = calculateAgeFromDate(inputs.birthdate);
+        if (calculated === null) return false;
+        // If difference is significant (more than 0.01 years ~ 3.65 days)
+        return Math.abs(parseFloat(inputs.currentAge) - calculated) > 0.01;
+    }, [inputs.birthdate, inputs.currentAge, calculateAgeFromDate]);
+
     const handleBirthdateChange = (e) => {
         const date = e.target.value;
-        const birthDateObj = new Date(date);
-        const today = new Date();
-
-        // Calculate precise age including decimals
-        let age = (today - birthDateObj) / (1000 * 60 * 60 * 24 * 365.25);
+        const age = calculateAgeFromDate(date);
 
         // Only update if age is reasonable (0-120)
-        if (age >= 0 && age <= 120) {
+        if (age !== null && age >= 0 && age <= 120) {
             setInputs(prev => ({
                 ...prev,
                 birthdate: date,
-                currentAge: age.toFixed(2) // Keep as string for input
+                currentAge: age.toFixed(2) // Update age to match birthdate (Reset Manual Mode)
             }));
         } else {
-            // Just update birthdate but don't update age
             setInputs(prev => ({
                 ...prev,
                 birthdate: date
@@ -159,9 +171,11 @@ export default function InputForm({
         const current = parseFloat(inputs.currentAge);
         if (isNaN(target) || isNaN(current)) return null;
 
-        if (inputs.birthdate) {
+        // Use birthdate for projection ONLY if age is NOT manual
+        if (inputs.birthdate && !isAgeManual) {
             return new Date(inputs.birthdate).getFullYear() + target;
         }
+        // Fallback or Manual Age: Use current year + age difference
         return Math.floor(currentYear + (target - current));
     };
 
@@ -452,6 +466,12 @@ export default function InputForm({
                             value={inputs.birthdate}
                             onChange={handleBirthdateChange}
                             icon={<Calendar size={14} />}
+                            extraContent={isAgeManual && (
+                                <span className="absolute right-8 top-1/2 -translate-y-1/2 text-[10px] bg-yellow-500/20 text-yellow-500 px-1 rounded">
+                                    {language === 'he' ? 'ידני' : 'Manual'}
+                                </span>
+                            )}
+                            disabledStyle={isAgeManual} // Custom prop to style it as "ignored"
                         />
                         <InputGroup
                             label={t('currentAge')}
@@ -557,7 +577,7 @@ export default function InputForm({
                         }
                         onChange={handleChange}
                         prefix={currency}
-                        icon={<span className="text-green-400">{currency}</span>}
+                        icon={<Wallet size={14} className="text-green-400" />}
                         extraLabel={grossWithdrawal ? `(${t('gross')}: ${formatCurrency(grossWithdrawal)})` : null}
                         disabled={
                             inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
@@ -652,7 +672,7 @@ export default function InputForm({
     );
 }
 
-function InputGroup({ label, name, value, onChange, icon, prefix, type = "text", extraLabel, extraContent, titleActions, disabled = false, error }) {
+function InputGroup({ label, name, value, onChange, icon, prefix, type = "text", extraLabel, extraContent, titleActions, disabled = false, error, disabledStyle = false }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
 
@@ -693,7 +713,8 @@ function InputGroup({ label, name, value, onChange, icon, prefix, type = "text",
                                 : 'bg-white/5 border border-white/20 text-gray-400 cursor-not-allowed')
                             : (isLight
                                 ? 'bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500'
-                                : 'bg-black/20 border border-white/50 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500')}`}
+                                : 'bg-black/20 border border-white/50 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500')
+                        } ${disabledStyle ? 'opacity-50 grayscale' : ''}`}
                 />
                 {extraContent}
             </div>

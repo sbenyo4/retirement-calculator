@@ -1,10 +1,13 @@
 import React, { useState, useMemo, useCallback } from 'react';
+import { useTheme } from '../contexts/ThemeContext';
 import { calculateRetirementProjection } from '../utils/calculator';
 import { AmortizationTable, AmortizationTableButton, AmortizationTableModal } from './AmortizationTable';
 import { SensitivityRangeChart, SensitivityRangeButton, SensitivityRangeModal } from './SensitivityRangeChart';
 import { SensitivityHeatmapButton, SensitivityHeatmapModal } from './SensitivityHeatmap';
 import { InflationButton, InflationModal } from './InflationRealityCheck';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
+import { LayoutDashboard, BrainCircuit } from 'lucide-react';
+import AIInsightsView from './AIInsightsView';
 import { Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -29,14 +32,17 @@ ChartJS.register(
     Filler
 );
 
-export function ResultsDashboard({ results, inputs, t, language, calculationMode, aiResults, simulationResults, aiLoading, aiError, simulationType, profiles, selectedProfileIds, setSelectedProfileIds, profileResults, showInterestSensitivity, setShowInterestSensitivity, showIncomeSensitivity, setShowIncomeSensitivity, showAgeSensitivity, setShowAgeSensitivity }) {
+export function ResultsDashboard({ results, inputs, t, language, calculationMode, aiResults, simulationResults, aiLoading, aiError, simulationType, profiles, selectedProfileIds, setSelectedProfileIds, profileResults, showInterestSensitivity, setShowInterestSensitivity, showIncomeSensitivity, setShowIncomeSensitivity, showAgeSensitivity, setShowAgeSensitivity, aiProvider, aiModel, apiKeyOverride, aiInsightsData, setAiInsightsData }) {
     // ALL HOOKS MUST BE AT THE TOP - React rules of hooks
+    const { theme } = useTheme();
+    const isLight = theme === 'light';
     // State hooks
     const [orderedSelections, setOrderedSelections] = useState([]);
     const [showSensitivityModal, setShowSensitivityModal] = useState(false);
     const [showHeatmapModal, setShowHeatmapModal] = useState(false);
     const [showAmortizationModal, setShowAmortizationModal] = useState(false);
     const [showInflationModal, setShowInflationModal] = useState(false);
+    const [activeTab, setActiveTab] = useState('numerical'); // 'numerical' | 'insights'
     // Note: showInterestSensitivity and showIncomeSensitivity are now received as props
 
     // Determine which results to display
@@ -403,400 +409,448 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
     const endYear = getProjectedYear(inputs.retirementEndAge);
 
     return (
-        <div className="space-y-3">
-            {/* Status Message - Hero Card - Fixed height for consistent UI */}
-            {!isCompareMode && (
-                <div className={`mx-1 md:mx-0 px-3 md:px-4 py-3 rounded-xl border shadow-lg min-h-[72px] flex items-center ${ranOutAtAge ? 'bg-red-500/20 border-red-500/50' : 'bg-green-500/20 border-green-500/50'}`}>
-                    <div className="flex justify-between items-center w-full gap-4">
-                        <div className="flex items-center gap-2">
-                            <span className={`text-sm md:text-lg font-bold ${ranOutAtAge ? 'text-red-200' : 'text-green-200'}`}>
-                                {ranOutAtAge ? `⚠️ ${t('warningRunOut')} ${ranOutAtAge.toFixed(1)}` : `✓ ${t('onTrack')}`}
-                            </span>
-                            {(isAiMode || isSimMode) && (
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${isAiMode ? 'bg-purple-500/20 border-purple-500/50 text-purple-200' : 'bg-pink-500/20 border-pink-500/50 text-pink-200'}`}>
-                                    {isAiMode ? 'AI' : 'SIM'}
-                                </span>
-                            )}
-                        </div>
-                        <div className="bg-black/20 rounded-lg px-4 py-2 border border-white/10">
-                            <div className="flex items-baseline gap-2">
-                                <span className="text-xs text-gray-400">{t('balanceAtEnd')}:</span>
-                                <span className={`text-2xl font-bold ${ranOutAtAge ? 'text-red-300' : 'text-white'}`}>
-                                    {formatCurrency(balanceAtEnd)}
-                                </span>
-                            </div>
-                            <div className={`text-[10px] text-gray-400 mt-0.5 ${!simulationRange ? 'invisible' : ''}`}>
-                                {simulationRange
-                                    ? `${t('range')}: ${formatCurrency(simulationRange.p25Balance)} - ${formatCurrency(simulationRange.p75Balance)}`
-                                    : '\u00A0'
-                                }
-                            </div>
-                        </div>
-                    </div>
+        <div className="space-y-3 h-full flex flex-col min-h-0">
+            {/* View Toggle */}
+            <div className={`flex p-1 rounded-lg shrink-0 ${isLight ? 'bg-white border border-slate-200' : 'bg-white/5'}`}>
+                <button
+                    onClick={() => setActiveTab('numerical')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'numerical'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : (isLight ? 'text-slate-500 hover:bg-slate-100' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200')
+                        }`}
+                >
+                    <LayoutDashboard size={16} />
+                    {t('numericalResults') || 'Numerical Results'}
+                </button>
+                <button
+                    onClick={() => setActiveTab('insights')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'insights'
+                        ? 'bg-purple-600 text-white shadow-md'
+                        : (isLight ? 'text-slate-500 hover:bg-slate-100' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200')
+                        }`}
+                >
+                    <BrainCircuit size={16} />
+                    {t('aiInsights') || 'AI Insights'}
+                </button>
+            </div>
+
+            {activeTab === 'insights' ? (
+                <div className="flex-1 min-h-0 overflow-hidden">
+                    <AIInsightsView
+                        inputs={inputs}
+                        results={results}
+                        aiProvider={aiProvider}
+                        aiModel={aiModel}
+                        apiKeyOverride={apiKeyOverride}
+                        language={language}
+                        t={t}
+                        insightsData={aiInsightsData}
+                        onInsightsChange={setAiInsightsData}
+                    />
                 </div>
-            )}
-
-            {/* Comparison View or Standard Summary Cards */}
-            {isCompareMode ? (
-                <div className={orderedColumns.length > 1 ? "overflow-x-auto" : "overflow-x-hidden"}>
-                    {/* Profile Selection for Comparison - Compact View */}
-                    {/* Profile Selection for Comparison - Compact View */}
-                    {/* Profile Selection for Comparison - Compact View */}
-                    <div className="mb-2 bg-white/5 p-2 rounded-xl border border-white/10">
-                        <div className="flex flex-col md:flex-row gap-4 items-start">
-                            {/* Controls Column */}
-                            <div className="flex flex-col gap-2 shrink-0 border-b md:border-b-0 md:border-e border-white/10 pb-4 md:pb-0 md:pe-4 w-full md:w-auto">
-                                {/* Basic Scenarios */}
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-gray-400 text-xs font-medium uppercase tracking-wider whitespace-nowrap">{t('basicScenarios')}</span>
-
-                                    <button
-                                        onClick={() => toggleSelection('math')}
-                                        className={`px-2 py-1.5 rounded-lg text-xs transition-colors border ${isSelected('math')
-                                            ? 'bg-blue-600 border-blue-500 text-white'
-                                            : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10'
-                                            }`}
-                                    >
-                                        {t('mathematical')}
-                                    </button>
-                                    <button
-                                        onClick={() => toggleSelection('sim')}
-                                        className={`px-2 py-1.5 rounded-lg text-xs transition-colors border ${isSelected('sim')
-                                            ? 'bg-pink-600 border-pink-500 text-white'
-                                            : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10'
-                                            }`}
-                                    >
-                                        {t('simulations')}
-                                    </button>
-                                    <button
-                                        onClick={() => toggleSelection('ai')}
-                                        disabled={!aiResults}
-                                        className={`px-2 py-1.5 rounded-lg text-xs transition-colors border ${isSelected('ai')
-                                            ? 'bg-purple-600 border-purple-500 text-white'
-                                            : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10'
-                                            } ${!aiResults ? 'opacity-40 cursor-not-allowed' : ''}`}
-                                    >
-                                        {t('aiMode')}
-                                    </button>
-
-                                    {/* Sensitivity Icons - Pushed to the end (Left in RTL) */}
-                                    <div className="flex gap-1 ms-auto mt-1 md:mt-0">
-                                        <SensitivityRangeButton
-                                            onClick={() => setShowSensitivityModal(true)}
-                                            t={t}
-                                        />
-                                        <SensitivityHeatmapButton
-                                            onClick={() => setShowHeatmapModal(true)}
-                                            t={t}
-                                        />
-                                        <InflationButton
-                                            onClick={() => setShowInflationModal(true)}
-                                            t={t}
-                                        />
+            ) : (
+                <div className="space-y-3 overflow-y-auto flex-1 min-h-0 pr-1">
+                    {/* Status Message - Hero Card - Fixed height for consistent UI */}
+                    {!isCompareMode && (
+                        <div className={`mx-1 md:mx-0 px-3 md:px-4 py-3 rounded-xl border shadow-lg min-h-[72px] flex items-center ${ranOutAtAge ? 'bg-red-500/20 border-red-500/50' : 'bg-green-500/20 border-green-500/50'}`}>
+                            <div className="flex justify-between items-center w-full gap-4">
+                                <div className="flex items-center gap-2">
+                                    <span className={`text-sm md:text-lg font-bold ${ranOutAtAge ? (isLight ? 'text-red-700' : 'text-red-200') : (isLight ? 'text-green-700' : 'text-green-200')}`}>
+                                        {ranOutAtAge ? `⚠️ ${t('warningRunOut')} ${ranOutAtAge.toFixed(1)}` : `✓ ${t('onTrack')}`}
+                                    </span>
+                                    {(isAiMode || isSimMode) && (
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${isAiMode ? 'bg-purple-500/20 border-purple-500/50 text-purple-200' : 'bg-pink-500/20 border-pink-500/50 text-pink-200'}`}>
+                                            {isAiMode ? 'AI' : 'SIM'}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className={`px-4 py-2 rounded-lg border ${isLight ? 'bg-white/50 border-slate-200' : 'bg-black/20 border-white/10'}`}>
+                                    <div className="flex items-baseline gap-2">
+                                        <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{t('balanceAtEnd')}:</span>
+                                        <span className={`text-2xl font-bold ${ranOutAtAge ? (isLight ? 'text-red-600' : 'text-red-300') : (isLight ? 'text-slate-900' : 'text-white')}`}>
+                                            {formatCurrency(balanceAtEnd)}
+                                        </span>
+                                    </div>
+                                    <div className={`text-[10px] text-gray-400 mt-0.5 ${!simulationRange ? 'invisible' : ''}`}>
+                                        {simulationRange
+                                            ? `${t('range')}: ${formatCurrency(simulationRange.p25Balance)} - ${formatCurrency(simulationRange.p75Balance)}`
+                                            : '\u00A0'
+                                        }
                                     </div>
                                 </div>
-
-                                {/* Sensitivity Toggles - Disabled if AI is first in comparison */}
-                                {orderedSelections[0] !== 'ai' && (
-                                    <div className="flex flex-wrap gap-x-4 gap-y-2 mt-2 md:mt-0">
-                                        <label className="flex items-center gap-2 cursor-pointer group">
-                                            <div className="relative">
-                                                <input
-                                                    type="checkbox"
-                                                    className="sr-only peer"
-                                                    checked={showInterestSensitivity}
-                                                    onChange={(e) => handleInterestToggle(e.target.checked)}
-                                                />
-                                                <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
-                                            </div>
-                                            <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors whitespace-nowrap">
-                                                {t('interestSensitivity')}
-                                            </span>
-                                        </label>
-
-                                        {/* Income Sensitivity Toggle */}
-                                        <label className="flex items-center gap-2 cursor-pointer group">
-                                            <div className="relative">
-                                                <input
-                                                    type="checkbox"
-                                                    className="sr-only peer"
-                                                    checked={showIncomeSensitivity}
-                                                    onChange={(e) => handleIncomeToggle(e.target.checked)}
-                                                />
-                                                <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
-                                            </div>
-                                            <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors whitespace-nowrap">
-                                                {t('incomeSensitivity')}
-                                            </span>
-                                        </label>
-
-                                        {/* Age Sensitivity Toggle */}
-                                        <label className="flex items-center gap-2 cursor-pointer group">
-                                            <div className="relative">
-                                                <input
-                                                    type="checkbox"
-                                                    className="sr-only peer"
-                                                    checked={showAgeSensitivity}
-                                                    onChange={(e) => handleAgeToggle(e.target.checked)}
-                                                />
-                                                <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
-                                            </div>
-                                            <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors whitespace-nowrap">
-                                                {t('ageSensitivity')}
-                                            </span>
-                                        </label>
-                                    </div>
-                                )}
                             </div>
+                        </div>
+                    )}
 
-                            {/* Saved Profiles */}
-                            <div className="flex-1 min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-gray-400 text-xs font-medium uppercase tracking-wider">{t('selectProfiles')}</span>
-                                    <div className="flex flex-wrap gap-1">
-                                        {profiles && profiles.map(profile => (
+                    {/* Comparison View or Standard Summary Cards */}
+                    {isCompareMode ? (
+                        <div className={orderedColumns.length > 1 ? "overflow-x-auto" : "overflow-x-hidden"}>
+                            {/* Profile Selection for Comparison - Compact View */}
+                            {/* Profile Selection for Comparison - Compact View */}
+                            {/* Profile Selection for Comparison - Compact View */}
+                            {/* Profile Selection for Comparison - Compact View */}
+                            <div className={`mb-2 p-2 rounded-xl border ${isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-white/5 border-white/10'}`}>
+                                <div className="flex flex-col md:flex-row gap-4 items-start">
+                                    {/* Controls Column */}
+                                    <div className="flex flex-col gap-2 shrink-0 border-b md:border-b-0 md:border-e border-white/10 pb-4 md:pb-0 md:pe-4 w-full md:w-auto">
+                                        {/* Basic Scenarios */}
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className={`${isLight ? 'text-slate-500' : 'text-gray-400'} text-xs font-medium uppercase tracking-wider whitespace-nowrap`}>{t('basicScenarios')}</span>
+
                                             <button
-                                                key={profile.id}
-                                                onClick={() => toggleSelection(`profile_${profile.id}`)}
-                                                title={profile.name}
-                                                className={`px-2 py-1 rounded text-xs transition-colors border max-w-[120px] truncate ${isSelected(`profile_${profile.id}`)
-                                                    ? 'bg-emerald-600 border-emerald-500 text-white'
-                                                    : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10'
+                                                onClick={() => toggleSelection('math')}
+                                                className={`px-2 py-1.5 rounded-lg text-xs transition-colors border ${isSelected('math')
+                                                    ? 'bg-blue-600 border-blue-500 text-white'
+                                                    : (isLight ? 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50' : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10')
                                                     }`}
                                             >
-                                                {profile.name}
+                                                {t('mathematical')}
                                             </button>
-                                        ))}
-                                        {(!profiles || profiles.length === 0) && (
-                                            <span className="text-gray-500 text-xs italic">{t('noSavedProfiles')}</span>
+                                            <button
+                                                onClick={() => toggleSelection('sim')}
+                                                className={`px-2 py-1.5 rounded-lg text-xs transition-colors border ${isSelected('sim')
+                                                    ? 'bg-pink-600 border-pink-500 text-white'
+                                                    : (isLight ? 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50' : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10')
+                                                    }`}
+                                            >
+                                                {t('simulations')}
+                                            </button>
+                                            <button
+                                                onClick={() => toggleSelection('ai')}
+                                                disabled={!aiResults}
+                                                className={`px-2 py-1.5 rounded-lg text-xs transition-colors border ${isSelected('ai')
+                                                    ? 'bg-purple-600 border-purple-500 text-white'
+                                                    : (isLight ? 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50' : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10')
+                                                    } ${!aiResults ? 'opacity-40 cursor-not-allowed' : ''}`}
+                                            >
+                                                {t('aiMode')}
+                                            </button>
+
+                                            {/* Sensitivity Icons - Pushed to the end (Left in RTL) */}
+                                            <div className="flex gap-1 ms-auto mt-1 md:mt-0">
+                                                <SensitivityRangeButton
+                                                    onClick={() => setShowSensitivityModal(true)}
+                                                    t={t}
+                                                />
+                                                <SensitivityHeatmapButton
+                                                    onClick={() => setShowHeatmapModal(true)}
+                                                    t={t}
+                                                />
+                                                <InflationButton
+                                                    onClick={() => setShowInflationModal(true)}
+                                                    t={t}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Sensitivity Toggles - Disabled if AI is first in comparison */}
+                                        {orderedSelections[0] !== 'ai' && (
+                                            <div className="flex flex-wrap gap-x-4 gap-y-2 mt-2 md:mt-0">
+                                                <label className="flex items-center gap-2 cursor-pointer group">
+                                                    <div className="relative">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="sr-only peer"
+                                                            checked={showInterestSensitivity}
+                                                            onChange={(e) => handleInterestToggle(e.target.checked)}
+                                                        />
+                                                        <div className={`w-9 h-5 ${isLight ? 'bg-slate-200' : 'bg-white/10'} peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600`}></div>
+                                                    </div>
+                                                    <span className={`text-xs ${isLight ? 'text-slate-700 group-hover:text-slate-900' : 'text-gray-400 group-hover:text-gray-200'} transition-colors whitespace-nowrap`}>
+                                                        {t('interestSensitivity')}
+                                                    </span>
+                                                </label>
+
+                                                {/* Income Sensitivity Toggle */}
+                                                <label className="flex items-center gap-2 cursor-pointer group">
+                                                    <div className="relative">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="sr-only peer"
+                                                            checked={showIncomeSensitivity}
+                                                            onChange={(e) => handleIncomeToggle(e.target.checked)}
+                                                        />
+                                                        <div className={`w-9 h-5 ${isLight ? 'bg-slate-200' : 'bg-white/10'} peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600`}></div>
+                                                    </div>
+                                                    <span className={`text-xs ${isLight ? 'text-slate-700 group-hover:text-slate-900' : 'text-gray-400 group-hover:text-gray-200'} transition-colors whitespace-nowrap`}>
+                                                        {t('incomeSensitivity')}
+                                                    </span>
+                                                </label>
+
+                                                {/* Age Sensitivity Toggle */}
+                                                <label className="flex items-center gap-2 cursor-pointer group">
+                                                    <div className="relative">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="sr-only peer"
+                                                            checked={showAgeSensitivity}
+                                                            onChange={(e) => handleAgeToggle(e.target.checked)}
+                                                        />
+                                                        <div className={`w-9 h-5 ${isLight ? 'bg-slate-200' : 'bg-white/10'} peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600`}></div>
+                                                    </div>
+                                                    <span className={`text-xs ${isLight ? 'text-slate-700 group-hover:text-slate-900' : 'text-gray-400 group-hover:text-gray-200'} transition-colors whitespace-nowrap`}>
+                                                        {t('ageSensitivity')}
+                                                    </span>
+                                                </label>
+                                            </div>
                                         )}
+                                    </div>
+
+                                    {/* Saved Profiles */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className={`${isLight ? 'text-slate-500' : 'text-gray-400'} text-xs font-medium uppercase tracking-wider`}>{t('selectProfiles')}</span>
+                                            <div className="flex flex-wrap gap-1">
+                                                {profiles && profiles.map(profile => (
+                                                    <button
+                                                        key={profile.id}
+                                                        onClick={() => toggleSelection(`profile_${profile.id}`)}
+                                                        title={profile.name}
+                                                        className={`px-2 py-1 rounded text-xs transition-colors border max-w-[120px] truncate ${isSelected(`profile_${profile.id}`)
+                                                            ? 'bg-emerald-600 border-emerald-500 text-white'
+                                                            : (isLight ? 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50' : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10')
+                                                            }`}
+                                                    >
+                                                        {profile.name}
+                                                    </button>
+                                                ))}
+                                                {(!profiles || profiles.length === 0) && (
+                                                    <span className={`${isLight ? 'text-slate-400' : 'text-gray-500'} text-xs italic`}>{t('noSavedProfiles')}</span>
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
 
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr>
-                                <th className="p-2 text-sm font-semibold text-gray-400 border-b border-white/10">{t('metric')}</th>
-                                {orderedColumns.map((col, i) => (
-                                    <React.Fragment key={col.type === 'profile' ? col.id : col.type}>
-                                        {/* Sensitivity -1 (Only for first column and if canShowMinus) */}
-                                        {i === 0 && sensitivityResults && sensitivityResults.canShowMinus && sensitivityResults.minus && (
-                                            <th className="p-2 text-sm font-semibold border-b border-white/10 bg-white/5 rounded-t-lg opacity-70" style={{ color: sensitivityResults.color }}>
-                                                {sensitivityResults.minusLabel}
-                                            </th>
-                                        )}
-
-                                        {/* Column Header */}
-                                        <th className={`p-2 text-sm font-semibold border-b border-white/10 ${col.bgClass} rounded-t-lg`} style={{ color: col.color }}>
-                                            {col.name}
-                                        </th>
-
-                                        {/* Sensitivity +1% (Only for first column) */}
-                                        {i === 0 && sensitivityResults && (
-                                            <th className="p-2 text-sm font-semibold border-b border-white/10 bg-white/5 rounded-t-lg opacity-70" style={{ color: sensitivityResults.color }}>
-                                                {sensitivityResults.plusLabel}
-                                            </th>
-                                        )}
-                                    </React.Fragment>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5">
-                            {[
-                                { label: t('balanceAtRetirement'), key: 'balanceAtRetirement' },
-                                { label: t('requiredCapital'), key: 'requiredCapitalAtRetirement' },
-                                { label: t('surplus') + '/' + t('deficit'), key: 'surplus' },
-                                { label: t('neededToday'), key: 'pvOfDeficit', highlightColor: 'orange' },
-                                { label: t('balanceAtEnd'), key: 'balanceAtEnd', highlightColor: 'emerald' },
-                                { label: t('capitalPreservation'), key: 'requiredCapitalForPerpetuity', highlightColor: 'cyan' },
-                                { label: t('neededToday'), key: 'pvOfCapitalPreservation', highlightColor: 'orange' },
-                            ].map((row, idx) => {
-                                const getRowStyles = (color) => {
-                                    if (color === 'orange') return { bg: 'bg-orange-500/10', text: 'text-orange-300 font-bold' };
-                                    if (color === 'emerald') return { bg: 'bg-emerald-500/10', text: 'text-emerald-300 font-bold' };
-                                    if (color === 'cyan') return { bg: 'bg-cyan-500/10', text: 'text-cyan-300 font-bold' };
-                                    return { bg: 'hover:bg-white/5', text: 'text-gray-300' };
-                                };
-                                const styles = getRowStyles(row.highlightColor);
-                                const valueTextClass = row.highlightColor ? styles.text : 'text-white';
-
-                                return (
-                                    <tr key={idx} className={`transition-colors ${styles.bg}`}>
-                                        <td className={`p-2 text-sm ${styles.text}`}>{row.label}</td>
-
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr>
+                                        <th className={`p-2 text-sm font-semibold border-b ${isLight ? 'text-slate-600 border-slate-200' : 'text-gray-400 border-white/10'}`}>{t('metric')}</th>
                                         {orderedColumns.map((col, i) => (
                                             <React.Fragment key={col.type === 'profile' ? col.id : col.type}>
                                                 {/* Sensitivity -1 (Only for first column and if canShowMinus) */}
                                                 {i === 0 && sensitivityResults && sensitivityResults.canShowMinus && sensitivityResults.minus && (
-                                                    <td className={`p-2 text-sm font-medium ${valueTextClass} bg-white/5 opacity-70`}>
-                                                        {formatCurrency(row.key === 'surplus' ? Math.abs(sensitivityResults.minus[row.key]) : sensitivityResults.minus[row.key])}
-                                                    </td>
+                                                    <th className="p-2 text-sm font-semibold border-b border-white/10 bg-white/5 rounded-t-lg opacity-70" style={{ color: sensitivityResults.color }}>
+                                                        {sensitivityResults.minusLabel}
+                                                    </th>
                                                 )}
 
-                                                {/* Column Data */}
-                                                <td className={`p-2 text-sm font-medium ${valueTextClass} ${col.bgClass}`}>
-                                                    {col.data ? (
-                                                        formatCurrency(row.key === 'surplus' ? Math.abs(col.data[row.key]) : col.data[row.key])
-                                                    ) : (
-                                                        <span className="text-gray-600">-</span>
-                                                    )}
-                                                </td>
+                                                {/* Column Header */}
+                                                <th className={`p-2 text-sm font-semibold border-b ${isLight ? 'border-slate-200' : 'border-white/10'} ${col.bgClass} rounded-t-lg`} style={{ color: col.color }}>
+                                                    {col.name}
+                                                </th>
 
                                                 {/* Sensitivity +1% (Only for first column) */}
                                                 {i === 0 && sensitivityResults && (
-                                                    <td className={`p-2 text-sm font-medium ${valueTextClass} bg-white/5 opacity-70`}>
-                                                        {formatCurrency(row.key === 'surplus' ? Math.abs(sensitivityResults.plus[row.key]) : sensitivityResults.plus[row.key])}
-                                                    </td>
+                                                    <th className="p-2 text-sm font-semibold border-b border-white/10 bg-white/5 rounded-t-lg opacity-70" style={{ color: sensitivityResults.color }}>
+                                                        {sensitivityResults.plusLabel}
+                                                    </th>
                                                 )}
                                             </React.Fragment>
                                         ))}
                                     </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            ) : (
-                <div
-                    className="grid grid-cols-2 lg:grid-cols-3 gap-2"
-                >
-                    <SummaryCard
-                        label={t('balanceAtRetirement')}
-                        value={formatCurrency(balanceAtRetirement)}
-                        subtext={t('projectedSavings')}
-                        color="text-blue-400"
-                    />
-                    <SummaryCard
-                        label={t('requiredCapital')}
-                        value={formatCurrency(requiredCapitalAtRetirement)}
-                        subtext={t('toEndWithZero')}
-                        color="text-purple-400"
-                    />
-                    <SummaryCard
-                        label={t('capitalPreservation')}
-                        value={formatCurrency(requiredCapitalForPerpetuity)}
-                        subtext={t('preservePrincipal')}
-                        color="text-emerald-400"
-                        extraContent={
-                            <div className="mt-1 pt-1 border-t border-white/10">
-                                <span className="text-xs text-orange-300 font-medium block">{t('neededToday')}:</span>
-                                <span className="text-lg font-bold text-orange-300">{formatCurrency(activeResults.pvOfCapitalPreservation)}</span>
-                            </div>
-                        }
-                    />
-                    <SummaryCard
-                        label={surplus >= 0 ? t('surplus') : t('deficit')}
-                        value={formatCurrency(Math.abs(surplus))}
-                        subtext={surplus >= 0 ? t('onTrack') : t('capitalNeeded')}
-                        color={surplus >= 0 ? "text-green-400" : "text-red-400"}
-                        extraContent={surplus < 0 && (
-                            <div className="mt-1 pt-1 border-t border-white/10">
-                                <span className="text-xs text-orange-300 font-medium block">{t('neededToday')}:</span>
-                                <span className="text-lg font-bold text-orange-300">{formatCurrency(pvOfDeficit)}</span>
-                            </div>
-                        )}
-                    />
-                    <SummaryCard
-                        label={t('estGrossWithdrawal')}
-                        value={formatCurrency(initialGrossWithdrawal)}
-                        color="text-yellow-400"
-                        extraContent={
-                            <div className="mt-1 pt-1 border-t border-white/10">
-                                <span className="text-xs text-green-300 font-medium block">{t('netWithdrawal')}:</span>
-                                <span className="text-lg font-bold text-green-300">{formatCurrency(initialNetWithdrawal || 0)}</span>
-                            </div>
-                        }
-                    />
-                    <SummaryCard
-                        label={t('timeHorizon')}
-                        value={`${(inputs.retirementStartAge - inputs.currentAge).toFixed(1)} / ${(inputs.retirementEndAge - inputs.retirementStartAge).toFixed(1)}`}
-                        subtext={`${t('yearsUntilRetirement')} / ${t('yearsOfRetirement')}`}
-                        color="text-orange-400"
-                        extraContent={
-                            <div className="mt-1 pt-1 border-t border-white/10">
-                                <span className="text-xs text-orange-300 font-medium block">{t('years')}:</span>
-                                <span className="text-lg font-bold text-orange-300">{startYear} - {endYear}</span>
-                            </div>
-                        }
-                    />
-                </div>
-            )
-            }
+                                </thead>
+                                <tbody className={`divide-y ${isLight ? 'divide-slate-200' : 'divide-white/5'}`}>
+                                    {[
+                                        { label: t('balanceAtRetirement'), key: 'balanceAtRetirement' },
+                                        { label: t('requiredCapital'), key: 'requiredCapitalAtRetirement' },
+                                        { label: t('surplus') + '/' + t('deficit'), key: 'surplus' },
+                                        { label: t('neededToday'), key: 'pvOfDeficit', highlightColor: 'orange' },
+                                        { label: t('balanceAtEnd'), key: 'balanceAtEnd', highlightColor: 'emerald' },
+                                        { label: t('capitalPreservation'), key: 'requiredCapitalForPerpetuity', highlightColor: 'cyan' },
+                                        { label: t('neededToday'), key: 'pvOfCapitalPreservation', highlightColor: 'orange' },
+                                    ].map((row, idx) => {
+                                        const getRowStyles = (color) => {
+                                            if (color === 'orange') return { bg: isLight ? 'bg-orange-50' : 'bg-orange-500/10', text: isLight ? 'text-orange-700 font-bold' : 'text-orange-300 font-bold' };
+                                            if (color === 'emerald') return { bg: isLight ? 'bg-emerald-50' : 'bg-emerald-500/10', text: isLight ? 'text-emerald-700 font-bold' : 'text-emerald-300 font-bold' };
+                                            if (color === 'cyan') return { bg: isLight ? 'bg-cyan-50' : 'bg-cyan-500/10', text: isLight ? 'text-cyan-700 font-bold' : 'text-cyan-300 font-bold' };
+                                            // Zebra striping for light mode
+                                            const zebraBg = isLight ? (idx % 2 === 0 ? 'bg-white hover:bg-slate-50' : 'bg-slate-50 hover:bg-slate-100') : 'hover:bg-white/5';
+                                            return { bg: zebraBg, text: isLight ? 'text-slate-700' : 'text-gray-300' };
+                                        };
+                                        const styles = getRowStyles(row.highlightColor);
+                                        const valueTextClass = row.highlightColor ? styles.text : (isLight ? 'text-slate-900' : 'text-white');
 
-            {/* Chart */}
-            <div className="bg-white/10 backdrop-blur-md border border-white/40 rounded-2xl p-4 shadow-xl">
-                {/* Chart Title with Custom Legend */}
-                <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                        <h3 className="text-lg font-semibold text-white">{t('wealthProjection')}</h3>
-                        {/* Year-by-Year Progress Button */}
-                        {!isCompareMode && history && (
-                            <AmortizationTableButton
-                                onClick={() => setShowAmortizationModal(true)}
-                                t={t}
+                                        return (
+                                            <tr key={idx} className={`transition-colors ${styles.bg}`}>
+                                                <td className={`p-2 text-sm ${styles.text}`}>{row.label}</td>
+
+                                                {orderedColumns.map((col, i) => (
+                                                    <React.Fragment key={col.type === 'profile' ? col.id : col.type}>
+                                                        {/* Sensitivity -1 (Only for first column and if canShowMinus) */}
+                                                        {i === 0 && sensitivityResults && sensitivityResults.canShowMinus && sensitivityResults.minus && (
+                                                            <td className={`p-2 text-sm font-medium ${valueTextClass} bg-white/5 opacity-70`}>
+                                                                {formatCurrency(row.key === 'surplus' ? Math.abs(sensitivityResults.minus[row.key]) : sensitivityResults.minus[row.key])}
+                                                            </td>
+                                                        )}
+
+                                                        {/* Column Data */}
+                                                        <td className={`p-2 text-sm font-medium ${valueTextClass} ${col.bgClass}`}>
+                                                            {col.data ? (
+                                                                formatCurrency(row.key === 'surplus' ? Math.abs(col.data[row.key]) : col.data[row.key])
+                                                            ) : (
+                                                                <span className="text-gray-600">-</span>
+                                                            )}
+                                                        </td>
+
+                                                        {/* Sensitivity +1% (Only for first column) */}
+                                                        {i === 0 && sensitivityResults && (
+                                                            <td className={`p-2 text-sm font-medium ${valueTextClass} bg-white/5 opacity-70`}>
+                                                                {formatCurrency(row.key === 'surplus' ? Math.abs(sensitivityResults.plus[row.key]) : sensitivityResults.plus[row.key])}
+                                                            </td>
+                                                        )}
+                                                    </React.Fragment>
+                                                ))}
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <div
+                            className="grid grid-cols-2 lg:grid-cols-3 gap-2"
+                        >
+                            <SummaryCard
+                                label={t('balanceAtRetirement')}
+                                value={formatCurrency(balanceAtRetirement)}
+                                subtext={t('projectedSavings')}
+                                color="text-blue-400"
                             />
-                        )}
-                    </div>
-                    <div className="flex gap-6">
-                        <div className="flex items-center gap-1.5">
-                            <span className={`w-3 h-3 inline-block ${isAiMode ? 'bg-[#a78bfa]' : (isSimMode ? 'bg-[#f472b6]' : 'bg-[#60a5fa]')}`}></span>
-                            <span className="text-sm text-white">{t('wealthProjection')}</span>
+                            <SummaryCard
+                                label={t('requiredCapital')}
+                                value={formatCurrency(requiredCapitalAtRetirement)}
+                                subtext={t('toEndWithZero')}
+                                color="text-purple-400"
+                            />
+                            <SummaryCard
+                                label={t('capitalPreservation')}
+                                value={formatCurrency(requiredCapitalForPerpetuity)}
+                                subtext={t('preservePrincipal')}
+                                color="text-emerald-400"
+                                extraContent={
+                                    <div className="mt-1 pt-1 border-t border-white/10">
+                                        <span className="text-xs text-orange-300 font-medium block">{t('neededToday')}:</span>
+                                        <span className="text-lg font-bold text-orange-300">{formatCurrency(activeResults.pvOfCapitalPreservation)}</span>
+                                    </div>
+                                }
+                            />
+                            <SummaryCard
+                                label={surplus >= 0 ? t('surplus') : t('deficit')}
+                                value={formatCurrency(Math.abs(surplus))}
+                                subtext={surplus >= 0 ? t('onTrack') : t('capitalNeeded')}
+                                color={surplus >= 0 ? "text-green-400" : "text-red-400"}
+                                extraContent={surplus < 0 && (
+                                    <div className="mt-1 pt-1 border-t border-white/10">
+                                        <span className="text-xs text-orange-300 font-medium block">{t('neededToday')}:</span>
+                                        <span className="text-lg font-bold text-orange-300">{formatCurrency(pvOfDeficit)}</span>
+                                    </div>
+                                )}
+                            />
+                            <SummaryCard
+                                label={t('estGrossWithdrawal')}
+                                value={formatCurrency(initialGrossWithdrawal)}
+                                color="text-yellow-400"
+                                extraContent={
+                                    <div className="mt-1 pt-1 border-t border-white/10">
+                                        <span className="text-xs text-green-300 font-medium block">{t('netWithdrawal')}:</span>
+                                        <span className="text-lg font-bold text-green-300">{formatCurrency(initialNetWithdrawal || 0)}</span>
+                                    </div>
+                                }
+                            />
+                            <SummaryCard
+                                label={t('timeHorizon')}
+                                value={`${(inputs.retirementStartAge - inputs.currentAge).toFixed(1)} / ${(inputs.retirementEndAge - inputs.retirementStartAge).toFixed(1)}`}
+                                subtext={`${t('yearsUntilRetirement')} / ${t('yearsOfRetirement')}`}
+                                color="text-orange-400"
+                                extraContent={
+                                    <div className="mt-1 pt-1 border-t border-white/10">
+                                        <span className="text-xs text-orange-300 font-medium block">{t('years')}:</span>
+                                        <span className="text-lg font-bold text-orange-300">{startYear} - {endYear}</span>
+                                    </div>
+                                }
+                            />
                         </div>
-                        <div className="flex items-center gap-1.5">
-                            <span className="w-3 h-3 bg-[#facc15] inline-block"></span>
-                            <span className="text-sm text-white">{t('accumulatedWithdrawals')}</span>
+                    )
+                    }
+
+                    {/* Chart */}
+                    <div className={`backdrop-blur-md border rounded-2xl p-4 shadow-xl ${isLight ? 'bg-white border-slate-300 shadow-md' : 'bg-white/10 border-white/40'}`}>
+                        {/* Chart Title with Custom Legend */}
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-3">
+                                <h3 className={`text-lg font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>{t('wealthProjection')}</h3>
+                                {/* Year-by-Year Progress Button */}
+                                {!isCompareMode && history && (
+                                    <AmortizationTableButton
+                                        onClick={() => setShowAmortizationModal(true)}
+                                        t={t}
+                                    />
+                                )}
+                            </div>
+                            <div className="flex gap-6">
+                                <div className="flex items-center gap-1.5">
+                                    <span className={`w-3 h-3 inline-block ${isAiMode ? 'bg-[#a78bfa]' : (isSimMode ? 'bg-[#f472b6]' : 'bg-[#60a5fa]')}`}></span>
+                                    <span className={`text-sm ${isLight ? 'text-slate-700' : 'text-white'}`}>{t('wealthProjection')}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <span className="w-3 h-3 bg-[#facc15] inline-block"></span>
+                                    <span className={`text-sm ${isLight ? 'text-slate-700' : 'text-white'}`}>{t('accumulatedWithdrawals')}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="h-52">
+                            <Line data={chartData} options={options} />
                         </div>
                     </div>
-                </div>
-                <div className="h-52">
-                    <Line data={chartData} options={options} />
-                </div>
-            </div>
 
-            {/* Amortization Table Modal */}
-            <AmortizationTableModal
-                isOpen={showAmortizationModal}
-                onClose={() => setShowAmortizationModal(false)}
-                history={history}
-                t={t}
-                language={language}
-            />
+                    {/* Amortization Table Modal */}
+                    <AmortizationTableModal
+                        isOpen={showAmortizationModal}
+                        onClose={() => setShowAmortizationModal(false)}
+                        history={history}
+                        t={t}
+                        language={language}
+                    />
 
-            <SensitivityRangeModal
-                isOpen={showSensitivityModal}
-                onClose={() => setShowSensitivityModal(false)}
-                inputs={inputs}
-                t={t}
-                language={language}
-            />
+                    <SensitivityRangeModal
+                        isOpen={showSensitivityModal}
+                        onClose={() => setShowSensitivityModal(false)}
+                        inputs={inputs}
+                        t={t}
+                        language={language}
+                    />
 
-            <SensitivityHeatmapModal
-                isOpen={showHeatmapModal}
-                onClose={() => setShowHeatmapModal(false)}
-                inputs={inputs}
-                t={t}
-                language={language}
-            />
+                    <SensitivityHeatmapModal
+                        isOpen={showHeatmapModal}
+                        onClose={() => setShowHeatmapModal(false)}
+                        inputs={inputs}
+                        t={t}
+                        language={language}
+                    />
 
-            <InflationModal
-                isOpen={showInflationModal}
-                onClose={() => setShowInflationModal(false)}
-                t={t}
-                language={language}
-            />
-        </div >
+                    <InflationModal
+                        isOpen={showInflationModal}
+                        onClose={() => setShowInflationModal(false)}
+                        t={t}
+                        language={language}
+                    />
+                </div >
+            )}
+        </div>
     );
 }
 
 function SummaryCard({ label, value, subtext, color, extraContent }) {
+    const { theme } = useTheme();
+    const isLight = theme === 'light';
+
     return (
-        <div className="bg-white/10 backdrop-blur-md border border-white/40 rounded-xl p-2 md:p-3">
-            <p className="text-gray-400 text-xs md:text-sm truncate">{label}</p>
+        <div className={`${isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-white/10 border-white/40'} backdrop-blur-md border rounded-xl p-2 md:p-3`}>
+            <p className={`${isLight ? 'text-slate-500' : 'text-gray-400'} text-xs md:text-sm truncate`}>{label}</p>
             <p className={`text-lg md:text-2xl font-bold ${color} my-0.5 md:my-1 truncate`}>{value}</p>
-            <p className="text-[10px] md:text-xs text-gray-500 truncate">{subtext}</p>
+            <p className={`${isLight ? 'text-slate-400' : 'text-gray-500'} text-[10px] md:text-xs truncate`}>{subtext}</p>
             {extraContent}
         </div>
     );

@@ -125,10 +125,6 @@ export function AmortizationTableModal({ isOpen, onClose, history, t, language }
                         </thead>
                         <tbody className={`divide-y ${theme === 'light' ? 'divide-gray-100' : 'divide-gray-700'}`}>
                             {yearlyData.map((row, idx) => {
-                                // Add helper classes for styling
-                                const balanceClass = row.balance < 0 ? 'text-red-600' : 'text-emerald-600';
-                                const interestClass = row.interest < 0 ? 'text-red-600' : 'text-emerald-600';
-
                                 return (
                                     <tr
                                         key={idx}
@@ -136,16 +132,16 @@ export function AmortizationTableModal({ isOpen, onClose, history, t, language }
                                     >
                                         <td className={`p-3 text-center amortization-cell-age ${isLight ? 'text-gray-800' : 'text-gray-200'}`}>{row.age.toFixed(0)}</td>
                                         <td className={`p-3 text-center amortization-cell-year ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>{row.year}</td>
-                                        <td className={`p-3 text-right font-medium whitespace-nowrap amortization-cell-balance ${row.balance < 0 ? 'is-negative' : 'is-positive'}`}>
+                                        <td className={`p-3 text-right font-medium whitespace-nowrap amortization-cell-balance ${balanceColor(row.balance < 0)}`}>
                                             {formatCurrency(row.balance)}
                                         </td>
-                                        <td className="p-3 text-right whitespace-nowrap amortization-cell-contribution">
+                                        <td className={`p-3 text-right whitespace-nowrap amortization-cell-contribution ${contributionColor}`}>
                                             {row.contribution > 0 ? formatCurrency(row.contribution) : '-'}
                                         </td>
-                                        <td className="p-3 text-right whitespace-nowrap amortization-cell-withdrawal">
+                                        <td className={`p-3 text-right whitespace-nowrap amortization-cell-withdrawal ${withdrawalColor}`}>
                                             {row.withdrawal > 0 ? formatCurrency(row.withdrawal) : '-'}
                                         </td>
-                                        <td className={`p-3 text-right whitespace-nowrap amortization-cell-interest ${row.interest < 0 ? 'is-negative' : 'is-positive'}`}>
+                                        <td className={`p-3 text-right whitespace-nowrap amortization-cell-interest ${interestColor(row.interest < 0)}`}>
                                             {formatCurrency(row.interest)}
                                         </td>
                                     </tr>
