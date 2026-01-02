@@ -177,7 +177,7 @@ export default function AddEventModal({
                     </div>
 
                     {/* Scrollable Form Content */}
-                    <div className="flex-grow overflow-y-auto" dir="ltr">
+                    <div className="flex-grow overflow-y-auto custom-scrollbar" dir="ltr">
                         <div className="p-4 space-y-4" dir={language === 'he' ? 'rtl' : 'ltr'}>
                             {/* Event Type */}
                             <div className="space-y-2">

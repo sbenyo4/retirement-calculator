@@ -457,7 +457,7 @@ const InputForm = memo(function InputForm({
             </div>
 
             {activeView === 'parameters' ? (
-                <div className="space-y-1 animate-in fade-in slide-in-from-left-2 duration-200 flex-1 overflow-y-auto">
+                <div className="space-y-1 animate-in fade-in slide-in-from-left-2 duration-200 flex-1 overflow-y-auto custom-scrollbar">
                     <div className="grid grid-cols-2 gap-1">
                         <InputGroup
                             label={t('birthdate')}

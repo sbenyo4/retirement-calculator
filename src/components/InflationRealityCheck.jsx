@@ -186,7 +186,7 @@ export function InflationModal({ isOpen, onClose, t, language }) {
                 </div>
 
                 {/* Grid */}
-                <div className="p-6 overflow-y-auto relative z-10">
+                <div className="p-6 overflow-y-auto custom-scrollbar relative z-10">
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                         {projectedItems.map((item) => (
                             <div
