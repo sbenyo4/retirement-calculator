@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useCallback, memo } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { getAvailableProviders, getAvailableModels, generatePrompt } from '../utils/ai-calculator';
 import { SIMULATION_TYPES } from '../utils/simulation-calculator';
@@ -7,7 +7,7 @@ import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X,
 import { CustomSelect } from './common/CustomSelect';
 import LifeEventsManager from './LifeEventsManager';
 
-export default function InputForm({
+const InputForm = memo(function InputForm({
     inputs,
     setInputs,
     t,
@@ -670,7 +670,10 @@ export default function InputForm({
         </div>
 
     );
-}
+});
+
+export default InputForm;
+
 
 function InputGroup({ label, name, value, onChange, icon, prefix, type = "text", extraLabel, extraContent, titleActions, disabled = false, error, disabledStyle = false }) {
     const { theme } = useTheme();
@@ -705,6 +708,7 @@ function InputGroup({ label, name, value, onChange, icon, prefix, type = "text",
                     value={value}
                     onChange={onChange}
                     disabled={disabled}
+                    autoComplete="off"
                     className={`w-full rounded-lg py-1 px-2 text-xs transition-all ${prefix ? 'pl-5' : ''} ${extraContent ? 'pr-16' : ''} ${error
                         ? 'border-red-500 focus:ring-red-500'
                         : ''} ${disabled

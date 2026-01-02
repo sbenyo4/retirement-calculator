@@ -1,9 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
 import { useThemeClasses } from '../hooks/useThemeClasses';
 import { EVENT_TYPES } from '../constants';
 import { Calendar, Plus, Edit2, Trash2, ToggleLeft, ToggleRight, TrendingUp, TrendingDown, DollarSign, BarChart3, ChevronUp, ChevronDown } from 'lucide-react';
 import AddEventModal from './AddEventModal';
-import LifeEventsTimelineModal from './LifeEventsTimelineModal';
+
+// Lazy load timeline modal
+const LifeEventsTimelineModal = lazy(() => import('./LifeEventsTimelineModal'));
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTHS_SHORT_HE = ['ינו', 'פבר', 'מרץ', 'אפר', 'מאי', 'יונ', 'יול', 'אוג', 'ספט', 'אוק', 'נוב', 'דצמ'];
@@ -11,7 +13,7 @@ const MONTHS_SHORT_HE = ['ינו', 'פבר', 'מרץ', 'אפר', 'מאי', 'יו
 /**
  * LifeEventsManager - Manages life events timeline
  */
-export default function LifeEventsManager({
+const LifeEventsManager = React.memo(function LifeEventsManager({
     events = [],
     onChange,
     t,
@@ -38,9 +40,9 @@ export default function LifeEventsManager({
         if (viewOffset > Math.max(0, events.length - itemsPerView)) {
             setViewOffset(Math.max(0, events.length - itemsPerView));
         }
-    }, [events.length, itemsPerView]);
+    }, [events.length, itemsPerView, viewOffset]);
 
-    const calculateItems = () => {
+    const calculateItems = useCallback(() => {
         const container = listContainerRef.current;
         if (!container) return;
 
@@ -65,7 +67,7 @@ export default function LifeEventsManager({
         const count = Math.max(1, Math.floor(availableHeight / ITEM_HEIGHT));
 
         setItemsPerView(count);
-    };
+    }, [events.length]);
 
     // Calculate on resize and strict mode changes
     useEffect(() => {
@@ -82,7 +84,7 @@ export default function LifeEventsManager({
             observer.disconnect();
             window.removeEventListener('resize', calculateItems);
         };
-    }, []);
+    }, [calculateItems]);
 
     // Recalculate when layout-shifting props change, with a delay for animations
     useEffect(() => {
@@ -92,7 +94,7 @@ export default function LifeEventsManager({
         // And run again after animation (approx 300ms)
         const timer = setTimeout(calculateItems, 350);
         return () => clearTimeout(timer);
-    }, [calculationMode, simulationType]);
+    }, [calculationMode, simulationType, calculateItems]);
 
     const handleScrollUp = () => {
         setViewOffset(prev => Math.max(0, prev - 1));
@@ -346,30 +348,42 @@ export default function LifeEventsManager({
                 </div>
             </div>
 
-            {/* Timeline Modal */}
-            <LifeEventsTimelineModal
-                isOpen={showTimelineModal}
-                onClose={() => setShowTimelineModal(false)}
-                events={events}
-                retirementAge={retirementAge}
-                retirementEndAge={retirementEndAge}
-                currentAge={currentAge}
-                // Pass birthDate for exact year calculation
-                birthDate={birthDate}
-                t={t}
-                language={language}
-                onToggleEvent={handleToggleEvent}
-                onChange={onChange}
-                setShowAddModal={setShowAddModal}
-                showAddModal={showAddModal}
-                editingEvent={editingEvent}
-                setEditingEvent={setEditingEvent}
-                handleAddEvent={handleAddEvent}
-                handleEditEvent={handleEditEvent}
-                results={results}
-                setInputs={setInputs}
-                onDeleteEvent={handleDeleteEvent}
-            />
+            {/* Timeline Modal - Lazy loaded */}
+            {showTimelineModal && (
+                <Suspense fallback={
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-xl">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                            <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Loading...</p>
+                        </div>
+                    </div>
+                }>
+                    <LifeEventsTimelineModal
+                        isOpen={showTimelineModal}
+                        onClose={() => setShowTimelineModal(false)}
+                        events={events}
+                        retirementAge={retirementAge}
+                        retirementEndAge={retirementEndAge}
+                        currentAge={currentAge}
+                        // Pass birthDate for exact year calculation
+                        birthDate={birthDate}
+                        t={t}
+                        language={language}
+                        onToggleEvent={handleToggleEvent}
+                        onChange={onChange}
+                        setShowAddModal={setShowAddModal}
+                        showAddModal={showAddModal}
+                        editingEvent={editingEvent}
+                        setEditingEvent={setEditingEvent}
+                        handleAddEvent={handleAddEvent}
+                        handleEditEvent={handleEditEvent}
+                        results={results}
+                        setInputs={setInputs}
+                        onDeleteEvent={handleDeleteEvent}
+                    />
+                </Suspense>
+            )}
+
 
             {/* Add/Edit Modal - only render here when timeline is closed */}
             {
@@ -392,4 +406,6 @@ export default function LifeEventsManager({
             }
         </div >
     );
-}
+});
+
+export default LifeEventsManager;

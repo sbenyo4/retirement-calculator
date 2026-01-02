@@ -18,8 +18,11 @@ function deepEqual(obj1, obj2) {
 
     if (keys1.length !== keys2.length) return false;
 
+    // Use Set for O(n) instead of O(n²) with includes
+    const keys2Set = new Set(keys2);
+
     for (const key of keys1) {
-        if (!keys2.includes(key)) return false;
+        if (!keys2Set.has(key)) return false;
         if (!deepEqual(obj1[key], obj2[key])) return false;
     }
 

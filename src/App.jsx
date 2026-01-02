@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef, useMemo, Component, useReducer } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useReducer, useCallback, lazy, Suspense } from 'react';
 import InputForm from './components/InputForm';
 import { ResultsDashboard } from './components/ResultsDashboard';
 import { ProfileManager } from './components/ProfileManager';
+import ErrorBoundary from './components/ErrorBoundary';
 import { calculateRetirementProjection } from './utils/calculator';
 import { calculateRetirementWithAI } from './utils/ai-calculator';
 import { getAvailableModels } from './config/ai-models';
@@ -16,48 +17,11 @@ import { useProfiles } from './hooks/useProfiles';
 import { useDebouncedValue } from './hooks/useDebounce';
 import { useRateLimit } from './hooks/useRateLimit';
 import { useDeepCompareMemo } from './hooks/useDeepCompare';
-import { ModelsManager } from './components/ModelsManager';
 import { DEFAULT_INPUTS, WITHDRAWAL_STRATEGIES } from './constants';
 import { Settings } from 'lucide-react';
 
-// Error Boundary to catch render errors
-class ErrorBoundary extends Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null, errorInfo: null };
-  }
-
-  static getDerivedStateFromError(error) {
-    return { hasError: true };
-  }
-
-  componentDidCatch(error, errorInfo) {
-    this.setState({ error, errorInfo });
-    console.error('ErrorBoundary caught:', error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      const { t } = this.props;
-      return (
-        <div className="bg-red-900/50 border border-red-500 rounded-xl p-4 text-white">
-          <h2 className="text-xl font-bold mb-2">⚠️ {t ? t('displayError') : 'שגיאה בתצוגה'}</h2>
-          <p className="text-red-300 mb-2">{this.state.error?.message || (t ? t('unknownError') : 'Unknown error')}</p>
-          <pre className="text-xs bg-black/50 p-2 rounded overflow-auto max-h-40">
-            {this.state.errorInfo?.componentStack}
-          </pre>
-          <button
-            onClick={() => this.setState({ hasError: false, error: null, errorInfo: null })}
-            className="mt-2 bg-blue-600 px-4 py-2 rounded"
-          >
-            {t ? t('tryAgain') : 'נסה שוב'}
-          </button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
+// Lazy load ModelsManager modal for better initial bundle size
+const ModelsManager = lazy(() => import('./components/ModelsManager').then(module => ({ default: module.ModelsManager })));
 
 // Settings Reducer - consolidates related state
 const SETTINGS_ACTIONS = {
@@ -283,7 +247,7 @@ function MainApp() {
       setValidationError(null); // Don't show error for incomplete inputs
       setResults(null);
     }
-  }, [debouncedInputs, memoizedDebouncedInputs, settings.calculationMode, settings.simulationType, language]);
+  }, [debouncedInputs, memoizedDebouncedInputs, settings.calculationMode, settings.simulationType, t, language]);
 
   // Mark inputs as changed when they change
   useEffect(() => {
@@ -314,10 +278,11 @@ function MainApp() {
         results: calculateRetirementProjection(profile.data, t)
       };
     }).filter(Boolean);
-  }, [selectedProfileIds, profiles]);
+  }, [selectedProfileIds, profiles, t]); // Fixed: Added missing 't' dependency
 
-  // Helper to format rate limit messages
-  const formatLimitMessage = (limitCheck) => {
+
+  // Helper to format rate limit messages - memoized to prevent re-creation on every render
+  const formatLimitMessage = useCallback((limitCheck) => {
     if (!limitCheck || limitCheck.allowed) return null;
 
     const { reason, resetTime, current, limit } = limitCheck;
@@ -333,7 +298,7 @@ function MainApp() {
     }
 
     return t('rateLimitReached');
-  };
+  }, [t, language]);
 
   // Manual AI Calculation Handler
   const handleAiCalculate = async () => {
@@ -412,66 +377,70 @@ function MainApp() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           <div className="lg:col-span-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 shadow-xl flex flex-col relative z-20">
-            <ProfileManager
-              currentInputs={inputs}
-              onLoad={setInputs}
-              t={t}
-              language={language}
-              profiles={profiles}
-              onSaveProfile={saveProfile}
-              onUpdateProfile={updateProfile}
-              onDeleteProfile={deleteProfile}
-              onProfileLoad={markProfileAsLoaded}
-              lastLoadedProfileId={lastLoadedProfileId}
-            />
+            <ErrorBoundary t={t} theme={theme} componentName="ProfileManager">
+              <ProfileManager
+                currentInputs={inputs}
+                onLoad={setInputs}
+                t={t}
+                language={language}
+                profiles={profiles}
+                onSaveProfile={saveProfile}
+                onUpdateProfile={updateProfile}
+                onDeleteProfile={deleteProfile}
+                onProfileLoad={markProfileAsLoaded}
+                lastLoadedProfileId={lastLoadedProfileId}
+              />
+            </ErrorBoundary>
             <div className="my-2 border-t border-white/10"></div>
-            <InputForm
-              inputs={inputs}
-              setInputs={setInputs}
-              t={t}
-              language={language}
-              grossWithdrawal={
-                inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC && simulationResults
-                  ? simulationResults.initialGrossWithdrawal
-                  : results?.initialGrossWithdrawal
-              }
-              netWithdrawal={
-                inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC && simulationResults
-                  ? simulationResults.initialNetWithdrawal
-                  : results?.initialNetWithdrawal
-              }
-              neededToday={results?.pvOfDeficit}
-              capitalPreservation={results?.requiredCapitalForPerpetuity}
-              capitalPreservationNeededToday={results?.pvOfCapitalPreservation}
-              results={results}
+            <ErrorBoundary t={t} theme={theme} componentName="InputForm">
+              <InputForm
+                inputs={inputs}
+                setInputs={setInputs}
+                t={t}
+                language={language}
+                grossWithdrawal={
+                  inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC && simulationResults
+                    ? simulationResults.initialGrossWithdrawal
+                    : results?.initialGrossWithdrawal
+                }
+                netWithdrawal={
+                  inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC && simulationResults
+                    ? simulationResults.initialNetWithdrawal
+                    : results?.initialNetWithdrawal
+                }
+                neededToday={results?.pvOfDeficit}
+                capitalPreservation={results?.requiredCapitalForPerpetuity}
+                capitalPreservationNeededToday={results?.pvOfCapitalPreservation}
+                results={results}
 
-              // Settings Props
-              calculationMode={settings.calculationMode}
-              setCalculationMode={(mode) => dispatchSettings({ type: 'SET_CALCULATION_MODE', payload: mode })}
-              aiProvider={settings.aiProvider}
-              setAiProvider={(provider) => dispatchSettings({ type: 'SET_AI_PROVIDER', payload: provider })}
-              aiModel={settings.aiModel}
-              setAiModel={(model) => dispatchSettings({ type: 'SET_AI_MODEL', payload: model })}
-              apiKeyOverride={settings.apiKeyOverride}
-              setApiKeyOverride={(key) => dispatchSettings({ type: 'SET_API_KEY_OVERRIDE', payload: key })}
-              simulationType={settings.simulationType}
-              setSimulationType={(type) => dispatchSettings({ type: 'SET_SIMULATION_TYPE', payload: type })}
-              onAiCalculate={handleAiCalculate}
-              aiInputsChanged={aiInputsChanged}
-              aiLoading={aiLoading}
+                // Settings Props
+                calculationMode={settings.calculationMode}
+                setCalculationMode={(mode) => dispatchSettings({ type: 'SET_CALCULATION_MODE', payload: mode })}
+                aiProvider={settings.aiProvider}
+                setAiProvider={(provider) => dispatchSettings({ type: 'SET_AI_PROVIDER', payload: provider })}
+                aiModel={settings.aiModel}
+                setAiModel={(model) => dispatchSettings({ type: 'SET_AI_MODEL', payload: model })}
+                apiKeyOverride={settings.apiKeyOverride}
+                setApiKeyOverride={(key) => dispatchSettings({ type: 'SET_API_KEY_OVERRIDE', payload: key })}
+                simulationType={settings.simulationType}
+                setSimulationType={(type) => dispatchSettings({ type: 'SET_SIMULATION_TYPE', payload: type })}
+                onAiCalculate={handleAiCalculate}
+                aiInputsChanged={aiInputsChanged}
+                aiLoading={aiLoading}
 
-              // Sensitivity analysis props
-              showInterestSensitivity={showInterestSensitivity}
-              setShowInterestSensitivity={setShowInterestSensitivity}
-              showIncomeSensitivity={showIncomeSensitivity}
-              setShowIncomeSensitivity={setShowIncomeSensitivity}
-              showAgeSensitivity={showAgeSensitivity}
-              setShowAgeSensitivity={setShowAgeSensitivity}
-            />
+                // Sensitivity analysis props
+                showInterestSensitivity={showInterestSensitivity}
+                setShowInterestSensitivity={setShowInterestSensitivity}
+                showIncomeSensitivity={showIncomeSensitivity}
+                setShowIncomeSensitivity={setShowIncomeSensitivity}
+                showAgeSensitivity={showAgeSensitivity}
+                setShowAgeSensitivity={setShowAgeSensitivity}
+              />
+            </ErrorBoundary>
           </div>
 
           <div className="lg:col-span-8">
-            <ErrorBoundary t={t}>
+            <ErrorBoundary t={t} theme={theme} componentName="ResultsDashboard">
               {validationError && (
                 <div className="bg-red-900/50 border border-red-500 rounded-xl p-4 mb-4 text-white">
                   <h3 className="text-lg font-bold mb-2 flex items-center gap-2">
@@ -524,21 +493,30 @@ function MainApp() {
         </div>
       </div>
 
-      {/* Models Manager Modal */}
+      {/* Models Manager Modal - Lazy loaded */}
       {showModelsManager && (
-        <ModelsManager
-          apiKeys={{
-            gemini: settings.apiKeyOverride || import.meta.env.VITE_GEMINI_API_KEY,
-            openai: import.meta.env.VITE_OPENAI_API_KEY,
-            anthropic: import.meta.env.VITE_ANTHROPIC_API_KEY
-          }}
-          onClose={() => setShowModelsManager(false)}
-          onModelsUpdated={() => {
-            // Trigger refresh of models list by changing key
-            setModelsRefreshKey(prev => prev + 1);
-          }}
-          t={t}
-        />
+        <Suspense fallback={
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-xl">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Loading...</p>
+            </div>
+          </div>
+        }>
+          <ModelsManager
+            apiKeys={{
+              gemini: settings.apiKeyOverride || import.meta.env.VITE_GEMINI_API_KEY,
+              openai: import.meta.env.VITE_OPENAI_API_KEY,
+              anthropic: import.meta.env.VITE_ANTHROPIC_API_KEY
+            }}
+            onClose={() => setShowModelsManager(false)}
+            onModelsUpdated={() => {
+              // Trigger refresh of models list by changing key
+              setModelsRefreshKey(prev => prev + 1);
+            }}
+            t={t}
+          />
+        </Suspense>
       )}
     </div>
   );

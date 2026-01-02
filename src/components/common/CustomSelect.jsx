@@ -48,7 +48,7 @@ export function CustomSelect({ value, onChange, options, className = "", disable
                     focus:outline-none focus:ring-2 focus:ring-blue-500
                 `}
             >
-                <span className="truncate">
+                <span className="truncate" dir="auto">
                     {selectedOption ? selectedOption.label : (placeholder || "")}
                 </span>
                 <ChevronDown size={14} className={`opacity-70 flex-shrink-0 ml-1 ${isLight ? 'text-gray-500' : 'text-gray-400'}`} />
@@ -57,7 +57,6 @@ export function CustomSelect({ value, onChange, options, className = "", disable
             {/* DROPDOWN LIST */}
             {isOpen && (
                 <div
-                    dir="ltr"
                     className={`absolute top-full left-0 right-0 mt-1 z-50 rounded-lg shadow-xl overflow-hidden max-h-40 overflow-y-auto
                     ${dropdownBg} ${dropdownBorder} text-xs animate-in fade-in zoom-in-95 duration-100
                     [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent
@@ -71,10 +70,11 @@ export function CustomSelect({ value, onChange, options, className = "", disable
                                     onChange(option.value);
                                     setIsOpen(false);
                                 }}
-                                className={`px-3 py-2 cursor-pointer truncate transition-colors
+                                className={`px-3 py-2 cursor-pointer transition-colors text-right notranslate
                                     ${textColor} ${hoverColor}
                                     ${option.value === value ? selectedItemBg : ''}
                                 `}
+                                dir="auto"
                             >
                                 {option.label}
                             </div>

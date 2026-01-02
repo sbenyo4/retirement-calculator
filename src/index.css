@@ -33,6 +33,7 @@ body {
 }
 
 .no-spinner {
+  appearance: textfield;
   -moz-appearance: textfield;
 }
 
@@ -66,4 +67,39 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 input[type="date"]::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
+}
+
+/* RTL Scrollbar - Position scrollbar on right side for Hebrew mode */
+[dir="rtl"] .rtl-scroll {
+  transform: rotateY(180deg);
+}
+
+[dir="rtl"] .rtl-scroll>* {
+  transform: rotateY(180deg);
+}
+
+/* Smooth models list scrollbar styling */
+.rtl-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.rtl-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+
+.rtl-scroll::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.4);
+  border-radius: 10px;
+  transition: background 0.3s ease;
+}
+
+.rtl-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.7);
+}
+
+/* Firefox scrollbar styling */
+.rtl-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.4) rgba(0, 0, 0, 0.1);
 }

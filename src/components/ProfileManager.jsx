@@ -4,7 +4,7 @@ import { Save, Trash2, Upload, RotateCcw } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 import { DEFAULT_INPUTS } from '../constants';
 
-export function ProfileManager({ currentInputs, onLoad, t, language, profiles, onSaveProfile, onUpdateProfile, onDeleteProfile, onProfileLoad, lastLoadedProfileId }) {
+export const ProfileManager = React.memo(function ProfileManager({ currentInputs, onLoad, t, language, profiles, onSaveProfile, onUpdateProfile, onDeleteProfile, onProfileLoad, lastLoadedProfileId }) {
     const [newProfileName, setNewProfileName] = useState('');
     const [selectedProfileId, setSelectedProfileId] = useState('');
     const [saveMessage, setSaveMessage] = useState('');
@@ -149,4 +149,4 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
             </div>
         </div>
     );
-}
+});

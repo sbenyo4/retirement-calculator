@@ -136,7 +136,7 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t }) {
 
     return (
         <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${isLight ? 'bg-black/50' : 'bg-black/70'}`}>
-            <div className={`w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl shadow-2xl ${isLight ? 'bg-white' : 'bg-gray-900 border border-white/20'}`}>
+            <div className={`w-full max-w-3xl max-h-[85vh] rounded-2xl shadow-2xl ${isLight ? 'bg-white' : 'bg-gray-900 border border-white/20'}`}>
                 <div className={`sticky top-0 z-10 p-4 border-b ${isLight ? 'bg-white border-gray-200' : 'bg-gray-900 border-white/20'}`}>
                     <div className="flex items-center justify-between">
                         <h2 className={`text-xl font-bold ${isLight ? 'text-gray-900' : 'text-white'}`}>
@@ -251,7 +251,8 @@ function ProviderResults({ providerId, data, isLight, t, selectedModels, onToggl
             <div className="flex items-center justify-between mb-2">
                 <h4 className={`font-semibold ${isLight ? 'text-gray-900' : 'text-white'}`}>
                     {providerId === 'gemini' ? 'Google Gemini' : providerId === 'openai' ? 'OpenAI' : 'Anthropic'}
-                    <span className={`text-sm font-normal ml-2 ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
+                    {' '}
+                    <span className={`text-sm font-normal ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
                         ({selectedCount}/{allModels.length} {(t && t('selected')) || 'selected'})
                     </span>
                 </h4>
@@ -278,7 +279,7 @@ function ProviderResults({ providerId, data, isLight, t, selectedModels, onToggl
             </div>
 
             {expanded && (
-                <div className="space-y-1 mt-2">
+                <div className="space-y-1 mt-2 max-h-[300px] overflow-y-auto rtl-scroll pr-2">
                     {allModels
                         // Sort: selected models first, then unselected
                         .sort((a, b) => {
