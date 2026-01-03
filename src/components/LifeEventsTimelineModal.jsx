@@ -75,10 +75,6 @@ export default function LifeEventsTimelineModal({
         }
     }, [isOpen]);
 
-    // Initialize history reset when modal opens?? 
-    // Actually standard undo usually persists until close. 
-    // We will reset history only if modal was re-mounted (which it is).
-
     const handleEventsChange = (newEvents) => {
         // Push current state to history
         setHistory(prev => [...prev, events]);
@@ -169,7 +165,7 @@ export default function LifeEventsTimelineModal({
         }
     };
 
-    // Calculate implied birth month - MOVED UP
+    // Calculate implied birth month
     const birthMonth = useMemo(() => {
         if (birthDate) {
             const dateObj = new Date(birthDate);
@@ -190,25 +186,11 @@ export default function LifeEventsTimelineModal({
     const startYear = new Date().getFullYear();
     const baseCurrentAge = Math.floor(currentAge);
 
-    // User Expectation: Timeline should end exactly at "Retirement End Age"
-    // Use retirementEndAge if available, otherwise fallback to 70 (or user's prefererence, but let's stick to the input)
-    // Add a tiny buffer (0.1) just to ensure the final marker doesn't clip, but effectively it's the end age.
     const targetEndAge = retirementEndAge || 95;
     // FIXED: Add fractional year for birth month to ensure marker is included
     const endYear = startYear + (targetEndAge - baseCurrentAge) + ((birthMonth || 12) / 12);
 
-    // Ensure we have at least a decent view, but don't force 95 if user wants 67.
-    // However, we need minimal width for render. default min 10 years.
     const totalYears = Math.max(5, endYear - startYear);
-
-    // Define pixels per year
-    const PIXELS_PER_YEAR = 60;
-    const TOTAL_WIDTH_PX = (totalYears * PIXELS_PER_YEAR) + 120;
-    const CONTAINER_HEIGHT_PX = 450;
-
-
-
-
 
     // Process events for timeline
     const { layoutEvents, totalHeight, outOfBoundsCount } = useMemo(() => {
@@ -225,9 +207,13 @@ export default function LifeEventsTimelineModal({
                 if (eventCopy.endDate) {
                     eventEndYear = eventCopy.endDate.year + (eventCopy.endDate.month / 12);
                 } else if (eventCopy.type === EVENT_TYPES.INCOME_CHANGE || eventCopy.type === EVENT_TYPES.EXPENSE_CHANGE) {
-                    // Fallback to global endYear if recurring and no end date
-                    // STRICTLY use the calculated endYear (which matches retirementEndAge)
-                    eventEndYear = endYear;
+                    // Fallback to exactly retirementEndAge using Absolute Birth Year logic
+                    // This matches the marker position exactly (BirthYear + Age)
+                    const bYear = birthDate
+                        ? new Date(birthDate).getFullYear()
+                        : Math.floor(startYear - currentAge);
+
+                    eventEndYear = bYear + retirementEndAge + ((birthMonth || 1) / 12);
                 } else {
                     // One-time event
                     eventEndYear = eventStartYear;
@@ -284,51 +270,51 @@ export default function LifeEventsTimelineModal({
             let finalStartYear = e.startYear;
             let finalEndYear = e.endYear;
 
-            // Custom POST-LAYOUT tweak for Electricity
-            // We do this here (after calculateTimelineLayout) to ensure the track assignment (height) 
-            // is based on the original data (preserving the current look), 
-            // but the visual bar and label reflect the requested "Retirement End" duration.
+            // Custom POST-LAYOUT tweak for Electricity - REMOVED
+            // Logic is now handled correctly in processedEvents with retirementEndAge
             const nameStr = (e.name || e.label || e.description || '').toLowerCase();
             const isElectricity = nameStr.includes('electricity') || nameStr.includes('חשמל');
 
             let finalEndDate = e.endDate;
+            /* Conflicting override removed */
 
-            if (isElectricity && !e.endDate && retirementEndAge) {
-                // New End Target using shared birthMonth
-                const diffYears = retirementEndAge - Math.floor(currentAge);
+            // Ensure visualEndDate is populated for ALL recurring events without explicit end date
+            if (!finalEndDate && (e.type === EVENT_TYPES.INCOME_CHANGE || e.type === EVENT_TYPES.EXPENSE_CHANGE)) {
                 finalEndDate = {
-                    year: startYear + diffYears,
+                    year: Math.floor(finalEndYear),
                     month: birthMonth
                 };
                 finalEndYear = finalEndDate.year + (finalEndDate.month / 12);
             }
 
-            // Ensure visualEndDate is populated for ALL recurring events without explicit end date
-            // This fixes the "Missing End Label" issue and aligns month with birthMonth
-            if (!finalEndDate && (e.type === EVENT_TYPES.INCOME_CHANGE || e.type === EVENT_TYPES.EXPENSE_CHANGE)) {
-                finalEndDate = {
-                    year: Math.floor(finalEndYear),
-                    month: birthMonth // Use actual birth month
-                };
-                finalEndYear = finalEndDate.year + (finalEndDate.month / 12);
+            // Dynamic Layout with Fixed Zones for Recurring Events
+            // Blue (Income) -> Lower (Closer to axis)
+            // Orange (Expense) -> Higher (Further from axis)
+            const trackHeight = 38;
+            const baseAxisOffset = 40;
+
+            // Stagger One-Time events: Expense closer (0), Income further (1) - Existing Logic
+            let fixedTrackIndex = -1;
+            if (e.type === EVENT_TYPES.ONE_TIME_EXPENSE) fixedTrackIndex = 0;
+            if (e.type === EVENT_TYPES.ONE_TIME_INCOME) fixedTrackIndex = 3;
+
+            let trackIndex = (fixedTrackIndex !== -1)
+                ? fixedTrackIndex
+                : (e.trackIndex !== undefined ? (e.trackIndex - 1) : 0); // Convert to 0-based
+
+            // Apply Offset for Recurring Expense (Orange)
+            // If it's a recurring expense (and not a fixed one-time), shift it up.
+            if (fixedTrackIndex === -1 && (e.type === EVENT_TYPES.EXPENSE_CHANGE)) {
+                trackIndex += 3; // Shift Orange bars up to maximize distance (Starts at track 3)
             }
 
-            // STRICT LAYER SYSTEM
-            // 1. Green (One-Time Income): Fixed Bottom Layer
-            // 2. Red (One-Time Expense): Fixed Top Layer (Below Axis)
-            // 3. Blue (Income Change): Fixed Top Layer (Above Axis)
-            // 4. Orange (Expense Change): Fixed Mid Layer (Above Axis)
+            // Note: Recurring Income (Blue) stays at base trackIndex (Starts at track 0)
 
-            let trackOffsetPx = 50;
+            let trackOffsetPx = baseAxisOffset + (trackIndex * trackHeight);
 
-            if (e.type === EVENT_TYPES.ONE_TIME_INCOME) {
-                trackOffsetPx = 145;
-            } else if (e.type === EVENT_TYPES.ONE_TIME_EXPENSE) {
-                trackOffsetPx = 50;
-            } else if (e.type === EVENT_TYPES.INCOME_CHANGE) {
-                trackOffsetPx = 55;
-            } else if (e.type === EVENT_TYPES.EXPENSE_CHANGE) {
-                trackOffsetPx = 135;
+            // Override if manual offset exists (legacy support)
+            if (e.trackOffsetPx !== undefined) {
+                trackOffsetPx = e.trackOffsetPx;
             }
 
             return {
@@ -336,7 +322,6 @@ export default function LifeEventsTimelineModal({
                 startPos: ((finalStartYear - startYear) / totalYears) * 100,
                 endPos: ((finalEndYear - startYear) / totalYears) * 100,
                 yearSpan: finalEndYear - finalStartYear,
-                // Decouple VISUAL data from RAW data to prevent leaking fake endDates to the editor
                 visualEndDate: finalEndDate,
                 visualEndYear: finalEndYear,
                 isRecurring: e.type === EVENT_TYPES.INCOME_CHANGE || e.type === EVENT_TYPES.EXPENSE_CHANGE,
@@ -344,14 +329,10 @@ export default function LifeEventsTimelineModal({
             };
         });
 
-        // Total calculated height
-        const maxTracks = Math.max(incomeTracks, expenseTracks, 2); // At least 2 tracks of space
+        // Total calculated height (with 38px tracks) - ensure at least 4 tracks for our forced indexing
+        const maxTracks = Math.max(incomeTracks, expenseTracks, 4);
         const calculatedH = ((12 + (maxTracks * 38) + 40) * 2);
-
-        // Ensure enough height for the fixed layers (Green/Orange offsets ~145px from center)
-        // Center is at 48%. If total height is too small, 145px offset will clip.
-        // We need at least ~420px to nicely fit 145px up and down with label space.
-        const totalH = Math.max(calculatedH, 420);
+        const totalH = Math.max(calculatedH, 450);
 
         // Count out-of-bounds events for the alert
         const outOfBoundsCount = processedEvents.filter(e => e.startYear > endYear).length;
@@ -359,10 +340,13 @@ export default function LifeEventsTimelineModal({
         return { layoutEvents: eventsWithPos, totalHeight: totalH, outOfBoundsCount };
     }, [JSON.stringify(events), startYear, totalYears, endYear, isLight, retirementEndAge, baseCurrentAge, currentAge, birthDate, birthMonth]);
 
-
-
     const getSmartMarkerPos = (targetAge, forcedMonth = null) => {
-        const targetYearInt = startYear + (targetAge - baseCurrentAge);
+        // Calculate birth year accurately
+        const birthYear = birthDate
+            ? new Date(birthDate).getFullYear()
+            : Math.floor(startYear - currentAge);
+
+        const targetYearInt = birthYear + targetAge;
         let month = forcedMonth || birthMonth;
         const positionYear = targetYearInt + (month / 12);
         const displayLabel = formatDateShort({ year: targetYearInt, month: month });
@@ -431,7 +415,7 @@ export default function LifeEventsTimelineModal({
                         </button>
                     </div>
 
-                    {/* Main Header Content - Added padding to avoid overlapping the absolute buttons */}
+                    {/* Main Header Content */}
                     <div className={`flex justify-between items-start ${language === 'he' ? 'pl-[140px]' : 'pr-[140px]'}`}>
                         <div className="flex flex-col w-full min-w-0">
                             {/* Row 1: Title & Stats */}
@@ -529,12 +513,11 @@ export default function LifeEventsTimelineModal({
                                             value={retirementAge}
                                             onChange={(e) => {
                                                 const newVal = parseInt(e.target.value);
-                                                // Push logic: If new start age >= end age, push end age forward
                                                 if (newVal >= retirementEndAge) {
                                                     setInputs(prev => ({
                                                         ...prev,
                                                         retirementStartAge: newVal,
-                                                        retirementEndAge: Math.min(newVal + 1, 95) // Ensure at least 1 year gap, capped at 95
+                                                        retirementEndAge: Math.min(newVal + 1, 95)
                                                     }));
                                                 } else {
                                                     setInputs(prev => ({ ...prev, retirementStartAge: newVal }));
@@ -553,17 +536,16 @@ export default function LifeEventsTimelineModal({
                                         </div>
                                         <input
                                             type="range"
-                                            min={Math.ceil(currentAge)} // Changed min to start at current age to allow full range comparison
+                                            min={Math.ceil(currentAge)}
                                             max={95}
                                             value={retirementEndAge}
                                             onChange={(e) => {
                                                 const newVal = parseInt(e.target.value);
-                                                // Push logic: If new end age <= start age, push start age back
                                                 if (newVal <= retirementAge) {
                                                     setInputs(prev => ({
                                                         ...prev,
                                                         retirementEndAge: newVal,
-                                                        retirementStartAge: Math.max(newVal - 1, Math.ceil(currentAge)) // Ensure at least 1 year gap
+                                                        retirementStartAge: Math.max(newVal - 1, Math.ceil(currentAge))
                                                     }));
                                                 } else {
                                                     setInputs(prev => ({ ...prev, retirementEndAge: newVal }));
@@ -577,7 +559,7 @@ export default function LifeEventsTimelineModal({
                                     </div>
                                 </div>
 
-                                <div className={`h-3 w-px ${isLight ? 'bg-gray-300' : 'bg-white/20'}`} />
+                                <div className={`h-3 w-px ${isLight ? 'bg-gray-300' : 'bg-white/20'} shrink-0`} />
 
                                 <div className="flex items-center gap-1">
                                     {[
@@ -654,10 +636,8 @@ export default function LifeEventsTimelineModal({
                                         const age = baseCurrentAge + i;
                                         const left = (i / totalYears) * 100;
 
-                                        // Show tick if: divisible by 5, OR start, OR strictly the target end age
-                                        // AND strictly within the visual bounds (age <= targetEndAge)
                                         const isTargetEnd = age === Math.floor(targetEndAge);
-                                        if (age > targetEndAge) return null; // STRICT CLIP
+                                        if (age > targetEndAge) return null;
                                         if (!(i % 5 === 0 || i === 0 || isTargetEnd)) return null;
 
                                         return (
@@ -696,7 +676,6 @@ export default function LifeEventsTimelineModal({
 
                                         const isStart = marker.labelKey === 'retirementStart';
 
-                                        // Tooltip data
                                         const tooltipContent = results ? (
                                             isStart ? (
                                                 <div className="flex flex-col gap-1">
@@ -725,13 +704,11 @@ export default function LifeEventsTimelineModal({
                                                 className="group absolute top-[48%] z-[300] flex flex-col-reverse items-center pointer-events-auto cursor-help"
                                                 style={{ left: `${marker.left}%`, transform: 'translate(-50%, calc(-100% - 4px))' }}
                                             >
-                                                {/* Tooltip Content */}
                                                 {tooltipContent && (
                                                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1.5 bg-gray-800/95 backdrop-blur-md border border-white/20 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-[400] min-w-max">
                                                         <div className="text-[11px] text-white">
                                                             {tooltipContent}
                                                         </div>
-                                                        {/* Tooltip Arrow */}
                                                         <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-8 border-transparent border-t-gray-800/95" />
                                                     </div>
                                                 )}
@@ -757,35 +734,17 @@ export default function LifeEventsTimelineModal({
                                             return true;
                                         })
                                         .map((event) => {
-                                            // Use strict trackOffsetPx calculated above
-                                            // Determine vertical direction based on type
-                                            // Blue/Orange (Recurring) -> Above Axis (- verticalShift)
-                                            // Green/Red (One-time) -> Below Axis (+ verticalShift)
-
-                                            const isAboveAxis = event.type === EVENT_TYPES.INCOME_CHANGE || event.type === EVENT_TYPES.EXPENSE_CHANGE;
-
-                                            // Note: In the DOM, positive translateY moves DOWN.
-                                            // isTop was using negative shift to move UP.
-                                            // We want Blue/Orange ABOVE axis -> Negative Shift
-
-                                            // Ensure nameStr is available
-                                            const nameStr = (event.name || event.label || event.description || '').toLowerCase();
-
-                                            // Fix ReferenceErrors for dashed line rendering
                                             const finalOffset = event.trackOffsetPx;
+                                            const isAboveAxis = event.type === EVENT_TYPES.INCOME_CHANGE || event.type === EVENT_TYPES.EXPENSE_CHANGE;
                                             const isTop = isAboveAxis;
-
                                             const verticalShift = isAboveAxis ? -event.trackOffsetPx : event.trackOffsetPx;
-
-                                            // Fix ReferenceErrors for dashed line rendering
-                                            // const finalOffset = event.trackOffsetPx; // Removed duplicate
-                                            // const isTop = isAboveAxis; // Removed duplicate
+                                            const nameStr = (event.name || event.label || event.description || '').toLowerCase();
 
                                             const positionStyle = {
                                                 left: `${event.startPos}%`,
                                                 width: event.isRecurring ? `${Math.max(event.endPos - event.startPos, 0.5)}%` : '0',
                                                 top: `calc(48% + ${verticalShift}px)`,
-                                                height: '32px',
+                                                height: '32px', // FIX: 32px Height (Reverted)
                                                 transform: 'translateY(-50%)'
                                             };
 
@@ -864,7 +823,6 @@ export default function LifeEventsTimelineModal({
                                                         {event.isRecurring ? (
                                                             <div className="relative w-full h-full">
                                                                 <div dir={isRtl ? 'rtl' : 'ltr'} className={`absolute ${isTop ? (nameStr.includes('electricity') || nameStr.includes('חשמל') || nameStr.includes('side jobs') || nameStr.includes('עבודות צד') ? 'top-0 -translate-y-full' : '-top-2 -translate-y-full') : 'bottom-0 translate-y-full'} left-1/2 -translate-x-1/2 px-2 py-0.5 rounded shadow-sm border flex flex-col items-center whitespace-nowrap min-w-[100px] ${event.cardClass} group cursor-pointer`}>
-                                                                    {/* Hover Delete Button */}
                                                                     <button
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
@@ -900,7 +858,6 @@ export default function LifeEventsTimelineModal({
                                                         ) : (
                                                             <div className="relative w-0 h-full flex items-center justify-center">
                                                                 <div dir={isRtl ? 'rtl' : 'ltr'} className={`absolute ${isTop ? '-top-2 -translate-y-full' : 'bottom-0 translate-y-full'} left-1/2 -translate-x-1/2 px-2 py-1 rounded shadow-sm border whitespace-nowrap text-center min-w-[80px] ${event.cardClass} group cursor-pointer`}>
-                                                                    {/* Hover Delete Button */}
                                                                     <button
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
@@ -976,7 +933,6 @@ export default function LifeEventsTimelineModal({
                                                         {event.description && <div className="opacity-70 break-words">{event.description}</div>}
                                                     </div>
 
-                                                    {/* Mobile Actions */}
                                                     <div className="mt-3 flex gap-3 border-t border-black/5 dark:border-white/10 pt-2 opacity-60">
                                                         <button
                                                             onClick={(e) => {

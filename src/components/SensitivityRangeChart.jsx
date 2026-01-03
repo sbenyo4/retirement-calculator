@@ -315,7 +315,7 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
                 </div>
 
                 {/* Content */}
-                <div className="p-4 space-y-4 overflow-y-auto custom-scrollbar flex-1 relative z-10">
+                <div className="p-4 space-y-4 overflow-y-auto flex-1 relative z-10">
                     {/* Controls Row */}
                     <div className="flex flex-wrap gap-4 items-end">
                         {/* Parameter Selector */}

@@ -172,6 +172,33 @@ export default function AIInsightsView({ inputs, results, aiProvider, aiModel, a
                             </div>
                         </div>
 
+                        {/* Retirement Age Recommendation */}
+                        {insights.retirementAgeRecommendation && (
+                            <div className={`${cardClass} rounded-xl p-5 border-l-4 border-l-blue-500`}>
+                                <div className="flex items-start gap-4">
+                                    <div className="p-3 bg-blue-500/10 rounded-lg text-blue-500 shrink-0">
+                                        <TrendingUp size={24} />
+                                    </div>
+                                    <div>
+                                        <h3 className={`font-bold ${textPrimary} text-lg mb-1`}>
+                                            {safeT('aiRecommendedAge', 'AI Recommended Retirement Age')}
+                                        </h3>
+                                        <div className="flex items-baseline gap-2 mb-2">
+                                            <span className="text-3xl font-bold text-blue-500">
+                                                {insights.retirementAgeRecommendation.recommendedAge}
+                                            </span>
+                                            <span className={`text-sm ${textSecondary}`}>
+                                                ({safeT('current', 'Current Plan')}: {inputs.retirementStartAge})
+                                            </span>
+                                        </div>
+                                        <p className={`text-sm ${textSecondary} leading-relaxed`}>
+                                            {insights.retirementAgeRecommendation.reasoning}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Analysis Grid */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {/* Strengths */}

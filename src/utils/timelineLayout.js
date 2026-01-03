@@ -31,6 +31,8 @@ export const calculateTimelineLayout = (events, { minSpacingYears = 0.5 } = {}) 
         }
     });
 
+
+
     // 2. Sort function: by start date, then by duration (longer first to take inner tracks) 
     const byStart = (a, b) => {
         const startDiff = getEventStart(a) - getEventStart(b);
@@ -61,15 +63,20 @@ export const calculateTimelineLayout = (events, { minSpacingYears = 0.5 } = {}) 
 };
 
 function getEventStart(event) {
+    // If startYear is pre-calculated, use it for consistency
+    if (event.startYear !== undefined) return event.startYear;
     return event.startDate.year + (event.startDate.month / 12);
 }
 
 function getEventEnd(event) {
+    // CRITICAL FIX: Use pre-calculated endYear if available
+    // This ensures recurring events have their full duration for collision detection
+    if (event.endYear !== undefined) return event.endYear;
+
     if (event.endDate) {
         return event.endDate.year + (event.endDate.month / 12);
     }
-    // For one-time events, define a "visual duration" for collision purposes
-    // Use the same start date + a small width (e.g. 0.1) or rely on minSpacingYears
+    // Only for true one-time events without pre-calc
     return getEventStart(event);
 }
 

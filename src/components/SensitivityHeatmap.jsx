@@ -140,7 +140,7 @@ export function SensitivityHeatmapModal({ isOpen, onClose, inputs, t, language }
                 </div>
 
                 {/* Content */}
-                <div className="p-2 md:p-4 overflow-y-auto custom-scrollbar flex-1 min-h-0 relative z-10">
+                <div className="p-2 md:p-4 overflow-y-auto flex-1 min-h-0 relative z-10">
                     <SensitivityHeatmapGrid
                         inputs={localInputs}
                         originalInputs={inputs}

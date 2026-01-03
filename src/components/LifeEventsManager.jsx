@@ -1,11 +1,9 @@
-import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useThemeClasses } from '../hooks/useThemeClasses';
 import { EVENT_TYPES } from '../constants';
 import { Calendar, Plus, Edit2, Trash2, ToggleLeft, ToggleRight, TrendingUp, TrendingDown, DollarSign, BarChart3, ChevronUp, ChevronDown } from 'lucide-react';
 import AddEventModal from './AddEventModal';
-
-// Lazy load timeline modal
-const LifeEventsTimelineModal = lazy(() => import('./LifeEventsTimelineModal'));
+import LifeEventsTimelineModal from './LifeEventsTimelineModal';
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTHS_SHORT_HE = ['ינו', 'פבר', 'מרץ', 'אפר', 'מאי', 'יונ', 'יול', 'אוג', 'ספט', 'אוק', 'נוב', 'דצמ'];
@@ -13,7 +11,7 @@ const MONTHS_SHORT_HE = ['ינו', 'פבר', 'מרץ', 'אפר', 'מאי', 'יו
 /**
  * LifeEventsManager - Manages life events timeline
  */
-const LifeEventsManager = React.memo(function LifeEventsManager({
+export default function LifeEventsManager({
     events = [],
     onChange,
     t,
@@ -40,23 +38,19 @@ const LifeEventsManager = React.memo(function LifeEventsManager({
         if (viewOffset > Math.max(0, events.length - itemsPerView)) {
             setViewOffset(Math.max(0, events.length - itemsPerView));
         }
-    }, [events.length, itemsPerView, viewOffset]);
+    }, [events.length, itemsPerView]);
 
-    const calculateItems = useCallback(() => {
+    const calculateItems = () => {
         const container = listContainerRef.current;
         if (!container) return;
 
-        const rect = container.getBoundingClientRect();
-        // Calculate available space from the container's top to the bottom of the viewport
-        // Minimized buffer (4px)
-        const viewportForList = window.innerHeight - rect.top - 4;
-        const effectiveHeight = Math.max(100, viewportForList);
+        const effectiveHeight = container.clientHeight;
 
         const ITEM_HEIGHT = 48; // Compacted: py-1.5 (6+6) + 2 lines(32) + border(2) + gap(2) = ~48px
-        const BUTTON_SPACE = 44; // 2 buttons * 22px (slightly tighter reservation)
+        const BUTTON_SPACE = 36; // 2 buttons * 18px (optimized to fit more items)
 
-        // 1. Check if we can fit ALL events without buttons
-        const potentialCountNoButtons = Math.floor(effectiveHeight / ITEM_HEIGHT);
+        // 1. Check if we can fit ALL events without buttons (with 12px buffer/squeeze)
+        const potentialCountNoButtons = Math.floor((effectiveHeight + 12) / ITEM_HEIGHT);
 
         if (potentialCountNoButtons >= events.length) {
             setItemsPerView(events.length);
@@ -64,10 +58,11 @@ const LifeEventsManager = React.memo(function LifeEventsManager({
         }
 
         const availableHeight = effectiveHeight - BUTTON_SPACE;
-        const count = Math.max(1, Math.floor(availableHeight / ITEM_HEIGHT));
+        // Allow squeezing one more item if we are within 12px of fitting it
+        const count = Math.max(1, Math.floor((availableHeight + 12) / ITEM_HEIGHT));
 
         setItemsPerView(count);
-    }, [events.length]);
+    };
 
     // Calculate on resize and strict mode changes
     useEffect(() => {
@@ -84,7 +79,7 @@ const LifeEventsManager = React.memo(function LifeEventsManager({
             observer.disconnect();
             window.removeEventListener('resize', calculateItems);
         };
-    }, [calculateItems]);
+    }, []);
 
     // Recalculate when layout-shifting props change, with a delay for animations
     useEffect(() => {
@@ -94,7 +89,7 @@ const LifeEventsManager = React.memo(function LifeEventsManager({
         // And run again after animation (approx 300ms)
         const timer = setTimeout(calculateItems, 350);
         return () => clearTimeout(timer);
-    }, [calculationMode, simulationType, calculateItems]);
+    }, [calculationMode, simulationType]);
 
     const handleScrollUp = () => {
         setViewOffset(prev => Math.max(0, prev - 1));
@@ -197,7 +192,7 @@ const LifeEventsManager = React.memo(function LifeEventsManager({
             parts.push(`${duration.months} ${language === 'he' ? (duration.months === 1 ? 'חודש' : 'חודשים') : (duration.months === 1 ? 'month' : 'months')}`);
         }
 
-        return parts.length > 0 ? ` (${parts.join(language === 'he' ? ' ו' : ' and ')})` : '';
+        return parts.length > 0 ? ` (${parts.join(language === 'he' ? ' ו-' : ' and ')})` : '';
     };
 
     const formatAmount = (event) => {
@@ -215,7 +210,7 @@ const LifeEventsManager = React.memo(function LifeEventsManager({
     };
 
     return (
-        <div className="flex flex-col h-full space-y-2 mt-2">
+        <div className="flex flex-col flex-1 space-y-2 mt-2">
             {/* Header */}
             <div className={`${classes.container} rounded-xl p-2 flex-none`}>
                 <div className="flex items-center justify-between mb-2">
@@ -250,13 +245,13 @@ const LifeEventsManager = React.memo(function LifeEventsManager({
                 </div>
 
                 {/* Events List Container */}
-                <div ref={listContainerRef} className="flex-1 min-h-0">
+                <div ref={listContainerRef} className="flex-1 min-h-0 flex flex-col">
                     {events.length === 0 ? (
                         <div className={`text-center py-4 ${classes.label} text-xs`}>
                             {t ? t('noEventsYet') : 'No life events added yet. Click "Add" to create one.'}
                         </div>
                     ) : (
-                        <div className="space-y-0.5 notranslate h-full flex flex-col" translate="no">
+                        <div className="space-y-0.5 notranslate flex-1 flex flex-col" translate="no">
                             {/* Up Arrow - Always render but hidden if needed to preserve layout if we want, OR conditional */}
                             {/* To keep height calculations stable, it's better if they exist or we account for them. */}
                             {/* Since we subtracted BUTTON_SPACE, we can render them. */}
@@ -265,7 +260,7 @@ const LifeEventsManager = React.memo(function LifeEventsManager({
                                 <button
                                     onClick={handleScrollUp}
                                     disabled={viewOffset === 0}
-                                    className={`w-full flex-none flex items-center justify-center p-1 rounded transition-colors ${viewOffset === 0
+                                    className={`w-full flex-none flex items-center justify-center p-[1px] rounded transition-colors ${viewOffset === 0
                                         ? 'invisible'
                                         : 'text-blue-400 hover:bg-white/10'
                                         }`}
@@ -274,11 +269,11 @@ const LifeEventsManager = React.memo(function LifeEventsManager({
                                 </button>
                             )}
 
-                            <div className="flex-1 space-y-0.5 min-h-0">
+                            <div className="flex-1 space-y-0.5 min-h-0 flex flex-col">
                                 {events.slice(viewOffset, viewOffset + itemsPerView).map(event => (
                                     <div
                                         key={event.id}
-                                        className={`${classes.container} border ${event.enabled ? classes.border : 'border-gray-600'} rounded-lg px-2 py-1.5 ${!event.enabled ? 'opacity-50' : ''} select-none`}
+                                        className={`${classes.container} border ${event.enabled ? classes.border : 'border-gray-600'} rounded-lg px-2 py-1.5 ${!event.enabled ? 'opacity-50' : ''} select-none flex-1`}
                                     >
                                         <div className="flex items-start justify-between gap-2">
                                             <div className="flex items-start gap-2 flex-1 min-w-0">
@@ -335,7 +330,7 @@ const LifeEventsManager = React.memo(function LifeEventsManager({
                                 <button
                                     onClick={handleScrollDown}
                                     disabled={viewOffset + itemsPerView >= events.length}
-                                    className={`w-full flex-none flex items-center justify-center p-1 rounded transition-colors ${viewOffset + itemsPerView >= events.length
+                                    className={`w-full flex-none flex items-center justify-center p-[1px] rounded transition-colors ${viewOffset + itemsPerView >= events.length
                                         ? 'invisible'
                                         : 'text-blue-400 hover:bg-white/10'
                                         }`}
@@ -348,42 +343,30 @@ const LifeEventsManager = React.memo(function LifeEventsManager({
                 </div>
             </div>
 
-            {/* Timeline Modal - Lazy loaded */}
-            {showTimelineModal && (
-                <Suspense fallback={
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-xl">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                            <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Loading...</p>
-                        </div>
-                    </div>
-                }>
-                    <LifeEventsTimelineModal
-                        isOpen={showTimelineModal}
-                        onClose={() => setShowTimelineModal(false)}
-                        events={events}
-                        retirementAge={retirementAge}
-                        retirementEndAge={retirementEndAge}
-                        currentAge={currentAge}
-                        // Pass birthDate for exact year calculation
-                        birthDate={birthDate}
-                        t={t}
-                        language={language}
-                        onToggleEvent={handleToggleEvent}
-                        onChange={onChange}
-                        setShowAddModal={setShowAddModal}
-                        showAddModal={showAddModal}
-                        editingEvent={editingEvent}
-                        setEditingEvent={setEditingEvent}
-                        handleAddEvent={handleAddEvent}
-                        handleEditEvent={handleEditEvent}
-                        results={results}
-                        setInputs={setInputs}
-                        onDeleteEvent={handleDeleteEvent}
-                    />
-                </Suspense>
-            )}
-
+            {/* Timeline Modal */}
+            <LifeEventsTimelineModal
+                isOpen={showTimelineModal}
+                onClose={() => setShowTimelineModal(false)}
+                events={events}
+                retirementAge={retirementAge}
+                retirementEndAge={retirementEndAge}
+                currentAge={currentAge}
+                // Pass birthDate for exact year calculation
+                birthDate={birthDate}
+                t={t}
+                language={language}
+                onToggleEvent={handleToggleEvent}
+                onChange={onChange}
+                setShowAddModal={setShowAddModal}
+                showAddModal={showAddModal}
+                editingEvent={editingEvent}
+                setEditingEvent={setEditingEvent}
+                handleAddEvent={handleAddEvent}
+                handleEditEvent={handleEditEvent}
+                results={results}
+                setInputs={setInputs}
+                onDeleteEvent={handleDeleteEvent}
+            />
 
             {/* Add/Edit Modal - only render here when timeline is closed */}
             {
@@ -406,6 +389,4 @@ const LifeEventsManager = React.memo(function LifeEventsManager({
             }
         </div >
     );
-});
-
-export default LifeEventsManager;
+}

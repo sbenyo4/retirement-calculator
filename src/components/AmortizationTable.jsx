@@ -106,7 +106,7 @@ export function AmortizationTableModal({ isOpen, onClose, history, t, language }
                 {/* Table Content - Direction inverted on container to control scrollbar side as requested */}
                 {/* Hebrew: container LTR (scroll right), table RTL. English: container RTL (scroll left), table LTR */}
                 <div
-                    className="max-h-[70vh] overflow-y-auto custom-scrollbar p-4"
+                    className="max-h-[70vh] overflow-y-auto p-4"
                     dir={language === 'he' ? 'ltr' : 'rtl'}
                 >
                     <table
@@ -213,7 +213,7 @@ export function AmortizationTable({ history, t, language }) {
             </button>
 
             {isExpanded && (
-                <div className="max-h-80 overflow-y-auto custom-scrollbar border-t border-white/10">
+                <div className="max-h-80 overflow-y-auto border-t border-white/10">
                     <table className="w-full text-sm">
                         <thead className="bg-slate-900 sticky top-0 z-10">
                             <tr>

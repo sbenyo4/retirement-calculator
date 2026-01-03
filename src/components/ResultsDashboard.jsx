@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, memo, lazy, Suspense } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { calculateRetirementProjection } from '../utils/calculator';
 import { AmortizationTable, AmortizationTableButton, AmortizationTableModal } from './AmortizationTable';
@@ -7,9 +7,7 @@ import { SensitivityHeatmapButton, SensitivityHeatmapModal } from './Sensitivity
 import { InflationButton, InflationModal } from './InflationRealityCheck';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
 import { LayoutDashboard, BrainCircuit } from 'lucide-react';
-
-// Lazy load AI Insights view
-const AIInsightsView = lazy(() => import('./AIInsightsView'));
+import AIInsightsView from './AIInsightsView';
 import { Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -34,7 +32,7 @@ ChartJS.register(
     Filler
 );
 
-const ResultsDashboard = memo(function ResultsDashboard({ results, inputs, t, language, calculationMode, aiResults, simulationResults, aiLoading, aiError, simulationType, profiles, selectedProfileIds, setSelectedProfileIds, profileResults, showInterestSensitivity, setShowInterestSensitivity, showIncomeSensitivity, setShowIncomeSensitivity, showAgeSensitivity, setShowAgeSensitivity, aiProvider, aiModel, apiKeyOverride, aiInsightsData, setAiInsightsData }) {
+export function ResultsDashboard({ results, inputs, t, language, calculationMode, aiResults, simulationResults, aiLoading, aiError, simulationType, profiles, selectedProfileIds, setSelectedProfileIds, profileResults, showInterestSensitivity, setShowInterestSensitivity, showIncomeSensitivity, setShowIncomeSensitivity, showAgeSensitivity, setShowAgeSensitivity, aiProvider, aiModel, apiKeyOverride, aiInsightsData, setAiInsightsData }) {
     // ALL HOOKS MUST BE AT THE TOP - React rules of hooks
     const { theme } = useTheme();
     const isLight = theme === 'light';
@@ -350,6 +348,8 @@ const ResultsDashboard = memo(function ResultsDashboard({ results, inputs, t, la
         pvOfDeficit,
         initialGrossWithdrawal,
         initialNetWithdrawal,
+        averageGrossWithdrawal,
+        averageNetWithdrawal,
         simulationRange // Only present in Monte Carlo
     } = activeResults;
 
@@ -438,28 +438,17 @@ const ResultsDashboard = memo(function ResultsDashboard({ results, inputs, t, la
 
             {activeTab === 'insights' ? (
                 <div className="flex-1 min-h-0 overflow-hidden">
-                    <Suspense fallback={
-                        <div className="flex items-center justify-center h-full">
-                            <div className={`text-center p-8 rounded-xl ${isLight ? 'bg-white' : 'bg-white/5'}`}>
-                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
-                                <p className={`text-sm ${isLight ? 'text-gray-600' : 'text-gray-300'}`}>
-                                    {t('loadingAIInsights') || 'Loading AI Insights...'}
-                                </p>
-                            </div>
-                        </div>
-                    }>
-                        <AIInsightsView
-                            inputs={inputs}
-                            results={results}
-                            aiProvider={aiProvider}
-                            aiModel={aiModel}
-                            apiKeyOverride={apiKeyOverride}
-                            language={language}
-                            t={t}
-                            insightsData={aiInsightsData}
-                            onInsightsChange={setAiInsightsData}
-                        />
-                    </Suspense>
+                    <AIInsightsView
+                        inputs={inputs}
+                        results={results}
+                        aiProvider={aiProvider}
+                        aiModel={aiModel}
+                        apiKeyOverride={apiKeyOverride}
+                        language={language}
+                        t={t}
+                        insightsData={aiInsightsData}
+                        onInsightsChange={setAiInsightsData}
+                    />
                 </div>
             ) : (
                 <div className="space-y-3 overflow-y-auto flex-1 min-h-0 pr-1">
@@ -763,12 +752,14 @@ const ResultsDashboard = memo(function ResultsDashboard({ results, inputs, t, la
                             />
                             <SummaryCard
                                 label={t('estGrossWithdrawal')}
-                                value={formatCurrency(initialGrossWithdrawal)}
+                                value={formatCurrency(averageGrossWithdrawal || initialGrossWithdrawal)}
                                 color="text-yellow-400"
                                 extraContent={
                                     <div className="mt-1 pt-1 border-t border-white/10">
-                                        <span className="text-xs text-green-300 font-medium block">{t('netWithdrawal')}:</span>
-                                        <span className="text-lg font-bold text-green-300">{formatCurrency(initialNetWithdrawal || 0)}</span>
+                                        <span className="text-xs text-green-300 font-medium block">
+                                            {t('netWithdrawal')} {language === 'he' ? '(ממוצע)' : '(Avg)'}:
+                                        </span>
+                                        <span className="text-lg font-bold text-green-300">{formatCurrency(averageNetWithdrawal || initialNetWithdrawal || 0)}</span>
                                     </div>
                                 }
                             />
@@ -853,9 +844,7 @@ const ResultsDashboard = memo(function ResultsDashboard({ results, inputs, t, la
             )}
         </div>
     );
-});
-
-export { ResultsDashboard };
+}
 
 function SummaryCard({ label, value, subtext, color, extraContent }) {
     const { theme } = useTheme();
@@ -870,3 +859,5 @@ function SummaryCard({ label, value, subtext, color, extraContent }) {
         </div>
     );
 }
+
+

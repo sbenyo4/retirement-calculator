@@ -104,9 +104,14 @@ export function calculateRetirementProjection(inputs, t = null) {
         monthlyContribution,
         monthlyNetIncomeDesired,
         annualReturnRate,
-        taxRate
+        taxRate,
+        variableRates, // New input
+        variableRatesEnabled // Toggle flag
     } = Object.fromEntries(
-        Object.entries(inputs).map(([k, v]) => [k, parseFloat(v) || 0])
+        Object.entries(inputs).map(([k, v]) => {
+            if (k === 'variableRates' || k === 'variableRatesEnabled' || k === 'lifeEvents') return [k, v]; // Preserve non-numeric inputs
+            return [k, parseFloat(v) || 0];
+        })
     );
 
     // Get withdrawal strategy (default to fixed if not specified)
@@ -115,6 +120,9 @@ export function calculateRetirementProjection(inputs, t = null) {
 
     // Get life events (default to empty array if not specified)
     const lifeEvents = inputs.lifeEvents || [];
+
+    // START YEAR for variable rates mapping
+    const startYear = new Date().getFullYear();
 
     // Helper function to convert event date to month number from current age
     const getMonthFromDate = (date) => {
@@ -149,8 +157,17 @@ export function calculateRetirementProjection(inputs, t = null) {
             : (event.amount || 0);
     };
 
+    // Helper to get rate for a specific month index
+    const getMonthlyRateForMonth = (monthIndex) => {
+        const yearOffset = Math.floor(monthIndex / 12);
+        const currentCalcYear = startYear + yearOffset;
+        const yearRate = (variableRatesEnabled && variableRates && variableRates[currentCalcYear] !== undefined)
+            ? variableRates[currentCalcYear]
+            : annualReturnRate;
+        return yearRate / 100 / 12;
+    };
 
-    const monthlyRate = annualReturnRate / 100 / 12;
+    // Constant tax rate (could be variable too, but keeping simple)
     const taxRateDecimal = taxRate / 100;
 
     const monthsToRetirement = (retirementStartAge - currentAge) * 12;
@@ -192,6 +209,7 @@ export function calculateRetirementProjection(inputs, t = null) {
 
     for (let i = 1; i <= monthsToRetirement; i++) {
         currentMonth++;
+        const monthlyRate = getMonthlyRateForMonth(currentMonth);
 
         // Apply life events for this month
         lifeEvents.forEach(event => {
@@ -277,14 +295,19 @@ export function calculateRetirementProjection(inputs, t = null) {
     let initialGrossWithdrawal = 0;
     let initialNetWithdrawal = 0;
     let accumulatedWithdrawals = 0;
+    let totalNetWithdrawal = 0;
 
     // Calculate base withdrawal for 4% rule (yearly amount / 12)
     const fourPercentMonthly = (balanceAtRetirement * 0.04) / 12;
     // Track the base for dynamic strategy
     let dynamicBaseWithdrawal = monthlyNetIncomeDesired;
 
-    // Effective monthly rate for PV calculations (growth net of tax on interest)
-    const effectiveMonthlyRate = monthlyRate * (1 - taxRateDecimal);
+    // Effective monthly rate for PV calculations - VARIES BY MONTH NOW due to variable rates
+    // const effectiveMonthlyRate = monthlyRate * (1 - taxRateDecimal); 
+    // We can't use a constant effectiveMonthlyRate for PV anymore if we want perfect accuracy, 
+    // but for PV estimate we might just use the CURRENT average or base rate?
+    // Let's stick to base annualReturnRate for PV estimate to avoid complexity, or calculate average.
+    const effectiveMonthlyRate = (annualReturnRate / 100 / 12) * (1 - taxRateDecimal);
 
     // Accumulator for Required Capital (NPV of all future needs)
     let requiredCapitalPV = 0;
@@ -312,6 +335,7 @@ export function calculateRetirementProjection(inputs, t = null) {
 
     for (let i = 1; i <= monthsInRetirement; i++) {
         currentMonth++;
+        const monthlyRate = getMonthlyRateForMonth(currentMonth);
 
         // Apply life events for this month during retirement
         lifeEvents.forEach(event => {
@@ -319,50 +343,38 @@ export function calculateRetirementProjection(inputs, t = null) {
 
             const eventStartMonth = getMonthFromDate(event.startDate);
 
-            // Check if this is the exact month the event starts
+            // 1. Handle One-Time Events (Impact Balance directly)
             if (eventStartMonth === currentMonth) {
                 switch (event.type) {
                     case EVENT_TYPES.ONE_TIME_INCOME:
                         retirementBalance += event.amount;
-                        // One-time income reduces the capital needed for this month
-                        // We track this separately for the PV calculation
                         break;
-
                     case EVENT_TYPES.ONE_TIME_EXPENSE:
                         retirementBalance -= event.amount;
-                        // One-time expense increases the need
-                        break;
-
-                    case EVENT_TYPES.INCOME_CHANGE:
-                        // Additional income during retirement (e.g., part-time work, pension)
-                        // Treat as reduction in needed withdrawal
-                        activeIncomeAdjustment += getMonthlyAmount(event);
-                        break;
-
-                    case EVENT_TYPES.EXPENSE_CHANGE:
-                        // Adjust monthly expenses (will affect net withdrawal needed)
-                        activeExpenseAdjustment += getMonthlyAmount(event);
                         break;
                 }
             }
+        });
 
-            // Check if recurring events should end this month
-            if ((event.type === EVENT_TYPES.INCOME_CHANGE || event.type === EVENT_TYPES.EXPENSE_CHANGE) && event.endDate) {
-                const eventEndMonth = getMonthFromDate(event.endDate);
-                if (eventEndMonth === currentMonth) {
+        // 2. Handle Recurring Events (Stateless Calculation)
+        // Recalculate adjustments from scratch each month to avoid state drift
+        activeIncomeAdjustment = 0;
+        activeExpenseAdjustment = 0;
+
+        lifeEvents.forEach(event => {
+            if (!event.enabled) return;
+
+            // Only check recurring types
+            if (event.type === EVENT_TYPES.INCOME_CHANGE || event.type === EVENT_TYPES.EXPENSE_CHANGE) {
+                if (isEventActive(event, currentMonth)) {
+                    const amount = getMonthlyAmount(event);
                     if (event.type === EVENT_TYPES.INCOME_CHANGE) {
-                        // Stop adding this income
-                        activeIncomeAdjustment -= getMonthlyAmount(event);
+                        activeIncomeAdjustment += amount;
                     } else if (event.type === EVENT_TYPES.EXPENSE_CHANGE) {
-                        // Revert the expense change
-                        activeExpenseAdjustment -= getMonthlyAmount(event);
+                        activeExpenseAdjustment += amount;
                     }
                 }
             }
-
-            // Apply ongoing INCOME_CHANGE during retirement
-            // REMOVED: No longer applying income directly to balance each month.
-            // Instead, it is handled via activeIncomeAdjustment reducing the withdrawal request below.
         });
 
         const interest = retirementBalance * monthlyRate;
@@ -385,7 +397,10 @@ export function calculateRetirementProjection(inputs, t = null) {
                 // Dynamic: adjust based on previous year's performance
                 if (i % 12 === 1 && i > 1) {
                     // Calculate previous year's return
-                    const yearlyReturnRate = Math.pow(1 + monthlyRate, 12) - 1;
+                    // Use the RATE from the previous year (which we can approximate or track)
+                    // For dynamic strategy, we should use the ACTUAL return of the previous year.
+                    const prevYearRate = getMonthlyRateForMonth(currentMonth - 1);
+                    const yearlyReturnRate = Math.pow(1 + prevYearRate, 12) - 1;
                     const expectedReturn = 0.07; // 7% expected
 
                     if (yearlyReturnRate > expectedReturn) {
@@ -457,6 +472,7 @@ export function calculateRetirementProjection(inputs, t = null) {
 
         retirementBalance = retirementBalance + interest - grossWithdrawal;
         accumulatedWithdrawals += grossWithdrawal;
+        totalNetWithdrawal += netWithdrawal;
 
         // --- Required Capital Accumulation (NPV) ---
         // Calculate what we NEEDED this month to satisfy the goal.
@@ -553,8 +569,9 @@ export function calculateRetirementProjection(inputs, t = null) {
         // We need to cover the deficit amount
         const deficitAmount = Math.abs(surplus);
         // Discount it back to today using the monthly rate
-        if (monthlyRate > 0) {
-            pvOfDeficit = deficitAmount / Math.pow(1 + monthlyRate, monthsToRetirement);
+        const currentMonthlyRate = annualReturnRate / 100 / 12;
+        if (currentMonthlyRate > 0) {
+            pvOfDeficit = deficitAmount / Math.pow(1 + currentMonthlyRate, monthsToRetirement);
         } else {
             pvOfDeficit = deficitAmount;
         }
@@ -579,9 +596,10 @@ export function calculateRetirementProjection(inputs, t = null) {
     // X = (RequiredCapitalForPerpetuity - FV_contributions) / (1+r)^n
 
     let pvOfCapitalPreservation = 0;
-    if (monthlyRate > 0) {
-        const fvContributions = monthlyContribution * (Math.pow(1 + monthlyRate, monthsToRetirement) - 1) / monthlyRate;
-        pvOfCapitalPreservation = (requiredCapitalForPerpetuity - fvContributions) / Math.pow(1 + monthlyRate, monthsToRetirement);
+    const currentMonthlyRateForPreservation = annualReturnRate / 100 / 12;
+    if (currentMonthlyRateForPreservation > 0) {
+        const fvContributions = monthlyContribution * (Math.pow(1 + currentMonthlyRateForPreservation, monthsToRetirement) - 1) / currentMonthlyRateForPreservation;
+        pvOfCapitalPreservation = (requiredCapitalForPerpetuity - fvContributions) / Math.pow(1 + currentMonthlyRateForPreservation, monthsToRetirement);
     } else {
         const fvContributions = monthlyContribution * monthsToRetirement;
         pvOfCapitalPreservation = requiredCapitalForPerpetuity - fvContributions;
@@ -593,6 +611,10 @@ export function calculateRetirementProjection(inputs, t = null) {
     // Let's keep the raw number for now, but in UI we might want to handle negative differently if needed.
     // For the copy button, if it's negative, setting savings to negative doesn't make sense. 
     // But the math X is correct for "what should be in the bank today".
+
+    // Calculate Average Withdrawals
+    const averageGrossWithdrawal = accumulatedWithdrawals / monthsInRetirement;
+    const averageNetWithdrawal = totalNetWithdrawal / monthsInRetirement;
 
     return {
         history,
@@ -607,6 +629,8 @@ export function calculateRetirementProjection(inputs, t = null) {
         pvOfDeficit,
         pvOfCapitalPreservation,
         initialGrossWithdrawal,
-        initialNetWithdrawal
+        initialNetWithdrawal,
+        averageGrossWithdrawal,
+        averageNetWithdrawal
     };
 }

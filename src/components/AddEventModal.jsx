@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useThemeClasses } from '../hooks/useThemeClasses';
 import { EVENT_TYPES } from '../constants';
-import { X, DollarSign, Calendar, TrendingUp, TrendingDown, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
+import { X, DollarSign, Calendar, TrendingUp, TrendingDown, ChevronUp, ChevronDown, Trash2, Lock, LockOpen } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 
 const MONTHS = [
@@ -44,7 +44,8 @@ export default function AddEventModal({
     // Helper to calculate age based on selected year
     const getAgeAtYear = (year) => {
         if (!currentAge || !year) return null;
-        return Math.floor(currentAge + (parseInt(year) - currentYear));
+        const birthYear = Math.floor(new Date().getFullYear() - currentAge);
+        return parseInt(year) - birthYear;
     };
 
     // Form state - using standard initializers
@@ -57,6 +58,7 @@ export default function AddEventModal({
     const [amount, setAmount] = useState(event?.amount || '');
     const [monthlyChange, setMonthlyChange] = useState(event?.monthlyChange || '');
     const [description, setDescription] = useState(event?.description || '');
+    const [linkedTo, setLinkedTo] = useState(event?.linkedTo || null);
 
     // Synchronize form state when event prop changes (crucial for modal reuse)
     useEffect(() => {
@@ -68,7 +70,9 @@ export default function AddEventModal({
         setEndMonth(event?.endDate?.month || currentMonth);
         setAmount(event?.amount || '');
         setMonthlyChange(event?.monthlyChange || '');
+        setMonthlyChange(event?.monthlyChange || '');
         setDescription(event?.description || '');
+        setLinkedTo(event?.linkedTo || null);
     }, [event, currentYear, currentMonth]);
 
     const isRecurring = eventType === EVENT_TYPES.INCOME_CHANGE || eventType === EVENT_TYPES.EXPENSE_CHANGE;
@@ -137,7 +141,8 @@ export default function AddEventModal({
             } : null,
             amount: isOneTime ? parseFloat(amount) : null,
             monthlyChange: isRecurring ? parseFloat(monthlyChange) : null,
-            description
+            description,
+            linkedTo
         };
 
         onSave(newEvent);
@@ -242,53 +247,83 @@ export default function AddEventModal({
                                     <label className={`text-xs font-medium ${classes.headerLabel}`}>
                                         {t ? t('startDate') : 'Start Date'}
                                     </label>
-                                    <div className="flex gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                const rAge = parseFloat(retirementAge);
-                                                const cAge = parseFloat(currentAge);
-                                                if (isNaN(rAge) || isNaN(cAge)) return;
+                                    <div className="flex gap-4 items-center">
+                                        {/* Unified Lock Group */}
+                                        <div className="flex items-center gap-2">
+                                            {/* Single Master Lock Icon */}
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (linkedTo) {
+                                                        setLinkedTo(null);
+                                                    } else {
+                                                        const rAge = parseFloat(retirementAge);
+                                                        const cAge = parseFloat(currentAge);
+                                                        if (isNaN(rAge) || isNaN(cAge)) return;
 
-                                                const yearsRemaining = rAge - cAge;
-                                                const monthsRemaining = Math.floor(yearsRemaining * 12);
+                                                        const yearsRemaining = rAge - cAge;
+                                                        const monthsRemaining = Math.floor(yearsRemaining * 12);
+                                                        const targetDate = new Date();
+                                                        targetDate.setMonth(targetDate.getMonth() + monthsRemaining);
 
-                                                const targetDate = new Date();
-                                                targetDate.setMonth(targetDate.getMonth() + monthsRemaining);
+                                                        setStartYear(targetDate.getFullYear());
+                                                        setStartMonth(targetDate.getMonth() + 1);
+                                                        setLinkedTo('retirementStart');
+                                                    }
+                                                }}
+                                                className={`transition-colors p-1 cursor-pointer ${linkedTo ? 'text-red-500 hover:text-red-600' : 'text-gray-400 hover:text-gray-600'} `}
+                                                title={linkedTo ? (language === 'he' ? 'בטל נעילה' : 'Unlink Date') : (language === 'he' ? 'נעל לתאריך פרישה' : 'Lock to Retirement')}
+                                            >
+                                                {linkedTo ? <Lock size={14} /> : <LockOpen size={14} />}
+                                            </button>
 
-                                                const newStartYear = targetDate.getFullYear();
-                                                const newStartMonth = targetDate.getMonth() + 1;
+                                            {/* Separation Line */}
+                                            <div className="h-4 w-px bg-gray-300 dark:bg-white/20"></div>
 
-                                                setStartYear(newStartYear);
-                                                setStartMonth(newStartMonth);
-                                            }}
-                                            className="text-[10px] text-blue-400 hover:text-blue-300 underline"
-                                        >
-                                            {language === 'he' ? 'בגיל פרישה' : 'At Retirement'}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                const rEndAge = parseFloat(retirementEndAge);
-                                                const cAge = parseFloat(currentAge);
-                                                if (isNaN(rEndAge) || isNaN(cAge)) return;
+                                            {/* Retirement Start Link */}
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const rAge = parseFloat(retirementAge);
+                                                    const cAge = parseFloat(currentAge);
+                                                    if (isNaN(rAge) || isNaN(cAge)) return;
 
-                                                const yearsRemaining = rEndAge - cAge;
-                                                const monthsRemaining = Math.floor(yearsRemaining * 12);
+                                                    const yearsRemaining = rAge - cAge;
+                                                    const monthsRemaining = Math.floor(yearsRemaining * 12);
+                                                    const targetDate = new Date();
+                                                    targetDate.setMonth(targetDate.getMonth() + monthsRemaining);
 
-                                                const targetDate = new Date();
-                                                targetDate.setMonth(targetDate.getMonth() + monthsRemaining);
+                                                    setStartYear(targetDate.getFullYear());
+                                                    setStartMonth(targetDate.getMonth() + 1);
+                                                    setLinkedTo('retirementStart');
+                                                }}
+                                                className="text-[10px] text-blue-400 hover:text-blue-500 underline cursor-pointer transition-colors"
+                                            >
+                                                {language === 'he' ? 'בגיל פרישה' : 'At Retirement'}
+                                            </button>
 
-                                                const newStartYear = targetDate.getFullYear();
-                                                const newStartMonth = targetDate.getMonth() + 1;
+                                            {/* Retirement End Link */}
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const rEndAge = parseFloat(retirementEndAge);
+                                                    const cAge = parseFloat(currentAge);
+                                                    if (isNaN(rEndAge) || isNaN(cAge)) return;
 
-                                                setStartYear(newStartYear);
-                                                setStartMonth(newStartMonth);
-                                            }}
-                                            className="text-[10px] text-blue-400 hover:text-blue-300 underline"
-                                        >
-                                            {language === 'he' ? 'בגיל סיום' : 'At End Age'}
-                                        </button>
+                                                    const yearsRemaining = rEndAge - cAge;
+                                                    const monthsRemaining = Math.floor(yearsRemaining * 12);
+                                                    const targetDate = new Date();
+                                                    targetDate.setMonth(targetDate.getMonth() + monthsRemaining);
+
+                                                    setStartYear(targetDate.getFullYear());
+                                                    setStartMonth(targetDate.getMonth() + 1);
+                                                    setLinkedTo('retirementEnd');
+                                                }}
+                                                className="text-[10px] text-blue-400 hover:text-blue-500 underline cursor-pointer transition-colors"
+                                            >
+                                                {language === 'he' ? 'בגיל סיום' : 'At End Age'}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
@@ -305,7 +340,10 @@ export default function AddEventModal({
                                             <input
                                                 type="number"
                                                 value={startYear}
-                                                onChange={(e) => setStartYear(e.target.value)}
+                                                onChange={(e) => {
+                                                    setStartYear(e.target.value);
+                                                    setLinkedTo(null);
+                                                }}
                                                 min={currentYear}
                                                 max={currentYear + 50}
                                                 className={`w-full rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 no-spinner ${language === 'he' ? 'pl-6' : 'pr-6'} ${isLight ? 'bg-white border border-gray-300 text-gray-900' : 'bg-black/20 border border-white/50 text-white'}`}
@@ -314,14 +352,20 @@ export default function AddEventModal({
                                             <div className={`absolute top-1 bottom-0 flex flex-col justify-center gap-0 ${language === 'he' ? 'left-1' : 'right-1'}`}>
                                                 <button
                                                     type="button"
-                                                    onClick={() => setStartYear(prev => Math.min(parseInt(prev || currentYear) + 1, currentYear + 50))}
+                                                    onClick={() => {
+                                                        setStartYear(prev => Math.min(parseInt(prev || currentYear) + 1, currentYear + 50));
+                                                        setLinkedTo(null);
+                                                    }}
                                                     className="text-gray-400 hover:text-blue-500 focus:outline-none h-3 flex items-center"
                                                 >
                                                     <ChevronUp size={12} />
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    onClick={() => setStartYear(prev => Math.max(parseInt(prev || currentYear) - 1, currentYear))}
+                                                    onClick={() => {
+                                                        setStartYear(prev => Math.max(parseInt(prev || currentYear) - 1, currentYear));
+                                                        setLinkedTo(null);
+                                                    }}
                                                     className="text-gray-400 hover:text-blue-500 focus:outline-none h-3 flex items-center"
                                                 >
                                                     <ChevronDown size={12} />
@@ -336,7 +380,10 @@ export default function AddEventModal({
                                         <div className="mt-1">
                                             <CustomSelect
                                                 value={Number(startMonth)}
-                                                onChange={(val) => setStartMonth(Number(val))}
+                                                onChange={(val) => {
+                                                    setStartMonth(Number(val));
+                                                    setLinkedTo(null);
+                                                }}
                                                 options={MONTHS.map(m => ({
                                                     value: m.value,
                                                     label: language === 'he' ? m.labelHe : m.labelEn

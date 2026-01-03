@@ -3,8 +3,9 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Save, Trash2, Upload, RotateCcw } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 import { DEFAULT_INPUTS } from '../constants';
+import { deepEqual } from '../hooks/useDeepCompare';
 
-export const ProfileManager = React.memo(function ProfileManager({ currentInputs, onLoad, t, language, profiles, onSaveProfile, onUpdateProfile, onDeleteProfile, onProfileLoad, lastLoadedProfileId }) {
+export function ProfileManager({ currentInputs, onLoad, t, language, profiles, onSaveProfile, onUpdateProfile, onDeleteProfile, onProfileLoad, lastLoadedProfileId }) {
     const [newProfileName, setNewProfileName] = useState('');
     const [selectedProfileId, setSelectedProfileId] = useState('');
     const [saveMessage, setSaveMessage] = useState('');
@@ -75,6 +76,16 @@ export const ProfileManager = React.memo(function ProfileManager({ currentInputs
         }
     };
 
+
+
+
+    const selectedProfile = profiles.find(p => p.id === selectedProfileId);
+    // Normalize saved data with defaults to match how currentInputs is constructed on load
+    // This prevents false positives when new fields (like manualAge) are added to the app but missing in old profiles
+    const comparisonData = selectedProfile ? { ...DEFAULT_INPUTS, ...selectedProfile.data } : null;
+
+    const hasChanges = comparisonData && !deepEqual(currentInputs, comparisonData);
+
     return (
         <div className="mb-2">
             <div className="flex flex-col gap-2">
@@ -121,10 +132,16 @@ export const ProfileManager = React.memo(function ProfileManager({ currentInputs
                                 {/* Update/save changes to profile */}
                                 <button
                                     onClick={updateProfile}
-                                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors"
+                                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors relative"
                                     title={language === 'he' ? 'שמור שינויים לפרופיל' : 'Save changes to profile'}
                                 >
                                     <Upload className="w-4 h-4" />
+                                    {hasChanges && (
+                                        <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                                        </span>
+                                    )}
                                 </button>
                                 <button
                                     onClick={() => deleteProfile(selectedProfileId)}
@@ -138,15 +155,22 @@ export const ProfileManager = React.memo(function ProfileManager({ currentInputs
                     </div>
                 )}
 
-                {/* Message area - fixed height to prevent shifting */}
-                <div className="h-6">
+                {/* Message area - dynamic height to show "Unsaved Changes" */}
+                <div className="min-h-6 flex flex-col gap-1">
                     {saveMessage && (
-                        <div className="bg-green-600/20 border border-green-500 text-green-300 px-2 py-0.5 rounded text-xs text-center">
+                        <div className="bg-green-600/20 border border-green-500 text-green-300 px-2 py-0.5 rounded text-xs text-center animate-fade-in">
                             {saveMessage}
+                        </div>
+                    )}
+
+                    {!saveMessage && hasChanges && (
+                        <div className="bg-yellow-500/10 border border-yellow-500/50 text-yellow-500 px-2 py-0.5 rounded text-xs text-center flex items-center justify-center gap-2 animate-fade-in">
+                            <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse" />
+                            {language === 'he' ? 'שינויים לא שמורים' : 'Unsaved changes'}
                         </div>
                     )}
                 </div>
             </div>
         </div>
     );
-});
+}

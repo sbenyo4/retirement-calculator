@@ -15,6 +15,7 @@ export const DEFAULT_INPUTS = {
     annualReturnRate: 5,
     taxRate: 25,
     birthdate: '',
+    manualAge: false,
     lifeEvents: []
 };
 

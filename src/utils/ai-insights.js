@@ -19,8 +19,18 @@ export const generateInsightPrompt = (inputs, results, language) => {
     let lifeEventsText = "None";
     if (inputs.lifeEvents && inputs.lifeEvents.length > 0) {
         lifeEventsText = inputs.lifeEvents.map(event =>
-            `- ${event.title}: ${currency}${event.amount} (${event.type}, Year: ${event.year})`
+            `- ${event.title || event.name}: ${currency}${event.amount || event.monthlyChange} (${event.type}, Start: ${event.startDate?.year})`
         ).join('\n    ');
+    }
+
+    // Handle Variable Rates
+    let returnRateText = `${inputs.annualReturnRate}%`;
+    if (inputs.variableRatesEnabled && inputs.variableRates) {
+        const rates = Object.values(inputs.variableRates);
+        if (rates.length > 0) {
+            const avgRate = (rates.reduce((a, b) => a + b, 0) / rates.length).toFixed(1);
+            returnRateText = `Variable Rates Active (Avg: ${avgRate}%, Range: ${Math.min(...rates)}% - ${Math.max(...rates)}%)`;
+        }
     }
 
     const basePrompt = `
@@ -34,7 +44,7 @@ export const generateInsightPrompt = (inputs, results, language) => {
     - Current Savings: ${currency}${inputs.currentSavings}
     - Monthly Contribution: ${currency}${inputs.monthlyContribution}
     - Desired Monthly Net Income: ${currency}${inputs.monthlyNetIncomeDesired}
-    - Assumed Annual Return: ${inputs.annualReturnRate}%
+    - Assumed Annual Return: ${returnRateText}
     - Inflation Type: ${inputs.inflationType || 'None'}
     
     Significant Life Events (One-time or recurring changes):
@@ -53,6 +63,10 @@ export const generateInsightPrompt = (inputs, results, language) => {
     {
         "readinessScore": number, // 0-100 score of how ready the user is
         "executiveSummary": "string", // 2-3 sentences summarizing the situation
+        "retirementAgeRecommendation": {
+            "recommendedAge": number, // The specific age recommended (e.g. 67)
+            "reasoning": "string" // Why this exact age? (e.g. "Closing the 200k deficit requires 2 more years of compounding")
+        },
         "analysis": {
             "strengths": ["string", "string"], // List of 2-3 strong points
             "weaknesses": ["string", "string"], // List of 2-3 weak points/risks

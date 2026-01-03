@@ -285,6 +285,8 @@ export const translations = {
         errorHighTrafficDesc: 'The model is currently busy. Please try "Gemini Flash" or wait a moment.',
         errorApiKey: 'API Key Issue',
         errorApiKeyDesc: 'Please check your API key settings.',
+        aiRecommendedAge: 'AI Recommended Retirement Age',
+        current: 'Current Plan',
     },
     he: {
         appTitle: "מתכנן פרישה",
@@ -572,5 +574,7 @@ export const translations = {
         errorHighTrafficDesc: 'המודל עמוס כרגע. נסה לבחור ב-"Gemini Flash" או המתן מספר שניות.',
         errorApiKey: 'בעיית מפתח API',
         errorApiKeyDesc: 'אנא בדוק את הגדרות המפתח שלך.',
+        aiRecommendedAge: 'גיל פרישה מומלץ (AI)',
+        current: 'תכנון נוכחי',
     }
 };

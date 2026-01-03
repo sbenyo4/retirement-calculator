@@ -1,13 +1,14 @@
-import React, { useRef, useEffect, useState, useMemo, useCallback, memo } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { getAvailableProviders, getAvailableModels, generatePrompt } from '../utils/ai-calculator';
 import { SIMULATION_TYPES } from '../utils/simulation-calculator';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
-import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, Coins, BarChart3, Landmark, PiggyBank, Wallet } from 'lucide-react';
+import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, Coins, BarChart3, Landmark, PiggyBank, Wallet, Activity } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 import LifeEventsManager from './LifeEventsManager';
+import VariableRatesModal from './VariableRatesModal';
 
-const InputForm = memo(function InputForm({
+export default function InputForm({
     inputs,
     setInputs,
     t,
@@ -62,6 +63,14 @@ const InputForm = memo(function InputForm({
     const [showApiKey, setShowApiKey] = useState(false);
     // View Toggle State: 'parameters' | 'events'
     const [activeView, setActiveView] = useState('parameters');
+    const [showVariableRates, setShowVariableRates] = useState(false);
+
+    // Helper to check if variable rates are active (different from default)
+    const hasActiveVariableRates = useMemo(() => {
+        if (!inputs.variableRates || Object.keys(inputs.variableRates).length === 0) return false;
+        // Check if any rate differs from base annualReturnRate
+        return Object.values(inputs.variableRates).some(r => r !== parseFloat(inputs.annualReturnRate));
+    }, [inputs.variableRates, inputs.annualReturnRate]);
 
     // Update button visibility based on values
     useEffect(() => {
@@ -119,7 +128,9 @@ const InputForm = memo(function InputForm({
 
             setInputs(prev => ({
                 ...prev,
-                [name]: finalValue
+                [name]: finalValue,
+                // If editing currentAge, mark as manual. Otherwise keep existing flag.
+                manualAge: name === 'currentAge' ? true : prev.manualAge
             }));
         }
     };
@@ -134,12 +145,15 @@ const InputForm = memo(function InputForm({
 
     // Check if current age is manually set (differs from calculated age)
     const isAgeManual = useMemo(() => {
+        // Explicit flag takes precedence
+        if (inputs.manualAge !== undefined) return inputs.manualAge;
+
         if (!inputs.birthdate || !inputs.currentAge) return false;
         const calculated = calculateAgeFromDate(inputs.birthdate);
         if (calculated === null) return false;
-        // If difference is significant (more than 0.01 years ~ 3.65 days)
-        return Math.abs(parseFloat(inputs.currentAge) - calculated) > 0.01;
-    }, [inputs.birthdate, inputs.currentAge, calculateAgeFromDate]);
+        // If difference is significant (more than 0.05 years ~ 18 days) to avoid false positives
+        return Math.abs(parseFloat(inputs.currentAge) - calculated) > 0.05;
+    }, [inputs.birthdate, inputs.currentAge, inputs.manualAge, calculateAgeFromDate]);
 
     const handleBirthdateChange = (e) => {
         const date = e.target.value;
@@ -150,7 +164,8 @@ const InputForm = memo(function InputForm({
             setInputs(prev => ({
                 ...prev,
                 birthdate: date,
-                currentAge: age.toFixed(2) // Update age to match birthdate (Reset Manual Mode)
+                manualAge: false, // Explicitly turn off manual mode
+                currentAge: age.toFixed(2) // Update age to match birthdate
             }));
         } else {
             setInputs(prev => ({
@@ -457,9 +472,9 @@ const InputForm = memo(function InputForm({
             </div>
 
             {activeView === 'parameters' ? (
-                <div className="space-y-1 animate-in fade-in slide-in-from-left-2 duration-200 flex-1 overflow-y-auto custom-scrollbar">
+                <div className="space-y-1 animate-in fade-in slide-in-from-left-2 duration-200 flex-1 overflow-y-auto">
                     <div className="grid grid-cols-2 gap-1">
-                        <InputGroup
+                        <InputGroup language={language}
                             label={t('birthdate')}
                             name="birthdate"
                             type="date"
@@ -467,13 +482,13 @@ const InputForm = memo(function InputForm({
                             onChange={handleBirthdateChange}
                             icon={<Calendar size={14} />}
                             extraContent={isAgeManual && (
-                                <span className="absolute right-8 top-1/2 -translate-y-1/2 text-[10px] bg-yellow-500/20 text-yellow-500 px-1 rounded">
+                                <span className={`absolute ${language === 'he' ? 'right-12' : 'right-8'} top-1/2 -translate-y-1/2 text-[10px] bg-yellow-500/20 text-yellow-500 px-1 rounded`}>
                                     {language === 'he' ? 'ידני' : 'Manual'}
                                 </span>
                             )}
                             disabledStyle={isAgeManual} // Custom prop to style it as "ignored"
                         />
-                        <InputGroup
+                        <InputGroup language={language}
                             label={t('currentAge')}
                             name="currentAge"
                             value={inputs.currentAge}
@@ -484,7 +499,7 @@ const InputForm = memo(function InputForm({
                     </div>
 
                     <div className="grid grid-cols-2 gap-1">
-                        <InputGroup
+                        <InputGroup language={language}
                             label={t('startAge')}
                             name="retirementStartAge"
                             value={inputs.retirementStartAge}
@@ -493,7 +508,7 @@ const InputForm = memo(function InputForm({
                             error={validationErrors.retirementStartAge}
                             extraLabel={startYear ? `(${startYear})` : null}
                         />
-                        <InputGroup
+                        <InputGroup language={language}
                             label={t('endAge')}
                             name="retirementEndAge"
                             value={inputs.retirementEndAge}
@@ -505,7 +520,7 @@ const InputForm = memo(function InputForm({
                     </div>
 
                     <div className="grid grid-cols-2 gap-1">
-                        <InputGroup
+                        <InputGroup language={language}
                             label={t('currentSavings')}
                             name="currentSavings"
                             value={inputs.currentSavings}
@@ -554,7 +569,7 @@ const InputForm = memo(function InputForm({
                                 </>
                             }
                         />
-                        <InputGroup
+                        <InputGroup language={language}
                             label={t('monthlyContribution')}
                             name="monthlyContribution"
                             value={inputs.monthlyContribution}
@@ -564,7 +579,7 @@ const InputForm = memo(function InputForm({
                         />
                     </div>
 
-                    <InputGroup
+                    <InputGroup language={language}
                         label={t('monthlyNetIncomeDesired')}
                         name="monthlyNetIncomeDesired"
                         value={
@@ -586,15 +601,29 @@ const InputForm = memo(function InputForm({
                         }
                     />
 
-                    <div className="grid grid-cols-2 gap-1">
-                        <InputGroup
-                            label={t('annualReturnRate')}
-                            name="annualReturnRate"
-                            value={inputs.annualReturnRate}
-                            onChange={handleChange}
-                            icon={<BarChart3 size={14} />}
-                        />
-                        <InputGroup
+                    <div className="grid grid-cols-[1.3fr_0.7fr] gap-3">
+                        <div className="relative">
+                            <InputGroup language={language}
+                                label={t('annualReturnRate')}
+                                name="annualReturnRate"
+                                value={inputs.annualReturnRate}
+                                onChange={handleChange}
+                                icon={<BarChart3 size={14} />}
+                                endAction={
+                                    <button
+                                        onClick={() => setInputs(prev => ({ ...prev, variableRatesEnabled: !prev.variableRatesEnabled }))}
+                                        className={`p-1 transition-colors h-full flex items-center justify-center ${inputs.variableRatesEnabled
+                                            ? 'text-blue-600'
+                                            : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200')
+                                            }`}
+                                        title={language === 'he' ? 'הפעל/כבה ריביות משתנות' : 'Toggle Variable Rates'}
+                                    >
+                                        <Activity size={16} />
+                                    </button>
+                                }
+                            />
+                        </div>
+                        <InputGroup language={language}
                             label={t('taxRate')}
                             name="taxRate"
                             value={inputs.taxRate}
@@ -628,6 +657,16 @@ const InputForm = memo(function InputForm({
                                     {strategy.label}
                                 </button>
                             ))}
+                            {/* Variable Rates Trigger (In Grid) */}
+                            <button
+                                onClick={() => setShowVariableRates(true)}
+                                className={`px-2 py-1.5 rounded-lg text-[10px] md:text-xs font-medium transition-all ${inputs.variableRatesEnabled
+                                    ? 'bg-blue-600 text-white shadow-md'
+                                    : (isLight ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-white/5 text-gray-400 hover:bg-white/10')
+                                    }`}
+                            >
+                                {language === 'he' ? 'ריביות משתנות' : 'Variable Rates'}
+                            </button>
                         </div>
                         <p className={`text-[10px] px-1 ${labelClass}`}>
                             {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT && t('withdrawalFourPercentDesc')}
@@ -636,9 +675,11 @@ const InputForm = memo(function InputForm({
                             {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY && t('withdrawalInterestOnlyDesc')}
                             {(!inputs.withdrawalStrategy || inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FIXED) && t('withdrawalFixedDesc')}
                         </p>
+
+
                         {/* Percentage Rate Input (only for percentage strategy) */}
                         {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE && (
-                            <InputGroup
+                            <InputGroup language={language}
                                 label={t('withdrawalPercentageRate')}
                                 name="withdrawalPercentage"
                                 value={inputs.withdrawalPercentage || '4'}
@@ -667,15 +708,25 @@ const InputForm = memo(function InputForm({
                     />
                 </div>
             )}
+            <VariableRatesModal
+                isOpen={showVariableRates}
+                onClose={() => setShowVariableRates(false)}
+                startYear={currentYear}
+                endYear={endYear || (currentYear + 30)}
+                retirementStartYear={startYear}
+                retirementEndYear={endYear}
+                currentRate={parseFloat(inputs.annualReturnRate) || 5}
+                variableRates={inputs.variableRates || {}}
+                onSave={(newRates) => setInputs(prev => ({ ...prev, variableRates: newRates }))}
+                language={language}
+                t={t}
+            />
         </div>
 
     );
-});
+}
 
-export default InputForm;
-
-
-function InputGroup({ label, name, value, onChange, icon, prefix, type = "text", extraLabel, extraContent, titleActions, disabled = false, error, disabledStyle = false }) {
+function InputGroup({ label, name, value, onChange, icon, prefix, type = "text", extraLabel, extraContent, titleActions, disabled = false, error, disabledStyle = false, language, endAction }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
 
@@ -696,31 +747,35 @@ function InputGroup({ label, name, value, onChange, icon, prefix, type = "text",
                     </div>
                 )}
             </div>
-            <div className="relative">
-                {prefix && (
-                    <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-xs ${disabled ? 'text-gray-500' : 'text-gray-400'}`}>
-                        {prefix}
-                    </span>
-                )}
-                <input
-                    type={type}
-                    name={name}
-                    value={value}
-                    onChange={onChange}
-                    disabled={disabled}
-                    autoComplete="off"
-                    className={`w-full rounded-lg py-1 px-2 text-xs transition-all ${prefix ? 'pl-5' : ''} ${extraContent ? 'pr-16' : ''} ${error
-                        ? 'border-red-500 focus:ring-red-500'
-                        : ''} ${disabled
-                            ? (isLight
-                                ? 'bg-gray-100 border border-gray-200 text-gray-500 cursor-not-allowed'
-                                : 'bg-white/5 border border-white/20 text-gray-400 cursor-not-allowed')
-                            : (isLight
-                                ? 'bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500'
-                                : 'bg-black/20 border border-white/50 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500')
-                        } ${disabledStyle ? 'opacity-50 grayscale' : ''}`}
-                />
-                {extraContent}
+            <div className="flex gap-1">
+                <div className="relative flex-1">
+                    {prefix && (
+                        <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-xs ${disabled ? 'text-gray-500' : 'text-gray-400'}`}>
+                            {prefix}
+                        </span>
+                    )}
+                    <input
+                        type={type}
+                        name={name}
+                        value={value}
+                        onChange={onChange}
+                        disabled={disabled}
+                        autoComplete="off"
+                        className={`w-full rounded-lg py-1 px-2 text-xs transition-all ${prefix ? 'pl-5' : ''} ${extraContent ? (language === 'he' ? '' : 'pr-16') : ''} ${error
+                            ? 'border-red-500 focus:ring-red-500'
+                            : ''
+                            } ${disabled
+                                ? (isLight
+                                    ? 'bg-gray-100 border border-gray-200 text-gray-500 cursor-not-allowed'
+                                    : 'bg-white/5 border border-white/20 text-gray-400 cursor-not-allowed')
+                                : (isLight
+                                    ? 'bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                                    : 'bg-black/20 border border-white/50 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500')
+                            } ${disabledStyle ? 'opacity-50 grayscale' : ''}`}
+                    />
+                    {extraContent}
+                </div>
+                {endAction}
             </div>
             {error && (
                 <span className="text-[10px] text-red-400">{error}</span>
