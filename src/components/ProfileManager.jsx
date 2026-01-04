@@ -84,6 +84,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     // This prevents false positives when new fields (like manualAge) are added to the app but missing in old profiles
     const comparisonData = selectedProfile ? { ...DEFAULT_INPUTS, ...selectedProfile.data } : null;
 
+
     const hasChanges = comparisonData && !deepEqual(currentInputs, comparisonData);
 
     return (

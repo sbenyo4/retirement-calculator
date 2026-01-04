@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useThemeClasses } from '../hooks/useThemeClasses';
-import { X, Dices, ArrowDown, Calculator, RotateCcw } from 'lucide-react';
+import { X, Dices, ArrowDown, Calculator, RotateCcw, TrendingUp, TrendingDown, Shuffle } from 'lucide-react';
+import { calculateRetirementProjection } from '../utils/calculator';
 
 export default function VariableRatesModal({
     isOpen,
@@ -14,7 +15,8 @@ export default function VariableRatesModal({
     variableRates,
     onSave,
     language,
-    t
+    t,
+    inputs // Step 4: Receive inputs
 }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
@@ -42,6 +44,74 @@ export default function VariableRatesModal({
     // Calculate current average - safely handle strings/numbers
     const calculatedAverage = Object.values(rates).reduce((a, b) => a + (parseFloat(b) || 0), 0) / Math.max(1, Object.keys(rates).length);
 
+    // Step 4: Live Calculation Logic
+    const { projectedBalance, averageBalance, gap, minBalance, maxBalance, minGap, maxGap } = useMemo(() => {
+        if (!inputs) return { projectedBalance: 0, averageBalance: 0, gap: 0, minBalance: 0, maxBalance: 0 };
+
+        // 1. Current Sequence
+        const scenarioInputs = {
+            ...inputs,
+            variableRatesEnabled: true,
+            variableRates: rates
+        };
+        const projection = calculateRetirementProjection(scenarioInputs);
+        const finalBal = projection.balanceAtEnd || 0;
+
+        // 2. Average (Benchmark)
+        const avgScenarioInputs = {
+            ...inputs,
+            variableRatesEnabled: false,
+            annualReturnRate: calculatedAverage
+        };
+        const avgProjection = calculateRetirementProjection(avgScenarioInputs);
+        const avgBal = avgProjection.balanceAtEnd || 0;
+
+        // 3. Bounds Calculation (Optimistic vs Pessimistic)
+        // Extract values
+        const years = [];
+        const values = [];
+        for (let y = startYear; y <= endYear; y++) {
+            years.push(y);
+            values.push(rates[y] !== undefined ? parseFloat(rates[y]) : calculatedAverage);
+        }
+
+        // Optimistic (Best First - Descending)
+        const valuesOpt = [...values].sort((a, b) => b - a);
+        const ratesOpt = {};
+        years.forEach((y, i) => ratesOpt[y] = valuesOpt[i]);
+        const optInputs = { ...inputs, variableRatesEnabled: true, variableRates: ratesOpt };
+        const optProj = calculateRetirementProjection(optInputs);
+        const maxBal = optProj.balanceAtEnd || 0;
+
+        // Pessimistic (Worst First - Ascending)
+        const valuesPess = [...values].sort((a, b) => a - b);
+        const ratesPess = {};
+        years.forEach((y, i) => ratesPess[y] = valuesPess[i]);
+        const pessInputs = { ...inputs, variableRatesEnabled: true, variableRates: ratesPess };
+        const pessProj = calculateRetirementProjection(pessInputs);
+        const minBal = pessProj.balanceAtEnd || 0;
+
+        return {
+            projectedBalance: finalBal,
+            averageBalance: avgBal,
+            gap: finalBal - avgBal,
+            minBalance: minBal,
+            maxBalance: maxBal,
+            minGap: minBal - avgBal,
+            maxGap: maxBal - avgBal
+        };
+    }, [rates, inputs, calculatedAverage, startYear, endYear]);
+
+    const formatCurrency = (val) => {
+        return new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-IL', {
+            style: 'currency',
+            currency: 'ILS',
+            maximumFractionDigits: 0
+        }).format(val);
+    };
+
+    // ... handlers ...
+
     const handleRateChange = (year, value) => {
         // Allow empty string, minus sign, or valid number
         if (value === '' || value === '-' || !isNaN(parseFloat(value))) {
@@ -50,7 +120,6 @@ export default function VariableRatesModal({
     };
 
     const handleRandomize = () => {
-        const newRates = {};
         const years = [];
         for (let y = startYear; y <= endYear; y++) {
             years.push(y);
@@ -99,6 +168,7 @@ export default function VariableRatesModal({
         }
 
         // Assign to state
+        const newRates = {}; // Define newRates here
         years.forEach((year, i) => {
             newRates[year] = quantizedRates[i];
         });
@@ -106,7 +176,7 @@ export default function VariableRatesModal({
         setRates(newRates);
     };
 
-    const handleReset = () => {
+    const handleReset = () => { // Reset to Constant Average
         const newRates = {};
         for (let y = startYear; y <= endYear; y++) {
             newRates[y] = averageRate;
@@ -124,6 +194,64 @@ export default function VariableRatesModal({
         }
         setRates(newRates);
     };
+
+    const handleSortOptimistic = () => {
+        const years = [];
+        const values = [];
+        // Extract
+        for (let y = startYear; y <= endYear; y++) {
+            years.push(y);
+            values.push(rates[y] !== undefined ? parseFloat(rates[y]) : averageRate);
+        }
+        // Sort Descending
+        values.sort((a, b) => b - a);
+        // Re-assign
+        const newRates = {};
+        years.forEach((year, i) => {
+            newRates[year] = values[i];
+        });
+        setRates(newRates);
+    };
+
+    const handleSortPessimistic = () => {
+        const years = [];
+        const values = [];
+        // Extract
+        for (let y = startYear; y <= endYear; y++) {
+            years.push(y);
+            values.push(rates[y] !== undefined ? parseFloat(rates[y]) : averageRate);
+        }
+        // Sort Ascending
+        values.sort((a, b) => a - b);
+        // Re-assign
+        const newRates = {};
+        years.forEach((year, i) => {
+            newRates[year] = values[i];
+        });
+        setRates(newRates);
+    };
+
+    const handleShuffle = () => {
+        const years = [];
+        const values = [];
+        // Extract
+        for (let y = startYear; y <= endYear; y++) {
+            years.push(y);
+            values.push(rates[y] !== undefined ? parseFloat(rates[y]) : averageRate);
+        }
+        // Shuffle (Fisher-Yates)
+        for (let i = values.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [values[i], values[j]] = [values[j], values[i]];
+        }
+        // Re-assign
+        const newRates = {};
+        years.forEach((year, i) => {
+            newRates[year] = values[i];
+        });
+        setRates(newRates);
+    };
+
 
     const handleSave = () => {
         onSave(rates);
@@ -184,6 +312,34 @@ export default function VariableRatesModal({
                     </button>
                 </div>
 
+                {/* Sequence Analysis Toolbar (New) */}
+                <div className="relative z-10 flex-none p-2 border-b border-gray-200 dark:border-white/10 flex gap-2 justify-center bg-white/5">
+                    <button
+                        onClick={handleSortOptimistic}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isLight ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-green-500/20 text-green-300 hover:bg-green-500/30'}`}
+                        title={language === 'he' ? 'מיין: מהטוב לגרוע' : 'Sort: Best First'}
+                    >
+                        <TrendingUp size={14} />
+                        {language === 'he' ? 'אופטימי' : 'Optimistic'}
+                    </button>
+                    <button
+                        onClick={handleSortPessimistic}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-500/20 text-red-300 hover:bg-red-500/30'}`}
+                        title={language === 'he' ? 'מיין: מהגרוע לטוב' : 'Sort: Worst First'}
+                    >
+                        <TrendingDown size={14} />
+                        {language === 'he' ? 'פסימי' : 'Pessimistic'}
+                    </button>
+                    <button
+                        onClick={handleShuffle}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isLight ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'}`}
+                        title={language === 'he' ? 'ערבב סדר קיים' : 'Shuffle Order'}
+                    >
+                        <Shuffle size={14} />
+                        {language === 'he' ? 'ערבב' : 'Shuffle'}
+                    </button>
+                </div>
+
                 {/* Summary Stats */}
                 <div className="relative z-10 flex-none px-4 py-2 flex justify-between items-center text-xs">
                     <span className={classes.label}>
@@ -228,8 +384,8 @@ export default function VariableRatesModal({
                                     <div className="flex-1 relative">
                                         <input
                                             dir="ltr"
-                                            type="number"
-                                            step="0.1"
+                                            type="text"
+                                            inputMode="decimal"
                                             value={rate}
                                             onChange={(e) => handleRateChange(year, e.target.value)}
                                             className={`w-full text-right px-3 py-1.5 rounded text-sm no-spinner
@@ -254,7 +410,66 @@ export default function VariableRatesModal({
                 </div>
 
                 {/* Footer */}
-                <div className="relative z-10 flex-none p-4 border-t border-gray-200 dark:border-white/10 bg-white/5">
+                <div className="relative z-10 flex-none p-3 border-t border-gray-200 dark:border-white/10 bg-white/5 space-y-2">
+
+                    {/* Range Analysis (New) */}
+                    <div className="flex justify-between items-center px-1">
+                        <span className={`text-xs ${classes.label}`}>
+                            {language === 'he' ? 'טווח אפשרי (לפי סדר התשואות):' : 'Possible Range (Sequence Risk):'}
+                        </span>
+                    </div>
+                    <div className="flex gap-2">
+                        {/* Pessimistic Card */}
+                        <div className={`flex-1 rounded-lg p-2 border ${isLight ? 'bg-red-50 border-red-100' : 'bg-red-950/40 border-red-500/30'}`}>
+                            <div className="flex justify-between items-baseline mb-0.5">
+                                <span className={`text-[10px] uppercase font-bold ${isLight ? 'text-red-600/70' : 'text-red-300/70'}`}>
+                                    {language === 'he' ? 'התרחיש הגרוע' : 'Worst Case'}
+                                </span>
+                                <span className={`text-[10px] font-mono ${isLight ? 'text-red-600/60' : 'text-red-300/50'}`} dir="ltr">
+                                    {minGap > 0 ? '+' : ''}{formatCurrency(minGap)}
+                                </span>
+                            </div>
+                            <div className={`text-sm font-bold font-mono ${isLight ? 'text-red-700' : 'text-red-200'}`}>
+                                {formatCurrency(minBalance)}
+                            </div>
+                        </div>
+
+                        {/* Optimistic Card */}
+                        <div className={`flex-1 rounded-lg p-2 border ${isLight ? 'bg-green-50 border-green-100' : 'bg-green-950/40 border-green-500/30'}`}>
+                            <div className="flex justify-between items-baseline mb-0.5">
+                                <span className={`text-[10px] uppercase font-bold ${isLight ? 'text-green-600/70' : 'text-green-300/70'}`}>
+                                    {language === 'he' ? 'התרחיש הטוב' : 'Best Case'}
+                                </span>
+                                <span className={`text-[10px] font-mono ${isLight ? 'text-green-600/60' : 'text-green-300/50'}`} dir="ltr">
+                                    {maxGap > 0 ? '+' : ''}{formatCurrency(maxGap)}
+                                </span>
+                            </div>
+                            <div className={`text-sm font-bold font-mono ${isLight ? 'text-green-700' : 'text-green-200'}`}>
+                                {formatCurrency(maxBalance)}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Live Sequence Analysis Summary (Step 3) */}
+                    <div className={`rounded-xl p-2 flex justify-between items-center ${isLight ? 'bg-indigo-50 border border-indigo-100' : 'bg-black/20 border border-white/10'}`}>
+                        <div className="flex flex-col">
+                            <span className="text-[10px] opacity-70 uppercase tracking-wider font-semibold">
+                                {language === 'he' ? 'צפי סיום (רצף נבחר)' : 'Projected End Balance'}
+                            </span>
+                            <span className={`text-lg font-bold font-mono ${gap > 0 ? 'text-green-500' : (gap < 0 ? 'text-red-400' : (isLight ? 'text-gray-900' : 'text-white'))}`}>
+                                {formatCurrency(projectedBalance)}
+                            </span>
+                        </div>
+                        <div className="flex flex-col items-end">
+                            <span className="text-[10px] opacity-70 uppercase tracking-wider font-semibold">
+                                {language === 'he' ? 'פער מהממוצע' : 'Gap from Avg'}
+                            </span>
+                            <span className={`text-sm font-bold font-mono ${gap > 0 ? 'text-green-500' : (gap < 0 ? 'text-red-400' : (isLight ? 'text-gray-500' : 'text-gray-400'))}`} dir="ltr">
+                                {gap > 0 ? '+' : ''}{formatCurrency(gap)}
+                            </span>
+                        </div>
+                    </div>
+
                     <button
                         onClick={handleSave}
                         className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium shadow-lg shadow-blue-900/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2"

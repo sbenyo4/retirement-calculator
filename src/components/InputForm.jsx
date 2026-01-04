@@ -720,9 +720,9 @@ export default function InputForm({
                 onSave={(newRates) => setInputs(prev => ({ ...prev, variableRates: newRates }))}
                 language={language}
                 t={t}
+                inputs={inputs}
             />
         </div>
-
     );
 }
 
