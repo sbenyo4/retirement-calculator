@@ -299,15 +299,15 @@ export default function LifeEventsTimelineModal({
             if (e.type === EVENT_TYPES.ONE_TIME_EXPENSE) fixedTrackIndex = 0.75;
             if (e.type === EVENT_TYPES.ONE_TIME_INCOME) fixedTrackIndex = 3;
 
+            // FORCE FIXED TRACKS FOR RECURRING EVENTS (User Request: No Stacking)
+            if (e.type === EVENT_TYPES.INCOME_CHANGE) fixedTrackIndex = 0.75;
+            if (e.type === EVENT_TYPES.EXPENSE_CHANGE) fixedTrackIndex = 3;
+
             let trackIndex = (fixedTrackIndex !== -1)
                 ? fixedTrackIndex
                 : (e.trackIndex !== undefined ? (e.trackIndex - 1) : 0); // Convert to 0-based
 
-            // Apply Offset for Recurring Expense (Orange)
-            // If it's a recurring expense (and not a fixed one-time), shift it up.
-            if (fixedTrackIndex === -1 && (e.type === EVENT_TYPES.EXPENSE_CHANGE)) {
-                trackIndex += 3; // Shift Orange bars up to maximize distance (Starts at track 3)
-            }
+            // REMOVED: Dynamic offset logic for Recurring Expense (Orange) because we now force it to track 3 above.
 
             // Note: Recurring Income (Blue) stays at base trackIndex (Starts at track 0)
 
@@ -331,7 +331,8 @@ export default function LifeEventsTimelineModal({
         });
 
         // Total calculated height (with 38px tracks) - ensure at least 4 tracks for our forced indexing
-        const maxTracks = Math.max(incomeTracks, expenseTracks, 4);
+        // FIXED: Locked to 4 tracks to prevent height jumps when events overlap (User Request for stability)
+        const maxTracks = 4;
         const calculatedH = ((12 + (maxTracks * 38) + 40) * 2);
         const totalH = Math.max(calculatedH, 450);
 
@@ -823,7 +824,7 @@ export default function LifeEventsTimelineModal({
                                                     >
                                                         {event.isRecurring ? (
                                                             <div className="relative w-full h-full">
-                                                                <div dir={isRtl ? 'rtl' : 'ltr'} className={`absolute ${isTop ? (nameStr.includes('electricity') || nameStr.includes('חשמל') || nameStr.includes('side jobs') || nameStr.includes('עבודות צד') ? 'top-0 -translate-y-full' : '-top-2 -translate-y-full') : 'bottom-0 translate-y-full'} left-1/2 -translate-x-1/2 px-2 py-0.5 rounded shadow-sm border flex flex-col items-center whitespace-nowrap min-w-[100px] ${event.cardClass} group cursor-pointer`}>
+                                                                <div dir={isRtl ? 'rtl' : 'ltr'} className={`absolute ${isTop ? 'top-0 -translate-y-full' : 'bottom-0 translate-y-full'} left-1/2 -translate-x-1/2 px-2 py-0.5 rounded shadow-sm border flex flex-col items-center whitespace-nowrap min-w-[100px] ${event.cardClass} group cursor-pointer`}>
                                                                     <button
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
@@ -836,24 +837,13 @@ export default function LifeEventsTimelineModal({
                                                                     </button>
 
                                                                     <span className="text-[10px] uppercase font-bold tracking-wider">{formatMoney(event.monthlyChange)}</span>
-                                                                    {(nameStr.includes('electricity') || nameStr.includes('חשמל') || nameStr.includes('side jobs') || nameStr.includes('עבודות צד')) ? (
-                                                                        <>
-                                                                            <span className="text-[8px] opacity-70 font-medium mt-0.5">
-                                                                                {(nameStr.includes('electricity') || nameStr.includes('חשמל')) && retirementEndAge
-                                                                                    ? getDurationString(event.startDate, { year: startYear + (retirementEndAge - baseCurrentAge), month: 1 })
-                                                                                    : getDurationString(event.startDate, event.endDate || event.visualEndDate)
-                                                                                }
-                                                                            </span>
-                                                                            <span className="text-[9px] opacity-80 max-w-[120px] truncate mt-0.5">{event.description}</span>
-                                                                        </>
-                                                                    ) : (
-                                                                        <>
-                                                                            <span className="text-[9px] opacity-80 max-w-[120px] truncate">{event.description}</span>
-                                                                            <span className="text-[8px] opacity-70 font-medium mt-0.5">
-                                                                                {getDurationString(event.startDate, event.endDate || event.visualEndDate)}
-                                                                            </span>
-                                                                        </>
-                                                                    )}
+                                                                    <span className="text-[8px] opacity-70 font-medium mt-0.5">
+                                                                        {(nameStr.includes('electricity') || nameStr.includes('חשמל')) && retirementEndAge
+                                                                            ? getDurationString(event.startDate, { year: startYear + (retirementEndAge - baseCurrentAge), month: 1 })
+                                                                            : getDurationString(event.startDate, event.endDate || event.visualEndDate)
+                                                                        }
+                                                                    </span>
+                                                                    <span className="text-[9px] opacity-80 max-w-[120px] truncate mt-0.5">{event.description}</span>
                                                                 </div>
                                                             </div>
                                                         ) : (
