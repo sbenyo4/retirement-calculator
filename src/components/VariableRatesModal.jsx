@@ -45,61 +45,68 @@ export default function VariableRatesModal({
     const calculatedAverage = Object.values(rates).reduce((a, b) => a + (parseFloat(b) || 0), 0) / Math.max(1, Object.keys(rates).length);
 
     // Step 4: Live Calculation Logic
-    const { projectedBalance, averageBalance, gap, minBalance, maxBalance, minGap, maxGap } = useMemo(() => {
-        if (!inputs) return { projectedBalance: 0, averageBalance: 0, gap: 0, minBalance: 0, maxBalance: 0 };
+    const { projectedBalance, averageBalance, gap, minBalance, maxBalance, minGap, maxGap, spread } = useMemo(() => {
+        const zeroResult = { projectedBalance: 0, averageBalance: 0, gap: 0, minBalance: 0, maxBalance: 0, minGap: 0, maxGap: 0, spread: 0 };
+        if (!inputs) return zeroResult;
 
-        // 1. Current Sequence
-        const scenarioInputs = {
-            ...inputs,
-            variableRatesEnabled: true,
-            variableRates: rates
-        };
-        const projection = calculateRetirementProjection(scenarioInputs);
-        const finalBal = projection.balanceAtEnd || 0;
+        try {
+            // 1. Current Sequence
+            const scenarioInputs = {
+                ...inputs,
+                variableRatesEnabled: true,
+                variableRates: rates
+            };
+            const projection = calculateRetirementProjection(scenarioInputs);
+            const finalBal = projection.balanceAtEnd || 0;
 
-        // 2. Average (Benchmark)
-        const avgScenarioInputs = {
-            ...inputs,
-            variableRatesEnabled: false,
-            annualReturnRate: calculatedAverage
-        };
-        const avgProjection = calculateRetirementProjection(avgScenarioInputs);
-        const avgBal = avgProjection.balanceAtEnd || 0;
+            // 2. Average (Benchmark)
+            const avgScenarioInputs = {
+                ...inputs,
+                variableRatesEnabled: false,
+                annualReturnRate: calculatedAverage
+            };
+            const avgProjection = calculateRetirementProjection(avgScenarioInputs);
+            const avgBal = avgProjection.balanceAtEnd || 0;
 
-        // 3. Bounds Calculation (Optimistic vs Pessimistic)
-        // Extract values
-        const years = [];
-        const values = [];
-        for (let y = startYear; y <= endYear; y++) {
-            years.push(y);
-            values.push(rates[y] !== undefined ? parseFloat(rates[y]) : calculatedAverage);
+            // 3. Bounds Calculation (Optimistic vs Pessimistic)
+            // Extract values
+            const years = [];
+            const values = [];
+            for (let y = startYear; y <= endYear; y++) {
+                years.push(y);
+                values.push(rates[y] !== undefined ? parseFloat(rates[y]) : calculatedAverage);
+            }
+
+            // Optimistic (Best First - Descending)
+            const valuesOpt = [...values].sort((a, b) => b - a);
+            const ratesOpt = {};
+            years.forEach((y, i) => ratesOpt[y] = valuesOpt[i]);
+            const optInputs = { ...inputs, variableRatesEnabled: true, variableRates: ratesOpt };
+            const optProj = calculateRetirementProjection(optInputs);
+            const maxBal = optProj.balanceAtEnd || 0;
+
+            // Pessimistic (Worst First - Ascending)
+            const valuesPess = [...values].sort((a, b) => a - b);
+            const ratesPess = {};
+            years.forEach((y, i) => ratesPess[y] = valuesPess[i]);
+            const pessInputs = { ...inputs, variableRatesEnabled: true, variableRates: ratesPess };
+            const pessProj = calculateRetirementProjection(pessInputs);
+            const minBal = pessProj.balanceAtEnd || 0;
+
+            return {
+                projectedBalance: finalBal,
+                averageBalance: avgBal,
+                gap: finalBal - avgBal,
+                minBalance: minBal,
+                maxBalance: maxBal,
+                minGap: minBal - avgBal,
+                maxGap: maxBal - avgBal,
+                spread: maxBal - minBal
+            };
+        } catch (error) {
+            console.warn("Calculation error (likely invalid inputs):", error.message);
+            return zeroResult;
         }
-
-        // Optimistic (Best First - Descending)
-        const valuesOpt = [...values].sort((a, b) => b - a);
-        const ratesOpt = {};
-        years.forEach((y, i) => ratesOpt[y] = valuesOpt[i]);
-        const optInputs = { ...inputs, variableRatesEnabled: true, variableRates: ratesOpt };
-        const optProj = calculateRetirementProjection(optInputs);
-        const maxBal = optProj.balanceAtEnd || 0;
-
-        // Pessimistic (Worst First - Ascending)
-        const valuesPess = [...values].sort((a, b) => a - b);
-        const ratesPess = {};
-        years.forEach((y, i) => ratesPess[y] = valuesPess[i]);
-        const pessInputs = { ...inputs, variableRatesEnabled: true, variableRates: ratesPess };
-        const pessProj = calculateRetirementProjection(pessInputs);
-        const minBal = pessProj.balanceAtEnd || 0;
-
-        return {
-            projectedBalance: finalBal,
-            averageBalance: avgBal,
-            gap: finalBal - avgBal,
-            minBalance: minBal,
-            maxBalance: maxBal,
-            minGap: minBal - avgBal,
-            maxGap: maxBal - avgBal
-        };
     }, [rates, inputs, calculatedAverage, startYear, endYear]);
 
     const formatCurrency = (val) => {
@@ -119,19 +126,17 @@ export default function VariableRatesModal({
         }
     };
 
-    const handleRandomize = () => {
+    // Helper to generate random volatile rates
+    const generateRandomRates = () => {
         const years = [];
         for (let y = startYear; y <= endYear; y++) {
             years.push(y);
         }
-
         const count = years.length;
-        if (count === 0) return;
+        if (count === 0) return {};
 
         // 1. Generate random volatility (roughly -12% to +12% spread)
-        // We use a simple uniform distribution centered around the average, then adjust.
         let rawRates = years.map(() => {
-            // Random variance between -12 and +12
             const variance = (Math.random() * 24) - 12;
             return averageRate + variance;
         });
@@ -140,20 +145,14 @@ export default function VariableRatesModal({
         const currentSum = rawRates.reduce((a, b) => a + b, 0);
         const targetSum = averageRate * count;
         const correction = (targetSum - currentSum) / count;
-
         rawRates = rawRates.map(r => r + correction);
 
         // 3. Quantize to 0.5
-        // Rounding introduces error, so we may need to distribute the rounding error
         let quantizedRates = rawRates.map(r => Math.round(r * 2) / 2);
 
         // 4. Final Adjustment to maintain exact average after rounding
-        // Calculate the drift caused by rounding
         let finalSum = quantizedRates.reduce((a, b) => a + b, 0);
         let drift = targetSum - finalSum;
-
-        // Distribute the drift in 0.5 increments to random years until satisfied
-        // drift is likely small (e.g. 0.5, -1.0)
         let attempts = 0;
         while (Math.abs(drift) >= 0.25 && attempts < 100) {
             const idx = Math.floor(Math.random() * count);
@@ -167,13 +166,16 @@ export default function VariableRatesModal({
             attempts++;
         }
 
-        // Assign to state
-        const newRates = {}; // Define newRates here
+        const newRates = {};
         years.forEach((year, i) => {
             newRates[year] = quantizedRates[i];
         });
+        return newRates;
+    };
 
-        setRates(newRates);
+    const handleRandomize = () => {
+        const newRates = generateRandomRates();
+        if (Object.keys(newRates).length > 0) setRates(newRates);
     };
 
     const handleReset = () => { // Reset to Constant Average
@@ -196,34 +198,83 @@ export default function VariableRatesModal({
     };
 
     const handleSortOptimistic = () => {
+        let currentRates = { ...rates };
+        const values = Object.values(rates).map(parseFloat);
+
+        // If all values are the same (variance is 0), generate random complexity first
+        const isFlat = values.every(v => Math.abs(v - values[0]) < 0.1);
+        if (isFlat) {
+            currentRates = generateRandomRates();
+        }
+
         const years = [];
-        const values = [];
-        // Extract
+        const sortedValues = [];
         for (let y = startYear; y <= endYear; y++) {
             years.push(y);
-            values.push(rates[y] !== undefined ? parseFloat(rates[y]) : averageRate);
+            sortedValues.push(currentRates[y] !== undefined ? parseFloat(currentRates[y]) : averageRate);
         }
+
         // Sort Descending
-        values.sort((a, b) => b - a);
-        // Re-assign
+        sortedValues.sort((a, b) => b - a);
+
         const newRates = {};
         years.forEach((year, i) => {
-            newRates[year] = values[i];
+            newRates[year] = sortedValues[i];
         });
         setRates(newRates);
     };
 
     const handleSortPessimistic = () => {
+        let currentRates = { ...rates };
+        const values = Object.values(rates).map(parseFloat);
+
+        // If all values are the same (variance is 0), generate random complexity first
+        const isFlat = values.every(v => Math.abs(v - values[0]) < 0.1);
+        if (isFlat) {
+            currentRates = generateRandomRates();
+        }
+
         const years = [];
-        const values = [];
-        // Extract
+        const sortedValues = [];
         for (let y = startYear; y <= endYear; y++) {
             years.push(y);
-            values.push(rates[y] !== undefined ? parseFloat(rates[y]) : averageRate);
+            sortedValues.push(currentRates[y] !== undefined ? parseFloat(currentRates[y]) : averageRate);
         }
+
         // Sort Ascending
-        values.sort((a, b) => a - b);
-        // Re-assign
+        sortedValues.sort((a, b) => a - b);
+
+        const newRates = {};
+        years.forEach((year, i) => {
+            newRates[year] = sortedValues[i];
+        });
+        setRates(newRates);
+    };
+
+    const handleShuffle = () => {
+        let values = Object.values(rates).map(parseFloat);
+
+        // If all values are the same (variance is 0), generate random complexity first
+        // Otherwise a shuffle does nothing visible
+        const isFlat = values.every(v => Math.abs(v - values[0]) < 0.1);
+        if (isFlat) {
+            handleRandomize();
+            return;
+        }
+
+        // True Fisher-Yates Shuffle (Permutation)
+        // Keeps the exact same set of numbers, just changes order.
+        // This ensures Best/Worst case bounds remain identical.
+        for (let i = values.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [values[i], values[j]] = [values[j], values[i]];
+        }
+
+        const years = [];
+        for (let y = startYear; y <= endYear; y++) {
+            years.push(y);
+        }
+
         const newRates = {};
         years.forEach((year, i) => {
             newRates[year] = values[i];
@@ -231,26 +282,6 @@ export default function VariableRatesModal({
         setRates(newRates);
     };
 
-    const handleShuffle = () => {
-        const years = [];
-        const values = [];
-        // Extract
-        for (let y = startYear; y <= endYear; y++) {
-            years.push(y);
-            values.push(rates[y] !== undefined ? parseFloat(rates[y]) : averageRate);
-        }
-        // Shuffle (Fisher-Yates)
-        for (let i = values.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [values[i], values[j]] = [values[j], values[i]];
-        }
-        // Re-assign
-        const newRates = {};
-        years.forEach((year, i) => {
-            newRates[year] = values[i];
-        });
-        setRates(newRates);
-    };
 
 
     const handleSave = () => {
@@ -416,6 +447,9 @@ export default function VariableRatesModal({
                     <div className="flex justify-between items-center px-1">
                         <span className={`text-xs ${classes.label}`}>
                             {language === 'he' ? 'טווח אפשרי (לפי סדר התשואות):' : 'Possible Range (Sequence Risk):'}
+                        </span>
+                        <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded-md ${isLight ? 'bg-orange-100 text-orange-700' : 'bg-orange-900/40 text-orange-300'}`}>
+                            {language === 'he' ? 'פער:' : 'Spread:'} {formatCurrency(spread)}
                         </span>
                     </div>
                     <div className="flex gap-2">

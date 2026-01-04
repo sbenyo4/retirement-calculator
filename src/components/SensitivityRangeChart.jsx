@@ -139,6 +139,18 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
     // Calculate results for each value in range
     const rangeResults = useMemo(() => {
         const results = [];
+
+        // Validation: Verify basic age constraints before looping
+        // This prevents console spam/crashes when user is modifying age inputs
+        const currentAge = parseFloat(inputs.currentAge);
+        const retirementStartAge = parseFloat(inputs.retirementStartAge);
+        const retirementEndAge = parseFloat(inputs.retirementEndAge);
+
+        if (isNaN(currentAge) || isNaN(retirementStartAge) || isNaN(retirementEndAge) ||
+            currentAge < 0 || retirementStartAge <= currentAge || retirementEndAge <= retirementStartAge) {
+            return results; // Return empty results if basic logic is violated
+        }
+
         const effectiveMin = Math.max(config.min, rangeMin);
         const effectiveMax = Math.min(config.max, rangeMax);
 
