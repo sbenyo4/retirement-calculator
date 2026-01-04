@@ -201,11 +201,11 @@ export default function LifeEventsTimelineModal({
             // Don't filter by enabled - let disabled events show as greyed out
             .map(e => {
                 const eventCopy = { ...e };
-                const eventStartYear = eventCopy.startDate.year + (eventCopy.startDate.month / 12);
+                const eventStartYear = eventCopy.startDate.year + ((eventCopy.startDate.month - 1) / 12);
                 let eventEndYear;
 
                 if (eventCopy.endDate) {
-                    eventEndYear = eventCopy.endDate.year + (eventCopy.endDate.month / 12);
+                    eventEndYear = eventCopy.endDate.year + ((eventCopy.endDate.month - 1) / 12);
                 } else if (eventCopy.type === EVENT_TYPES.INCOME_CHANGE || eventCopy.type === EVENT_TYPES.EXPENSE_CHANGE) {
                     // Fallback to exactly retirementEndAge using Absolute Birth Year logic
                     // This matches the marker position exactly (BirthYear + Age)
@@ -294,8 +294,9 @@ export default function LifeEventsTimelineModal({
             const baseAxisOffset = 40;
 
             // Stagger One-Time events: Expense closer (0), Income further (1) - Existing Logic
+            // UPDATE: Moving Expense to track 0.75 (Closure to axis but avoiding text) to prevent overlap with Green (User Request)
             let fixedTrackIndex = -1;
-            if (e.type === EVENT_TYPES.ONE_TIME_EXPENSE) fixedTrackIndex = 0;
+            if (e.type === EVENT_TYPES.ONE_TIME_EXPENSE) fixedTrackIndex = 0.75;
             if (e.type === EVENT_TYPES.ONE_TIME_INCOME) fixedTrackIndex = 3;
 
             let trackIndex = (fixedTrackIndex !== -1)
@@ -312,8 +313,8 @@ export default function LifeEventsTimelineModal({
 
             let trackOffsetPx = baseAxisOffset + (trackIndex * trackHeight);
 
-            // Override if manual offset exists (legacy support)
-            if (e.trackOffsetPx !== undefined) {
+            // Override if manual offset exists (legacy support), UNLESS it's a one-time expense we want to force
+            if (e.trackOffsetPx !== undefined && e.type !== EVENT_TYPES.ONE_TIME_EXPENSE) {
                 trackOffsetPx = e.trackOffsetPx;
             }
 

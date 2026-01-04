@@ -43,7 +43,7 @@ export const calculateTimelineLayout = (events, { minSpacingYears = 0.5 } = {}) 
             const durDiff = durB - durA;
             if (Math.abs(durDiff) > 0.01) return durDiff;
             // Deterministic tie-breaker: ID or Name
-            return (a.id || '').localeCompare(b.id || '');
+            return String(a.id || '').localeCompare(String(b.id || ''));
         }
         return startDiff;
     };
