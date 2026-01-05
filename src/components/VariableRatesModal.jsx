@@ -41,8 +41,67 @@ export default function VariableRatesModal({
         }
     }, [isOpen, startYear, endYear, currentRate, variableRates]);
 
-    // Calculate current average - safely handle strings/numbers
-    const calculatedAverage = Object.values(rates).reduce((a, b) => a + (parseFloat(b) || 0), 0) / Math.max(1, Object.keys(rates).length);
+    // Helper: Calculate months in year for weighting
+    const getMonthsForYear = (year) => {
+        // 1. First Year (Current Year)
+        // Assume simulation starts "Now", so months remaining in current year.
+        if (year === startYear) {
+            const currentMonth = new Date().getMonth(); // 0-11
+            return 12 - currentMonth;
+        }
+
+        // 2. Last Year (End of Simulation)
+        if (year === endYear) {
+            // Calculate end month based on Birth Month + Fractional End Age
+            const bDate = inputs?.birthDate || inputs?.birthdate;
+            if (inputs && bDate && inputs.retirementEndAge) {
+                const birthMonth = new Date(bDate).getMonth();
+                const endAgeMonths = (parseFloat(inputs.retirementEndAge) % 1) * 12;
+                // e.g. Born Feb (1). Age 67.0.
+                // 1 + 0 = 1 (Feb). +1 for count = 2 months (Jan, Feb).
+                const endMonthIndex = Math.floor((birthMonth + endAgeMonths) % 12);
+                return endMonthIndex + 1;
+            }
+            return 12; // Fallback
+        }
+
+        // 3. Intermediate Years
+        return 12;
+    };
+
+    // Helper: Get month name for display
+    const getMonthName = (year) => {
+        const bDate = inputs?.birthDate || inputs?.birthdate;
+        if (!inputs || !bDate || !inputs.retirementEndAge) return '';
+        if (year === endYear) {
+            const birthMonth = new Date(bDate).getMonth();
+            const endAgeMonths = (parseFloat(inputs.retirementEndAge) % 1) * 12;
+            const endMonthIndex = Math.floor((birthMonth + endAgeMonths) % 12);
+            // Return short month name
+            const date = new Date();
+            date.setMonth(endMonthIndex);
+            return new Intl.DateTimeFormat(language === 'he' ? 'he-IL' : 'en-US', { month: 'short' }).format(date);
+        }
+        return '';
+    };
+
+    // Calculate time-weighted average
+    const calculatedAverage = useMemo(() => {
+        let totalWeightedRate = 0;
+        let totalMonths = 0;
+
+        // Iterate over the actua years in state
+        Object.keys(rates).forEach(yStr => {
+            const y = parseInt(yStr);
+            const rate = parseFloat(rates[y]) || 0;
+            const months = getMonthsForYear(y);
+
+            totalWeightedRate += rate * months;
+            totalMonths += months;
+        });
+
+        return totalMonths > 0 ? (totalWeightedRate / totalMonths) : 0;
+    }, [rates, startYear, endYear, inputs]);
 
     // Step 4: Live Calculation Logic
     const { projectedBalance, averageBalance, gap, minBalance, maxBalance, minGap, maxGap, spread } = useMemo(() => {
@@ -126,14 +185,21 @@ export default function VariableRatesModal({
         }
     };
 
-    // Helper to generate random volatile rates
+    // Helper to generate random volatile rates (Time-Weighted)
     const generateRandomRates = () => {
         const years = [];
+        const weights = []; // Store month counts
+        let totalMonths = 0;
+
         for (let y = startYear; y <= endYear; y++) {
             years.push(y);
+            const m = getMonthsForYear(y);
+            weights.push(m);
+            totalMonths += m;
         }
+
         const count = years.length;
-        if (count === 0) return {};
+        if (count === 0 || totalMonths === 0) return {};
 
         // 1. Generate random volatility (roughly -12% to +12% spread)
         let rawRates = years.map(() => {
@@ -141,27 +207,52 @@ export default function VariableRatesModal({
             return averageRate + variance;
         });
 
-        // 2. Adjust mean to match exactly the target 'averageRate'
-        const currentSum = rawRates.reduce((a, b) => a + b, 0);
-        const targetSum = averageRate * count;
-        const correction = (targetSum - currentSum) / count;
+        // 2. Adjust mean to match exactly the target 'averageRate' (Weighted)
+        // Adding a constant C to all rates changes the Weighted Average by exactly C.
+        // NewAvg = Sum((R+C)*W) / Sum(W) = (Sum(RW) + C*Sum(W)) / Sum(W) = OldAvg + C.
+        // So C = TargetAvg - OldAvg.
+
+        let currentWeightedSum = 0;
+        rawRates.forEach((r, i) => {
+            currentWeightedSum += r * weights[i];
+        });
+
+        const currentWeightedAvg = currentWeightedSum / totalMonths;
+        const correction = averageRate - currentWeightedAvg;
+
         rawRates = rawRates.map(r => r + correction);
 
         // 3. Quantize to 0.5
         let quantizedRates = rawRates.map(r => Math.round(r * 2) / 2);
 
-        // 4. Final Adjustment to maintain exact average after rounding
-        let finalSum = quantizedRates.reduce((a, b) => a + b, 0);
-        let drift = targetSum - finalSum;
+        // 4. Final Adjustment to maintain reasonable weighted average after rounding
+        // Note: With partial weights, we might not be able to hit the EXACT average with 0.5 steps.
+        // We will try to minimize the weighted drift.
+
+        let finalWeightedSum = 0;
+        quantizedRates.forEach((r, i) => {
+            finalWeightedSum += r * weights[i];
+        });
+
+        const targetWeightedSum = averageRate * totalMonths;
+        let weightedDrift = targetWeightedSum - finalWeightedSum;
+
+        // We iterate to reduce drift.
+        // Each step changes a rate by 0.5. The impact on Sum is 0.5 * weight[i].
         let attempts = 0;
-        while (Math.abs(drift) >= 0.25 && attempts < 100) {
+        while (Math.abs(weightedDrift) > 1 && attempts < 200) { // Threshold > 1 month-percent
             const idx = Math.floor(Math.random() * count);
-            if (drift > 0) {
+            const weight = weights[idx];
+            const change = 0.5 * weight;
+
+            if (weightedDrift > 0) {
+                // Need to increase sum
                 quantizedRates[idx] += 0.5;
-                drift -= 0.5;
+                weightedDrift -= change;
             } else {
+                // Need to decrease sum
                 quantizedRates[idx] -= 0.5;
-                drift += 0.5;
+                weightedDrift += change;
             }
             attempts++;
         }
@@ -392,7 +483,7 @@ export default function VariableRatesModal({
                             const rate = rates[year] !== undefined ? rates[year] : averageRate;
                             return (
                                 <div key={year} className="flex items-center gap-2">
-                                    <div className="w-12 flex flex-col items-start justify-center">
+                                    <div className="w-16 flex flex-col items-start justify-center">
                                         <span className={`text-xs font-mono font-bold ${year === retirementStartYear
                                             ? 'text-emerald-600 dark:text-emerald-400'
                                             : (year === retirementEndYear
@@ -407,8 +498,8 @@ export default function VariableRatesModal({
                                             </span>
                                         )}
                                         {year === retirementEndYear && (
-                                            <span className={`text-[9px] font-bold leading-none px-1.5 py-0.5 rounded-full mt-0.5 ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-300'}`}>
-                                                {language === 'he' ? 'סיום' : 'End'}
+                                            <span className={`text-[9px] font-bold leading-none px-1.5 py-0.5 rounded-full mt-0.5 whitespace-nowrap ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-300'}`}>
+                                                {language === 'he' ? 'סיום' : 'End'} <span className="opacity-75">({getMonthName(year)})</span>
                                             </span>
                                         )}
                                     </div>

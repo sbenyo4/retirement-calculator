@@ -712,10 +712,10 @@ export default function InputForm({
                 isOpen={showVariableRates}
                 onClose={() => setShowVariableRates(false)}
                 startYear={currentYear}
-                endYear={endYear || (currentYear + 30)}
+                endYear={endYear}
                 retirementStartYear={startYear}
                 retirementEndYear={endYear}
-                currentRate={parseFloat(inputs.annualReturnRate) || 5}
+                currentRate={inputs.annualReturnRate}
                 variableRates={inputs.variableRates || {}}
                 onSave={(newRates) => setInputs(prev => ({ ...prev, variableRates: newRates }))}
                 language={language}
