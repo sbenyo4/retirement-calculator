@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { getAvailableProviders, getAvailableModels, generatePrompt } from '../utils/ai-calculator';
+import { calculateAgeFromDate } from '../utils/dateUtils';
 import { SIMULATION_TYPES } from '../utils/simulation-calculator';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
 import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, Coins, BarChart3, Landmark, PiggyBank, Wallet, Activity } from 'lucide-react';
@@ -135,13 +136,7 @@ export default function InputForm({
         }
     };
 
-    const calculateAgeFromDate = useCallback((dateString) => {
-        if (!dateString) return null;
-        const birthDateObj = new Date(dateString);
-        const today = new Date();
-        const age = (today - birthDateObj) / (1000 * 60 * 60 * 24 * 365.25);
-        return age;
-    }, []);
+
 
     // Check if current age is manually set (differs from calculated age)
     const isAgeManual = useMemo(() => {
@@ -153,7 +148,7 @@ export default function InputForm({
         if (calculated === null) return false;
         // If difference is significant (more than 0.05 years ~ 18 days) to avoid false positives
         return Math.abs(parseFloat(inputs.currentAge) - calculated) > 0.05;
-    }, [inputs.birthdate, inputs.currentAge, inputs.manualAge, calculateAgeFromDate]);
+    }, [inputs.birthdate, inputs.currentAge, inputs.manualAge]);
 
     const handleBirthdateChange = (e) => {
         const date = e.target.value;

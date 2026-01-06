@@ -5,6 +5,8 @@ import { CustomSelect } from './common/CustomSelect';
 import { DEFAULT_INPUTS } from '../constants';
 import { deepEqual } from '../hooks/useDeepCompare';
 
+import { calculateAgeFromDate } from '../utils/dateUtils';
+
 export function ProfileManager({ currentInputs, onLoad, t, language, profiles, onSaveProfile, onUpdateProfile, onDeleteProfile, onProfileLoad, lastLoadedProfileId }) {
     const [newProfileName, setNewProfileName] = useState('');
     const [selectedProfileId, setSelectedProfileId] = useState('');
@@ -45,11 +47,25 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         showMessage(language === 'he' ? 'פרופיל עודכן!' : 'Profile updated!');
     };
 
+    const prepareProfileData = (profileData) => {
+        const data = { ...DEFAULT_INPUTS, ...profileData };
+        // Recalculate age if manualAge is NOT explicitly enabled
+        if (!data.manualAge && data.birthdate) {
+            const newAge = calculateAgeFromDate(data.birthdate);
+            if (newAge !== null) {
+                // Keep the precision consistent (2 decimals)
+                data.currentAge = newAge.toFixed(2);
+            }
+        }
+        return data;
+    };
+
     const reloadProfile = () => {
         if (!selectedProfileId) return;
         const profile = profiles.find(p => p.id === selectedProfileId);
         if (profile) {
-            onLoad({ ...DEFAULT_INPUTS, ...profile.data });
+            const data = prepareProfileData(profile.data);
+            onLoad(data);
             showMessage(language === 'he' ? 'פרופיל נטען מחדש!' : 'Profile reloaded!');
         }
     };
@@ -67,7 +83,8 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     const loadProfile = (id) => {
         const profile = profiles.find(p => p.id === id);
         if (profile) {
-            onLoad({ ...DEFAULT_INPUTS, ...profile.data });
+            const data = prepareProfileData(profile.data);
+            onLoad(data);
             setSelectedProfileId(id);
             // Persist this as the last loaded profile
             if (onProfileLoad) {
