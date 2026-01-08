@@ -1,0 +1,10 @@
+﻿--- Running Standard Strategy ---
+--- Running Bucket Strategy (6/6/6) ---
+
+Results Comparison:
+Standard End Balance: 1371434.360946646
+Buckets End Balance:  1371434.3609466387
+Difference: 7.2177499532699585e-9
+
+History Analysis (First 12 months of decumulation):
+Comparison Points (Yearly):

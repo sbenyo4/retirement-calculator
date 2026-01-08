@@ -1,10 +1,10 @@
-import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { getAvailableProviders, getAvailableModels, generatePrompt } from '../utils/ai-calculator';
 import { calculateAgeFromDate } from '../utils/dateUtils';
 import { SIMULATION_TYPES } from '../utils/simulation-calculator';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
-import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, Coins, BarChart3, Landmark, PiggyBank, Wallet, Activity } from 'lucide-react';
+import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, Coins, BarChart3, Landmark, PiggyBank, Wallet, Activity, Layers, ShieldCheck, Gem } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 import LifeEventsManager from './LifeEventsManager';
 import VariableRatesModal from './VariableRatesModal';
@@ -64,6 +64,7 @@ export default function InputForm({
     const [showApiKey, setShowApiKey] = useState(false);
     // View Toggle State: 'parameters' | 'events'
     const [activeView, setActiveView] = useState('parameters');
+    const previousVariableRatesState = useRef(false); // Store VR state before buckets toggle
     const [showVariableRates, setShowVariableRates] = useState(false);
 
     // Helper to check if variable rates are active (different from default)
@@ -599,22 +600,62 @@ export default function InputForm({
                     <div className="grid grid-cols-[1.3fr_0.7fr] gap-3">
                         <div className="relative">
                             <InputGroup language={language}
-                                label={t('annualReturnRate')}
+                                label={inputs.enableBuckets ? t('accumulationRate') : t('annualReturnRate')}
                                 name="annualReturnRate"
                                 value={inputs.annualReturnRate}
                                 onChange={handleChange}
                                 icon={<BarChart3 size={14} />}
                                 endAction={
-                                    <button
-                                        onClick={() => setInputs(prev => ({ ...prev, variableRatesEnabled: !prev.variableRatesEnabled }))}
-                                        className={`p-1 transition-colors h-full flex items-center justify-center ${inputs.variableRatesEnabled
-                                            ? 'text-blue-600'
-                                            : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200')
-                                            }`}
-                                        title={language === 'he' ? 'הפעל/כבה ריביות משתנות' : 'Toggle Variable Rates'}
-                                    >
-                                        <Activity size={16} />
-                                    </button>
+                                    <div className="flex h-full">
+                                        <button
+                                            onClick={() => setInputs(prev => ({ ...prev, variableRatesEnabled: !prev.variableRatesEnabled }))}
+                                            disabled={inputs.enableBuckets}
+                                            className={`p-1 transition-colors h-full flex items-center justify-center ${inputs.variableRatesEnabled
+                                                ? 'text-blue-600'
+                                                : (inputs.enableBuckets
+                                                    ? 'text-gray-300 cursor-not-allowed'
+                                                    : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200'))
+                                                }`}
+                                            title={inputs.enableBuckets
+                                                ? (language === 'he' ? 'לא זמין במצב דליים' : 'Not available in Bucket Mode')
+                                                : (language === 'he' ? 'הפעל/כבה ריביות משתנות' : 'Toggle Variable Rates')}
+                                        >
+                                            <Activity size={16} />
+                                        </button>
+                                        <div className={`w-px mx-0.5 ${isLight ? 'bg-gray-300' : 'bg-gray-700'}`}></div>
+
+
+                                        <button
+                                            onClick={() => {
+                                                if (inputs.enableBuckets) {
+                                                    // Turning Buckets OFF -> Restore VR state
+                                                    setInputs(prev => ({
+                                                        ...prev,
+                                                        enableBuckets: false,
+                                                        variableRatesEnabled: previousVariableRatesState.current
+                                                    }));
+                                                } else {
+                                                    // Turning Buckets ON -> Save VR state and force OFF
+                                                    previousVariableRatesState.current = inputs.variableRatesEnabled;
+                                                    setInputs(prev => ({
+                                                        ...prev,
+                                                        enableBuckets: true,
+                                                        variableRatesEnabled: false,
+                                                        // Initialize bucket rates if missing
+                                                        bucketSafeRate: prev.bucketSafeRate !== undefined ? prev.bucketSafeRate : '2',
+                                                        bucketSurplusRate: prev.bucketSurplusRate !== undefined ? prev.bucketSurplusRate : '7'
+                                                    }));
+                                                }
+                                            }}
+                                            className={`p-1 transition-colors h-full flex items-center justify-center ${inputs.enableBuckets
+                                                ? 'text-indigo-500' // Distinct color for Buckets
+                                                : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200')
+                                                }`}
+                                            title={t('bucketStrategy')}
+                                        >
+                                            <Layers size={16} />
+                                        </button>
+                                    </div>
                                 }
                             />
                         </div>
@@ -626,6 +667,28 @@ export default function InputForm({
                             icon={<Landmark size={14} />}
                         />
                     </div>
+
+                    {/* Bucket Strategy Details (Conditional) */}
+                    {inputs.enableBuckets && (
+                        <div className={`grid grid-cols-2 gap-1 animate-in fade-in slide-in-from-top-1 ${isLight ? 'bg-indigo-50/50' : 'bg-indigo-900/10'} p-1 rounded-lg border border-indigo-100 dark:border-indigo-900/30`}>
+                            <InputGroup language={language}
+                                label={t('safeRate')}
+                                name="bucketSafeRate"
+                                value={inputs.bucketSafeRate}
+                                onChange={handleChange}
+                                icon={<ShieldCheck size={14} className="text-emerald-500" />}
+                                prefix="%"
+                            />
+                            <InputGroup language={language}
+                                label={t('surplusRate')}
+                                name="bucketSurplusRate"
+                                value={inputs.bucketSurplusRate}
+                                onChange={handleChange}
+                                icon={<Gem size={14} className="text-purple-500" />}
+                                prefix="%"
+                            />
+                        </div>
+                    )}
 
                     {/* Withdrawal Strategy Selector */}
                     <div className={`${containerClass} rounded-xl p-2 space-y-1 mt-2`}>

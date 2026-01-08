@@ -106,10 +106,13 @@ export function calculateRetirementProjection(inputs, t = null) {
         annualReturnRate,
         taxRate,
         variableRates, // New input
-        variableRatesEnabled // Toggle flag
+        variableRatesEnabled, // Toggle flag
+        enableBuckets, // New: Separate Buckets Strategy
+        bucketSafeRate = 0,
+        bucketSurplusRate = 0
     } = Object.fromEntries(
         Object.entries(inputs).map(([k, v]) => {
-            if (k === 'variableRates' || k === 'variableRatesEnabled' || k === 'lifeEvents') return [k, v]; // Preserve non-numeric inputs
+            if (k === 'variableRates' || k === 'variableRatesEnabled' || k === 'lifeEvents' || k === 'enableBuckets') return [k, v]; // Preserve non-numeric inputs
             return [k, parseFloat(v) || 0];
         })
     );
@@ -317,6 +320,94 @@ export function calculateRetirementProjection(inputs, t = null) {
     // Track active income adjustments during retirement (e.g. pension)
     let activeIncomeAdjustment = 0;
 
+    // --- BUCKET STRATEGY INITIALIZATION ---
+    let safeBalance = 0;
+    let surplusBalance = 0;
+
+    // We can't perfectly initialize buckets yet because we need 'requiredCapitalPV' which is calculated IN the loop.
+    // However, the loop modifies 'retirementBalance' based on returns.
+    // If we want Separate Buckets to work, we need to know the split AT START.
+    // 
+    // SOLUTION: Run a "Pre-Pass" to calculate Liability (Required Capital) first?
+    // OR: Assume for the loop that we are ONE pool, BUT accumulate "Safe Bucket Logic" vs "Surplus Logic"?
+    //
+    // Better: Run a fast Pre-Pass loop just to calculate 'requiredCapitalAtRetirement' using Safe Rate.
+    // This allows us to split the balance correctly at Month 0 of retirement.
+
+    let prePassRequiredCapital = 0;
+    if (enableBuckets) {
+        // Calculate NPV of liabilities using Safe Rate
+        const safeMonthlyRate = (bucketSafeRate / 100 / 12) * (1 - taxRateDecimal);
+
+        // Estimate Initial Effective Tax Rate for Gross-up
+        // This ensures checking against the GROSS withdrawal needed from the safe bucket, not just Net.
+        // If we don't do this, high-tax scenarios drain the Safe bucket faster than planned.
+        const totalProfitAtRetirement = retirementBalance - principalAtRetirement;
+        const profitRatioAtRetirement = retirementBalance > 0 ? (totalProfitAtRetirement / retirementBalance) : 0;
+        const effectiveTaxRate = Math.max(0, profitRatioAtRetirement * taxRateDecimal);
+        const grossUpFactor = 1 / (1 - effectiveTaxRate);
+
+        // Clone event trackers for Pre-Pass
+        let ppActiveExpense = 0;
+        let ppActiveIncome = 0;
+
+        // Initialize active events state at start of retirement
+        lifeEvents.forEach(event => {
+            if (!event.enabled) return;
+            if (isEventActive(event, monthsToRetirement + 1)) {
+                if (event.type === EVENT_TYPES.EXPENSE_CHANGE) ppActiveExpense += getMonthlyAmount(event);
+                else if (event.type === EVENT_TYPES.INCOME_CHANGE) ppActiveIncome += getMonthlyAmount(event);
+            }
+        });
+
+        // Run Pre-Pass Loop to calculate precise liability
+        for (let j = 1; j <= monthsInRetirement; j++) {
+            const currentSimMonth = monthsToRetirement + j;
+
+            // Update Event States for this month
+            lifeEvents.forEach(event => {
+                if (!event.enabled) return;
+
+                const eventStartMonth = getMonthFromDate(event.startDate);
+                const eventEndMonth = event.endDate ? getMonthFromDate(event.endDate) : Infinity;
+
+                // Check for state changes (Start or End)
+                if (eventStartMonth === currentSimMonth) {
+                    if (event.type === EVENT_TYPES.EXPENSE_CHANGE) ppActiveExpense += getMonthlyAmount(event);
+                    else if (event.type === EVENT_TYPES.INCOME_CHANGE) ppActiveIncome += getMonthlyAmount(event);
+                }
+
+                // Check for endings (End month is INCLUSIVE in main loop? check isEventActive)
+                // isEventActive: start <= current && current <= end
+                // So if currentSimMonth == eventEndMonth + 1, it expires.
+                if (eventEndMonth !== Infinity && currentSimMonth === eventEndMonth + 1) {
+                    if (event.type === EVENT_TYPES.EXPENSE_CHANGE) ppActiveExpense -= getMonthlyAmount(event);
+                    else if (event.type === EVENT_TYPES.INCOME_CHANGE) ppActiveIncome -= getMonthlyAmount(event);
+                }
+            });
+
+            // Calculate Net Need for this month
+            // Need = BASE + RecurringExpense - RecurringIncome
+            const monthlyNetNeed = Math.max(0, monthlyNetIncomeDesired + ppActiveExpense - ppActiveIncome);
+            const monthlyGrossNeed = monthlyNetNeed * grossUpFactor;
+
+            // Discount to T=0 of Retirement
+            const discount = Math.pow(1 + safeMonthlyRate, j);
+            prePassRequiredCapital += monthlyGrossNeed / discount;
+        }
+
+        // Apply Split
+        if (balanceAtRetirement >= prePassRequiredCapital) {
+            safeBalance = prePassRequiredCapital;
+            surplusBalance = balanceAtRetirement - prePassRequiredCapital;
+        } else {
+            safeBalance = balanceAtRetirement;
+            surplusBalance = 0;
+        }
+    } else {
+        // Standard mode: everything is one "balance"
+    }
+
     // Pre-scan for EXPENSE and INCOME events active at start of retirement
     lifeEvents.forEach(event => {
         if (!event.enabled) return;
@@ -348,9 +439,23 @@ export function calculateRetirementProjection(inputs, t = null) {
                 switch (event.type) {
                     case EVENT_TYPES.ONE_TIME_INCOME:
                         retirementBalance += event.amount;
+                        if (enableBuckets) {
+                            surplusBalance += event.amount;
+                        }
                         break;
                     case EVENT_TYPES.ONE_TIME_EXPENSE:
                         retirementBalance -= event.amount;
+                        if (enableBuckets) {
+                            let expenseRemaining = event.amount;
+                            if (safeBalance >= expenseRemaining) {
+                                safeBalance -= expenseRemaining;
+                                expenseRemaining = 0;
+                            } else {
+                                expenseRemaining -= safeBalance;
+                                safeBalance = 0;
+                                surplusBalance -= expenseRemaining;
+                            }
+                        }
                         break;
                 }
             }
@@ -377,8 +482,38 @@ export function calculateRetirementProjection(inputs, t = null) {
             }
         });
 
-        const interest = retirementBalance * monthlyRate;
-        const tax = interest * taxRateDecimal;
+        let interest = retirementBalance * monthlyRate;
+        if (enableBuckets) {
+            // Placeholder: will be overwritten/augmented
+        }
+        let tax = interest * taxRateDecimal;
+        let effectiveInterest = interest;
+
+        // BUCKET STRATEGY INTEREST
+        let safeInterest = 0;
+        let surplusInterest = 0;
+        let safeTax = 0;
+        let surplusTax = 0;
+
+        if (enableBuckets) {
+            const safeDailyRate = bucketSafeRate / 100 / 12;
+            const surplusDailyRate = bucketSurplusRate / 100 / 12;
+
+            safeInterest = safeBalance * safeDailyRate;
+            surplusInterest = surplusBalance * surplusDailyRate;
+
+            // Update buckets with interest
+            safeBalance += safeInterest;
+            surplusBalance += surplusInterest;
+
+            // For total balance tracking
+            // (Note: we calculate total tax for 'grossWithdrawal' logic below based on weighted avg or sum?)
+            // Simplest is to treat tax as a withdrawal from the buckets too.
+            safeTax = safeInterest * taxRateDecimal;
+            surplusTax = surplusInterest * taxRateDecimal;
+
+            effectiveInterest = safeInterest + surplusInterest;
+        }
 
         // Calculate withdrawal based on strategy
         let netWithdrawal;
@@ -463,14 +598,41 @@ export function calculateRetirementProjection(inputs, t = null) {
         }
 
         // Check if we have enough money
-        if (retirementBalance + interest < grossWithdrawal) {
-            grossWithdrawal = retirementBalance + interest; // Take what's left
+        if (retirementBalance + effectiveInterest < grossWithdrawal) {
+            grossWithdrawal = retirementBalance + effectiveInterest; // Take what's left
             if (ranOutAtAge === null) {
                 ranOutAtAge = retirementStartAge + (i / 12);
             }
         }
 
-        retirementBalance = retirementBalance + interest - grossWithdrawal;
+        retirementBalance = retirementBalance + effectiveInterest - grossWithdrawal;
+
+        // BUCKET STRATEGY WITHDRAWAL
+        if (enableBuckets) {
+            // Gross Withdrawal needs to come out of buckets.
+            // Strategy: Drain Safe Bucket first.
+            let remainingWithdrawal = grossWithdrawal;
+
+            if (safeBalance >= remainingWithdrawal) {
+                safeBalance -= remainingWithdrawal;
+                remainingWithdrawal = 0;
+            } else {
+                remainingWithdrawal -= safeBalance;
+                safeBalance = 0;
+
+                // Overflow to Surplus
+                if (surplusBalance >= remainingWithdrawal) {
+                    surplusBalance -= remainingWithdrawal;
+                    remainingWithdrawal = 0;
+                } else {
+                    surplusBalance = 0; // Ran out completely
+                }
+            }
+
+            // Re-sync total balance to be sum of buckets
+            retirementBalance = safeBalance + surplusBalance;
+        }
+
         accumulatedWithdrawals += grossWithdrawal;
         totalNetWithdrawal += netWithdrawal;
 
@@ -499,8 +661,18 @@ export function calculateRetirementProjection(inputs, t = null) {
         // Discount back to retirement start
         // Formula: PV = PMT / (1 + r)^n
         // If effectiveRate is 0, just add.
-        if (effectiveMonthlyRate !== 0) {
-            requiredCapitalPV += monthlyNeed / Math.pow(1 + effectiveMonthlyRate, i);
+
+        // BUCKET STRATEGY ADJUSTMENT:
+        // Use Safe Rate for Capital Requirement logic IF buckets are enabled.
+        // Otherwise use standard effective rate.
+        let discountRate = effectiveMonthlyRate;
+        if (enableBuckets) {
+            const safeMonthlyRate = (bucketSafeRate / 100 / 12) * (1 - taxRateDecimal);
+            discountRate = safeMonthlyRate;
+        }
+
+        if (discountRate !== 0) {
+            requiredCapitalPV += monthlyNeed / Math.pow(1 + discountRate, i);
         } else {
             requiredCapitalPV += monthlyNeed;
         }
@@ -510,6 +682,8 @@ export function calculateRetirementProjection(inputs, t = null) {
                 month: currentMonth,
                 age: retirementStartAge + (i / 12),
                 balance: Math.max(0, retirementBalance),
+                safeBucket: enableBuckets ? Math.max(0, safeBalance) : 0,
+                surplusBucket: enableBuckets ? Math.max(0, surplusBalance) : 0,
                 contribution: 0,
                 withdrawal: grossWithdrawal * 12, // Annual withdrawal (current rate)
                 accumulatedWithdrawals: accumulatedWithdrawals,
@@ -520,6 +694,8 @@ export function calculateRetirementProjection(inputs, t = null) {
 
         if (retirementBalance <= 0) {
             retirementBalance = 0;
+            safeBalance = 0;
+            surplusBalance = 0;
             // Do NOT break here. We must continue to calculate requiredCapitalPV for the full duration.
             // break; 
         }

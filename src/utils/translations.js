@@ -164,6 +164,17 @@ export const translations = {
         unknownError: 'Unknown error',
         tryAgain: 'Try Again',
 
+        // Bucket Strategy
+        bucketStrategy: 'Bucket Strategy',
+        enableBuckets: 'Enable Separate Buckets',
+        accumulationRate: 'Accumulation Rate (Pre-Retirement)',
+        safeRate: 'Safe Bucket Rate',
+        surplusRate: 'Surplus Bucket Rate',
+        safeBucketDesc: 'Capital reserved for essential income',
+        surplusBucketDesc: 'Capital for growth/legacy',
+        safeBucketBalance: 'Safe Bucket',
+        surplusBucketBalance: 'Surplus Bucket',
+
         // Life Events Timeline
         lifeEventsTimeline: 'Life Events Timeline',
         addEvent: 'Add Event',
@@ -452,6 +463,17 @@ export const translations = {
         displayError: 'שגיאה בתצוגה',
         unknownError: 'שגיאה לא ידועה',
         tryAgain: 'נסה שוב',
+
+        // Bucket Strategy
+        bucketStrategy: 'אסטרטגיית דליים',
+        enableBuckets: 'הפעל דליים נפרדים',
+        accumulationRate: 'ריבית צבירה (לפני פרישה)',
+        safeRate: 'ריבית דלי בטוח (פרישה)',
+        surplusRate: 'ריבית דלי עודף (פרישה)',
+        safeBucketDesc: 'הון שמור להכנסה חיונית',
+        surplusBucketDesc: 'הון לצמיחה/ירושה',
+        safeBucketBalance: 'דלי בטוח',
+        surplusBucketBalance: 'דלי עודף',
 
         // Life Events Timeline
         lifeEventsTimeline: 'ציר זמן אירועי חיים',

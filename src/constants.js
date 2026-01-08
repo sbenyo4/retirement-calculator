@@ -18,7 +18,10 @@ export const DEFAULT_INPUTS = {
     manualAge: false,
     lifeEvents: [],
     variableRatesEnabled: false,
-    variableRates: {}
+    variableRates: {},
+    enableBuckets: false,
+    bucketSafeRate: 0,
+    bucketSurplusRate: 0
 };
 
 /**
