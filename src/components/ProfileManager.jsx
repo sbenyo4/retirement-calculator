@@ -4,6 +4,7 @@ import { Save, Trash2, Upload, RotateCcw } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 import { DEFAULT_INPUTS } from '../constants';
 import { deepEqual } from '../hooks/useDeepCompare';
+import { normalizeInputs } from '../utils/profileUtils';
 
 import { calculateAgeFromDate } from '../utils/dateUtils';
 
@@ -47,24 +48,11 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         showMessage(language === 'he' ? 'פרופיל עודכן!' : 'Profile updated!');
     };
 
-    const prepareProfileData = (profileData) => {
-        const data = { ...DEFAULT_INPUTS, ...profileData };
-        // Recalculate age if manualAge is NOT explicitly enabled
-        if (!data.manualAge && data.birthdate) {
-            const newAge = calculateAgeFromDate(data.birthdate);
-            if (newAge !== null) {
-                // Keep the precision consistent (2 decimals)
-                data.currentAge = newAge.toFixed(2);
-            }
-        }
-        return data;
-    };
-
     const reloadProfile = () => {
         if (!selectedProfileId) return;
         const profile = profiles.find(p => p.id === selectedProfileId);
         if (profile) {
-            const data = prepareProfileData(profile.data);
+            const data = normalizeInputs(profile.data);
             onLoad(data);
             showMessage(language === 'he' ? 'פרופיל נטען מחדש!' : 'Profile reloaded!');
         }
@@ -83,7 +71,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     const loadProfile = (id) => {
         const profile = profiles.find(p => p.id === id);
         if (profile) {
-            const data = prepareProfileData(profile.data);
+            const data = normalizeInputs(profile.data);
             onLoad(data);
             setSelectedProfileId(id);
             // Persist this as the last loaded profile
@@ -99,7 +87,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     const selectedProfile = profiles.find(p => p.id === selectedProfileId);
     // Normalize saved data with defaults to match how currentInputs is constructed on load
     // This prevents false positives when new fields (like manualAge) are added to the app but missing in old profiles
-    const comparisonData = selectedProfile ? { ...DEFAULT_INPUTS, ...selectedProfile.data } : null;
+    const comparisonData = selectedProfile ? normalizeInputs(selectedProfile.data) : null;
 
 
     const hasChanges = comparisonData && !deepEqual(currentInputs, comparisonData);

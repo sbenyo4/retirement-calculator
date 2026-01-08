@@ -18,6 +18,7 @@ import { useRateLimit } from './hooks/useRateLimit';
 import { useDeepCompareMemo } from './hooks/useDeepCompare';
 import { ModelsManager } from './components/ModelsManager';
 import { DEFAULT_INPUTS, WITHDRAWAL_STRATEGIES } from './constants';
+import { normalizeInputs } from './utils/profileUtils';
 import { Settings } from 'lucide-react';
 
 // Error Boundary to catch render errors
@@ -136,7 +137,7 @@ function MainApp() {
     const savedSession = localStorage.getItem(sessionKey);
     if (savedSession) {
       try {
-        return { ...DEFAULT_INPUTS, ...JSON.parse(savedSession) };
+        return normalizeInputs(JSON.parse(savedSession));
       } catch (e) {
         console.error('Error loading session inputs:', e);
       }
@@ -154,7 +155,7 @@ function MainApp() {
             const profiles = JSON.parse(localStorage.getItem(key) || '[]');
             const profile = profiles.find(p => p.id === lastProfileId);
             if (profile?.data) {
-              return { ...DEFAULT_INPUTS, ...profile.data };
+              return normalizeInputs(profile.data);
             }
           } catch (e) {
             console.error('Error loading profile:', e);
@@ -163,7 +164,7 @@ function MainApp() {
       }
     }
 
-    return { ...DEFAULT_INPUTS };
+    return normalizeInputs({});
   });
 
   const [results, setResults] = useState(null);
