@@ -1,113 +1,31 @@
-import React, { useState, useEffect, useRef, useMemo, Component, useReducer } from 'react';
+
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import InputForm from './components/InputForm';
 import { ResultsDashboard } from './components/ResultsDashboard';
 import { ProfileManager } from './components/ProfileManager';
 import { calculateRetirementProjection } from './utils/calculator';
 import { calculateRetirementWithAI } from './utils/ai-calculator';
 import { getAvailableModels } from './config/ai-models';
-import { calculateSimulation, SIMULATION_TYPES } from './utils/simulation-calculator';
+import { calculateSimulation } from './utils/simulation-calculator';
 import { translations } from './utils/translations';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { UserMenu } from './components/UserMenu';
 import { ThemeToggle } from './components/ThemeToggle';
 import { LoginPage } from './components/LoginPage';
+import { ModelsManager } from './components/ModelsManager';
+import ErrorBoundary from './components/common/ErrorBoundary';
+
+// Hooks
 import { useProfiles } from './hooks/useProfiles';
 import { useDebouncedValue } from './hooks/useDebounce';
 import { useRateLimit } from './hooks/useRateLimit';
 import { useDeepCompareMemo } from './hooks/useDeepCompare';
-import { ModelsManager } from './components/ModelsManager';
-import { DEFAULT_INPUTS, WITHDRAWAL_STRATEGIES } from './constants';
-import { normalizeInputs } from './utils/profileUtils';
+import { useAppSettings } from './hooks/useAppSettings';
+import { useRetirementData } from './hooks/useRetirementData';
+
+import { WITHDRAWAL_STRATEGIES } from './constants';
 import { Settings } from 'lucide-react';
-
-// Error Boundary to catch render errors
-class ErrorBoundary extends Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null, errorInfo: null };
-  }
-
-  static getDerivedStateFromError(error) {
-    return { hasError: true };
-  }
-
-  componentDidCatch(error, errorInfo) {
-    this.setState({ error, errorInfo });
-    console.error('ErrorBoundary caught:', error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      const { t } = this.props;
-      return (
-        <div className="bg-red-900/50 border border-red-500 rounded-xl p-4 text-white">
-          <h2 className="text-xl font-bold mb-2">⚠️ {t ? t('displayError') : 'שגיאה בתצוגה'}</h2>
-          <p className="text-red-300 mb-2">{this.state.error?.message || (t ? t('unknownError') : 'Unknown error')}</p>
-          <pre className="text-xs bg-black/50 p-2 rounded overflow-auto max-h-40">
-            {this.state.errorInfo?.componentStack}
-          </pre>
-          <button
-            onClick={() => this.setState({ hasError: false, error: null, errorInfo: null })}
-            className="mt-2 bg-blue-600 px-4 py-2 rounded"
-          >
-            {t ? t('tryAgain') : 'נסה שוב'}
-          </button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-// Settings Reducer - consolidates related state
-const SETTINGS_ACTIONS = {
-  SET_CALCULATION_MODE: 'SET_CALCULATION_MODE',
-  SET_AI_PROVIDER: 'SET_AI_PROVIDER',
-  SET_AI_MODEL: 'SET_AI_MODEL',
-  SET_API_KEY_OVERRIDE: 'SET_API_KEY_OVERRIDE',
-  SET_SIMULATION_TYPE: 'SET_SIMULATION_TYPE'
-};
-
-function getInitialSettings() {
-  const savedProvider = localStorage.getItem('aiProvider') || 'gemini';
-  return {
-    calculationMode: 'mathematical', // Always start in mathematical mode on refresh
-    aiProvider: savedProvider,
-    aiModel: localStorage.getItem('aiModel') || 'gemini-2.5-flash',
-    apiKeyOverride: localStorage.getItem(`apiKeyOverride_${savedProvider}`) || '',
-    simulationType: localStorage.getItem('simulationType') || SIMULATION_TYPES.MONTE_CARLO
-  };
-}
-
-function settingsReducer(state, action) {
-  switch (action.type) {
-    case SETTINGS_ACTIONS.SET_CALCULATION_MODE:
-      return { ...state, calculationMode: action.payload };
-
-    case SETTINGS_ACTIONS.SET_AI_PROVIDER: {
-      // When provider changes, load the saved API key for that provider
-      const newApiKey = localStorage.getItem(`apiKeyOverride_${action.payload}`) || '';
-      return {
-        ...state,
-        aiProvider: action.payload,
-        apiKeyOverride: newApiKey
-      };
-    }
-
-    case SETTINGS_ACTIONS.SET_AI_MODEL:
-      return { ...state, aiModel: action.payload };
-
-    case SETTINGS_ACTIONS.SET_API_KEY_OVERRIDE:
-      return { ...state, apiKeyOverride: action.payload };
-
-    case SETTINGS_ACTIONS.SET_SIMULATION_TYPE:
-      return { ...state, simulationType: action.payload };
-
-    default:
-      return state;
-  }
-}
 
 function App() {
   return (
@@ -126,46 +44,9 @@ function MainApp() {
   // Wrap t in useCallback to prevent it from changing on every render
   const t = React.useCallback((key) => translations[language][key] || key, [language]);
 
-  // Settings State - using useReducer for related state
-  const [settings, dispatchSettings] = useReducer(settingsReducer, null, getInitialSettings);
-
-  // Initialize inputs - load from last session or profile
-  const [inputs, setInputs] = useState(() => {
-    // 1. Try to load from current session persistence
-    const curId = currentUser?.uid || 'guest';
-    const sessionKey = `retirementInputs_current_${curId}`;
-    const savedSession = localStorage.getItem(sessionKey);
-    if (savedSession) {
-      try {
-        return normalizeInputs(JSON.parse(savedSession));
-      } catch (e) {
-        console.error('Error loading session inputs:', e);
-      }
-    }
-
-    // 2. Fallback to last explicitly loaded profile
-    const lastProfileId = localStorage.getItem(`lastLoadedProfile_${curId}`);
-
-    if (lastProfileId) {
-      // Find the profiles storage key
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key?.startsWith('retirementProfiles_')) {
-          try {
-            const profiles = JSON.parse(localStorage.getItem(key) || '[]');
-            const profile = profiles.find(p => p.id === lastProfileId);
-            if (profile?.data) {
-              return normalizeInputs(profile.data);
-            }
-          } catch (e) {
-            console.error('Error loading profile:', e);
-          }
-        }
-      }
-    }
-
-    return normalizeInputs({});
-  });
+  // Use Custom Hooks for Logic
+  const { settings, dispatch: dispatchSettings, SETTINGS_ACTIONS } = useAppSettings();
+  const { inputs, setInputs } = useRetirementData();
 
   const [results, setResults] = useState(null);
   const [aiResults, setAiResults] = useState(null);
@@ -186,11 +67,8 @@ function MainApp() {
 
   // Rate limiting hook
   const {
-    isLimited,
-    timeUntilReset,
     checkRateLimit,
     recordCall,
-    getUsageStats
   } = useRateLimit(currentUser?.uid || 'guest');
 
   // UI State
@@ -201,17 +79,21 @@ function MainApp() {
   const lastSimInputs = useRef(null);
   const lastSimType = useRef(null);
 
-  // Persistence for General Settings
-  useEffect(() => {
-    localStorage.setItem('aiProvider', settings.aiProvider);
-    localStorage.setItem('aiModel', settings.aiModel);
-    localStorage.setItem('simulationType', settings.simulationType);
-  }, [settings.aiProvider, settings.aiModel, settings.simulationType]);
-
-  // Persistence for API Key (Per Provider)
-  useEffect(() => {
-    localStorage.setItem(`apiKeyOverride_${settings.aiProvider}`, settings.apiKeyOverride);
-  }, [settings.apiKeyOverride, settings.aiProvider]);
+  // Helper to format rate limit messages
+  const formatLimitMessage = (limitCheck) => {
+    if (!limitCheck || limitCheck.allowed) return null;
+    const { reason, resetTime, current, limit } = limitCheck;
+    if (reason === 'minute') {
+      const secondsLeft = Math.ceil((resetTime.getTime() - Date.now()) / 1000);
+      return t('rateLimitMinute').replace('{seconds}', secondsLeft);
+    } else if (reason === 'hour') {
+      const timeStr = resetTime.toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' });
+      return t('rateLimitHour').replace('{limit}', limit).replace('{time}', timeStr);
+    } else if (reason === 'day') {
+      return t('rateLimitDay').replace('{limit}', limit);
+    }
+    return t('rateLimitReached');
+  };
 
   // Validate AI Model on load/change (fix for persisted invalid models)
   useEffect(() => {
@@ -376,25 +258,6 @@ function MainApp() {
     }).filter(Boolean);
   }, [selectedProfileIds, profiles]);
 
-  // Helper to format rate limit messages
-  const formatLimitMessage = (limitCheck) => {
-    if (!limitCheck || limitCheck.allowed) return null;
-
-    const { reason, resetTime, current, limit } = limitCheck;
-
-    if (reason === 'minute') {
-      const secondsLeft = Math.ceil((resetTime.getTime() - Date.now()) / 1000);
-      return t('rateLimitMinute').replace('{seconds}', secondsLeft);
-    } else if (reason === 'hour') {
-      const timeStr = resetTime.toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' });
-      return t('rateLimitHour').replace('{limit}', limit).replace('{time}', timeStr);
-    } else if (reason === 'day') {
-      return t('rateLimitDay').replace('{limit}', limit);
-    }
-
-    return t('rateLimitReached');
-  };
-
   // Manual AI Calculation Handler
   const handleAiCalculate = async () => {
     // Check rate limit BEFORE calling API
@@ -423,13 +286,6 @@ function MainApp() {
       setAiLoading(false);
     }
   };
-
-  // Note: Profile loading is now handled by the ProfileManager component
-  // Inputs are automatically saved to localStorage whenever they change
-  useEffect(() => {
-    const curId = currentUser?.uid || 'guest';
-    localStorage.setItem(`retirementInputs_current_${curId}`, JSON.stringify(inputs));
-  }, [inputs, currentUser]);
 
   const toggleLanguage = () => {
     setLanguage(prev => prev === 'en' ? 'he' : 'en');
@@ -507,15 +363,15 @@ function MainApp() {
 
               // Settings Props
               calculationMode={settings.calculationMode}
-              setCalculationMode={(mode) => dispatchSettings({ type: 'SET_CALCULATION_MODE', payload: mode })}
+              setCalculationMode={(mode) => dispatchSettings({ type: SETTINGS_ACTIONS.SET_CALCULATION_MODE, payload: mode })}
               aiProvider={settings.aiProvider}
-              setAiProvider={(provider) => dispatchSettings({ type: 'SET_AI_PROVIDER', payload: provider })}
+              setAiProvider={(provider) => dispatchSettings({ type: SETTINGS_ACTIONS.SET_AI_PROVIDER, payload: provider })}
               aiModel={settings.aiModel}
-              setAiModel={(model) => dispatchSettings({ type: 'SET_AI_MODEL', payload: model })}
+              setAiModel={(model) => dispatchSettings({ type: SETTINGS_ACTIONS.SET_AI_MODEL, payload: model })}
               apiKeyOverride={settings.apiKeyOverride}
-              setApiKeyOverride={(key) => dispatchSettings({ type: 'SET_API_KEY_OVERRIDE', payload: key })}
+              setApiKeyOverride={(key) => dispatchSettings({ type: SETTINGS_ACTIONS.SET_API_KEY_OVERRIDE, payload: key })}
               simulationType={settings.simulationType}
-              setSimulationType={(type) => dispatchSettings({ type: 'SET_SIMULATION_TYPE', payload: type })}
+              setSimulationType={(type) => dispatchSettings({ type: SETTINGS_ACTIONS.SET_SIMULATION_TYPE, payload: type })}
               onAiCalculate={handleAiCalculate}
               aiInputsChanged={aiInputsChanged}
               aiLoading={aiLoading}
