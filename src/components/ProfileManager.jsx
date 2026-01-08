@@ -4,7 +4,7 @@ import { Save, Trash2, Upload, RotateCcw } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 import { DEFAULT_INPUTS } from '../constants';
 import { deepEqual } from '../hooks/useDeepCompare';
-import { normalizeInputs } from '../utils/profileUtils';
+import { normalizeInputs, getDetailedDiff } from '../utils/profileUtils';
 
 import { calculateAgeFromDate } from '../utils/dateUtils';
 
@@ -34,17 +34,31 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
 
     const optionClass = isLight ? "bg-white text-gray-900" : "bg-gray-800 text-white";
 
+    const [comparisonSnapshot, setComparisonSnapshot] = useState(null);
+
+    // Initial snapshot on mount - assume current state is "saved" to avoid warnings on refresh
+    useEffect(() => {
+        if (!comparisonSnapshot && currentInputs && Object.keys(currentInputs).length > 0) {
+            setComparisonSnapshot(normalizeInputs(currentInputs));
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Only run once on mount
+
     const saveProfile = () => {
         if (!newProfileName.trim()) return;
         const newProfile = onSaveProfile(newProfileName, currentInputs);
         setNewProfileName('');
         setSelectedProfileId(newProfile.id);
+        // Update snapshot to match new saved state
+        setComparisonSnapshot(normalizeInputs(currentInputs));
         showMessage(language === 'he' ? 'פרופיל נשמר!' : 'Profile saved!');
     };
 
     const updateProfile = () => {
         if (!selectedProfileId) return;
         onUpdateProfile(selectedProfileId, currentInputs);
+        // Update snapshot to match new saved state
+        setComparisonSnapshot(normalizeInputs(currentInputs));
         showMessage(language === 'he' ? 'פרופיל עודכן!' : 'Profile updated!');
     };
 
@@ -54,6 +68,8 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         if (profile) {
             const data = normalizeInputs(profile.data);
             onLoad(data);
+            // Reset snapshot to the loaded profile data
+            setComparisonSnapshot(data);
             showMessage(language === 'he' ? 'פרופיל נטען מחדש!' : 'Profile reloaded!');
         }
     };
@@ -74,6 +90,9 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
             const data = normalizeInputs(profile.data);
             onLoad(data);
             setSelectedProfileId(id);
+            // Reset snapshot to the loaded profile data
+            setComparisonSnapshot(data);
+
             // Persist this as the last loaded profile
             if (onProfileLoad) {
                 onProfileLoad(id);
@@ -81,16 +100,12 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         }
     };
 
+    // Normalize currentInputs to ensure types match (Strings -> Numbers) before comparison
+    const normalizedCurrent = currentInputs ? normalizeInputs(currentInputs) : null;
 
-
-
-    const selectedProfile = profiles.find(p => p.id === selectedProfileId);
-    // Normalize saved data with defaults to match how currentInputs is constructed on load
-    // This prevents false positives when new fields (like manualAge) are added to the app but missing in old profiles
-    const comparisonData = selectedProfile ? normalizeInputs(selectedProfile.data) : null;
-
-
-    const hasChanges = comparisonData && !deepEqual(currentInputs, comparisonData);
+    // Compare normalized current inputs with the SNAPSHOT instead of the database profile
+    // This ensures "Unsaved changes" only appears when user modifies data AFTER loading/refreshing
+    const hasChanges = comparisonSnapshot && normalizedCurrent && !deepEqual(normalizedCurrent, comparisonSnapshot);
 
     return (
         <div className="mb-2">
@@ -161,7 +176,6 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                     </div>
                 )}
 
-                {/* Message area - dynamic height to show "Unsaved Changes" */}
                 <div className="min-h-6 flex flex-col gap-1">
                     {saveMessage && (
                         <div className="bg-green-600/20 border border-green-500 text-green-300 px-2 py-0.5 rounded text-xs text-center animate-fade-in">

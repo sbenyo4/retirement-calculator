@@ -18,6 +18,12 @@ export const generatePrompt = (inputs) => {
     - Monthly Net Income Desired in Retirement: ${inputs.monthlyNetIncomeDesired}
     - Annual Return Rate (Investment): ${inputs.annualReturnRate}%
     - Tax Rate on Profits: ${inputs.taxRate}%
+    - Withdrawal Strategy: ${inputs.withdrawalStrategy || 'fixed'}
+    ${inputs.enableBuckets ? `
+    - **Bucket Strategy Enabled**: Yes
+    - Bucket Safe Rate (Yield): ${inputs.bucketSafeRate}%
+    - Bucket Surplus Rate (Growth): ${inputs.bucketSurplusRate}%
+    ` : ''}
 
     Specific Calculation Instructions:
     1. **Balance at Retirement (Projected Savings)**: Calculate the Future Value of the "Current Savings" plus the Future Value of the "Monthly Contribution" (invested until retirement age).
