@@ -2,7 +2,7 @@ import React, { useMemo, useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useThemeClasses } from '../hooks/useThemeClasses';
-import { X, Calendar, TrendingUp, TrendingDown, DollarSign, ArrowRight, ArrowLeft, Eye, EyeOff, ToggleLeft, ToggleRight, Filter, FilterX, Plus, Undo2, Redo2, AlertTriangle } from 'lucide-react';
+import { X, Calendar, TrendingUp, TrendingDown, DollarSign, ArrowRight, ArrowLeft, Eye, EyeOff, ToggleLeft, ToggleRight, Filter, FilterX, Plus, Undo2, Redo2, AlertTriangle, Trash2 } from 'lucide-react';
 import { EVENT_TYPES } from '../constants';
 import { calculateTimelineLayout } from '../utils/timelineLayout';
 import AddEventModal from './AddEventModal';
@@ -82,6 +82,12 @@ export default function LifeEventsTimelineModal({
         setFuture([]);
         // Update actual state
         onChange(newEvents);
+    };
+
+    const handleDeleteAll = () => {
+        if (events.length === 0) return;
+        addToHistory();
+        onChange && onChange([]);
     };
 
     const handleUndo = () => {
@@ -384,6 +390,14 @@ export default function LifeEventsTimelineModal({
                 <div className={`p-4 border-b ${isLight ? 'border-gray-200' : 'border-white/10'} bg-transparent shrink-0 relative`}>
                     {/* Action Buttons - Absolutely Positioned to prevent overflow clipping */}
                     <div className={`absolute top-4 ${language === 'he' ? 'left-4' : 'right-4'} flex items-center gap-2 z-10`}>
+                        <button
+                            onClick={handleDeleteAll}
+                            disabled={events.length === 0}
+                            className={`p-2 rounded-lg transition-colors ${events.length === 0 ? 'opacity-30 cursor-not-allowed' : (isLight ? 'bg-red-50 hover:bg-red-100 text-red-600' : 'bg-red-500/20 hover:bg-red-500/30 text-red-400')}`}
+                            title={t ? t('deleteAll') : 'Delete All'}
+                        >
+                            <Trash2 className="w-5 h-5" />
+                        </button>
                         <div className="flex items-center gap-0.5">
                             <button
                                 onClick={handleUndo}
@@ -418,7 +432,7 @@ export default function LifeEventsTimelineModal({
                     </div>
 
                     {/* Main Header Content */}
-                    <div className={`flex justify-between items-start ${language === 'he' ? 'pl-[140px]' : 'pr-[140px]'}`}>
+                    <div className={`flex justify-between items-start ${language === 'he' ? 'pl-[180px]' : 'pr-[180px]'}`}>
                         <div className="flex flex-col w-full min-w-0">
                             {/* Row 1: Title & Stats */}
                             <div className="flex items-center gap-4 mb-2 flex-wrap">
