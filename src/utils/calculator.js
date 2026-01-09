@@ -78,13 +78,20 @@ export function calculateRetirementProjection(inputs, t = null) {
         startYear
     }, t);
 
+    // Determine effective rate for post-retirement (Used for Perpetuity Calc)
+    // If buckets are enabled, the 'Safe Bucket Rate' is the assumption for living off interest (Perpetuity)
+    const retirementAnnualReturnRate = parsedInputs.enableBuckets
+        ? (parsedInputs.bucketSafeRate || 0)
+        : annualReturnRate;
+
     // 4. Statistics (Phase 3)
     const statsResult = calculateStatistics({
         balanceAtRetirement,
         requiredCapitalAtRetirement: decumResult.requiredCapitalPV,
         monthlyNetIncomeDesired,
         monthlyContribution,
-        annualReturnRate,
+        annualReturnRate, // Accumulation Rate (for PV to today)
+        retirementAnnualReturnRate, // Decumulation Rate (for Perpetuity threshold)
         taxRateDecimal: taxRate / 100,
         monthsToRetirement: (retirementStartAge - currentAge) * 12,
         monthsInRetirement,

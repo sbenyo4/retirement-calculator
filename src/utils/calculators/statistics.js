@@ -7,7 +7,9 @@ export function calculateStatistics({
     requiredCapitalAtRetirement,
     monthlyNetIncomeDesired,
     monthlyContribution,
+
     annualReturnRate,
+    retirementAnnualReturnRate = null,
     taxRateDecimal,
     monthsToRetirement,
     monthsInRetirement,
@@ -15,7 +17,9 @@ export function calculateStatistics({
     totalNetWithdrawal
 }) {
     // 1. Capital Preservation (Perpetuity)
-    const effectiveMonthlyRate = (annualReturnRate / 100 / 12) * (1 - taxRateDecimal);
+    // Use Retirement Rate if provided, else fall back to Accumulation Rate
+    const rateForPerpetuity = retirementAnnualReturnRate !== null ? retirementAnnualReturnRate : annualReturnRate;
+    const effectiveMonthlyRate = (rateForPerpetuity / 100 / 12) * (1 - taxRateDecimal);
 
     let requiredCapitalForPerpetuity = 0;
     if (effectiveMonthlyRate > 0) {

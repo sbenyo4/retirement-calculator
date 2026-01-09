@@ -36,7 +36,11 @@ export default function AIInsightsView({ inputs, results, aiProvider, aiModel, a
     const textPrimary = isLight ? "text-slate-900" : "text-white";
     const textSecondary = isLight ? "text-slate-600" : "text-gray-400";
 
-    const safeT = (key, fallback) => t ? (t(key) || fallback) : fallback;
+    const safeT = (key, fallback) => {
+        if (!t) return fallback;
+        const res = t(key);
+        return (!res || res === key) ? fallback : res;
+    };
 
     // Error Parsing
     const getFriendlyError = (err) => {
@@ -144,33 +148,44 @@ export default function AIInsightsView({ inputs, results, aiProvider, aiModel, a
                 {insights && (
                     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                         {/* Header Score Section */}
-                        <div className={`${cardClass} rounded-xl p-6 relative overflow-hidden`}>
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
+                        {(() => {
+                            const radius = 40;
+                            const circumference = 2 * Math.PI * radius; // ~251.327
+                            const offset = circumference - (insights.readinessScore / 100) * circumference;
 
-                            <div className="flex items-center gap-6">
-                                <div className="relative flex-shrink-0">
-                                    <svg className="w-24 h-24 transform -rotate-90">
-                                        <circle cx="48" cy="48" r="40" stroke="currentColor" strokeWidth="8" fill="transparent" className={isLight ? "text-gray-200" : "text-white/10"} />
-                                        <circle cx="48" cy="48" r="40" stroke="currentColor" strokeWidth="8" fill="transparent"
-                                            strokeDasharray={251.2}
-                                            strokeDashoffset={251.2 - (251.2 * insights.readinessScore / 100)}
-                                            className={`${insights.readinessScore > 75 ? 'text-green-500' : insights.readinessScore > 50 ? 'text-yellow-500' : 'text-red-500'} transition-all duration-1000 ease-out`}
-                                        />
-                                    </svg>
-                                    <div className="absolute inset-0 flex items-center justify-center flex-col">
-                                        <span className={`text-2xl font-bold ${textPrimary}`}>{insights.readinessScore}</span>
+                            return (
+                                <div className={`${cardClass} rounded-xl p-6 relative overflow-hidden`}>
+                                    <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
+
+                                    <div className="flex items-center gap-6">
+                                        <div className="relative flex-shrink-0">
+                                            <svg className="w-24 h-24 transform -rotate-90" viewBox="0 0 96 96">
+                                                {/* Background Circle */}
+                                                <circle cx="48" cy="48" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className={isLight ? "text-gray-200" : "text-white/10"} />
+                                                {/* Progress Circle */}
+                                                <circle cx="48" cy="48" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent"
+                                                    strokeDasharray={circumference}
+                                                    strokeDashoffset={offset}
+                                                    strokeLinecap="round"
+                                                    className={`${insights.readinessScore > 75 ? 'text-green-500' : insights.readinessScore > 50 ? 'text-yellow-500' : 'text-red-500'} transition-all duration-1000 ease-out`}
+                                                />
+                                            </svg>
+                                            <div className="absolute inset-0 flex items-center justify-center flex-col">
+                                                <span className={`text-2xl font-bold ${textPrimary}`}>{insights.readinessScore}</span>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <h2 className={`text-xl font-bold ${textPrimary} mb-2`}>
+                                                {safeT('readinessScore', 'Readiness Score')}
+                                            </h2>
+                                            <p className={`text-sm ${textSecondary} leading-relaxed`}>
+                                                {insights.executiveSummary}
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
-                                <div>
-                                    <h2 className={`text-xl font-bold ${textPrimary} mb-2`}>
-                                        {safeT('readinessScore', 'Readiness Score')}
-                                    </h2>
-                                    <p className={`text-sm ${textSecondary} leading-relaxed`}>
-                                        {insights.executiveSummary}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
+                            );
+                        })()}
 
                         {/* Retirement Age Recommendation */}
                         {insights.retirementAgeRecommendation && (
@@ -234,6 +249,22 @@ export default function AIInsightsView({ inputs, results, aiProvider, aiModel, a
                             </div>
                         </div>
 
+
+                        {/* Sensitivity Analysis (New) */}
+                        {insights.analysis.sensitivityAnalysis && (
+                            <div className={`${cardClass} rounded-xl p-4 border-l-4 border-l-purple-500`}>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Sparkles size={18} className="text-purple-500" />
+                                    <h3 className={`font-semibold ${textPrimary}`}>
+                                        {safeT('sensitivityInsight', isHebrew ? 'תובנת מפתח: מה באמת משפיע?' : 'Key Insight: What Moves the Needle?')}
+                                    </h3>
+                                </div>
+                                <p className={`text-sm ${textSecondary}`}>
+                                    {insights.analysis.sensitivityAnalysis}
+                                </p>
+                            </div>
+                        )}
+
                         {/* Market Dependency */}
                         <div className={`${cardClass} rounded-xl p-4`}>
                             <div className="flex items-center gap-2 mb-2">
@@ -290,6 +321,6 @@ export default function AIInsightsView({ inputs, results, aiProvider, aiModel, a
                     </div>
                 )}
             </div>
-        </div>
+        </div >
     );
 }

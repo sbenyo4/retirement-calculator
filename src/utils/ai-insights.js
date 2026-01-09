@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { getProviderEnvKey } from '../config/ai-models';
+import { calculateRetirementProjection } from './calculator';
 
 /**
  * Generates a specialized prompt for AI qualitative analysis of retirement data.
@@ -33,6 +34,62 @@ export const generateInsightPrompt = (inputs, results, language) => {
         }
     }
 
+
+    // --- Sensitivity / "What Moves the Needle" Calculation ---
+    // We run a few quick simulations to give the AI hard data on what changes impact the result the most.
+    let sensitivityText = "";
+    try {
+        const baseBalance = results.balanceAtEnd;
+        const sensitivtyScenarios = [];
+
+        // 1. Delay Retirement (Work 1 more year)
+        const delayRetireInputs = { ...inputs, retirementStartAge: (parseFloat(inputs.retirementStartAge) || 67) + 1 };
+        if (delayRetireInputs.retirementStartAge <= 80) { // sanity check
+            const res = calculateRetirementProjection(delayRetireInputs);
+            sensitivtyScenarios.push({ name: "Delaying Retirement by 1 year", diff: res.balanceAtEnd - baseBalance });
+        }
+
+        // 2. Higher Returns (+1% Accumulation)
+        const higherReturnInputs = { ...inputs, annualReturnRate: (parseFloat(inputs.annualReturnRate) || 0) + 1 };
+        const resReturn = calculateRetirementProjection(higherReturnInputs);
+        sensitivtyScenarios.push({ name: "Increasing Annual Return by 1%", diff: resReturn.balanceAtEnd - baseBalance });
+
+        // 3. Save More (+500 monthly)
+        const saveMoreInputs = { ...inputs, monthlyContribution: (parseFloat(inputs.monthlyContribution) || 0) + 500 };
+        const resSave = calculateRetirementProjection(saveMoreInputs);
+        sensitivtyScenarios.push({ name: "Saving 500 more per month", diff: resSave.balanceAtEnd - baseBalance });
+
+        // 4. Spend Less (-500 monthly in retirement)
+        const spendLessInputs = { ...inputs, monthlyNetIncomeDesired: (parseFloat(inputs.monthlyNetIncomeDesired) || 0) - 500 };
+        const resSpend = calculateRetirementProjection(spendLessInputs);
+        sensitivtyScenarios.push({ name: "Reducing Retirement Spending by 500/mo", diff: resSpend.balanceAtEnd - baseBalance });
+
+        // 5. Bucket Specifics (if enabled)
+        if (inputs.enableBuckets) {
+            // Safe Rate +1%
+            const safeInputs = { ...inputs, bucketSafeRate: (parseFloat(inputs.bucketSafeRate) || 0) + 1 };
+            const resSafe = calculateRetirementProjection(safeInputs);
+            sensitivtyScenarios.push({ name: "Improving Safe Bucket Return by 1%", diff: resSafe.balanceAtEnd - baseBalance });
+
+            // Surplus Rate +1%
+            const surplusInputs = { ...inputs, bucketSurplusRate: (parseFloat(inputs.bucketSurplusRate) || 0) + 1 };
+            const resSurplus = calculateRetirementProjection(surplusInputs);
+            sensitivtyScenarios.push({ name: "Improving Surplus Bucket Return by 1%", diff: resSurplus.balanceAtEnd - baseBalance });
+        }
+
+        // Format for AI
+        // Sort by impact (absolute value)
+        sensitivtyScenarios.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+
+        sensitivityText = sensitivtyScenarios.map(s =>
+            `- ${s.name}: ${s.diff >= 0 ? '+' : ''}${currency}${Math.round(s.diff).toLocaleString()} change in final balance`
+        ).join('\n    ');
+
+    } catch (err) {
+        console.warn("Failed to generate sensitivity data for AI:", err);
+        sensitivityText = "Data unavailable";
+    }
+
     const basePrompt = `
     Act as a senior financial advisor and retirement planner.
     Analyze the following retirement scenario and provide qualitative insights, conclusions, and actionable recommendations.
@@ -55,7 +112,11 @@ export const generateInsightPrompt = (inputs, results, language) => {
     - Projected Balance at End of Retirement: ${currency}${results.balanceAtEnd}
     - Ran Out of Money At Age: ${results.ranOutAtAge || 'Never (Succesfully funded)'}
     - Required Capital at Retirement: ${currency}${results.requiredCapitalAtRetirement}
+    - Required Capital at Retirement: ${currency}${results.requiredCapitalAtRetirement}
     - Deficit (Needed Today): ${currency}${results.pvOfDeficit}
+    
+    Sensitivity Analysis (Impact of changes on Final Balance):
+    ${sensitivityText}
     
     Your Output Requirements:
     1. **Language**: The response MUST be in ${isHebrew ? 'Hebrew (Modern, professional yet accessible)' : 'English'}.
@@ -70,7 +131,8 @@ export const generateInsightPrompt = (inputs, results, language) => {
         "analysis": {
             "strengths": ["string", "string"], // List of 2-3 strong points
             "weaknesses": ["string", "string"], // List of 2-3 weak points/risks
-            "marketDependency": "string" // Assessment of how dependent the plan is on market returns
+            "marketDependency": "string", // Assessment of how dependent the plan is on market returns
+            "sensitivityAnalysis": "string" // dedicated insight about what factor impacts the result the most (based on the provided sensitivity data)
         },
         "recommendations": [
             {
@@ -83,10 +145,12 @@ export const generateInsightPrompt = (inputs, results, language) => {
     }
     
     Guidance for Analysis:
-    - If there are significant life events (e.g., weddings, inheritance), specifically mention how they impact the plan.
+    - If there are significant life events, specifically mention their impact.
+    - LOOK at the "Sensitivity Analysis" section. Use it to populate the 'sensitivityAnalysis' field. 
+      Identify the TOP 2 most impactful factors. Explain the #1 factor and correct mention the #2 factor for context.
+      (e.g., "Delaying retirement is your strongest lever (+2M), followed by increasing safe yields (+500k). Saving more has minor impact.")
     - If the user runs out of money early, emphasize increasing savings or delaying retirement.
     - If the user has a large surplus, suggest leaving a legacy or spending more.
-    - Consider the age gaps and the realism of the inputs (e.g. if return rate is very high, warn about risk).
     - Be empathetic but realistic.
     `;
 

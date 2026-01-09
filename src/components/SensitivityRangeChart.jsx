@@ -26,6 +26,9 @@ ChartJS.register(
 
 const PARAMETER_TYPES = {
     INTEREST: 'interest',
+    ACCUMULATION_RATE: 'accumulationRate',
+    SAFE_RATE: 'safeRate',
+    SURPLUS_RATE: 'surplusRate',
     INCOME: 'income',
     RETIREMENT_AGE: 'retirementAge'
 };
@@ -37,6 +40,33 @@ const PARAMETER_CONFIG = {
         step: 1,
         defaultRange: [2, 10],
         inputKey: 'annualReturnRate',
+        format: (v) => `${v}%`,
+        unit: '%'
+    },
+    [PARAMETER_TYPES.ACCUMULATION_RATE]: {
+        min: 1,
+        max: 12,
+        step: 1,
+        defaultRange: [2, 10],
+        inputKey: 'annualReturnRate',
+        format: (v) => `${v}%`,
+        unit: '%'
+    },
+    [PARAMETER_TYPES.SAFE_RATE]: {
+        min: 0,
+        max: 10,
+        step: 0.5,
+        defaultRange: [1, 6],
+        inputKey: 'bucketSafeRate',
+        format: (v) => `${v}%`,
+        unit: '%'
+    },
+    [PARAMETER_TYPES.SURPLUS_RATE]: {
+        min: 0,
+        max: 15,
+        step: 1,
+        defaultRange: [3, 10],
+        inputKey: 'bucketSurplusRate',
         format: (v) => `${v}%`,
         unit: '%'
     },
@@ -94,7 +124,19 @@ export function SensitivityRangeButton({ onClick, t }) {
 // Modal component
 export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) {
     const { theme } = useTheme();
-    const [parameterType, setParameterType] = useState(PARAMETER_TYPES.INTEREST);
+    const [parameterType, setParameterType] = useState(() => {
+        // Default to Interest (or Accumulation if buckets enabled)
+        return inputs.enableBuckets ? PARAMETER_TYPES.ACCUMULATION_RATE : PARAMETER_TYPES.INTEREST;
+    });
+
+    // Reset parameter type if buckets toggle changes while open
+    React.useEffect(() => {
+        if (inputs.enableBuckets && parameterType === PARAMETER_TYPES.INTEREST) {
+            setParameterType(PARAMETER_TYPES.ACCUMULATION_RATE);
+        } else if (!inputs.enableBuckets && [PARAMETER_TYPES.ACCUMULATION_RATE, PARAMETER_TYPES.SAFE_RATE, PARAMETER_TYPES.SURPLUS_RATE].includes(parameterType)) {
+            setParameterType(PARAMETER_TYPES.INTEREST);
+        }
+    }, [inputs.enableBuckets]);
 
     // Get config for current parameter
     const config = PARAMETER_CONFIG[parameterType];
@@ -104,13 +146,13 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
 
     // State for range controls
     const [rangeMin, setRangeMin] = useState(() => {
-        if (parameterType === PARAMETER_TYPES.INTEREST) {
+        if ([PARAMETER_TYPES.INTEREST, PARAMETER_TYPES.ACCUMULATION_RATE, PARAMETER_TYPES.SAFE_RATE, PARAMETER_TYPES.SURPLUS_RATE].includes(parameterType)) {
             return Math.max(config.min, currentValue - 4);
         }
         return config.defaultRange[0];
     });
     const [rangeMax, setRangeMax] = useState(() => {
-        if (parameterType === PARAMETER_TYPES.INTEREST) {
+        if ([PARAMETER_TYPES.INTEREST, PARAMETER_TYPES.ACCUMULATION_RATE, PARAMETER_TYPES.SAFE_RATE, PARAMETER_TYPES.SURPLUS_RATE].includes(parameterType)) {
             return Math.min(config.max, currentValue + 4);
         }
         return config.defaultRange[1];
@@ -123,7 +165,7 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
         const newConfig = PARAMETER_CONFIG[newType];
         const newCurrentValue = parseFloat(inputs[newConfig.inputKey]) || newConfig.defaultRange[0];
 
-        if (newType === PARAMETER_TYPES.INTEREST) {
+        if ([PARAMETER_TYPES.INTEREST, PARAMETER_TYPES.ACCUMULATION_RATE, PARAMETER_TYPES.SAFE_RATE, PARAMETER_TYPES.SURPLUS_RATE].includes(newType)) {
             setRangeMin(Math.max(newConfig.min, newCurrentValue - 4));
             setRangeMax(Math.min(newConfig.max, newCurrentValue + 4));
         } else if (newType === PARAMETER_TYPES.INCOME) {
@@ -182,6 +224,49 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
 
         return results;
     }, [inputs, rangeMin, rangeMax, stepSize, parameterType, config, currentValue, language]);
+
+    // Calculate "Most Impactful Factor" (Sensitivity Analysis)
+    const impactfulFactor = useMemo(() => {
+        if (!inputs.enableBuckets) return null;
+
+        try {
+            const baseResult = calculateRetirementProjection(inputs);
+            const baseBalance = baseResult.balanceAtEnd;
+
+            // check Accumulation (+1%)
+            const accumInputs = { ...inputs, annualReturnRate: (parseFloat(inputs.annualReturnRate) || 0) + 1 };
+            const accumResult = calculateRetirementProjection(accumInputs);
+            const accumDiff = Math.abs(accumResult.balanceAtEnd - baseBalance);
+
+            // check Safe Rate (+1%)
+            const safeInputs = { ...inputs, bucketSafeRate: (parseFloat(inputs.bucketSafeRate) || 0) + 1 };
+            const safeResult = calculateRetirementProjection(safeInputs);
+            const safeDiff = Math.abs(safeResult.balanceAtEnd - baseBalance);
+
+            // check Surplus Rate (+1%)
+            const surplusInputs = { ...inputs, bucketSurplusRate: (parseFloat(inputs.bucketSurplusRate) || 0) + 1 };
+            const surplusResult = calculateRetirementProjection(surplusInputs);
+            const surplusDiff = Math.abs(surplusResult.balanceAtEnd - baseBalance);
+
+            // Find winner
+            let winnerLabel = t('accumulationRate') || 'Accumulation Rate';
+            let maxDiff = accumDiff;
+
+            if (safeDiff > maxDiff) {
+                maxDiff = safeDiff;
+                winnerLabel = t('safeRate') || 'Safe Rate';
+            }
+            if (surplusDiff > maxDiff) {
+                maxDiff = surplusDiff;
+                winnerLabel = t('surplusRate') || 'Surplus Rate';
+            }
+
+            return winnerLabel;
+        } catch (e) {
+            // Silently fail if inputs are currently invalid (e.g. user clearing a field)
+            return null;
+        }
+    }, [inputs, t]);
 
     // Chart data
     const chartData = useMemo(() => {
@@ -277,7 +362,13 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
         }
     };
 
-    const parameterOptions = [
+    const parameterOptions = inputs.enableBuckets ? [
+        { value: PARAMETER_TYPES.ACCUMULATION_RATE, label: t('accumulationRate') || 'Accumulation Rate' },
+        { value: PARAMETER_TYPES.SAFE_RATE, label: t('safeRate') || 'Safe Rate' },
+        { value: PARAMETER_TYPES.SURPLUS_RATE, label: t('surplusRate') || 'Surplus Rate' },
+        { value: PARAMETER_TYPES.INCOME, label: t('monthlyIncome') || 'Monthly Income' },
+        { value: PARAMETER_TYPES.RETIREMENT_AGE, label: t('retirementAge') || 'Retirement Age' }
+    ] : [
         { value: PARAMETER_TYPES.INTEREST, label: t('interestRate') || 'Interest Rate' },
         { value: PARAMETER_TYPES.INCOME, label: t('monthlyIncome') || 'Monthly Income' },
         { value: PARAMETER_TYPES.RETIREMENT_AGE, label: t('retirementAge') || 'Retirement Age' }
@@ -316,7 +407,13 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
                 {/* Header */}
                 <div className={`flex items-center justify-between p-4 border-b ${headerBorder} relative z-10 shrink-0`}>
                     <h2 className={`text-lg font-semibold ${titleColor} flex items-center gap-2`}>
-                        📊 {t('sensitivityRangeChart') || 'Sensitivity Range Chart'}
+                        <span>📊</span>
+                        <span>{t('sensitivityRangeChart') || 'Sensitivity Range Chart'}</span>
+                        {impactfulFactor && (
+                            <span className={`text-xs ml-4 px-2 py-0.5 rounded-full border ${theme === 'light' ? 'bg-orange-100 border-orange-300 text-orange-900' : 'bg-orange-500/20 border-orange-400/50 text-orange-100'}`}>
+                                {t('mostImpactfulParameter')}: <strong>{impactfulFactor}</strong>
+                            </span>
+                        )}
                     </h2>
                     <button
                         onClick={onClose}
@@ -384,7 +481,7 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
                                 value={stepSize}
                                 onChange={(val) => setStepSize(parseFloat(val))}
                                 options={
-                                    parameterType === PARAMETER_TYPES.INTEREST ? [
+                                    [PARAMETER_TYPES.INTEREST, PARAMETER_TYPES.ACCUMULATION_RATE, PARAMETER_TYPES.SAFE_RATE, PARAMETER_TYPES.SURPLUS_RATE].includes(parameterType) ? [
                                         { value: 0.5, label: "0.5%" },
                                         { value: 1, label: "1%" },
                                         { value: 2, label: "2%" }

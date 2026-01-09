@@ -71,6 +71,7 @@ export const translations = {
         medianResult: 'Median Result',
         range: 'Range (P25-P75)',
         apiKeyMissing: 'API Key Missing',
+        sensitivityInsight: 'Key Insight: What Moves the Needle?',
         metric: 'Metric',
         conservativeDesc: 'Annual Return -2%',
         optimisticDesc: 'Annual Return +1.5%',
@@ -114,6 +115,8 @@ export const translations = {
         currentValue: 'Current Value',
         balanceAtEndShort: 'End Balance',
         years: 'years',
+        mostImpactfulParameter: 'Most Impactful Factor',
+        impactAnalysis: 'Impact Analysis',
         // Sensitivity Heatmap
         sensitivityHeatmap: 'Sensitivity Heatmap',
         heatmapDesc: 'Balance at End of Period (Green = Surplus, Red = Deficit)',
@@ -373,6 +376,7 @@ export const translations = {
         medianResult: 'תוצאה חציונית',
         range: 'טווח (P25-P75)',
         apiKeyMissing: 'חסר מפתח API',
+        sensitivityInsight: 'תובנת מפתח: מה באמת משפיע?',
         metric: 'מדד',
         conservativeDesc: 'תשואה שנתית 2%-',
         optimisticDesc: 'תשואה שנתית 1.5%+',
@@ -416,6 +420,8 @@ export const translations = {
         currentValue: 'ערך נוכחי',
         balanceAtEndShort: 'יתרה סופית',
         years: 'שנים',
+        mostImpactfulParameter: 'הגורם המשפיע ביותר',
+        impactAnalysis: 'ניתוח רגישות',
         // Sensitivity Heatmap
         sensitivityHeatmap: 'מפת חום - רגישות',
         heatmapDesc: 'יתרה בסוף התקופה (ירוק = עודף, אדום = חוסר)',
