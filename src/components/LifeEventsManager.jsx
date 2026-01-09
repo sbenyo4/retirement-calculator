@@ -41,6 +41,13 @@ export default function LifeEventsManager({
     }, [events.length, itemsPerView]);
 
     const calculateItems = () => {
+        // user-requested stability: if 4 or fewer events, just show them all.
+        // There is no need to paginate such a small list.
+        if (events.length <= 4) {
+            setItemsPerView(events.length);
+            return;
+        }
+
         const container = listContainerRef.current;
         if (!container) return;
 
