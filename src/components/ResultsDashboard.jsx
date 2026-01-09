@@ -410,6 +410,33 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
     const startYear = getProjectedYear(inputs.retirementStartAge);
     const endYear = getProjectedYear(inputs.retirementEndAge);
 
+    // Calculate inputs for sensitivity tools (Heatmap/Range)
+    // In comparison mode, use the first selected profile/scenario. Fallback to current inputs.
+    const sensitivityInputs = useMemo(() => {
+        if (!isCompareMode) return inputs;
+
+        if (orderedColumns.length > 0) {
+            const firstCol = orderedColumns[0];
+            if (firstCol.type === 'profile' && firstCol.profileData) {
+                return firstCol.profileData;
+            }
+            // For math/sim/ai types, they use the current 'inputs' prop
+            return inputs;
+        }
+
+        return inputs;
+    }, [isCompareMode, inputs, orderedColumns]);
+
+    const sensitivitySourceName = useMemo(() => {
+        if (!isCompareMode) return t('currentInputs') || 'Current Inputs';
+
+        if (orderedColumns.length > 0) {
+            return orderedColumns[0].name;
+        }
+
+        return t('currentInputs') || 'Current Inputs';
+    }, [isCompareMode, orderedColumns, t]);
+
     return (
         <div className="space-y-3 h-full flex flex-col min-h-0">
             {/* View Toggle */}
@@ -821,7 +848,7 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                     <SensitivityRangeModal
                         isOpen={showSensitivityModal}
                         onClose={() => setShowSensitivityModal(false)}
-                        inputs={inputs}
+                        inputs={sensitivityInputs}
                         t={t}
                         language={language}
                     />
@@ -829,9 +856,10 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                     <SensitivityHeatmapModal
                         isOpen={showHeatmapModal}
                         onClose={() => setShowHeatmapModal(false)}
-                        inputs={inputs}
+                        inputs={sensitivityInputs}
                         t={t}
                         language={language}
+                        sourceName={sensitivitySourceName}
                     />
 
                     <InflationModal

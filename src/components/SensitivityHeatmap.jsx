@@ -20,7 +20,7 @@ export function SensitivityHeatmapButton({ onClick, t }) {
     );
 }
 
-export function SensitivityHeatmapModal({ isOpen, onClose, inputs, t, language }) {
+export function SensitivityHeatmapModal({ isOpen, onClose, inputs, t, language, sourceName }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
     const isRTL = language === 'he';
@@ -63,6 +63,11 @@ export function SensitivityHeatmapModal({ isOpen, onClose, inputs, t, language }
                         <h2 className="text-lg font-bold flex items-center gap-2">
                             <span>🔥</span>
                             {t('sensitivityHeatmap')}
+                            {sourceName && (
+                                <span className={`text-sm font-normal mx-2 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                    - {sourceName}
+                                </span>
+                            )}
                         </h2>
                         <p className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                             {t('heatmapDesc')}
