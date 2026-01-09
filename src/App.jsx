@@ -14,6 +14,7 @@ import { UserMenu } from './components/UserMenu';
 import { ThemeToggle } from './components/ThemeToggle';
 import { LoginPage } from './components/LoginPage';
 import { ModelsManager } from './components/ModelsManager';
+import { ZoomToggle } from './components/ZoomToggle';
 import ErrorBoundary from './components/common/ErrorBoundary';
 
 // Hooks
@@ -310,6 +311,7 @@ function MainApp() {
           <div className="flex items-center gap-3">
             <UserMenu t={t} />
             <ThemeToggle t={t} />
+            <ZoomToggle />
             <button
               onClick={() => setShowModelsManager(true)}
               className={`px-3 py-2 rounded-lg backdrop-blur-sm transition-colors text-sm h-10 ${theme === 'light' ? 'bg-white border border-gray-200 text-slate-700 hover:bg-gray-50 shadow-sm' : 'bg-white/10 hover:bg-white/20 text-white'}`}
@@ -454,6 +456,7 @@ function MainApp() {
             setModelsRefreshKey(prev => prev + 1);
           }}
           t={t}
+          language={language}
         />
       )}
     </div>
