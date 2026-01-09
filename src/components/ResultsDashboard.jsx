@@ -625,7 +625,7 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                                 </div>
                             </div>
 
-                            <table className="w-full text-left border-collapse">
+                            <table className={`w-full border-collapse ${language === 'he' ? 'text-right' : 'text-left'}`}>
                                 <thead>
                                     <tr>
                                         <th className={`p-2 text-sm font-semibold border-b ${isLight ? 'text-slate-600 border-slate-200' : 'text-gray-400 border-white/10'}`}>{t('metric')}</th>
