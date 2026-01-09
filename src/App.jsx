@@ -64,7 +64,7 @@ function MainApp() {
   const [showAgeSensitivity, setShowAgeSensitivity] = useState(false);
 
   // Custom hooks (must be called unconditionally at top level)
-  const { profiles, saveProfile, updateProfile, deleteProfile, lastLoadedProfileId, markProfileAsLoaded, profilesLoaded } = useProfiles();
+  const { profiles, saveProfile, updateProfile, renameProfile, deleteProfile, lastLoadedProfileId, markProfileAsLoaded, profilesLoaded } = useProfiles();
 
   // Rate limiting hook
   const {
@@ -338,6 +338,7 @@ function MainApp() {
               profiles={profiles}
               onSaveProfile={saveProfile}
               onUpdateProfile={updateProfile}
+              onRenameProfile={renameProfile}
               onDeleteProfile={deleteProfile}
               onProfileLoad={markProfileAsLoaded}
               lastLoadedProfileId={lastLoadedProfileId}

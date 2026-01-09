@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
-import { Save, Trash2, Upload, RotateCcw } from 'lucide-react';
+import { Save, Trash2, Upload, RotateCcw, Pencil, Check, X } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 import { DEFAULT_INPUTS } from '../constants';
 import { deepEqual } from '../hooks/useDeepCompare';
@@ -8,10 +8,12 @@ import { normalizeInputs, getDetailedDiff } from '../utils/profileUtils';
 
 import { calculateAgeFromDate } from '../utils/dateUtils';
 
-export function ProfileManager({ currentInputs, onLoad, t, language, profiles, onSaveProfile, onUpdateProfile, onDeleteProfile, onProfileLoad, lastLoadedProfileId }) {
+export function ProfileManager({ currentInputs, onLoad, t, language, profiles, onSaveProfile, onUpdateProfile, onRenameProfile, onDeleteProfile, onProfileLoad, lastLoadedProfileId }) {
     const [newProfileName, setNewProfileName] = useState('');
     const [selectedProfileId, setSelectedProfileId] = useState('');
     const [saveMessage, setSaveMessage] = useState('');
+    const [isRenaming, setIsRenaming] = useState(false);
+    const [renameInput, setRenameInput] = useState('');
 
     // Sync selectedProfileId with lastLoadedProfileId on mount/change
     useEffect(() => {
@@ -60,6 +62,27 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         // Update snapshot to match new saved state
         setComparisonSnapshot(normalizeInputs(currentInputs));
         showMessage(language === 'he' ? 'פרופיל עודכן!' : 'Profile updated!');
+    };
+
+    const handleStartRename = () => {
+        const profile = profiles.find(p => p.id === selectedProfileId);
+        if (profile) {
+            setRenameInput(profile.name);
+            setIsRenaming(true);
+        }
+    };
+
+    const handleRankRename = () => {
+        if (!renameInput.trim()) return;
+        onRenameProfile(selectedProfileId, renameInput);
+        setIsRenaming(false);
+        setRenameInput('');
+        showMessage(language === 'he' ? 'שם פרופיל שונה!' : 'Profile renamed!');
+    };
+
+    const handleCancelRename = () => {
+        setIsRenaming(false);
+        setRenameInput('');
     };
 
     const reloadProfile = () => {
@@ -130,17 +153,43 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
 
                 {profiles.length > 0 && (
                     <div className="flex gap-2 items-center">
-                        <CustomSelect
-                            value={selectedProfileId}
-                            onChange={(val) => loadProfile(val)}
-                            options={[
-                                { value: "", label: `${t('loadProfile')}...` },
-                                ...profiles.map(p => ({ value: p.id, label: p.name }))
-                            ]}
-                            className="flex-1"
-                        />
+                        {isRenaming ? (
+                            <div className="flex-1 flex items-center gap-1">
+                                <input
+                                    type="text"
+                                    value={renameInput}
+                                    onChange={(e) => setRenameInput(e.target.value)}
+                                    className={`flex-1 rounded-lg py-1.5 px-3 focus:outline-none focus:ring-2 text-sm ${inputClass}`}
+                                    autoFocus
+                                />
+                                <button
+                                    onClick={handleRankRename}
+                                    className="bg-green-600 hover:bg-green-700 text-white p-1.5 rounded-lg transition-colors"
+                                    title={t('saveName')}
+                                >
+                                    <Check className="w-4 h-4" />
+                                </button>
+                                <button
+                                    onClick={handleCancelRename}
+                                    className="bg-gray-500 hover:bg-gray-600 text-white p-1.5 rounded-lg transition-colors"
+                                    title={t('cancel')}
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                        ) : (
+                            <CustomSelect
+                                value={selectedProfileId}
+                                onChange={(val) => loadProfile(val)}
+                                options={[
+                                    { value: "", label: `${t('loadProfile')}...` },
+                                    ...profiles.map(p => ({ value: p.id, label: p.name }))
+                                ]}
+                                className="flex-1"
+                            />
+                        )}
 
-                        {selectedProfileId && (
+                        {selectedProfileId && !isRenaming && (
                             <>
                                 {/* Reload profile (discard changes) */}
                                 <button
@@ -164,6 +213,16 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                                         </span>
                                     )}
                                 </button>
+
+                                {/* Rename Profile */}
+                                <button
+                                    onClick={handleStartRename}
+                                    className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors"
+                                    title={t('rename')}
+                                >
+                                    <Pencil className="w-4 h-4" />
+                                </button>
+
                                 <button
                                     onClick={() => deleteProfile(selectedProfileId)}
                                     className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors"

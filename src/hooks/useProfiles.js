@@ -49,6 +49,14 @@ export function useProfiles() {
         localStorage.setItem(storageKey, JSON.stringify(updated));
     };
 
+    const renameProfile = (id, newName) => {
+        const updated = profiles.map(p =>
+            p.id === id ? { ...p, name: newName } : p
+        );
+        setProfiles(updated);
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+    };
+
     const deleteProfile = (id) => {
         const updated = profiles.filter(p => p.id !== id);
         setProfiles(updated);
@@ -65,6 +73,6 @@ export function useProfiles() {
         localStorage.setItem(lastProfileKey, id);
     };
 
-    return { profiles, saveProfile, updateProfile, deleteProfile, lastLoadedProfileId, markProfileAsLoaded, profilesLoaded };
+    return { profiles, saveProfile, updateProfile, renameProfile, deleteProfile, lastLoadedProfileId, markProfileAsLoaded, profilesLoaded };
 }
 
