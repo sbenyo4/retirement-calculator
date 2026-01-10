@@ -121,6 +121,7 @@ export const translations = {
         mostImpactfulParameter: 'Most Impactful Factor',
         mostImpactfulFactor: 'Top Factor',
         mostImpactfulRate: 'Top Rate',
+        averageChange: 'Avg Change',
         impactAnalysis: 'Impact Analysis',
         // Sensitivity Heatmap
         sensitivityHeatmap: 'Sensitivity Heatmap',
@@ -431,6 +432,7 @@ export const translations = {
         mostImpactfulParameter: 'הגורם המשפיע ביותר',
         mostImpactfulFactor: 'הגורם המשפיע',
         mostImpactfulRate: 'הריבית המשפיעה',
+        averageChange: 'ממוצע שינוי לצעד',
         impactAnalysis: 'ניתוח רגישות',
         // Sensitivity Heatmap
         sensitivityHeatmap: 'מפת חום - רגישות',

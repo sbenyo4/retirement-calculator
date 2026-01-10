@@ -225,134 +225,135 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
         return results;
     }, [inputs, rangeMin, rangeMax, stepSize, parameterType, config, currentValue, language]);
 
+    // Helper to calculate Average Impact over the FULL VALID RANGE
+    // This answers: "On average, how much does the balance change per 1 unit step across the whole likely range?"
+    const calculateAverageImpact = (baseInputs, key, configKey) => {
+        const conf = PARAMETER_CONFIG[configKey];
+        if (!conf) return 0;
+
+        let totalDiff = 0;
+        let count = 0;
+        const step = conf.step;
+
+        // Define Range: Use defaultRange to be representative
+        // This addresses user request to calculate "Average according to min/max"
+        let start = conf.defaultRange[0];
+        let end = conf.defaultRange[1];
+
+        // Validations for Age
+        if (configKey === PARAMETER_TYPES.RETIREMENT_AGE) {
+            const currentAge = parseFloat(baseInputs.currentAge) || 0;
+            // Can't start retirement before current age
+            if (start <= currentAge) start = Math.ceil(currentAge + 1);
+            // Ensure we have at least some range to test
+            if (end <= start) end = start + 5;
+        }
+
+        // Loop through range from Start to End
+        for (let val = start; val < end; val += step) {
+            const val1 = val;
+            const val2 = val + step;
+
+            // Skip invalid ages (redundant check but safe)
+            if (configKey === PARAMETER_TYPES.RETIREMENT_AGE) {
+                const curAge = parseFloat(baseInputs.currentAge) || 0;
+                if (val1 <= curAge) continue;
+            }
+
+            const inputs1 = { ...baseInputs, [key]: val1 };
+            const inputs2 = { ...baseInputs, [key]: val2 };
+
+            try {
+                const res1 = calculateRetirementProjection(inputs1);
+                const res2 = calculateRetirementProjection(inputs2);
+                totalDiff += Math.abs(res1.balanceAtEnd - res2.balanceAtEnd);
+                count++;
+            } catch (e) {
+                // Ignore
+            }
+        }
+
+        return count > 0 ? (totalDiff / count) : 0;
+    };
+
     // Calculate "Most Impactful Bucket Rate" (Impactful Rate)
-    // Only strictly relevant when Buckets are ENABLED, as a specific "Bucket/Rate" insight.
     const impactfulRate = useMemo(() => {
         if (!inputs.enableBuckets) return null;
 
         try {
-            const baseResult = calculateRetirementProjection(inputs);
-            const baseBalance = baseResult.balanceAtEnd;
-
-            // Determine steps for each
-            const accumStep = (parameterType === PARAMETER_TYPES.ACCUMULATION_RATE) ? stepSize : 1;
-            const safeStep = (parameterType === PARAMETER_TYPES.SAFE_RATE) ? stepSize : 1;
-            const surplusStep = (parameterType === PARAMETER_TYPES.SURPLUS_RATE) ? stepSize : 1;
-
-            // check Accumulation
-            const accumInputs = { ...inputs, annualReturnRate: (parseFloat(inputs.annualReturnRate) || 0) + accumStep };
-            const accumResult = calculateRetirementProjection(accumInputs);
-            const accumDiff = Math.abs(accumResult.balanceAtEnd - baseBalance);
-
-            // check Safe Rate
-            const safeInputs = { ...inputs, bucketSafeRate: (parseFloat(inputs.bucketSafeRate) || 0) + safeStep };
-            const safeResult = calculateRetirementProjection(safeInputs);
-            const safeDiff = Math.abs(safeResult.balanceAtEnd - baseBalance);
-
-            // check Surplus Rate
-            const surplusInputs = { ...inputs, bucketSurplusRate: (parseFloat(inputs.bucketSurplusRate) || 0) + surplusStep };
-            const surplusResult = calculateRetirementProjection(surplusInputs);
-            const surplusDiff = Math.abs(surplusResult.balanceAtEnd - baseBalance);
+            const accumDiff = calculateAverageImpact(inputs, 'annualReturnRate', PARAMETER_TYPES.ACCUMULATION_RATE);
+            const safeDiff = calculateAverageImpact(inputs, 'bucketSafeRate', PARAMETER_TYPES.SAFE_RATE);
+            const surplusDiff = calculateAverageImpact(inputs, 'bucketSurplusRate', PARAMETER_TYPES.SURPLUS_RATE);
 
             // Find winner
             let winnerLabel = t('accumulationRate') || 'Accumulation Rate';
             let maxDiff = accumDiff;
-            let stepLabel = `${accumStep}%`;
+            let stepLabel = `${PARAMETER_CONFIG[PARAMETER_TYPES.ACCUMULATION_RATE].step}%`;
 
             if (safeDiff > maxDiff) {
                 maxDiff = safeDiff;
                 winnerLabel = t('safeRate') || 'Safe Rate';
-                stepLabel = `${safeStep}%`;
+                stepLabel = `${PARAMETER_CONFIG[PARAMETER_TYPES.SAFE_RATE].step}%`;
             }
             if (surplusDiff > maxDiff) {
                 maxDiff = surplusDiff;
                 winnerLabel = t('surplusRate') || 'Surplus Rate';
-                stepLabel = `${surplusStep}%`;
+                stepLabel = `${PARAMETER_CONFIG[PARAMETER_TYPES.SURPLUS_RATE].step}%`;
             }
 
             return { label: winnerLabel, diff: maxDiff, step: stepLabel };
         } catch (e) {
             return null;
         }
-    }, [inputs, t, stepSize, parameterType]);
+    }, [inputs, t, parameterType]);
 
     // Calculate "Most Impactful Global Factor"
-    // Compares: Rates (Int/Acc/Safe/Surp) vs Income vs Age
-    // Normalizes "Impact": 
-    // Rates: +1%
-    // Income: +1000 
-    // Age: +1 Year
     const impactfulGlobalFactor = useMemo(() => {
         try {
-            const baseResult = calculateRetirementProjection(inputs);
-            const baseBalance = baseResult.balanceAtEnd;
             let maxDiff = -1;
             let winnerLabel = null;
             let winnerStep = null;
 
-            // Define candidates based on mode
+            // Define candidates
             const candidates = [];
 
             // 1. Rates
             if (inputs.enableBuckets) {
-                candidates.push({ key: 'annualReturnRate', type: 'rate', label: t('accumulationRate') || 'Accumulation Rate' });
-                candidates.push({ key: 'bucketSafeRate', type: 'rate', label: t('safeRate') || 'Safe Rate' });
-                candidates.push({ key: 'bucketSurplusRate', type: 'rate', label: t('surplusRate') || 'Surplus Rate' });
+                candidates.push({ key: 'annualReturnRate', configKey: PARAMETER_TYPES.ACCUMULATION_RATE, label: t('accumulationRate') || 'Accumulation Rate' });
+                candidates.push({ key: 'bucketSafeRate', configKey: PARAMETER_TYPES.SAFE_RATE, label: t('safeRate') || 'Safe Rate' });
+                candidates.push({ key: 'bucketSurplusRate', configKey: PARAMETER_TYPES.SURPLUS_RATE, label: t('surplusRate') || 'Surplus Rate' });
             } else {
-                candidates.push({ key: 'annualReturnRate', type: 'rate', label: t('interestRate') || 'Interest Rate' });
+                candidates.push({ key: 'annualReturnRate', configKey: PARAMETER_TYPES.INTEREST, label: t('interestRate') || 'Interest Rate' });
             }
 
             // 2. Income
-            candidates.push({ key: 'monthlyNetIncomeDesired', type: 'income', label: t('monthlyIncome') || 'Monthly Income' });
+            candidates.push({ key: 'monthlyNetIncomeDesired', configKey: PARAMETER_TYPES.INCOME, label: t('monthlyIncome') || 'Monthly Income' });
 
             // 3. Age
-            candidates.push({ key: 'retirementStartAge', type: 'age', label: t('retirementAge') || 'Retirement Age' });
+            candidates.push({ key: 'retirementStartAge', configKey: PARAMETER_TYPES.RETIREMENT_AGE, label: t('retirementAge') || 'Retirement Age' });
 
 
             // Calculate Impact
             candidates.forEach(cand => {
-                let modifiedInputs = { ...inputs };
-                let currentVal = parseFloat(inputs[cand.key]) || 0;
-
-                // Determine Step Size
-                let thisStep = 0;
-                let thisStepLabel = '';
-
-                // Check if this is the currently viewed parameter
-                const isCurrent = (
-                    (cand.key === 'annualReturnRate' && (parameterType === PARAMETER_TYPES.INTEREST || parameterType === PARAMETER_TYPES.ACCUMULATION_RATE)) ||
-                    (cand.key === 'bucketSafeRate' && parameterType === PARAMETER_TYPES.SAFE_RATE) ||
-                    (cand.key === 'bucketSurplusRate' && parameterType === PARAMETER_TYPES.SURPLUS_RATE) ||
-                    (cand.key === 'monthlyNetIncomeDesired' && parameterType === PARAMETER_TYPES.INCOME) ||
-                    (cand.key === 'retirementStartAge' && parameterType === PARAMETER_TYPES.RETIREMENT_AGE)
-                );
-
-                if (isCurrent) {
-                    thisStep = stepSize;
-                } else {
-                    // Default steps
-                    if (cand.type === 'rate') thisStep = 1;
-                    else if (cand.type === 'income') thisStep = 1000;
-                    else if (cand.type === 'age') thisStep = 1;
-                }
+                const conf = PARAMETER_CONFIG[cand.configKey];
+                const step = conf.step;
 
                 // Format Step Label
-                if (cand.type === 'rate') {
-                    thisStepLabel = `${thisStep}%`;
-                } else if (cand.type === 'income') {
-                    thisStepLabel = `${thisStep}`;
-                } else if (cand.type === 'age') {
-                    const unit = thisStep === 1 ? (t('year') || 'Year') : (t('years') || 'Years');
-                    thisStepLabel = `${thisStep} ${unit}`;
+                let thisStepLabel = '';
+                if (cand.configKey === PARAMETER_TYPES.INCOME) {
+                    thisStepLabel = `${step.toLocaleString()}`; // e.g. "1,000"
+                } else if (cand.configKey === PARAMETER_TYPES.RETIREMENT_AGE) {
+                    const unit = step === 1 ? (t('year') || 'Year') : (t('years') || 'Years');
+                    thisStepLabel = `${step} ${unit}`;
+                } else {
+                    thisStepLabel = `${step}%`;
                 }
 
-                // Calculate Diff
-                modifiedInputs[cand.key] = currentVal + thisStep;
-                const res = calculateRetirementProjection(modifiedInputs);
-                const diff = Math.abs(res.balanceAtEnd - baseBalance);
+                // Calculate Average Global Impact
+                const avgDiff = calculateAverageImpact(inputs, cand.key, cand.configKey);
 
-                if (diff > maxDiff) {
-                    maxDiff = diff;
+                if (avgDiff > maxDiff) {
+                    maxDiff = avgDiff;
                     winnerLabel = cand.label;
                     winnerStep = thisStepLabel;
                 }
@@ -364,7 +365,7 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
             console.error(e);
             return null;
         }
-    }, [inputs, t, stepSize, parameterType]);
+    }, [inputs, t, parameterType]);
 
     // Chart data
     const chartData = useMemo(() => {
@@ -392,6 +393,22 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
             }]
         };
     }, [rangeResults, t]);
+
+    // Calculate Average Change per Step
+    const avgChange = useMemo(() => {
+        if (!rangeResults || rangeResults.length < 2) return 0;
+
+        let totalDiff = 0;
+        let count = 0;
+
+        for (let i = 1; i < rangeResults.length; i++) {
+            const diff = Math.abs(rangeResults[i].balanceAtEnd - rangeResults[i - 1].balanceAtEnd);
+            totalDiff += diff;
+            count++;
+        }
+
+        return count > 0 ? totalDiff / count : 0;
+    }, [rangeResults]);
 
     // Chart options
     const options = {
@@ -474,7 +491,6 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
 
     if (!isOpen) return null;
 
-    // Theme-aware classes
     // Theme-aware classes
     const modalBg = theme === 'light' ? 'bg-white' : '';
     const borderColor = theme === 'light' ? 'border-gray-200' : 'border-white/30';
@@ -609,10 +625,21 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
                         </div>
                     </div>
 
-                    {/* Current Value Indicator */}
-                    <div className={`flex items-center gap-2 text-xs ${labelColor}`}>
-                        <span className="w-3 h-3 bg-yellow-400 rounded-sm"></span>
-                        <span>{t('currentValue') || 'Current Value'}: {config.format(currentValue, language)}</span>
+                    {/* Chart Indicators: Current Value & Average Change */}
+                    <div className={`flex items-center justify-between text-sm ${labelColor} px-1 md:px-0 mt-2`}>
+                        {/* Average Change */}
+                        <div className="flex items-center gap-2">
+                            <div className={`flex items-center justify-center w-5 h-5 rounded-full ${theme === 'light' ? 'bg-blue-100 text-blue-600' : 'bg-blue-900/50 text-blue-400'}`}>
+                                <span className="text-xs font-bold">∑</span>
+                            </div>
+                            <span className="font-medium">{t('averageChange') || 'Avg Change'}: <span className="font-bold">{formatCompactNumber(avgChange)}</span></span>
+                        </div>
+
+                        {/* Current Value Indicator */}
+                        <div className="flex items-center gap-2">
+                            <span className="w-3 h-3 bg-yellow-400 rounded-sm"></span>
+                            <span className="font-medium">{t('currentValue') || 'Current Value'}: <span className="font-bold">{config.format(currentValue, language)}</span></span>
+                        </div>
                     </div>
 
                     {/* Chart */}
