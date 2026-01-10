@@ -119,6 +119,8 @@ export const translations = {
         balanceAtEndShort: 'End Balance',
         years: 'years',
         mostImpactfulParameter: 'Most Impactful Factor',
+        mostImpactfulFactor: 'Top Factor',
+        mostImpactfulRate: 'Top Rate',
         impactAnalysis: 'Impact Analysis',
         // Sensitivity Heatmap
         sensitivityHeatmap: 'Sensitivity Heatmap',
@@ -427,6 +429,8 @@ export const translations = {
         balanceAtEndShort: 'יתרה סופית',
         years: 'שנים',
         mostImpactfulParameter: 'הגורם המשפיע ביותר',
+        mostImpactfulFactor: 'הגורם המשפיע',
+        mostImpactfulRate: 'הריבית המשפיעה',
         impactAnalysis: 'ניתוח רגישות',
         // Sensitivity Heatmap
         sensitivityHeatmap: 'מפת חום - רגישות',

@@ -225,48 +225,146 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
         return results;
     }, [inputs, rangeMin, rangeMax, stepSize, parameterType, config, currentValue, language]);
 
-    // Calculate "Most Impactful Factor" (Sensitivity Analysis)
-    const impactfulFactor = useMemo(() => {
+    // Calculate "Most Impactful Bucket Rate" (Impactful Rate)
+    // Only strictly relevant when Buckets are ENABLED, as a specific "Bucket/Rate" insight.
+    const impactfulRate = useMemo(() => {
         if (!inputs.enableBuckets) return null;
 
         try {
             const baseResult = calculateRetirementProjection(inputs);
             const baseBalance = baseResult.balanceAtEnd;
 
-            // check Accumulation (+1%)
-            const accumInputs = { ...inputs, annualReturnRate: (parseFloat(inputs.annualReturnRate) || 0) + 1 };
+            // Determine steps for each
+            const accumStep = (parameterType === PARAMETER_TYPES.ACCUMULATION_RATE) ? stepSize : 1;
+            const safeStep = (parameterType === PARAMETER_TYPES.SAFE_RATE) ? stepSize : 1;
+            const surplusStep = (parameterType === PARAMETER_TYPES.SURPLUS_RATE) ? stepSize : 1;
+
+            // check Accumulation
+            const accumInputs = { ...inputs, annualReturnRate: (parseFloat(inputs.annualReturnRate) || 0) + accumStep };
             const accumResult = calculateRetirementProjection(accumInputs);
             const accumDiff = Math.abs(accumResult.balanceAtEnd - baseBalance);
 
-            // check Safe Rate (+1%)
-            const safeInputs = { ...inputs, bucketSafeRate: (parseFloat(inputs.bucketSafeRate) || 0) + 1 };
+            // check Safe Rate
+            const safeInputs = { ...inputs, bucketSafeRate: (parseFloat(inputs.bucketSafeRate) || 0) + safeStep };
             const safeResult = calculateRetirementProjection(safeInputs);
             const safeDiff = Math.abs(safeResult.balanceAtEnd - baseBalance);
 
-            // check Surplus Rate (+1%)
-            const surplusInputs = { ...inputs, bucketSurplusRate: (parseFloat(inputs.bucketSurplusRate) || 0) + 1 };
+            // check Surplus Rate
+            const surplusInputs = { ...inputs, bucketSurplusRate: (parseFloat(inputs.bucketSurplusRate) || 0) + surplusStep };
             const surplusResult = calculateRetirementProjection(surplusInputs);
             const surplusDiff = Math.abs(surplusResult.balanceAtEnd - baseBalance);
 
             // Find winner
             let winnerLabel = t('accumulationRate') || 'Accumulation Rate';
             let maxDiff = accumDiff;
+            let stepLabel = `${accumStep}%`;
 
             if (safeDiff > maxDiff) {
                 maxDiff = safeDiff;
                 winnerLabel = t('safeRate') || 'Safe Rate';
+                stepLabel = `${safeStep}%`;
             }
             if (surplusDiff > maxDiff) {
                 maxDiff = surplusDiff;
                 winnerLabel = t('surplusRate') || 'Surplus Rate';
+                stepLabel = `${surplusStep}%`;
             }
 
-            return winnerLabel;
+            return { label: winnerLabel, diff: maxDiff, step: stepLabel };
         } catch (e) {
-            // Silently fail if inputs are currently invalid (e.g. user clearing a field)
             return null;
         }
-    }, [inputs, t]);
+    }, [inputs, t, stepSize, parameterType]);
+
+    // Calculate "Most Impactful Global Factor"
+    // Compares: Rates (Int/Acc/Safe/Surp) vs Income vs Age
+    // Normalizes "Impact": 
+    // Rates: +1%
+    // Income: +1000 
+    // Age: +1 Year
+    const impactfulGlobalFactor = useMemo(() => {
+        try {
+            const baseResult = calculateRetirementProjection(inputs);
+            const baseBalance = baseResult.balanceAtEnd;
+            let maxDiff = -1;
+            let winnerLabel = null;
+            let winnerStep = null;
+
+            // Define candidates based on mode
+            const candidates = [];
+
+            // 1. Rates
+            if (inputs.enableBuckets) {
+                candidates.push({ key: 'annualReturnRate', type: 'rate', label: t('accumulationRate') || 'Accumulation Rate' });
+                candidates.push({ key: 'bucketSafeRate', type: 'rate', label: t('safeRate') || 'Safe Rate' });
+                candidates.push({ key: 'bucketSurplusRate', type: 'rate', label: t('surplusRate') || 'Surplus Rate' });
+            } else {
+                candidates.push({ key: 'annualReturnRate', type: 'rate', label: t('interestRate') || 'Interest Rate' });
+            }
+
+            // 2. Income
+            candidates.push({ key: 'monthlyNetIncomeDesired', type: 'income', label: t('monthlyIncome') || 'Monthly Income' });
+
+            // 3. Age
+            candidates.push({ key: 'retirementStartAge', type: 'age', label: t('retirementAge') || 'Retirement Age' });
+
+
+            // Calculate Impact
+            candidates.forEach(cand => {
+                let modifiedInputs = { ...inputs };
+                let currentVal = parseFloat(inputs[cand.key]) || 0;
+
+                // Determine Step Size
+                let thisStep = 0;
+                let thisStepLabel = '';
+
+                // Check if this is the currently viewed parameter
+                const isCurrent = (
+                    (cand.key === 'annualReturnRate' && (parameterType === PARAMETER_TYPES.INTEREST || parameterType === PARAMETER_TYPES.ACCUMULATION_RATE)) ||
+                    (cand.key === 'bucketSafeRate' && parameterType === PARAMETER_TYPES.SAFE_RATE) ||
+                    (cand.key === 'bucketSurplusRate' && parameterType === PARAMETER_TYPES.SURPLUS_RATE) ||
+                    (cand.key === 'monthlyNetIncomeDesired' && parameterType === PARAMETER_TYPES.INCOME) ||
+                    (cand.key === 'retirementStartAge' && parameterType === PARAMETER_TYPES.RETIREMENT_AGE)
+                );
+
+                if (isCurrent) {
+                    thisStep = stepSize;
+                } else {
+                    // Default steps
+                    if (cand.type === 'rate') thisStep = 1;
+                    else if (cand.type === 'income') thisStep = 1000;
+                    else if (cand.type === 'age') thisStep = 1;
+                }
+
+                // Format Step Label
+                if (cand.type === 'rate') {
+                    thisStepLabel = `${thisStep}%`;
+                } else if (cand.type === 'income') {
+                    thisStepLabel = `${thisStep}`;
+                } else if (cand.type === 'age') {
+                    const unit = thisStep === 1 ? (t('year') || 'Year') : (t('years') || 'Years');
+                    thisStepLabel = `${thisStep} ${unit}`;
+                }
+
+                // Calculate Diff
+                modifiedInputs[cand.key] = currentVal + thisStep;
+                const res = calculateRetirementProjection(modifiedInputs);
+                const diff = Math.abs(res.balanceAtEnd - baseBalance);
+
+                if (diff > maxDiff) {
+                    maxDiff = diff;
+                    winnerLabel = cand.label;
+                    winnerStep = thisStepLabel;
+                }
+            });
+
+            return winnerLabel ? { label: winnerLabel, diff: maxDiff, step: winnerStep } : null;
+
+        } catch (e) {
+            console.error(e);
+            return null;
+        }
+    }, [inputs, t, stepSize, parameterType]);
 
     // Chart data
     const chartData = useMemo(() => {
@@ -406,15 +504,25 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
                 )}
                 {/* Header */}
                 <div className={`flex items-center justify-between p-4 border-b ${headerBorder} relative z-10 shrink-0`}>
-                    <h2 className={`text-lg font-semibold ${titleColor} flex items-center gap-2`}>
-                        <span>📊</span>
-                        <span>{t('sensitivityRangeChart') || 'Sensitivity Range Chart'}</span>
-                        {impactfulFactor && (
-                            <span className={`text-xs ml-4 px-2 py-0.5 rounded-full border ${theme === 'light' ? 'bg-orange-100 border-orange-300 text-orange-900' : 'bg-orange-500/20 border-orange-400/50 text-orange-100'}`}>
-                                {t('mostImpactfulParameter')}: <strong>{impactfulFactor}</strong>
-                            </span>
-                        )}
-                    </h2>
+                    <div className="flex flex-col gap-1">
+                        <h2 className={`text-lg font-semibold ${titleColor} flex items-center gap-2`}>
+                            <span>📊</span>
+                            <span>{t('sensitivityRangeChart') || 'Sensitivity Range Chart'}</span>
+                        </h2>
+                        {/* Insights Badges */}
+                        <div className="flex gap-2">
+                            {impactfulGlobalFactor && (
+                                <span className={`text-[10px] md:text-xs px-2 py-0.5 rounded-full border ${theme === 'light' ? 'bg-blue-100 border-blue-300 text-blue-900' : 'bg-blue-500/20 border-blue-400/50 text-blue-100'}`}>
+                                    {t('mostImpactfulFactor') || 'Top Factor'}: <strong>{impactfulGlobalFactor.label} ({impactfulGlobalFactor.step} - {formatCompactNumber(impactfulGlobalFactor.diff)})</strong>
+                                </span>
+                            )}
+                            {impactfulRate && inputs.enableBuckets && (
+                                <span className={`text-[10px] md:text-xs px-2 py-0.5 rounded-full border ${theme === 'light' ? 'bg-orange-100 border-orange-300 text-orange-900' : 'bg-orange-500/20 border-orange-400/50 text-orange-100'}`}>
+                                    {t('mostImpactfulRate') || 'Top Rate'}: <strong>{impactfulRate.label} ({impactfulRate.step} - {formatCompactNumber(impactfulRate.diff)})</strong>
+                                </span>
+                            )}
+                        </div>
+                    </div>
                     <button
                         onClick={onClose}
                         className="p-1.5 hover:bg-black/10 rounded-lg transition-colors"
