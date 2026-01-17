@@ -66,6 +66,7 @@ export default function InputForm({
     const [activeView, setActiveView] = useState('parameters');
     const previousVariableRatesState = useRef(false); // Store VR state before buckets toggle
     const [showVariableRates, setShowVariableRates] = useState(false);
+    const [activeVRType, setActiveVRType] = useState('accumulation'); // 'accumulation' | 'safe' | 'surplus'
 
     // Helper to check if variable rates are active (different from default)
     const hasActiveVariableRates = useMemo(() => {
@@ -608,17 +609,12 @@ export default function InputForm({
                                 endAction={
                                     <div className="flex h-full">
                                         <button
-                                            onClick={() => setInputs(prev => ({ ...prev, variableRatesEnabled: !prev.variableRatesEnabled }))}
-                                            disabled={inputs.enableBuckets}
-                                            className={`p-1 transition-colors h-full flex items-center justify-center ${inputs.variableRatesEnabled
-                                                ? 'text-blue-600'
-                                                : (inputs.enableBuckets
-                                                    ? 'text-gray-300 cursor-not-allowed'
-                                                    : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200'))
-                                                }`}
-                                            title={inputs.enableBuckets
-                                                ? (language === 'he' ? 'לא זמין במצב דליים' : 'Not available in Bucket Mode')
-                                                : (language === 'he' ? 'הפעל/כבה ריביות משתנות' : 'Toggle Variable Rates')}
+                                            onClick={() => {
+                                                setActiveVRType('accumulation');
+                                                setShowVariableRates(true);
+                                            }}
+                                            className={`p-1 transition-colors h-full flex items-center justify-center ${isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200'}`}
+                                            title={language === 'he' ? 'ריביות משתנות' : 'Variable Rates'}
                                         >
                                             <Activity size={16} />
                                         </button>
@@ -678,6 +674,18 @@ export default function InputForm({
                                 onChange={handleChange}
                                 icon={<ShieldCheck size={14} className="text-emerald-500" />}
                                 prefix="%"
+                                endAction={
+                                    <button
+                                        onClick={() => {
+                                            setActiveVRType('safe');
+                                            setShowVariableRates(true);
+                                        }}
+                                        className={`p-1 transition-colors flex items-center justify-center ${isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200'}`}
+                                        title={language === 'he' ? 'ריביות משתנות' : 'Variable Rates'}
+                                    >
+                                        <Activity size={16} />
+                                    </button>
+                                }
                             />
                             <InputGroup language={language}
                                 label={t('surplusRate')}
@@ -686,6 +694,18 @@ export default function InputForm({
                                 onChange={handleChange}
                                 icon={<Gem size={14} className="text-purple-500" />}
                                 prefix="%"
+                                endAction={
+                                    <button
+                                        onClick={() => {
+                                            setActiveVRType('surplus');
+                                            setShowVariableRates(true);
+                                        }}
+                                        className={`p-1 transition-colors flex items-center justify-center ${isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200'}`}
+                                        title={language === 'he' ? 'ריביות משתנות' : 'Variable Rates'}
+                                    >
+                                        <Activity size={16} />
+                                    </button>
+                                }
                             />
                         </div>
                     )}
@@ -706,8 +726,8 @@ export default function InputForm({
                             ].map(strategy => (
                                 <button
                                     key={strategy.id}
-                                    onClick={() => setInputs(prev => ({ ...prev, withdrawalStrategy: strategy.id }))}
-                                    className={`px-2 py-1.5 rounded-lg text-[10px] md:text-xs font-medium transition-all ${(inputs.withdrawalStrategy || WITHDRAWAL_STRATEGIES.FIXED) === strategy.id
+                                    onClick={() => setInputs(prev => ({ ...prev, withdrawalStrategy: strategy.id, variableRatesEnabled: false }))}
+                                    className={`px-2 py-1.5 rounded-lg text-[10px] md:text-xs font-medium transition-all ${!inputs.variableRatesEnabled && (inputs.withdrawalStrategy || WITHDRAWAL_STRATEGIES.FIXED) === strategy.id
                                         ? 'bg-emerald-600 text-white shadow-md'
                                         : (isLight ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-white/5 text-gray-400 hover:bg-white/10')
                                         }`}
@@ -717,7 +737,7 @@ export default function InputForm({
                             ))}
                             {/* Variable Rates Trigger (In Grid) */}
                             <button
-                                onClick={() => setShowVariableRates(true)}
+                                onClick={() => setInputs(prev => ({ ...prev, variableRatesEnabled: !prev.variableRatesEnabled }))}
                                 className={`px-2 py-1.5 rounded-lg text-[10px] md:text-xs font-medium transition-all ${inputs.variableRatesEnabled
                                     ? 'bg-blue-600 text-white shadow-md'
                                     : (isLight ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-white/5 text-gray-400 hover:bg-white/10')
@@ -769,13 +789,26 @@ export default function InputForm({
             <VariableRatesModal
                 isOpen={showVariableRates}
                 onClose={() => setShowVariableRates(false)}
-                startYear={currentYear}
-                endYear={endYear}
+                startYear={inputs.enableBuckets ? (activeVRType === 'accumulation' ? currentYear : startYear) : currentYear}
+                endYear={inputs.enableBuckets ? (activeVRType === 'accumulation' ? (startYear - 1) : endYear) : endYear}
                 retirementStartYear={startYear}
                 retirementEndYear={endYear}
-                currentRate={inputs.annualReturnRate}
-                variableRates={inputs.variableRates || {}}
-                onSave={(newRates) => setInputs(prev => ({ ...prev, variableRates: newRates }))}
+                currentRate={
+                    activeVRType === 'accumulation' ? inputs.annualReturnRate :
+                        activeVRType === 'safe' ? inputs.bucketSafeRate :
+                            inputs.bucketSurplusRate
+                }
+                variableRates={
+                    activeVRType === 'accumulation' ? (inputs.variableRates || {}) :
+                        activeVRType === 'safe' ? (inputs.safeVariableRates || {}) :
+                            (inputs.surplusVariableRates || {})
+                }
+                bucketType={activeVRType}
+                onSave={(newRates) => {
+                    const key = activeVRType === 'accumulation' ? 'variableRates' :
+                        activeVRType === 'safe' ? 'safeVariableRates' : 'surplusVariableRates';
+                    setInputs(prev => ({ ...prev, [key]: newRates, variableRatesEnabled: true }));
+                }}
                 language={language}
                 t={t}
                 inputs={inputs}

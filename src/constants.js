@@ -19,6 +19,8 @@ export const DEFAULT_INPUTS = {
     lifeEvents: [],
     variableRatesEnabled: false,
     variableRates: {},
+    safeVariableRates: {},
+    surplusVariableRates: {},
     enableBuckets: false,
     bucketSafeRate: 0,
     bucketSurplusRate: 0

@@ -27,7 +27,9 @@ export function calculateDecumulation({
         variableRates,
         enableBuckets,
         bucketSafeRate = 0,
-        bucketSurplusRate = 0
+        bucketSurplusRate = 0,
+        safeVariableRates = {},
+        surplusVariableRates = {}
     } = inputs;
 
     let history = [];
@@ -164,11 +166,24 @@ export function calculateDecumulation({
 
         // Buckets Interest
         if (enableBuckets) {
-            const safeDailyRate = bucketSafeRate / 100 / 12;
-            const surplusDailyRate = bucketSurplusRate / 100 / 12;
+            // Calculate the year for this month of retirement (i is 1-indexed retirement month)
+            // startMonthIndex is months from today to retirement, startYear is current year
+            const retirementStartYear = startYear + Math.floor(startMonthIndex / 12);
+            const monthYear = retirementStartYear + Math.floor((i - 1) / 12);
 
-            const safeInterest = safeBalance * safeDailyRate;
-            const surplusInterest = surplusBalance * surplusDailyRate;
+            // Use variable rates if enabled, otherwise use fixed rates
+            const safeAnnualRate = variableRatesEnabled && safeVariableRates[monthYear] !== undefined
+                ? parseFloat(safeVariableRates[monthYear])
+                : bucketSafeRate;
+            const surplusAnnualRate = variableRatesEnabled && surplusVariableRates[monthYear] !== undefined
+                ? parseFloat(surplusVariableRates[monthYear])
+                : bucketSurplusRate;
+
+            const safeMonthlyRate = safeAnnualRate / 100 / 12;
+            const surplusMonthlyRate = surplusAnnualRate / 100 / 12;
+
+            const safeInterest = safeBalance * safeMonthlyRate;
+            const surplusInterest = surplusBalance * surplusMonthlyRate;
 
             safeBalance += safeInterest;
             surplusBalance += surplusInterest;

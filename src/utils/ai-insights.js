@@ -34,6 +34,21 @@ export const generateInsightPrompt = (inputs, results, language) => {
         }
     }
 
+    // Handle Bucket Variable Rates
+    let bucketRatesText = "";
+    if (inputs.enableBuckets && inputs.variableRatesEnabled) {
+        const safeRates = Object.values(inputs.safeVariableRates || {});
+        const surplusRates = Object.values(inputs.surplusVariableRates || {});
+        if (safeRates.length > 0) {
+            const avgSafe = (safeRates.reduce((a, b) => a + b, 0) / safeRates.length).toFixed(1);
+            bucketRatesText += `\n    - Safe Bucket Variable Rates: Avg ${avgSafe}%, Range ${Math.min(...safeRates)}% - ${Math.max(...safeRates)}%`;
+        }
+        if (surplusRates.length > 0) {
+            const avgSurplus = (surplusRates.reduce((a, b) => a + b, 0) / surplusRates.length).toFixed(1);
+            bucketRatesText += `\n    - Surplus Bucket Variable Rates: Avg ${avgSurplus}%, Range ${Math.min(...surplusRates)}% - ${Math.max(...surplusRates)}%`;
+        }
+    }
+
 
     // --- Sensitivity / "What Moves the Needle" Calculation ---
     // We run a few quick simulations to give the AI hard data on what changes impact the result the most.
@@ -101,7 +116,7 @@ export const generateInsightPrompt = (inputs, results, language) => {
     - Current Savings: ${currency}${inputs.currentSavings}
     - Monthly Contribution: ${currency}${inputs.monthlyContribution}
     - Desired Monthly Net Income: ${currency}${inputs.monthlyNetIncomeDesired}
-    - Assumed Annual Return: ${returnRateText}
+    - Assumed Annual Return: ${returnRateText}${bucketRatesText}
     - Inflation Type: ${inputs.inflationType || 'None'}
     
     Significant Life Events (One-time or recurring changes):

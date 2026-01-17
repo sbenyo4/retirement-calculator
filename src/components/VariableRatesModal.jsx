@@ -13,6 +13,7 @@ export default function VariableRatesModal({
     retirementEndYear,
     currentRate,
     variableRates,
+    bucketType = 'accumulation', // 'accumulation', 'safe', or 'surplus'
     onSave,
     language,
     t,
@@ -52,14 +53,16 @@ export default function VariableRatesModal({
 
         // 2. Last Year (End of Simulation)
         if (year === endYear) {
-            // Calculate end month based on Birth Month + Fractional End Age
+            // For accumulation bucket (ends before retirement), use retirementStartAge
+            // For retirement buckets, use retirementEndAge
             const bDate = inputs?.birthDate || inputs?.birthdate;
-            if (inputs && bDate && inputs.retirementEndAge) {
+            const isAccumulation = endYear < retirementStartYear;
+            const targetAge = isAccumulation ? inputs.retirementStartAge : inputs.retirementEndAge;
+
+            if (inputs && bDate && targetAge) {
                 const birthMonth = new Date(bDate).getMonth();
-                const endAgeMonths = (parseFloat(inputs.retirementEndAge) % 1) * 12;
-                // e.g. Born Feb (1). Age 67.0.
-                // 1 + 0 = 1 (Feb). +1 for count = 2 months (Jan, Feb).
-                const endMonthIndex = Math.floor((birthMonth + endAgeMonths) % 12);
+                const ageMonths = (parseFloat(targetAge) % 1) * 12;
+                const endMonthIndex = Math.floor((birthMonth + ageMonths) % 12);
                 return endMonthIndex + 1;
             }
             return 12; // Fallback
@@ -72,15 +75,27 @@ export default function VariableRatesModal({
     // Helper: Get month name for display
     const getMonthName = (year) => {
         const bDate = inputs?.birthDate || inputs?.birthdate;
-        if (!inputs || !bDate || !inputs.retirementEndAge) return '';
-        if (year === endYear) {
-            const birthMonth = new Date(bDate).getMonth();
-            const endAgeMonths = (parseFloat(inputs.retirementEndAge) % 1) * 12;
-            const endMonthIndex = Math.floor((birthMonth + endAgeMonths) % 12);
-            // Return short month name
+
+        // Start Year - show current month
+        if (year === startYear) {
+            const currentMonth = new Date().getMonth();
             const date = new Date();
-            date.setMonth(endMonthIndex);
+            date.setMonth(currentMonth);
             return new Intl.DateTimeFormat(language === 'he' ? 'he-IL' : 'en-US', { month: 'short' }).format(date);
+        }
+
+        // End Year - show end month based on target age
+        if (year === endYear && inputs && bDate) {
+            const isAccumulation = endYear < retirementStartYear;
+            const targetAge = isAccumulation ? inputs.retirementStartAge : inputs.retirementEndAge;
+            if (targetAge) {
+                const birthMonth = new Date(bDate).getMonth();
+                const ageMonths = (parseFloat(targetAge) % 1) * 12;
+                const endMonthIndex = Math.floor((birthMonth + ageMonths) % 12);
+                const date = new Date();
+                date.setMonth(endMonthIndex);
+                return new Intl.DateTimeFormat(language === 'he' ? 'he-IL' : 'en-US', { month: 'short' }).format(date);
+            }
         }
         return '';
     };
@@ -90,15 +105,14 @@ export default function VariableRatesModal({
         let totalWeightedRate = 0;
         let totalMonths = 0;
 
-        // Iterate over the actua years in state
-        Object.keys(rates).forEach(yStr => {
-            const y = parseInt(yStr);
+        // Only iterate over years within the current startYear-endYear range
+        for (let y = startYear; y <= endYear; y++) {
             const rate = parseFloat(rates[y]) || 0;
             const months = getMonthsForYear(y);
 
             totalWeightedRate += rate * months;
             totalMonths += months;
-        });
+        }
 
         return totalMonths > 0 ? (totalWeightedRate / totalMonths) : 0;
     }, [rates, startYear, endYear, inputs]);
@@ -109,11 +123,13 @@ export default function VariableRatesModal({
         if (!inputs) return zeroResult;
 
         try {
-            // 1. Current Sequence
+            // 1. Current Sequence - set the correct variable rates key based on bucket type
+            const ratesKey = bucketType === 'accumulation' ? 'variableRates' :
+                bucketType === 'safe' ? 'safeVariableRates' : 'surplusVariableRates';
             const scenarioInputs = {
                 ...inputs,
                 variableRatesEnabled: true,
-                variableRates: rates
+                [ratesKey]: rates
             };
             const projection = calculateRetirementProjection(scenarioInputs);
             const finalBal = projection.balanceAtEnd || 0;
@@ -201,9 +217,9 @@ export default function VariableRatesModal({
         const count = years.length;
         if (count === 0 || totalMonths === 0) return {};
 
-        // 1. Generate random volatility (roughly -12% to +12% spread)
+        // 1. Generate random volatility (roughly -10% to +10% spread)
         let rawRates = years.map(() => {
-            const variance = (Math.random() * 24) - 12;
+            const variance = (Math.random() * 20) - 10;
             return averageRate + variance;
         });
 
@@ -256,6 +272,11 @@ export default function VariableRatesModal({
             }
             attempts++;
         }
+
+        // 5. Clamp rates to be within absolute -10% to +10%
+        const minRate = -10;
+        const maxRate = 10;
+        quantizedRates = quantizedRates.map(r => Math.max(minRate, Math.min(maxRate, r)));
 
         const newRates = {};
         years.forEach((year, i) => {
@@ -497,7 +518,12 @@ export default function VariableRatesModal({
                                                 {language === 'he' ? 'פרישה' : 'Start'}
                                             </span>
                                         )}
-                                        {year === retirementEndYear && (
+                                        {year === startYear && getMonthName(year) && (
+                                            <span className={`text-[9px] font-bold leading-none px-1.5 py-0.5 rounded-full mt-0.5 whitespace-nowrap ${isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-500/20 text-blue-300'}`}>
+                                                {language === 'he' ? 'התחלה' : 'Start'} <span className="opacity-75">({getMonthName(year)})</span>
+                                            </span>
+                                        )}
+                                        {year === endYear && getMonthName(year) && (
                                             <span className={`text-[9px] font-bold leading-none px-1.5 py-0.5 rounded-full mt-0.5 whitespace-nowrap ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-300'}`}>
                                                 {language === 'he' ? 'סיום' : 'End'} <span className="opacity-75">({getMonthName(year)})</span>
                                             </span>
