@@ -32,13 +32,8 @@ export default function InputForm({
     setSimulationType,
     onAiCalculate,
     aiInputsChanged,
-    aiLoading,
-    showInterestSensitivity,
-    setShowInterestSensitivity,
-    showIncomeSensitivity,
-    setShowIncomeSensitivity,
-    showAgeSensitivity,
-    setShowAgeSensitivity
+    aiLoading
+    // Note: sensitivity props (showInterestSensitivity, etc.) were previously passed but are not used in this component
 }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';

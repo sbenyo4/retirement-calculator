@@ -88,7 +88,8 @@ describe('Separate Buckets Strategy', () => {
             bucketSurplusRate: 10 // Surplus should grow fast
         });
 
-        const startHist = result.history.find(h => h.phase === 'decumulation' && h.month === 1);
+        // Find the first and last decumulation records
+        const startHist = result.history.find(h => h.phase === 'decumulation');
         const endHist = result.history[result.history.length - 1];
 
         // Safe bucket starts around 1000 * 24 = 24000
@@ -101,8 +102,6 @@ describe('Separate Buckets Strategy', () => {
         // It has 0 withdrawals (safe bucket covers them).
         // 10% annual growth on ~976k
 
-        console.log("DEBUG TEST: Start Surplus", startHist.surplusBucket);
-        console.log("DEBUG TEST: End Surplus", endHist.surplusBucket);
         expect(endHist.surplusBucket).toBeGreaterThan(startHist.surplusBucket);
         expect(result.surplus).toBeGreaterThan(0);
     });

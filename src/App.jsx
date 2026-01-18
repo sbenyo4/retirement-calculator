@@ -64,7 +64,8 @@ function MainApp() {
   const [showAgeSensitivity, setShowAgeSensitivity] = useState(false);
 
   // Custom hooks (must be called unconditionally at top level)
-  const { profiles, saveProfile, updateProfile, renameProfile, deleteProfile, lastLoadedProfileId, markProfileAsLoaded, profilesLoaded } = useProfiles();
+  // Note: profilesLoaded is available but not currently used
+  const { profiles, saveProfile, updateProfile, renameProfile, deleteProfile, lastLoadedProfileId, markProfileAsLoaded } = useProfiles();
 
   // Rate limiting hook
   const {
@@ -74,7 +75,7 @@ function MainApp() {
 
   // UI State
   const [showModelsManager, setShowModelsManager] = useState(false);
-  const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
+  const [, setModelsRefreshKey] = useState(0);
 
   // Refs
   const lastSimInputs = useRef(null);
@@ -83,7 +84,7 @@ function MainApp() {
   // Helper to format rate limit messages
   const formatLimitMessage = (limitCheck) => {
     if (!limitCheck || limitCheck.allowed) return null;
-    const { reason, resetTime, current, limit } = limitCheck;
+    const { reason, resetTime, limit } = limitCheck;
     if (reason === 'minute') {
       const secondsLeft = Math.ceil((resetTime.getTime() - Date.now()) / 1000);
       return t('rateLimitMinute').replace('{seconds}', secondsLeft);
@@ -259,7 +260,7 @@ function MainApp() {
           name: profile.name,
           results: calculateRetirementProjection(profile.data, t)
         };
-      } catch (e) {
+      } catch {
         // Skip profiles with invalid data silently
         return null;
       }

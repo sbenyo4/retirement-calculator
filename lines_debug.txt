@@ -1,5 +1,0 @@
-﻿
-                                                                if (setEditingEvent) {
-                                                                    setEditingEvent(originalEvent || event);
-                                                                }
-                                                                lastClickRef.current = { time: 0, id: null }; // Reset

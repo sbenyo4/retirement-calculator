@@ -7,6 +7,18 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Debug files (development artifacts)
+debug_*.js
+*_debug.txt
+debug_*.txt
+verify_*.js
+reproduce_*.js
+check_*.js
+list_*.js
+test_*.js
+build_error*.txt
+*_output*.txt
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
