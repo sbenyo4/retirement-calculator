@@ -125,10 +125,12 @@ function MainApp() {
     const retirementEnd = parseFloat(debouncedInputs.retirementEndAge);
 
     // Basic validation to prevent obviously broken inputs
+    // Include age sequence validation to prevent console errors during profile loading
     if (
       !isNaN(age) && age >= 0 && age <= 120 &&
       !isNaN(retirementStart) && retirementStart >= 0 && retirementStart <= 120 &&
-      !isNaN(retirementEnd) && retirementEnd >= 0 && retirementEnd <= 120
+      !isNaN(retirementEnd) && retirementEnd >= 0 && retirementEnd <= 120 &&
+      retirementStart > age && retirementEnd > retirementStart
     ) {
       try {
         // Clear validation error on successful calculation
@@ -251,11 +253,16 @@ function MainApp() {
     return selectedProfileIds.map(id => {
       const profile = profiles.find(p => p.id === id);
       if (!profile) return null;
-      return {
-        id: profile.id,
-        name: profile.name,
-        results: calculateRetirementProjection(profile.data, t)
-      };
+      try {
+        return {
+          id: profile.id,
+          name: profile.name,
+          results: calculateRetirementProjection(profile.data, t)
+        };
+      } catch (e) {
+        // Skip profiles with invalid data silently
+        return null;
+      }
     }).filter(Boolean);
   }, [selectedProfileIds, profiles]);
 

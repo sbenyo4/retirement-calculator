@@ -44,9 +44,16 @@ export default function VariableRatesModal({
 
     // Helper: Calculate months in year for weighting
     const getMonthsForYear = (year) => {
-        // 1. First Year (Current Year)
-        // Assume simulation starts "Now", so months remaining in current year.
+        const bDate = inputs?.birthDate || inputs?.birthdate;
+
+        // 1. First Year of simulation
         if (year === startYear) {
+            // If this is also retirement start year, use birth month (retirement starts on birthday)
+            if (startYear === retirementStartYear && inputs && bDate) {
+                const birthMonth = new Date(bDate).getMonth(); // 0-11
+                return 12 - birthMonth; // Months remaining in year after birthday
+            }
+            // Otherwise (accumulation phase), use current month
             const currentMonth = new Date().getMonth(); // 0-11
             return 12 - currentMonth;
         }
@@ -55,7 +62,6 @@ export default function VariableRatesModal({
         if (year === endYear) {
             // For accumulation bucket (ends before retirement), use retirementStartAge
             // For retirement buckets, use retirementEndAge
-            const bDate = inputs?.birthDate || inputs?.birthdate;
             const isAccumulation = endYear < retirementStartYear;
             const targetAge = isAccumulation ? inputs.retirementStartAge : inputs.retirementEndAge;
 
@@ -76,8 +82,18 @@ export default function VariableRatesModal({
     const getMonthName = (year) => {
         const bDate = inputs?.birthDate || inputs?.birthdate;
 
-        // Start Year - show current month
-        if (year === startYear) {
+        // Retirement Start Year - show birth month (retirement starts on birthday)
+        // Check this FIRST, before startYear, because they might be the same
+        if (year === retirementStartYear && inputs && bDate) {
+            const birthMonth = new Date(bDate).getMonth();
+            const date = new Date();
+            date.setMonth(birthMonth);
+            return new Intl.DateTimeFormat(language === 'he' ? 'he-IL' : 'en-US', { month: 'short' }).format(date);
+        }
+
+        // Start Year (accumulation phase only) - show current month
+        // Only if NOT the same as retirement year
+        if (year === startYear && startYear !== retirementStartYear) {
             const currentMonth = new Date().getMonth();
             const date = new Date();
             date.setMonth(currentMonth);
@@ -156,7 +172,7 @@ export default function VariableRatesModal({
             const valuesOpt = [...values].sort((a, b) => b - a);
             const ratesOpt = {};
             years.forEach((y, i) => ratesOpt[y] = valuesOpt[i]);
-            const optInputs = { ...inputs, variableRatesEnabled: true, variableRates: ratesOpt };
+            const optInputs = { ...inputs, variableRatesEnabled: true, [ratesKey]: ratesOpt };
             const optProj = calculateRetirementProjection(optInputs);
             const maxBal = optProj.balanceAtEnd || 0;
 
@@ -164,7 +180,7 @@ export default function VariableRatesModal({
             const valuesPess = [...values].sort((a, b) => a - b);
             const ratesPess = {};
             years.forEach((y, i) => ratesPess[y] = valuesPess[i]);
-            const pessInputs = { ...inputs, variableRatesEnabled: true, variableRates: ratesPess };
+            const pessInputs = { ...inputs, variableRatesEnabled: true, [ratesKey]: ratesPess };
             const pessProj = calculateRetirementProjection(pessInputs);
             const minBal = pessProj.balanceAtEnd || 0;
 
@@ -217,17 +233,20 @@ export default function VariableRatesModal({
         const count = years.length;
         if (count === 0 || totalMonths === 0) return {};
 
-        // 1. Generate random volatility (roughly -10% to +10% spread)
+        const minRate = -10;
+        const maxRate = 10;
+
+        // 1. Generate random volatility within clamped range centered on average
+        // Ensure initial rates are within bounds
+        const minAllowed = Math.max(minRate, averageRate - 10);
+        const maxAllowed = Math.min(maxRate, averageRate + 10);
+
         let rawRates = years.map(() => {
-            const variance = (Math.random() * 20) - 10;
-            return averageRate + variance;
+            const range = maxAllowed - minAllowed;
+            return minAllowed + (Math.random() * range);
         });
 
         // 2. Adjust mean to match exactly the target 'averageRate' (Weighted)
-        // Adding a constant C to all rates changes the Weighted Average by exactly C.
-        // NewAvg = Sum((R+C)*W) / Sum(W) = (Sum(RW) + C*Sum(W)) / Sum(W) = OldAvg + C.
-        // So C = TargetAvg - OldAvg.
-
         let currentWeightedSum = 0;
         rawRates.forEach((r, i) => {
             currentWeightedSum += r * weights[i];
@@ -238,13 +257,14 @@ export default function VariableRatesModal({
 
         rawRates = rawRates.map(r => r + correction);
 
-        // 3. Quantize to 0.5
+        // 3. Clamp to bounds FIRST, then quantize
+        rawRates = rawRates.map(r => Math.max(minRate, Math.min(maxRate, r)));
+
+        // 4. Quantize to 0.5
         let quantizedRates = rawRates.map(r => Math.round(r * 2) / 2);
 
-        // 4. Final Adjustment to maintain reasonable weighted average after rounding
-        // Note: With partial weights, we might not be able to hit the EXACT average with 0.5 steps.
-        // We will try to minimize the weighted drift.
-
+        // 5. Final Adjustment to maintain weighted average after rounding AND clamping
+        // Re-calculate drift after clamping
         let finalWeightedSum = 0;
         quantizedRates.forEach((r, i) => {
             finalWeightedSum += r * weights[i];
@@ -253,30 +273,24 @@ export default function VariableRatesModal({
         const targetWeightedSum = averageRate * totalMonths;
         let weightedDrift = targetWeightedSum - finalWeightedSum;
 
-        // We iterate to reduce drift.
-        // Each step changes a rate by 0.5. The impact on Sum is 0.5 * weight[i].
+        // Iterate to reduce drift, respecting clamp bounds
         let attempts = 0;
-        while (Math.abs(weightedDrift) > 1 && attempts < 200) { // Threshold > 1 month-percent
+        while (Math.abs(weightedDrift) > 0.5 && attempts < 300) {
             const idx = Math.floor(Math.random() * count);
             const weight = weights[idx];
-            const change = 0.5 * weight;
+            const currentRate = quantizedRates[idx];
 
-            if (weightedDrift > 0) {
-                // Need to increase sum
+            if (weightedDrift > 0 && currentRate < maxRate) {
+                // Need to increase sum, and we can increase this rate
                 quantizedRates[idx] += 0.5;
-                weightedDrift -= change;
-            } else {
-                // Need to decrease sum
+                weightedDrift -= 0.5 * weight;
+            } else if (weightedDrift < 0 && currentRate > minRate) {
+                // Need to decrease sum, and we can decrease this rate
                 quantizedRates[idx] -= 0.5;
-                weightedDrift += change;
+                weightedDrift += 0.5 * weight;
             }
             attempts++;
         }
-
-        // 5. Clamp rates to be within absolute -10% to +10%
-        const minRate = -10;
-        const maxRate = 10;
-        quantizedRates = quantizedRates.map(r => Math.max(minRate, Math.min(maxRate, r)));
 
         const newRates = {};
         years.forEach((year, i) => {
@@ -421,6 +435,17 @@ export default function VariableRatesModal({
                 <div className="relative z-10 flex-none flex items-center justify-between p-4 border-b border-gray-200 dark:border-white/10">
                     <h3 className={`text-lg font-semibold ${classes.headerLabel}`}>
                         {language === 'he' ? 'תשואות משתנות' : 'Variable Returns'}
+                        {bucketType !== 'accumulation' && (
+                            <span className={`text-sm font-normal mx-2 px-2 py-0.5 rounded-full ${bucketType === 'safe'
+                                    ? (isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-500/20 text-blue-300')
+                                    : (isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-500/20 text-purple-300')
+                                }`}>
+                                {bucketType === 'safe'
+                                    ? (language === 'he' ? 'דלי בטוח' : 'Safe Bucket')
+                                    : (language === 'he' ? 'דלי עודף' : 'Surplus Bucket')
+                                }
+                            </span>
+                        )}
                     </h3>
                     <button onClick={onClose} className={`p-1 rounded hover:bg-gray-200 dark:hover:bg-white/10 ${classes.icon}`}>
                         <X className="w-5 h-5" />
@@ -514,11 +539,11 @@ export default function VariableRatesModal({
                                             {year}
                                         </span>
                                         {year === retirementStartYear && (
-                                            <span className={`text-[9px] font-bold leading-none px-1.5 py-0.5 rounded-full mt-0.5 ${isLight ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-500/20 text-emerald-300'}`}>
-                                                {language === 'he' ? 'פרישה' : 'Start'}
+                                            <span className={`text-[9px] font-bold leading-none px-1.5 py-0.5 rounded-full mt-0.5 whitespace-nowrap ${isLight ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-500/20 text-emerald-300'}`}>
+                                                {language === 'he' ? 'פרישה' : 'Retire'} {getMonthName(year) && <span className="opacity-75">({getMonthName(year)})</span>}
                                             </span>
                                         )}
-                                        {year === startYear && getMonthName(year) && (
+                                        {year === startYear && startYear !== retirementStartYear && getMonthName(year) && (
                                             <span className={`text-[9px] font-bold leading-none px-1.5 py-0.5 rounded-full mt-0.5 whitespace-nowrap ${isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-500/20 text-blue-300'}`}>
                                                 {language === 'he' ? 'התחלה' : 'Start'} <span className="opacity-75">({getMonthName(year)})</span>
                                             </span>

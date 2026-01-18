@@ -115,7 +115,7 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
 
             return columns;
         } catch (error) {
-            console.error('Error in orderedColumns:', error);
+            // Silently handle expected errors during profile loading
             return [];
         }
     }, [orderedSelections, results, simulationResults, aiResults, profileResults, profiles, t]);
@@ -212,7 +212,7 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                 canShowMinus
             };
         } catch (error) {
-            console.error('Error in sensitivityResults:', error);
+            // Silently return null for expected validation errors during profile loading
             return null;
         }
     }, [showInterestSensitivity, showIncomeSensitivity, showAgeSensitivity, isCompareMode, isMathMode, orderedColumns, inputs, t]);
@@ -309,7 +309,7 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                 ]
             };
         } catch (error) {
-            console.error('Error in chartData:', error);
+            // Silently handle expected errors during profile loading
             return { labels: [], datasets: [] };
         }
     }, [activeResults?.history, isCompareMode, isAiMode, isSimMode, orderedColumns, sensitivityResults, t]);

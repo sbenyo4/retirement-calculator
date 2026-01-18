@@ -20,7 +20,7 @@ export function calculateRetirementProjection(inputs, t = null) {
     if (validationErrors.length > 0) {
         const invalidInputsLabel = t ? t('validationInvalidInputs') : 'Invalid inputs:';
         const errorMessage = invalidInputsLabel + '\n' + validationErrors.map(e => `  • ${e}`).join('\n');
-        console.error(errorMessage);
+        // Don't log here - callers handle errors via try-catch and display to user as appropriate
         throw new Error(errorMessage);
     }
 

@@ -70,7 +70,6 @@ export default function AddEventModal({
         setEndMonth(event?.endDate?.month || currentMonth);
         setAmount(event?.amount || '');
         setMonthlyChange(event?.monthlyChange || '');
-        setMonthlyChange(event?.monthlyChange || '');
         setDescription(event?.description || '');
         setLinkedTo(event?.linkedTo || null);
     }, [event, currentYear, currentMonth]);

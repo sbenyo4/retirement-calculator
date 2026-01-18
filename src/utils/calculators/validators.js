@@ -8,18 +8,15 @@
 export function validateInputs(inputs, t = null) {
     const errors = [];
 
-    const {
-        currentAge,
-        retirementStartAge,
-        retirementEndAge,
-        currentSavings,
-        monthlyContribution,
-        monthlyNetIncomeDesired,
-        annualReturnRate,
-        taxRate
-    } = Object.fromEntries(
-        Object.entries(inputs).map(([k, v]) => [k, parseFloat(v)])
-    );
+    // Only parse the specific numeric fields we need for validation
+    const currentAge = parseFloat(inputs.currentAge);
+    const retirementStartAge = parseFloat(inputs.retirementStartAge);
+    const retirementEndAge = parseFloat(inputs.retirementEndAge);
+    const currentSavings = parseFloat(inputs.currentSavings);
+    const monthlyContribution = parseFloat(inputs.monthlyContribution);
+    const monthlyNetIncomeDesired = parseFloat(inputs.monthlyNetIncomeDesired);
+    const annualReturnRate = parseFloat(inputs.annualReturnRate);
+    const taxRate = parseFloat(inputs.taxRate);
 
     // Helper to get translation or fallback to English
     const getText = (key, fallback) => (t ? t(key) : fallback);
