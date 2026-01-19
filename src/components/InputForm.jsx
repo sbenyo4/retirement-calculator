@@ -608,7 +608,10 @@ export default function InputForm({
                                                 setActiveVRType('accumulation');
                                                 setShowVariableRates(true);
                                             }}
-                                            className={`p-1 transition-colors h-full flex items-center justify-center ${isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200'}`}
+                                            disabled={!inputs.variableRatesEnabled}
+                                            className={`p-1 transition-colors h-full flex items-center justify-center ${!inputs.variableRatesEnabled
+                                                ? 'text-gray-500 cursor-not-allowed opacity-40'
+                                                : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200')}`}
                                             title={language === 'he' ? 'ריביות משתנות' : 'Variable Rates'}
                                         >
                                             <Activity size={16} />
@@ -675,7 +678,10 @@ export default function InputForm({
                                             setActiveVRType('safe');
                                             setShowVariableRates(true);
                                         }}
-                                        className={`p-1 transition-colors flex items-center justify-center ${isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200'}`}
+                                        disabled={!inputs.variableRatesEnabled}
+                                        className={`p-1 transition-colors flex items-center justify-center ${!inputs.variableRatesEnabled
+                                            ? 'text-gray-500 cursor-not-allowed opacity-40'
+                                            : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200')}`}
                                         title={language === 'he' ? 'ריביות משתנות' : 'Variable Rates'}
                                     >
                                         <Activity size={16} />
@@ -695,7 +701,10 @@ export default function InputForm({
                                             setActiveVRType('surplus');
                                             setShowVariableRates(true);
                                         }}
-                                        className={`p-1 transition-colors flex items-center justify-center ${isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200'}`}
+                                        disabled={!inputs.variableRatesEnabled}
+                                        className={`p-1 transition-colors flex items-center justify-center ${!inputs.variableRatesEnabled
+                                            ? 'text-gray-500 cursor-not-allowed opacity-40'
+                                            : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200')}`}
                                         title={language === 'he' ? 'ריביות משתנות' : 'Variable Rates'}
                                     >
                                         <Activity size={16} />
