@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import InputForm from './components/InputForm';
 import { ResultsDashboard } from './components/ResultsDashboard';
 import { ProfileManager } from './components/ProfileManager';
@@ -13,9 +13,11 @@ import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { UserMenu } from './components/UserMenu';
 import { ThemeToggle } from './components/ThemeToggle';
 import { LoginPage } from './components/LoginPage';
-import { ModelsManager } from './components/ModelsManager';
 import { ZoomToggle } from './components/ZoomToggle';
 import ErrorBoundary from './components/common/ErrorBoundary';
+
+// Lazy-loaded components (loaded only when needed)
+const ModelsManager = React.lazy(() => import('./components/ModelsManager').then(m => ({ default: m.ModelsManager })));
 
 // Hooks
 import { useProfiles } from './hooks/useProfiles';
@@ -453,20 +455,26 @@ function MainApp() {
 
       {/* Models Manager Modal */}
       {showModelsManager && (
-        <ModelsManager
-          apiKeys={{
-            gemini: settings.apiKeyOverride || import.meta.env.VITE_GEMINI_API_KEY,
-            openai: import.meta.env.VITE_OPENAI_API_KEY,
-            anthropic: import.meta.env.VITE_ANTHROPIC_API_KEY
-          }}
-          onClose={() => setShowModelsManager(false)}
-          onModelsUpdated={() => {
-            // Trigger refresh of models list by changing key
-            setModelsRefreshKey(prev => prev + 1);
-          }}
-          t={t}
-          language={language}
-        />
+        <Suspense fallback={
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+          </div>
+        }>
+          <ModelsManager
+            apiKeys={{
+              gemini: settings.apiKeyOverride || import.meta.env.VITE_GEMINI_API_KEY,
+              openai: import.meta.env.VITE_OPENAI_API_KEY,
+              anthropic: import.meta.env.VITE_ANTHROPIC_API_KEY
+            }}
+            onClose={() => setShowModelsManager(false)}
+            onModelsUpdated={() => {
+              // Trigger refresh of models list by changing key
+              setModelsRefreshKey(prev => prev + 1);
+            }}
+            t={t}
+            language={language}
+          />
+        </Suspense>
       )}
     </div>
   );
