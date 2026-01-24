@@ -189,13 +189,16 @@ export function calculateDecumulation({
             surplusBalance += surplusInterest;
 
             // Treat tax as withdrawal from buckets
+            // NOTE: For Survivor/Surplus bucket, we assume distinct "Tax Deferral" (Capital Gains).
+            // We do NOT deduct tax on the growth annually. We only pay tax upon withdrawal (which is calculated via grossWithdrawal logic if we pull from it).
+            // But since this loop calculates "tax on interest" style, we just EXCLUDE surplus growth from this immediate tax bite.
             const safeTax = safeInterest * taxRateDecimal;
-            const surplusTax = surplusInterest * taxRateDecimal;
+            // const surplusTax = surplusInterest * taxRateDecimal; // Removed to allow gross compounding
 
             // effectiveInterest in main view is sum
             effectiveInterest = safeInterest + surplusInterest;
             // tax is also sum
-            tax = safeTax + surplusTax;
+            tax = safeTax; // + surplusTax;
         }
 
         // Calculate withdrawal

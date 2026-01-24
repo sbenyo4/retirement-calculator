@@ -58,6 +58,23 @@ body {
   scrollbar-color: rgba(71, 85, 105, 0.5) transparent;
 }
 
+/* Force scrollbar on right side even in RTL */
+.scrollbar-right {
+  direction: ltr;
+}
+
+.scrollbar-right>* {
+  direction: inherit;
+}
+
+[dir="rtl"] .scrollbar-right {
+  direction: ltr;
+}
+
+[dir="rtl"] .scrollbar-right>* {
+  direction: rtl;
+}
+
 /* Fix Date Picker Icon Color for Dark Backgrounds */
 input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(1);

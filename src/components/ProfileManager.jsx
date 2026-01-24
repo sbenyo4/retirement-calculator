@@ -48,7 +48,11 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
 
     const saveProfile = () => {
         if (!newProfileName.trim()) return;
-        const newProfile = onSaveProfile(newProfileName, currentInputs);
+        // Decouple pension data: don't save it to profile
+        // eslint-disable-next-line no-unused-vars
+        const { pensionIncomeSources, ...dataToSave } = currentInputs;
+
+        const newProfile = onSaveProfile(newProfileName, dataToSave);
         setNewProfileName('');
         setSelectedProfileId(newProfile.id);
         // Update snapshot to match new saved state
@@ -58,7 +62,11 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
 
     const updateProfile = () => {
         if (!selectedProfileId) return;
-        onUpdateProfile(selectedProfileId, currentInputs);
+        // Decouple pension data: don't save it to profile
+        // eslint-disable-next-line no-unused-vars
+        const { pensionIncomeSources, ...dataToSave } = currentInputs;
+
+        onUpdateProfile(selectedProfileId, dataToSave);
         // Update snapshot to match new saved state
         setComparisonSnapshot(normalizeInputs(currentInputs));
         showMessage(language === 'he' ? 'פרופיל עודכן!' : 'Profile updated!');
@@ -85,13 +93,46 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         setRenameInput('');
     };
 
+    const getGlobalPensionSources = () => {
+        try {
+            // Scan ALL keys to find any pension data, preferring the one that matches current user if possible, 
+            // but falling back to any valid data to prevent loss.
+            const candidates = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.includes('retirementGlobal_pensionSources_')) {
+                    try {
+                        const raw = localStorage.getItem(key);
+                        if (raw) {
+                            const data = JSON.parse(raw);
+                            if (Array.isArray(data) && data.length > 0) {
+                                candidates.push({ key, data });
+                            }
+                        }
+                    } catch (e) { /* ignore */ }
+                }
+            }
+            // If candidates found, return the most recent or just the first one
+            // Ideally we'd timestamp them, but for now just returning the first valid one is better than reset
+            if (candidates.length > 0) return candidates[0].data;
+        } catch (e) {
+            console.error('Error reading global pension sources:', e);
+        }
+        return [];
+    };
+
     const reloadProfile = () => {
         if (!selectedProfileId) return;
         const profile = profiles.find(p => p.id === selectedProfileId);
         if (profile) {
             const data = normalizeInputs(profile.data);
-            onLoad(data);
-            // Reset snapshot to the loaded profile data
+            // MERGE: Keep current global pension sources from storage
+            const globalPension = getGlobalPensionSources();
+            onLoad({
+                ...data,
+                pensionIncomeSources: globalPension.length > 0 ? globalPension : (currentInputs?.pensionIncomeSources || [])
+            });
+            // Reset snapshot using the merged data
             setComparisonSnapshot(data);
             showMessage(language === 'he' ? 'פרופיל נטען מחדש!' : 'Profile reloaded!');
         }
@@ -111,7 +152,12 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         const profile = profiles.find(p => p.id === id);
         if (profile) {
             const data = normalizeInputs(profile.data);
-            onLoad(data);
+            // MERGE: Keep current global pension sources from storage
+            const globalPension = getGlobalPensionSources();
+            onLoad({
+                ...data,
+                pensionIncomeSources: globalPension.length > 0 ? globalPension : (currentInputs?.pensionIncomeSources || [])
+            });
             setSelectedProfileId(id);
             // Reset snapshot to the loaded profile data
             setComparisonSnapshot(data);
@@ -126,9 +172,17 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     // Normalize currentInputs to ensure types match (Strings -> Numbers) before comparison
     const normalizedCurrent = currentInputs ? normalizeInputs(currentInputs) : null;
 
+    // Helper to strip pension data for comparison since it's global now
+    const stripPension = (data) => {
+        if (!data) return null;
+        // eslint-disable-next-line no-unused-vars
+        const { pensionIncomeSources, ...rest } = data;
+        return rest;
+    };
+
     // Compare normalized current inputs with the SNAPSHOT instead of the database profile
     // This ensures "Unsaved changes" only appears when user modifies data AFTER loading/refreshing
-    const hasChanges = comparisonSnapshot && normalizedCurrent && !deepEqual(normalizedCurrent, comparisonSnapshot);
+    const hasChanges = comparisonSnapshot && normalizedCurrent && !deepEqual(stripPension(normalizedCurrent), stripPension(comparisonSnapshot));
 
     return (
         <div className="mb-2">

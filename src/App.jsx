@@ -416,6 +416,7 @@ function MainApp() {
                 <ResultsDashboard
                   results={results}
                   inputs={inputs}
+                  setInputs={setInputs}
                   t={t}
                   language={language}
 

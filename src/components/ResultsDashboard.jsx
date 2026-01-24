@@ -5,6 +5,7 @@ import { AmortizationTable, AmortizationTableButton, AmortizationTableModal } fr
 import { SensitivityRangeChart, SensitivityRangeButton, SensitivityRangeModal } from './SensitivityRangeChart';
 import { SensitivityHeatmapButton, SensitivityHeatmapModal } from './SensitivityHeatmap';
 import { InflationButton, InflationModal } from './InflationRealityCheck';
+import { PensionIncomeButton, PensionIncomeModal } from './PensionIncomeModal';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
 import { LayoutDashboard, BrainCircuit } from 'lucide-react';
 import AIInsightsView from './AIInsightsView';
@@ -32,7 +33,7 @@ ChartJS.register(
     Filler
 );
 
-export function ResultsDashboard({ results, inputs, t, language, calculationMode, aiResults, simulationResults, aiLoading, aiError, simulationType, profiles, selectedProfileIds, setSelectedProfileIds, profileResults, showInterestSensitivity, setShowInterestSensitivity, showIncomeSensitivity, setShowIncomeSensitivity, showAgeSensitivity, setShowAgeSensitivity, aiProvider, aiModel, apiKeyOverride, aiInsightsData, setAiInsightsData }) {
+export function ResultsDashboard({ results, inputs, setInputs, t, language, calculationMode, aiResults, simulationResults, aiLoading, aiError, simulationType, profiles, selectedProfileIds, setSelectedProfileIds, profileResults, showInterestSensitivity, setShowInterestSensitivity, showIncomeSensitivity, setShowIncomeSensitivity, showAgeSensitivity, setShowAgeSensitivity, aiProvider, aiModel, apiKeyOverride, aiInsightsData, setAiInsightsData }) {
     // ALL HOOKS MUST BE AT THE TOP - React rules of hooks
     const { theme } = useTheme();
     const isLight = theme === 'light';
@@ -42,6 +43,7 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
     const [showHeatmapModal, setShowHeatmapModal] = useState(false);
     const [showAmortizationModal, setShowAmortizationModal] = useState(false);
     const [showInflationModal, setShowInflationModal] = useState(false);
+    const [showPensionModal, setShowPensionModal] = useState(false);
     const [activeTab, setActiveTab] = useState('numerical'); // 'numerical' | 'insights'
     // Note: showInterestSensitivity and showIncomeSensitivity are now received as props
 
@@ -569,6 +571,10 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                                                     onClick={() => setShowInflationModal(true)}
                                                     t={t}
                                                 />
+                                                <PensionIncomeButton
+                                                    onClick={() => setShowPensionModal(true)}
+                                                    t={t}
+                                                />
                                             </div>
                                         </div>
 
@@ -868,6 +874,32 @@ export function ResultsDashboard({ results, inputs, t, language, calculationMode
                         t={t}
                         language={language}
                     />
+
+                    {showPensionModal && (
+                        <PensionIncomeModal
+                            inputs={selectedProfileIds.length === 1
+                                ? profiles.find(p => p.id === selectedProfileIds[0])?.data || inputs
+                                : inputs
+                            }
+                            results={
+                                // If in Compare Mode AND exactly one profile is selected, show that profile's data.
+                                // Otherwise (including normal mode, sim mode, etc.), show the ACTIVE Dashboard results.
+                                isCompareMode && selectedProfileIds.length === 1
+                                    ? profileResults?.find(r => r.id === selectedProfileIds[0])?.results || activeResults
+                                    : activeResults
+                            }
+                            onClose={() => setShowPensionModal(false)}
+                            onSave={(newIncomeSources) => {
+                                setInputs(prev => ({
+                                    ...prev,
+                                    pensionIncomeSources: newIncomeSources
+                                }));
+                                // Don't close modal on save
+                            }}
+                            t={t}
+                            language={language}
+                        />
+                    )}
                 </div >
             )}
         </div>
