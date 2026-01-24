@@ -162,7 +162,7 @@ function generateHistoryFromSummary(inputs, aiResult) {
 }
 
 export async function calculateRetirementWithAI(inputs, provider, model, apiKeyOverride = null, mathematicalBaseline = null, t = null) {
-    let prompt = generatePrompt(inputs);
+    let prompt = inputs.prompt || generatePrompt(inputs);
 
     if (mathematicalBaseline) {
         // We only provide the balance at retirement as a sanity check, but let the AI do the rest.
@@ -222,9 +222,16 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
             // Helper to try generating content with a specific model
             const tryGenerate = async (modelId) => {
                 try {
-                    console.log(`Attempting Gemini with model: ${modelId}`);
+                    console.log(`Using Gemini model: ${modelId} with Search Grounding`);
+
+                    // Only apply search tools to Gemini 1.5+ models which support it reliably
+                    const tools = modelId.includes('1.5') || modelId.includes('2.0')
+                        ? [{ googleSearchRetrieval: {} }]
+                        : [];
+
                     const genModel = genAI.getGenerativeModel({
                         model: modelId,
+                        tools: tools,
                         generationConfig: { temperature: 0 }
                     });
                     const result = await genModel.generateContent(prompt);
@@ -285,20 +292,41 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
             responseText = message.content[0].text;
         }
 
-        // Clean up response if it contains markdown code blocks
-        // Robust JSON extraction: Find the first '{' and the last '}'
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-            responseText = jsonMatch[0];
-        } else {
-            // Fallback cleanup if regex fails (unlikely for valid JSON)
-            responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        // Clean up response if it contains markdown code blocks or citations
+        console.debug("Raw AI Response:", responseText);
+
+        // More robust JSON extraction:
+        // 1. Remove markdown blocks if they exist
+        let cleaned = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+
+        // 2. Find the first '{' and the last '}' to isolate the JSON object
+        const firstBrace = cleaned.indexOf('{');
+        const lastBrace = cleaned.lastIndexOf('}');
+
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+            cleaned = cleaned.substring(firstBrace, lastBrace + 1);
         }
 
-        const parsed = JSON.parse(responseText);
+        const parsed = JSON.parse(cleaned);
 
-        // Generate history locally
-        parsed.history = generateHistoryFromSummary(inputs, parsed);
+        // Data Normalization (Crucial for different AI behaviors)
+        // 1. Normalize tax rates: AI often returns 10 instead of 0.10
+        if (parsed.taxBrackets) {
+            parsed.taxBrackets = parsed.taxBrackets.map(b => ({
+                ...b,
+                rate: b.rate > 1 ? b.rate / 100 : b.rate
+            }));
+        }
+
+        // 2. Normalize NI seniority rates: AI might return 2 instead of 0.02 or 2% as 2
+        // Our system currently uses 2 for 2% (integer) in calculating, so keep it consistent 
+        // with the existing logic in pensionCalculator.js which does rate/100 later or expects percent.
+        // Actually pensionCalculator uses 2 for 2%.
+
+        // Only generate history for "Projection" responses (which have balanceAtRetirement)
+        if (parsed.balanceAtRetirement !== undefined) {
+            parsed.history = generateHistoryFromSummary(inputs, parsed);
+        }
 
         parsed.source = 'ai';
         return parsed;

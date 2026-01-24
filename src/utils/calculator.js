@@ -4,6 +4,7 @@ import { validateInputs } from './calculators/validators.js';
 import { calculateAccumulation } from './calculators/accumulation.js';
 import { calculateDecumulation } from './calculators/decumulation.js';
 import { calculateStatistics } from './calculators/statistics.js';
+import { calculateIncomeAtAge, calculateNationalInsurance } from './pensionCalculator.js';
 
 /**
  * Calculates the future value and required capital for retirement.
@@ -62,7 +63,6 @@ export function calculateRetirementProjection(inputs, t = null) {
 
     const { balanceAtRetirement, totalPrincipal, history: accumHistory, lastMonthIndex } = accumResult;
 
-    // 3. Decumulation Phase (Phase 2)
     const monthsInRetirement = (retirementEndAge - retirementStartAge) * 12;
 
     const decumResult = calculateDecumulation({
@@ -75,7 +75,8 @@ export function calculateRetirementProjection(inputs, t = null) {
         inputs: parsedInputs,
         annualReturnRate,
         taxRateDecimal: taxRate / 100,
-        startYear
+        startYear,
+        parameters: inputs.fiscalParameters || null // Pass dynamic parameters
     }, t);
 
     // Determine effective rate for post-retirement (Used for Perpetuity Calc)
@@ -106,6 +107,12 @@ export function calculateRetirementProjection(inputs, t = null) {
     // We should just concat them.
     const history = [...accumHistory, ...decumResult.history];
 
+    // 5. NI Context for AI/UI
+    const pensionSources = inputs.pensionIncomeSources || [];
+    const annuitySources = pensionSources.filter(s => !s.isLumpSum);
+    const incomeAtNIStart = calculateIncomeAtAge(annuitySources, 67, inputs.fiscalParameters ? { ...inputs.fiscalParameters, familyStatus: inputs.familyStatus } : { familyStatus: inputs.familyStatus });
+    const niDetails = calculateNationalInsurance(67, 35, inputs.fiscalParameters, inputs.familyStatus);
+
     return {
         history,
         balanceAtRetirement,
@@ -119,6 +126,9 @@ export function calculateRetirementProjection(inputs, t = null) {
         initialGrossWithdrawal: decumResult.initialGrossWithdrawal,
         initialNetWithdrawal: decumResult.initialNetWithdrawal,
         averageGrossWithdrawal: statsResult.averageGrossWithdrawal,
-        averageNetWithdrawal: statsResult.averageNetWithdrawal
+        averageNetWithdrawal: statsResult.averageNetWithdrawal,
+        // NI Info
+        incomeAtNIStart,
+        niThreshold: niDetails.incomeTest.threshold
     };
 }

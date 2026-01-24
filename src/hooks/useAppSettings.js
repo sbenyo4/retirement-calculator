@@ -1,4 +1,3 @@
-
 import { useReducer, useEffect } from 'react';
 import { SIMULATION_TYPES } from '../utils/simulation-calculator';
 
@@ -7,17 +6,33 @@ const SETTINGS_ACTIONS = {
     SET_AI_PROVIDER: 'SET_AI_PROVIDER',
     SET_AI_MODEL: 'SET_AI_MODEL',
     SET_API_KEY_OVERRIDE: 'SET_API_KEY_OVERRIDE',
-    SET_SIMULATION_TYPE: 'SET_SIMULATION_TYPE'
+    SET_SIMULATION_TYPE: 'SET_SIMULATION_TYPE',
+    SET_FISCAL_DATA: 'SET_FISCAL_DATA'
 };
 
 function getInitialSettings() {
     const savedProvider = localStorage.getItem('aiProvider') || 'gemini';
+
+    // Safely parse and validate fiscalParameters
+    let fiscalParameters = null;
+    try {
+        const saved = JSON.parse(localStorage.getItem('fiscalParameters'));
+        // Only use saved params if they have the required structure
+        if (saved && saved.nationalInsurance && saved.nationalInsurance.incomeTestThreshold) {
+            fiscalParameters = saved;
+        }
+    } catch (e) {
+        console.warn('Invalid fiscalParameters in localStorage, using defaults');
+    }
+
     return {
         calculationMode: 'mathematical', // Always start in mathematical mode on refresh
         aiProvider: savedProvider,
         aiModel: localStorage.getItem('aiModel') || 'gemini-2.5-flash',
         apiKeyOverride: localStorage.getItem(`apiKeyOverride_${savedProvider}`) || '',
-        simulationType: localStorage.getItem('simulationType') || SIMULATION_TYPES.MONTE_CARLO
+        simulationType: localStorage.getItem('simulationType') || SIMULATION_TYPES.MONTE_CARLO,
+        familyStatus: localStorage.getItem('familyStatus') || 'single',
+        fiscalParameters
     };
 }
 
@@ -45,6 +60,13 @@ function settingsReducer(state, action) {
         case SETTINGS_ACTIONS.SET_SIMULATION_TYPE:
             return { ...state, simulationType: action.payload };
 
+        case SETTINGS_ACTIONS.SET_FISCAL_DATA:
+            return {
+                ...state,
+                fiscalParameters: action.payload.parameters || state.fiscalParameters,
+                familyStatus: action.payload.familyStatus || state.familyStatus
+            };
+
         default:
             return state;
     }
@@ -58,7 +80,11 @@ export function useAppSettings() {
         localStorage.setItem('aiProvider', settings.aiProvider);
         localStorage.setItem('aiModel', settings.aiModel);
         localStorage.setItem('simulationType', settings.simulationType);
-    }, [settings.aiProvider, settings.aiModel, settings.simulationType]);
+        localStorage.setItem('familyStatus', settings.familyStatus);
+        if (settings.fiscalParameters) {
+            localStorage.setItem('fiscalParameters', JSON.stringify(settings.fiscalParameters));
+        }
+    }, [settings.aiProvider, settings.aiModel, settings.simulationType, settings.familyStatus, settings.fiscalParameters]);
 
     // Persistence for API Key (Per Provider)
     useEffect(() => {

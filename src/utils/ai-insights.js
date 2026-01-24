@@ -105,6 +105,30 @@ export const generateInsightPrompt = (inputs, results, language) => {
         sensitivityText = "Data unavailable";
     }
 
+    // Format Pension Sources
+    let pensionText = "None";
+    if (inputs.pensionIncomeSources && inputs.pensionIncomeSources.length > 0) {
+        pensionText = inputs.pensionIncomeSources.map(s => {
+            const isNI = s.type === 'nationalInsurance';
+            const grossInfo = s.isTaxable !== false ? " (Gross)" : " (Net/Exempt)";
+            return `- ${s.name || (isNI ? 'National Insurance' : 'Annuity')}: ${currency}${s.amount}${grossInfo}, Start: ${s.startAge}${s.endAge ? `, End: ${s.endAge}` : ''}${s.autoCalculated ? ' (Auto-calculated)' : ''}`;
+        }).join('\n    ');
+    }
+
+    // National Insurance Context
+    const niSource = inputs.pensionIncomeSources?.find(s => s.type === 'nationalInsurance');
+    const incomeAt67 = results.incomeAtNIStart?.nonWorkIncome || 0;
+    const niThreshold = results.niThreshold || 20000; // Fallback or from results
+
+    const niContext = `
+    National Insurance (Old Age Pension) Rules:
+    - Base Start Age: 67
+    - Income Test (Mivchan Hakhnasot) applies between 67 and 70.
+    - If other non-work income (pensions, rent, etc.) exceeds the threshold (currently ~${currency}${niThreshold} Gross), the pension is reduced or cancelled until age 70.
+    - At age 70, the pension is paid regardless of income.
+    - Current Non-NI Pension Income at age 67: ${currency}${incomeAt67} (Gross).
+    `;
+
     const basePrompt = `
     Act as a senior financial advisor and retirement planner.
     Analyze the following retirement scenario and provide qualitative insights, conclusions, and actionable recommendations.
@@ -119,6 +143,11 @@ export const generateInsightPrompt = (inputs, results, language) => {
     - Assumed Annual Return: ${returnRateText}${bucketRatesText}
     - Inflation Type: ${inputs.inflationType || 'None'}
     
+    Pension Income Sources:
+    ${pensionText}
+
+    ${niContext}
+    
     Significant Life Events (One-time or recurring changes):
     ${lifeEventsText}
     
@@ -126,7 +155,6 @@ export const generateInsightPrompt = (inputs, results, language) => {
     - Projected Balance at Retirement: ${currency}${results.balanceAtRetirement}
     - Projected Balance at End of Retirement: ${currency}${results.balanceAtEnd}
     - Ran Out of Money At Age: ${results.ranOutAtAge || 'Never (Succesfully funded)'}
-    - Required Capital at Retirement: ${currency}${results.requiredCapitalAtRetirement}
     - Required Capital at Retirement: ${currency}${results.requiredCapitalAtRetirement}
     - Deficit (Needed Today): ${currency}${results.pvOfDeficit}
     

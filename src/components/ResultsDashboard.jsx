@@ -7,7 +7,7 @@ import { SensitivityHeatmapButton, SensitivityHeatmapModal } from './Sensitivity
 import { InflationButton, InflationModal } from './InflationRealityCheck';
 import { PensionIncomeButton, PensionIncomeModal } from './PensionIncomeModal';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
-import { LayoutDashboard, BrainCircuit } from 'lucide-react';
+import { LayoutDashboard, BrainCircuit, Settings } from 'lucide-react'; // Added Settings
 import AIInsightsView from './AIInsightsView';
 import { Line } from 'react-chartjs-2';
 import {
@@ -33,7 +33,7 @@ ChartJS.register(
     Filler
 );
 
-export function ResultsDashboard({ results, inputs, setInputs, t, language, calculationMode, aiResults, simulationResults, aiLoading, aiError, simulationType, profiles, selectedProfileIds, setSelectedProfileIds, profileResults, showInterestSensitivity, setShowInterestSensitivity, showIncomeSensitivity, setShowIncomeSensitivity, showAgeSensitivity, setShowAgeSensitivity, aiProvider, aiModel, apiKeyOverride, aiInsightsData, setAiInsightsData }) {
+export function ResultsDashboard({ results, inputs, setInputs, t, language, calculationMode, aiResults, simulationResults, aiLoading, aiError, simulationType, profiles, selectedProfileIds, setSelectedProfileIds, profileResults, showInterestSensitivity, setShowInterestSensitivity, showIncomeSensitivity, setShowIncomeSensitivity, showAgeSensitivity, setShowAgeSensitivity, aiProvider, aiModel, apiKeyOverride, aiInsightsData, setAiInsightsData, fiscalParameters, familyStatus, onUpdateFiscalData }) {
     // ALL HOOKS MUST BE AT THE TOP - React rules of hooks
     const { theme } = useTheme();
     const isLight = theme === 'light';
@@ -473,6 +473,9 @@ export function ResultsDashboard({ results, inputs, setInputs, t, language, calc
                         aiProvider={aiProvider}
                         aiModel={aiModel}
                         apiKeyOverride={apiKeyOverride}
+                        fiscalParameters={fiscalParameters}
+                        familyStatus={familyStatus}
+                        onUpdateFiscalData={onUpdateFiscalData}
                         language={language}
                         t={t}
                         insightsData={aiInsightsData}
@@ -896,8 +899,20 @@ export function ResultsDashboard({ results, inputs, setInputs, t, language, calc
                                 }));
                                 // Don't close modal on save
                             }}
+                            onUpdateFiscalData={(data) => {
+                                setInputs(prev => ({
+                                    ...prev,
+                                    fiscalParameters: data.parameters,
+                                    familyStatus: data.familyStatus
+                                }));
+                            }}
+                            fiscalParameters={inputs.fiscalParameters}
+                            familyStatus={inputs.familyStatus}
                             t={t}
                             language={language}
+                            aiProvider={aiProvider}
+                            aiModel={aiModel}
+                            apiKeyOverride={apiKeyOverride}
                         />
                     )}
                 </div >

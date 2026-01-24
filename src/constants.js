@@ -23,6 +23,7 @@ export const DEFAULT_INPUTS = {
     surplusVariableRates: {},
     enableBuckets: false,
     pensionIncomeSources: [],
+    contributionYears: 35,
     bucketSafeRate: 0,
     bucketSurplusRate: 0
 };

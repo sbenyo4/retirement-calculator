@@ -435,6 +435,11 @@ function MainApp() {
                   setSelectedProfileIds={setSelectedProfileIds}
                   profileResults={profileResults}
 
+                  // Global Fiscal Settings
+                  fiscalParameters={settings.fiscalParameters}
+                  familyStatus={settings.familyStatus}
+                  onUpdateFiscalData={(data) => dispatchSettings({ type: SETTINGS_ACTIONS.SET_FISCAL_DATA, payload: data })}
+
                   // Sensitivity analysis props
                   showInterestSensitivity={showInterestSensitivity}
                   setShowInterestSensitivity={setShowInterestSensitivity}
