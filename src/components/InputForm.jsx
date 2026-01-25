@@ -561,8 +561,6 @@ export default function InputForm({
                                 </>
                             }
                         />
-                    </div>
-                    <div className="grid grid-cols-2 gap-1">
                         <InputGroup language={language}
                             label={t ? t('monthlyContribution') : 'Monthly Contribution'}
                             name="monthlyContribution"
@@ -570,13 +568,6 @@ export default function InputForm({
                             onChange={handleChange}
                             prefix={currency}
                             icon={<Coins size={14} />}
-                        />
-                        <InputGroup language={language}
-                            label={language === 'he' ? 'שנות ביטוח (ותק)' : 'Years of Insurance'}
-                            name="contributionYears"
-                            value={inputs.contributionYears || '35'}
-                            onChange={handleChange}
-                            icon={<ShieldCheck size={14} />}
                         />
                     </div>
 

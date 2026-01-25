@@ -30,6 +30,7 @@ export function FiscalUpdateModal({
     const [aiResults, setAiResults] = useState(null);
     const [showRawResults, setShowRawResults] = useState(false);
     const [statusMessage, setStatusMessage] = useState('');
+    const [sanityWarning, setSanityWarning] = useState(null);
 
     // Reset state when modal opens to ensure clean slate
     React.useEffect(() => {
@@ -40,6 +41,7 @@ export function FiscalUpdateModal({
             setSelectedStatus(currentFamilyStatus || 'single');
             setLoading(false);
             setError(null);
+            setSanityWarning(null);
         }
     }, [isOpen, currentFamilyStatus]);
 
@@ -228,6 +230,39 @@ export function FiscalUpdateModal({
 
                 console.log('Normalized AI Fiscal Data:', fiscalData);
 
+                // SANITY CHECK: Compare against baseline and warn if significantly different
+                const warnings = [];
+
+                // Check NI base rate
+                const aiSingle = fiscalData.nationalInsurance?.baseRates?.single;
+                const baseSingle = baseParameters?.nationalInsurance?.baseRates?.single || NATIONAL_INSURANCE_RATES.baseRates.single;
+                if (aiSingle && baseSingle) {
+                    const diffPercent = Math.abs((aiSingle - baseSingle) / baseSingle) * 100;
+                    if (diffPercent > 15) {
+                        warnings.push(language === 'he'
+                            ? `קצבת בסיס: AI החזיר ${aiSingle.toLocaleString()}₪ (הפרש ${diffPercent.toFixed(0)}% מברירת המחדל ${baseSingle.toLocaleString()}₪)`
+                            : `Base Rate: AI returned ${aiSingle.toLocaleString()} (${diffPercent.toFixed(0)}% diff from default ${baseSingle.toLocaleString()})`);
+                    }
+                }
+
+                // Check first tax bracket (most likely to catch errors)
+                const aiFirstBracket = fiscalData.taxBrackets?.[0]?.limit;
+                const baseFirstBracket = baseParameters?.taxBrackets?.[0]?.limit || PENSION_TAX_BRACKETS[0].limit;
+                if (aiFirstBracket && baseFirstBracket) {
+                    const diffPercent = Math.abs((aiFirstBracket - baseFirstBracket) / baseFirstBracket) * 100;
+                    if (diffPercent > 15) {
+                        warnings.push(language === 'he'
+                            ? `מדרגת מס ראשונה: AI החזיר ${aiFirstBracket.toLocaleString()}₪ (הפרש ${diffPercent.toFixed(0)}% מברירת המחדל ${baseFirstBracket.toLocaleString()}₪)`
+                            : `First Tax Bracket: AI returned ${aiFirstBracket.toLocaleString()} (${diffPercent.toFixed(0)}% diff from default ${baseFirstBracket.toLocaleString()})`);
+                    }
+                }
+
+                if (warnings.length > 0) {
+                    setSanityWarning(warnings);
+                } else {
+                    setSanityWarning(null);
+                }
+
                 // Check if identical to base parameters
                 if (deepEqual(fiscalData, baseParameters)) {
                     setIsDuplicate(true);
@@ -388,8 +423,14 @@ export function FiscalUpdateModal({
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-            <div className={`relative w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden ${theme === 'light' ? 'bg-white' : 'bg-gray-900'} flex flex-col`}>
-                <div className="p-6">
+            <div className={`relative w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden ${theme === 'light' ? 'bg-white' : ''} border ${theme === 'light' ? 'border-gray-200' : 'border-white/30'} flex flex-col`}>
+                {theme !== 'light' && (
+                    <>
+                        <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" />
+                        <div className="absolute inset-0 bg-white/10" />
+                    </>
+                )}
+                <div className="relative z-10 p-6">
                     <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
                         <Sparkles className="text-purple-500" />
                         {language === 'he' ? 'עדכון נתונים מערכתיים' : 'System Parameters Update'}
@@ -520,6 +561,25 @@ export function FiscalUpdateModal({
                         </div>
                     )}
 
+                    {sanityWarning && sanityWarning.length > 0 && (
+                        <div className="mt-4 p-4 border rounded-xl bg-amber-500/10 border-amber-500/20 text-amber-500 text-sm animate-in fade-in duration-300">
+                            <div className="flex items-center gap-2 font-bold mb-2">
+                                <AlertTriangle size={16} />
+                                {language === 'he' ? 'התראה: ערכים חריגים' : 'Warning: Unusual Values'}
+                            </div>
+                            <ul className="space-y-1 text-xs opacity-90">
+                                {sanityWarning.map((warning, idx) => (
+                                    <li key={idx}>• {warning}</li>
+                                ))}
+                            </ul>
+                            <p className="mt-2 text-xs opacity-70">
+                                {language === 'he'
+                                    ? 'הערכים שה-AI החזיר שונים משמעותית מברירת המחדל. וודא שהם נכונים לפני שמירה.'
+                                    : 'AI returned values significantly different from defaults. Verify before saving.'}
+                            </p>
+                        </div>
+                    )}
+
                     {statusMessage && (
                         <div className="mt-4 p-4 border rounded-xl bg-purple-500/10 border-purple-500/20 text-purple-400 text-sm flex items-center gap-3 animate-in fade-in duration-300">
                             <span className="relative flex h-3 w-3">
@@ -598,7 +658,7 @@ export function FiscalUpdateModal({
                 </div>
 
                 {/* Footer */}
-                <div className={`p-4 border-t flex gap-3 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'}`}>
+                <div className={`relative z-10 p-4 border-t flex gap-3 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'}`}>
                     <button
                         onClick={handleSave}
                         disabled={!canSave}

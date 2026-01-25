@@ -598,9 +598,15 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                 <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
                 {/* Modal */}
-                <div className={`relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden ${isLight ? 'bg-white' : 'bg-gray-900'}`}>
+                <div className={`relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden ${isLight ? 'bg-white' : ''} border ${isLight ? 'border-gray-200' : 'border-white/30'}`}>
+                    {!isLight && (
+                        <>
+                            <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" />
+                            <div className="absolute inset-0 bg-white/10" />
+                        </>
+                    )}
                     {/* Header */}
-                    <div className={`flex items-center justify-between p-4 border-b ${isLight ? 'border-slate-200 bg-gradient-to-r from-emerald-50 to-teal-50' : 'border-white/10 bg-gradient-to-r from-emerald-900/30 to-teal-900/30'}`}>
+                    <div className={`relative z-10 flex items-center justify-between p-4 border-b ${isLight ? 'border-slate-200 bg-gradient-to-r from-emerald-50 to-teal-50' : 'border-white/10 bg-gradient-to-r from-emerald-900/30 to-teal-900/30'}`}>
                         <div className="flex items-center gap-3">
                             <div className={`p-2 rounded-lg ${isLight ? 'bg-emerald-100 text-emerald-600' : 'bg-emerald-500/20 text-emerald-400'}`}>
                                 <Wallet size={20} />
@@ -639,7 +645,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                     </div>
 
                     {/* Content - Fixed Height Main Container with Flex Layout */}
-                    <div className="flex-1 flex flex-col min-h-0 overflow-hidden p-4 space-y-4">
+                    <div className="relative z-10 flex-1 flex flex-col min-h-0 overflow-hidden p-4 space-y-4">
                         {/* Summary Cards */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                             <div className={`p-3 rounded-lg ${isLight ? 'bg-blue-50 border border-blue-100' : 'bg-blue-500/10 border border-blue-500/20'}`}>
@@ -753,7 +759,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                     </div>
 
                     {/* Footer */}
-                    <div className={`flex justify-end gap-3 p-4 border-t ${isLight ? 'border-slate-200 bg-slate-50' : 'border-white/10 bg-black/20'}`}>
+                    <div className={`relative z-10 flex justify-end gap-3 p-4 border-t ${isLight ? 'border-slate-200 bg-slate-50' : 'border-white/10 bg-black/20'}`}>
                         <button
                             onClick={onClose}
                             className={`px-4 py-2 rounded-lg font-medium transition-colors ${isLight ? 'bg-slate-200 text-slate-700 hover:bg-slate-300' : 'bg-white/10 text-white hover:bg-white/20'}`}
@@ -799,8 +805,14 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                 {showBracketTable && (
                     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
                         <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowBracketTable(false)} />
-                        <div className={`relative w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden border ${isLight ? 'bg-white border-slate-200' : 'bg-gray-900 border-white/10'}`}>
-                            <div className={`p-4 border-b flex justify-between items-center ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'}`}>
+                        <div className={`relative w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden border ${isLight ? 'bg-white border-slate-200' : 'border-white/30'}`}>
+                            {!isLight && (
+                                <>
+                                    <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" />
+                                    <div className="absolute inset-0 bg-white/10" />
+                                </>
+                            )}
+                            <div className={`relative z-10 p-4 border-b flex justify-between items-center ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'}`}>
                                 <h3 className={`font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>
                                     {language === 'he' ? 'מדרגות מס ופטור פנסיוני 2026' : 'Tax Brackets & Exemptions 2026'}
                                 </h3>
@@ -808,8 +820,8 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                     <X size={20} className={isLight ? 'text-slate-500' : 'text-gray-400'} />
                                 </button>
                             </div>
-                            <div className="p-6 overflow-y-auto max-h-[85vh] custom-scrollbar">
-                                <div className="space-y-6">
+                            <div className="relative z-10 p-6 overflow-y-auto max-h-[85vh] custom-scrollbar">
+                                <div className="space-y-4">
                                     {/* Income Tax Brackets */}
                                     <div>
                                         <h4 className="text-sm font-bold mb-3 flex items-center gap-2 text-indigo-500">
@@ -858,7 +870,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                                 <span>{language === 'he' ? 'תוספת ותק:' : 'Seniority Bonus:'}</span>
                                                 <span dir="ltr" className="font-bold flex items-center gap-1.5">
                                                     <span>{Math.round(niCalc.seniorityBonusPercent)}%</span>
-                                                    <span className="opacity-70 text-[10px] font-normal">({formatCurrency(niCalc.seniorityBonus)})</span>
+                                                    <span className="opacity-70 text-[10px] font-normal">(₪ {Math.round(niCalc.seniorityBonus).toLocaleString()})</span>
                                                 </span>
                                             </div>
 
@@ -890,7 +902,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                 </div>
 
                                 {/* Ptor Mezake Exemption */}
-                                <div>
+                                <div className="mt-2">
                                     <h4 className="text-sm font-bold mb-3 flex items-center gap-2 text-emerald-500">
                                         <Shield size={14} />
                                         {language === 'he' ? 'פטור מזכה (מעודכן 2026)' : 'Qualified Exemption (2026)'}
