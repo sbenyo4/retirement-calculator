@@ -3,43 +3,22 @@
  * מחשבון הכנסות פנסיוניות
  */
 
-// Israeli National Insurance (Bituach Leumi) rates for old-age pension (2026)
-// These are approximate monthly amounts in ILS
+import {
+    DEFAULT_NATIONAL_INSURANCE,
+    DEFAULT_TAX_BRACKETS
+} from './fiscalDefaults';
+
+// Re-export centralized defaults for backward compatibility
+// These are imported from fiscalDefaults.js - the single source of truth
 const NATIONAL_INSURANCE_RATES = {
-    // Base monthly pension rates (January 2026)
+    ...DEFAULT_NATIONAL_INSURANCE,
     baseRates: {
-        single: 1838,
-        single_all_seniority: 2757, // Base 1838 + 50% seniority
-        single_child: 2419,
-        couple: 2762,
-        couple_child: 3343,
-        // Addon for those over age 80
-        age80PlusAddon: 103,
-        // Seniority addition per year of insurance (up to 50% max)
-        seniorityAdditionPerYear: 2
-    },
-    // Deferred pension bonus (for delaying past 67)
-    deferralBonusPerMonth: 5,
-    // Income test thresholds (Mivchan Hakhnasot) - January 2026
-    incomeTestThreshold: {
-        workEarningsLimit: 9781, // Max work income without penalty
-        single: 20226,          // Total income threshold (approx)
-        couple: 26968           // Total income threshold (approx)
+        ...DEFAULT_NATIONAL_INSURANCE.baseRates,
+        single_all_seniority: 2757 // Base 1838 + 50% seniority (derived value)
     }
 };
 
-// Israeli tax brackets for income (2026) - proposed legislation values
-// מדרגות מס הכנסה 2026 (הצעה)
-// Source: Israeli Ministry of Finance / Knesset proposed budget 2026
-const PENSION_TAX_BRACKETS = [
-    { limit: 7010, rate: 0.10 },
-    { limit: 10060, rate: 0.14 },
-    { limit: 16150, rate: 0.20 },
-    { limit: 22440, rate: 0.31 },
-    { limit: 46690, rate: 0.35 },
-    { limit: 60130, rate: 0.47 },
-    { limit: null, rate: 0.47 }
-];
+const PENSION_TAX_BRACKETS = DEFAULT_TAX_BRACKETS;
 
 // Pension income exemption (Pshur - פטור מזכה) - January 2026
 const PENSION_EXEMPTION = {
@@ -96,25 +75,53 @@ export function calculateNationalInsurance(age, contributionYears = 35, paramete
 
     const rawBase = rates.baseRates[status] || rates.baseRates.single;
 
-    // Normalize rate fields: handle both 2 and 0.02 formats for percentages
-    const normalize = (val, defaultValue) => {
-        if (val === undefined || val === null || val === 0) return defaultValue;
-
-        // If value is a tiny decimal (like 0.00417), it might be a monthly rate instead of yearly
-        if (val > 0 && val < 0.01) {
-            return val * 12 * 100; // Convert monthly decimal to yearly percentage (e.g. 0.00417 -> 5)
+    /**
+     * Normalize percentage rate values to a consistent format (whole number percentage).
+     * Handles multiple input formats that may come from user input, AI responses, or stored data:
+     *
+     * Expected OUTPUT: whole number percentage (e.g., 2 = 2%, 5 = 5%)
+     *
+     * INPUT formats handled:
+     * - Whole percentage: 2, 5 → returns as-is (2, 5)
+     * - Yearly decimal: 0.02, 0.05 → multiplied by 100 (2, 5)
+     * - Monthly decimal: 0.00417 (which is 5%/12) → converted to yearly % (5)
+     *
+     * @param {number|undefined|null} val - Input value in any format
+     * @param {number} defaultValue - Default if val is missing/zero
+     * @returns {number} - Normalized percentage as whole number
+     */
+    const normalizePercentageRate = (val, defaultValue) => {
+        // Handle missing or zero values
+        if (val === undefined || val === null || val === 0) {
+            return defaultValue;
         }
 
-        // If value is a small decimal (like 0.02 or 0.05), it's a yearly decimal
-        if (val > 0 && val < 0.25) {
-            return val * 100; // Convert 0.05 -> 5
+        // Constants for format detection thresholds
+        const MONTHLY_DECIMAL_THRESHOLD = 0.01;    // Values like 0.00417 (monthly 5%/12)
+        const YEARLY_DECIMAL_THRESHOLD = 0.25;     // Values like 0.02-0.20 (2%-20% as decimal)
+        const MONTHS_PER_YEAR = 12;
+        const DECIMAL_TO_PERCENT = 100;
+
+        // Format: Monthly decimal (e.g., 0.00417 = 5%/12 per month)
+        // Detected by: very small positive number < 1%
+        if (val > 0 && val < MONTHLY_DECIMAL_THRESHOLD) {
+            return Math.round(val * MONTHS_PER_YEAR * DECIMAL_TO_PERCENT);
         }
 
+        // Format: Yearly decimal (e.g., 0.02 = 2%, 0.05 = 5%)
+        // Detected by: small decimal between 1% and 25%
+        if (val > 0 && val < YEARLY_DECIMAL_THRESHOLD) {
+            return Math.round(val * DECIMAL_TO_PERCENT);
+        }
+
+        // Format: Already a whole percentage (e.g., 2 = 2%, 5 = 5%)
+        // Return as-is
         return val;
     };
 
-    const seniorityRate = normalize(rates.baseRates.seniorityAdditionPerYear, 2);
-    const deferralRate = normalize(rates.deferralBonusPerMonth, 5);
+    // Default rates: seniorityAdditionPerYear = 2% per year, deferralBonusPerMonth = 5% per year of deferral
+    const seniorityRate = normalizePercentageRate(rates.baseRates.seniorityAdditionPerYear, 2);
+    const deferralRate = normalizePercentageRate(rates.deferralBonusPerMonth, 5);
 
     // Seniority bonus: calculated on rawBase (1,838), capped at 50%
     const seniorityYears = Math.max(0, Math.min(contributionYears - 10, 25));

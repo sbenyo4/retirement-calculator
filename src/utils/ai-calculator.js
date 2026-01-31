@@ -6,6 +6,130 @@ import { getProviderEnvKey } from '../config/ai-models';
 // Re-export for backward compatibility
 export { getAvailableProviders, getAvailableModels } from '../config/ai-models';
 
+/**
+ * Retry configuration
+ */
+const RETRY_CONFIG = {
+    maxRetries: 3,
+    initialDelayMs: 1000,
+    maxDelayMs: 10000,
+    backoffMultiplier: 2,
+    timeoutMs: 30000, // 30 seconds timeout per request
+};
+
+/**
+ * Determines if an error is retryable
+ * @param {Error} error - The error to check
+ * @returns {boolean} - True if the error is retryable
+ */
+function isRetryableError(error) {
+    const message = error.message?.toLowerCase() || '';
+    const status = error.status || error.statusCode;
+
+    // Network errors are retryable
+    if (message.includes('network') || message.includes('fetch') ||
+        message.includes('econnrefused') || message.includes('enotfound') ||
+        message.includes('timeout') || message.includes('econnreset') ||
+        message.includes('socket')) {
+        return true;
+    }
+
+    // Server errors (5xx) are retryable
+    if (status >= 500 && status < 600) {
+        return true;
+    }
+
+    // Rate limit (429) is retryable with backoff
+    if (status === 429 || message.includes('429') || message.includes('rate limit')) {
+        return true;
+    }
+
+    // Specific transient errors
+    if (message.includes('temporarily') || message.includes('overloaded') ||
+        message.includes('capacity') || message.includes('try again')) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Wraps a promise with a timeout
+ * @param {Promise} promise - The promise to wrap
+ * @param {number} timeoutMs - Timeout in milliseconds
+ * @returns {Promise} - The wrapped promise
+ */
+function withTimeout(promise, timeoutMs) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            reject(new Error(`Request timeout after ${timeoutMs}ms`));
+        }, timeoutMs);
+
+        promise
+            .then(value => {
+                clearTimeout(timer);
+                resolve(value);
+            })
+            .catch(err => {
+                clearTimeout(timer);
+                reject(err);
+            });
+    });
+}
+
+/**
+ * Executes a function with retry logic and exponential backoff
+ * @param {Function} fn - Async function to execute
+ * @param {Object} options - Retry options
+ * @returns {Promise} - Result of the function
+ */
+async function withRetry(fn, options = {}) {
+    const {
+        maxRetries = RETRY_CONFIG.maxRetries,
+        initialDelayMs = RETRY_CONFIG.initialDelayMs,
+        maxDelayMs = RETRY_CONFIG.maxDelayMs,
+        backoffMultiplier = RETRY_CONFIG.backoffMultiplier,
+        timeoutMs = RETRY_CONFIG.timeoutMs,
+        onRetry = null,
+    } = options;
+
+    let lastError;
+    let delay = initialDelayMs;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            // Wrap the function call with timeout
+            return await withTimeout(fn(), timeoutMs);
+        } catch (error) {
+            lastError = error;
+
+            // Don't retry if it's the last attempt or error is not retryable
+            if (attempt === maxRetries || !isRetryableError(error)) {
+                throw error;
+            }
+
+            // Calculate delay with jitter (0-10% random addition to prevent thundering herd)
+            const jitter = delay * (Math.random() * 0.1);
+            const actualDelay = Math.min(delay + jitter, maxDelayMs);
+
+            console.warn(`Retry attempt ${attempt + 1}/${maxRetries} after ${actualDelay}ms. Error: ${error.message}`);
+
+            // Call onRetry callback if provided
+            if (onRetry) {
+                onRetry(attempt + 1, error, actualDelay);
+            }
+
+            // Wait before retrying
+            await new Promise(resolve => setTimeout(resolve, actualDelay));
+
+            // Increase delay for next attempt
+            delay = Math.min(delay * backoffMultiplier, maxDelayMs);
+        }
+    }
+
+    throw lastError;
+}
+
 export const generatePrompt = (inputs) => {
     return `
     Act as a financial retirement expert. Calculate the retirement projection based on the following inputs:
@@ -179,6 +303,7 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
         if (!t) {
             // Fallback to English if no translation function
             const fallbacks = {
+                errorTimeout: 'Request timed out. The AI service may be slow. Please try again.',
                 errorRateLimit: 'Rate limit exceeded. Please try again later or use a different model.',
                 errorInvalidApiKey: 'Invalid API key. Please check your credentials in settings.',
                 errorModelNotFound: `Model "{model}" not found for {provider}. Please select a different model.`,
@@ -214,6 +339,11 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
     try {
         let responseText = "";
 
+        // Retry callback for logging
+        const onRetry = (attempt, error, delay) => {
+            console.log(`[${provider}] Retry ${attempt} in ${Math.round(delay)}ms due to: ${error.message}`);
+        };
+
         if (provider === 'gemini') {
             console.log("Gemini API Key Status:", apiKey ? "Present (" + apiKey.slice(0, 4) + "...)" : "Missing");
 
@@ -221,30 +351,26 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
 
             // Helper to try generating content with a specific model
             const tryGenerate = async (modelId) => {
-                try {
-                    console.log(`Using Gemini model: ${modelId} with Search Grounding`);
+                console.log(`Using Gemini model: ${modelId} with Search Grounding`);
 
-                    // Only apply search tools to Gemini 1.5+ models which support it reliably
-                    const tools = modelId.includes('1.5') || modelId.includes('2.0')
-                        ? [{ googleSearchRetrieval: {} }]
-                        : [];
+                // Only apply search tools to Gemini 1.5+ models which support it reliably
+                const tools = modelId.includes('1.5') || modelId.includes('2.0')
+                    ? [{ googleSearchRetrieval: {} }]
+                    : [];
 
-                    const genModel = genAI.getGenerativeModel({
-                        model: modelId,
-                        tools: tools,
-                        generationConfig: { temperature: 0 }
-                    });
-                    const result = await genModel.generateContent(prompt);
-                    const response = await result.response;
-                    return response.text();
-                } catch (e) {
-                    console.warn(`Failed with model ${modelId}:`, e.message);
-                    throw e;
-                }
+                const genModel = genAI.getGenerativeModel({
+                    model: modelId,
+                    tools: tools,
+                    generationConfig: { temperature: 0 }
+                });
+                const result = await genModel.generateContent(prompt);
+                const response = await result.response;
+                return response.text();
             };
 
             try {
-                responseText = await tryGenerate(model);
+                // Wrap the API call with retry logic
+                responseText = await withRetry(() => tryGenerate(model), { onRetry });
             } catch (primaryError) {
                 // If primary model fails with 404, try fallbacks
                 if (primaryError.message.includes('404') || primaryError.message.includes('not found')) {
@@ -253,11 +379,7 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
 
                     if (alternative) {
                         console.log(`Retrying with fallback model: ${alternative}`);
-                        try {
-                            responseText = await tryGenerate(alternative);
-                        } catch (secondaryError) {
-                            throw primaryError; // Throw original error if fallback fails
-                        }
+                        responseText = await withRetry(() => tryGenerate(alternative), { onRetry });
                     } else {
                         throw primaryError;
                     }
@@ -271,24 +393,34 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
                 apiKey: apiKey,
                 dangerouslyAllowBrowser: true // Client-side usage
             });
-            const completion = await openai.chat.completions.create({
-                messages: [{ role: "user", content: prompt }],
-                model: model,
-                temperature: 0,
-                response_format: { type: "json_object" }
-            });
+
+            // Wrap OpenAI call with retry
+            const completion = await withRetry(async () => {
+                return openai.chat.completions.create({
+                    messages: [{ role: "user", content: prompt }],
+                    model: model,
+                    temperature: 0,
+                    response_format: { type: "json_object" }
+                });
+            }, { onRetry });
+
             responseText = completion.choices[0].message.content;
         } else if (provider === 'anthropic') {
             const anthropic = new Anthropic({
                 apiKey: apiKey,
                 dangerouslyAllowBrowser: true // Client-side usage
             });
-            const message = await anthropic.messages.create({
-                model: model,
-                max_tokens: 4096,
-                temperature: 0,
-                messages: [{ role: "user", content: prompt }]
-            });
+
+            // Wrap Anthropic call with retry
+            const message = await withRetry(async () => {
+                return anthropic.messages.create({
+                    model: model,
+                    max_tokens: 4096,
+                    temperature: 0,
+                    messages: [{ role: "user", content: prompt }]
+                });
+            }, { onRetry });
+
             responseText = message.content[0].text;
         }
 
@@ -335,7 +467,9 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
         console.error("AI Calculation Error:", error);
 
         // Enhanced error handling with specific messages
-        if (error.status === 429 || error.message?.includes('429') || error.message?.includes('rate limit')) {
+        if (error.message?.includes('timeout')) {
+            throw new Error(formatError('errorTimeout'));
+        } else if (error.status === 429 || error.message?.includes('429') || error.message?.includes('rate limit')) {
             throw new Error(formatError('errorRateLimit'));
         } else if (error.status === 401 || error.message?.includes('401') || error.message?.includes('Unauthorized') || error.message?.includes('API key')) {
             throw new Error(formatError('errorInvalidApiKey'));

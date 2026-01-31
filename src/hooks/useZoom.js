@@ -1,10 +1,15 @@
 import { useState, useEffect } from 'react';
+import { safeLocalStorageSet } from '../utils/storage';
 
 export function useZoom() {
     // Read from localStorage or default to 100
     const [zoomLevel, setZoomLevel] = useState(() => {
-        const saved = localStorage.getItem('app_zoom_level');
-        return saved ? parseInt(saved, 10) : 100;
+        try {
+            const saved = localStorage.getItem('app_zoom_level');
+            return saved ? parseInt(saved, 10) : 100;
+        } catch {
+            return 100;
+        }
     });
 
     useEffect(() => {
@@ -13,7 +18,7 @@ export function useZoom() {
         document.documentElement.style.fontSize = `${zoomLevel}%`;
 
         // Save to localStorage
-        localStorage.setItem('app_zoom_level', zoomLevel.toString());
+        safeLocalStorageSet('app_zoom_level', zoomLevel.toString());
     }, [zoomLevel]);
 
     const toggleZoom = () => {

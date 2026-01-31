@@ -1,25 +1,55 @@
 import { useRef, useEffect } from 'react';
 
 /**
- * Deep equality check for objects
- * @param {*} obj1 
- * @param {*} obj2 
+ * Optimized deep equality check for objects
+ * Uses early bailout and avoids unnecessary array operations
+ * @param {*} obj1
+ * @param {*} obj2
  * @returns {boolean}
  */
 export function deepEqual(obj1, obj2) {
+    // Fast path: reference equality
     if (obj1 === obj2) return true;
 
+    // Handle null/undefined
     if (obj1 == null || obj2 == null) return obj1 === obj2;
 
-    if (typeof obj1 !== 'object' || typeof obj2 !== 'object') return obj1 === obj2;
+    // Handle primitives and functions
+    const type1 = typeof obj1;
+    const type2 = typeof obj2;
+    if (type1 !== type2) return false;
+    if (type1 !== 'object') return obj1 === obj2;
 
+    // Handle arrays
+    const isArr1 = Array.isArray(obj1);
+    const isArr2 = Array.isArray(obj2);
+    if (isArr1 !== isArr2) return false;
+
+    if (isArr1) {
+        if (obj1.length !== obj2.length) return false;
+        for (let i = 0; i < obj1.length; i++) {
+            if (!deepEqual(obj1[i], obj2[i])) return false;
+        }
+        return true;
+    }
+
+    // Handle Date objects
+    if (obj1 instanceof Date && obj2 instanceof Date) {
+        return obj1.getTime() === obj2.getTime();
+    }
+
+    // Handle plain objects
     const keys1 = Object.keys(obj1);
     const keys2 = Object.keys(obj2);
 
     if (keys1.length !== keys2.length) return false;
 
-    for (const key of keys1) {
-        if (!keys2.includes(key)) return false;
+    // Use Set for O(1) lookup instead of includes() which is O(n)
+    const keys2Set = new Set(keys2);
+
+    for (let i = 0; i < keys1.length; i++) {
+        const key = keys1[i];
+        if (!keys2Set.has(key)) return false;
         if (!deepEqual(obj1[key], obj2[key])) return false;
     }
 

@@ -79,6 +79,13 @@ export default function VariableRatesModal({
     };
 
     // Helper: Get month name for display
+    // Helper to format month name without day-overflow bug
+    const formatMonthName = (monthIndex) => {
+        // Use a fixed date (1st of month) to avoid overflow when current day > 28
+        const date = new Date(2000, monthIndex, 1);
+        return new Intl.DateTimeFormat(language === 'he' ? 'he-IL' : 'en-US', { month: 'short' }).format(date);
+    };
+
     const getMonthName = (year) => {
         const bDate = inputs?.birthDate || inputs?.birthdate;
 
@@ -86,18 +93,14 @@ export default function VariableRatesModal({
         // Check this FIRST, before startYear, because they might be the same
         if (year === retirementStartYear && inputs && bDate) {
             const birthMonth = new Date(bDate).getMonth();
-            const date = new Date();
-            date.setMonth(birthMonth);
-            return new Intl.DateTimeFormat(language === 'he' ? 'he-IL' : 'en-US', { month: 'short' }).format(date);
+            return formatMonthName(birthMonth);
         }
 
         // Start Year (accumulation phase only) - show current month
         // Only if NOT the same as retirement year
         if (year === startYear && startYear !== retirementStartYear) {
             const currentMonth = new Date().getMonth();
-            const date = new Date();
-            date.setMonth(currentMonth);
-            return new Intl.DateTimeFormat(language === 'he' ? 'he-IL' : 'en-US', { month: 'short' }).format(date);
+            return formatMonthName(currentMonth);
         }
 
         // End Year - show end month based on target age
@@ -108,9 +111,7 @@ export default function VariableRatesModal({
                 const birthMonth = new Date(bDate).getMonth();
                 const ageMonths = (parseFloat(targetAge) % 1) * 12;
                 const endMonthIndex = Math.floor((birthMonth + ageMonths) % 12);
-                const date = new Date();
-                date.setMonth(endMonthIndex);
-                return new Intl.DateTimeFormat(language === 'he' ? 'he-IL' : 'en-US', { month: 'short' }).format(date);
+                return formatMonthName(endMonthIndex);
             }
         }
         return '';

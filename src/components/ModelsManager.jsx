@@ -3,6 +3,7 @@ import { RefreshCw, Check, X, AlertCircle, Download, RotateCcw, Settings } from 
 import { useTheme } from '../contexts/ThemeContext';
 import { fetchAllAvailableModels, compareModels } from '../utils/ai-models-fetcher';
 import { AI_MODELS_CONFIG } from '../config/ai-models';
+import { safeLocalStorageSetJSON, safeLocalStorageGetJSON, safeLocalStorageRemove } from '../utils/storage';
 
 export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language }) {
     const { theme } = useTheme();
@@ -24,21 +25,16 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language }
 
             // Get current config from localStorage if available, otherwise use static config
             let currentConfig = AI_MODELS_CONFIG;
-            try {
-                const override = localStorage.getItem('ai_models_override');
-                if (override) {
-                    const parsed = JSON.parse(override);
-                    // Merge localStorage models into config structure
-                    currentConfig = {};
-                    Object.keys(AI_MODELS_CONFIG).forEach(providerId => {
-                        currentConfig[providerId] = {
-                            ...AI_MODELS_CONFIG[providerId],
-                            models: parsed[providerId] || AI_MODELS_CONFIG[providerId].models
-                        };
-                    });
-                }
-            } catch (e) {
-                console.error('Failed to load localStorage models:', e);
+            const override = safeLocalStorageGetJSON('ai_models_override', null);
+            if (override) {
+                // Merge localStorage models into config structure
+                currentConfig = {};
+                Object.keys(AI_MODELS_CONFIG).forEach(providerId => {
+                    currentConfig[providerId] = {
+                        ...AI_MODELS_CONFIG[providerId],
+                        models: override[providerId] || AI_MODELS_CONFIG[providerId].models
+                    };
+                });
             }
 
             const comparison = compareModels(fetched, currentConfig);
@@ -111,11 +107,12 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language }
         });
 
         console.log('Saving models to localStorage:', modelsToSave);
-        localStorage.setItem('ai_models_override', JSON.stringify(modelsToSave));
+        const result = safeLocalStorageSetJSON('ai_models_override', modelsToSave);
 
-        // Verify save
-        const saved = localStorage.getItem('ai_models_override');
-        console.log('Verified save:', saved);
+        if (!result.success) {
+            setError(result.error === 'quota' ? 'Storage full. Please clear some data.' : 'Failed to save models.');
+            return;
+        }
 
         // Trigger refresh in parent component
         onModelsUpdated?.();
@@ -126,7 +123,7 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language }
     };
 
     const handleReset = () => {
-        localStorage.removeItem('ai_models_override');
+        safeLocalStorageRemove('ai_models_override');
 
         // Trigger refresh in parent component
         onModelsUpdated?.();

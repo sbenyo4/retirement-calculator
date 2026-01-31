@@ -2,8 +2,13 @@ import React, { useState } from 'react';
 import { calculateRetirementWithAI } from '../utils/ai-calculator';
 import { NATIONAL_INSURANCE_RATES, PENSION_TAX_BRACKETS } from '../utils/pensionCalculator';
 import { Sparkles, Save, RotateCcw, Check, AlertTriangle, Code, Copy, Table } from 'lucide-react';
-import { useDeepCompareMemo, deepEqual } from '../hooks/useDeepCompare';
+import { deepEqual } from '../hooks/useDeepCompare';
 import { useTheme } from '../contexts/ThemeContext';
+import {
+    DEFAULT_FISCAL_PARAMETERS,
+    validateFiscalParameters,
+    detectOutdatedValues
+} from '../utils/fiscalDefaults';
 
 export function FiscalUpdateModal({
     isOpen,
@@ -58,90 +63,131 @@ export function FiscalUpdateModal({
 
     if (!isOpen) return null;
 
-    const baseParameters = currentParameters || {
-        taxBrackets: PENSION_TAX_BRACKETS,
-        nationalInsurance: NATIONAL_INSURANCE_RATES
+    const baseParameters = currentParameters || DEFAULT_FISCAL_PARAMETERS;
+
+    // Generate improved AI prompt for fiscal data retrieval
+    const generateFiscalPrompt = (attemptNumber = 1) => {
+        const currentYear = new Date().getFullYear();
+
+        // Base prompt with clear structure and validation requirements
+        let prompt = `
+You are a senior Israeli tax and pension analyst. Your task is to provide ACCURATE, VERIFIED data for Israel's National Insurance (Bituach Leumi) old-age pension rates and income tax brackets for January ${currentYear}.
+
+CRITICAL REQUIREMENTS:
+1. Data must be for ${currentYear}, NOT ${currentYear - 1} or earlier years
+2. All values must be MONTHLY amounts in Israeli Shekels (ILS)
+3. Values must satisfy these MANDATORY relationships:
+   - couple > single (couple includes spouse supplement)
+   - single_child > single (single_child includes child supplement)
+   - couple_child > couple (couple_child includes child supplement)
+   - couple_child > single_child
+4. Tax brackets must have ASCENDING limits
+
+SEARCH QUERIES TO USE:
+- "ביטוח לאומי קצבת אזרח ותיק ${currentYear}" (National Insurance old-age pension ${currentYear})
+- "מדרגות מס הכנסה ${currentYear}" (Income tax brackets ${currentYear})
+- "תוספת בן זוג ביטוח לאומי ${currentYear}" (Spouse supplement ${currentYear})
+
+EXPECTED VALUES FOR JANUARY ${currentYear} (use these as reference):
+National Insurance (Bituach Leumi) old-age pension:
+- Single base pension: 1838 ILS/month
+- Spouse supplement: 924 ILS/month (so couple = 1838 + 924 = 2762)
+- Child supplement: 581 ILS/month (so single_child = 1838 + 581 = 2419)
+- couple_child = 1838 + 924 + 581 = 3343
+- Age 80+ addon: 103 ILS/month
+- Income test threshold (single): 13970 ILS/month (above = no pension)
+- Income test threshold (couple): 19483 ILS/month (above = no pension)
+
+Tax brackets (monthly limits):
+- 10%: up to 7010 ILS
+- 14%: 7010-10060 ILS
+- 20%: 10060-16150 ILS
+- 31%: 16150-22440 ILS
+- 35%: 22440-46690 ILS
+- 47%: above 46690 ILS
+
+IMPORTANT: If you cannot find updated ${currentYear} values, use the reference values above.
+
+CALCULATION INSTRUCTIONS:
+1. Find the BASE single person pension for ${currentYear}
+2. Find the SPOUSE SUPPLEMENT amount
+3. Find the CHILD SUPPLEMENT amount
+4. Calculate totals:
+   - single = base pension
+   - couple = base pension + spouse supplement
+   - single_child = base pension + child supplement
+   - couple_child = base pension + spouse supplement + child supplement
+
+OUTPUT FORMAT:
+Return ONLY a valid JSON object (no markdown, no explanation), exactly like this:
+
+{
+  "nationalInsurance": {
+    "baseRates": {
+      "single": <number>,
+      "single_child": <number>,
+      "couple": <number>,
+      "couple_child": <number>,
+      "age80PlusAddon": <number>,
+      "seniorityAdditionPerYear": 2
+    },
+    "deferralBonusPerMonth": 5,
+    "incomeTestThreshold": {
+      "single": <number>,
+      "couple": <number>
+    }
+  },
+  "taxBrackets": [
+    { "limit": <number>, "rate": 0.10 },
+    { "limit": <number>, "rate": 0.14 },
+    { "limit": <number>, "rate": 0.20 },
+    { "limit": <number>, "rate": 0.31 },
+    { "limit": <number>, "rate": 0.35 },
+    { "limit": <number>, "rate": 0.47 },
+    { "limit": null, "rate": 0.47 }
+  ]
+}`;
+
+        // Add retry-specific instructions if this is a retry attempt
+        if (attemptNumber > 1) {
+            prompt += `
+
+RETRY ATTEMPT ${attemptNumber}: Previous response failed validation.
+Please double-check:
+- Are you using ${currentYear} data (not ${currentYear - 1})?
+- Is couple (${DEFAULT_FISCAL_PARAMETERS.nationalInsurance.baseRates.couple}) > single (${DEFAULT_FISCAL_PARAMETERS.nationalInsurance.baseRates.single})?
+- Are tax bracket limits in ASCENDING order?
+
+Reference values for ${currentYear} (use if search fails):
+- Single: ~1838 ILS
+- Couple: ~2762 ILS
+- First tax bracket: ~7010 ILS`;
+        }
+
+        return prompt;
     };
 
-    const handleAutoUpdate = async () => {
-        setLoading(true);
-        setError(null);
-        setIsDuplicate(false);
-        setProposedParameters(null);
-        setAiResults(null);
+    const handleAutoUpdate = async (retryCount = 0) => {
+        const MAX_RETRIES = 2;
+
+        if (retryCount === 0) {
+            setLoading(true);
+            setError(null);
+            setIsDuplicate(false);
+            setProposedParameters(null);
+            setAiResults(null);
+        }
+
         try {
-            const currentDate = new Date();
-            const formattedDate = currentDate.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' });
+            const currentYear = new Date().getFullYear();
 
-            setStatusMessage(language === 'he' ? `מתחיל מחקר נתונים ל-${formattedDate}...` : `Starting data research for ${formattedDate}...`);
+            setStatusMessage(
+                retryCount > 0
+                    ? (language === 'he' ? `ניסיון ${retryCount + 1} - מאמת נתונים...` : `Attempt ${retryCount + 1} - Validating data...`)
+                    : (language === 'he' ? `מחפש נתוני ${currentYear}...` : `Searching for ${currentYear} data...`)
+            );
 
-            const prompt = `
-            היום הוא ה-${formattedDate}.
-            אתה אנליסט מיסים ופנסיה בכיר, המומחה בנתוני המוסד לביטוח לאומי ורשות המיסים בישראל. המטרה שלך היא לספק נתונים מדויקים, מאומתים ועדכניים להיום (${formattedDate}) ולינואר 2026 בלבד.
-
-            בצע את המשימה לפי השלבים הבאים בקפדנות יתרה:
-
-            שלב 1: איתור נתוני מקור (Search Grounding)
-            עליך לבצע חיפוש Google מעמיק וספציפי באמצעות השאילתות הבאות:
-            1. "עדכון קצבאות ביטוח לאומי ינואר 2026 חוזר רשמי"
-            2. "סכומי קצבת אזרח ותיק 2026 המוסד לביטוח לאומי"
-            3. "מדרגות מס הכנסה חודשיות 2026 רשות המיסים"
-            4. "נקודות זיכוי וסכום קצבה מזכה 2026"
-
-            עליך להתבסס אך ורק על מקורות רשמיים (סיומת gov.il) או אתרים משפטיים/פיננסיים אמינים (כגון 'כל זכות', 'חילן', 'חשבים').
-
-            שלב 2: חילוץ וחישוב נתונים (Critical Calculation Step)
-            שים לב! המשתמש דורש סכומים כוללים (Totals) ולא רק את התוספות. עליך לבצע את החישובים הבאים לפני יצירת ה-JSON:
-
-            עבור ביטוח לאומי (Base Rates):
-            1. אתר את "קצבת יחיד בסיסית" המעודכנת לינואר 2026. זהו הערך עבור key: "single".
-            2. אתר את "תוספת בעד בן זוג". חשב: [קצבת יחיד] + [תוספת בן זוג] = הערך עבור key: "couple".
-            3. אתר את "תוספת בעד ילד". חשב: [קצבת יחיד] + [תוספת ילד] = הערך עבור key: "single_child".
-            4. חשב: [קצבת יחיד] + [תוספת בן זוג] + [תוספת ילד] = הערך עבור key: "couple_child".
-            5. אתר את "תוספת גיל 80". וודא שזו התוספת בלבד.
-            6. אתר את "תוספת ותק". וודא שזהו האחוז השנתי (בד"כ 2%).
-
-            עבור מבחן הכנסות (Income Test) - טרם גיל 70:
-            1. מצא את "הכנסה מירבית מעבודה" המאפשרת קצבה מלאה (ליחיד ולזוג) המעודכנת לינואר 2026.
-            2. מצא את "הכנסה מירבית שלא מעבודה" המאפשרת קצבה מלאה (ליחיד ולזוג) המעודכנת לינואר 2026.
-
-            עבור מס הכנסה (Tax Brackets):
-            1. מצא את הטבלה המעודכנת של "שיעורי המס החודשיים מיגיעה אישית" לשנת 2026.
-            2. וודא שהתקרות (Limits) מעודכנות לפי עליית המדד של ינואר 2026.
-
-            שלב 3: אימות ובקרה
-            - וודא שהנתונים אינם של שנת 2025 או 2024. בשנת 2026 בוצע עדכון רוחבי (לרוב בינואר) המבוסס על הצמדה למדד. חפש את "חוזר הביטוח הלאומי" המעודכן ביותר לינואר 2026.
-            - וודא שסכום "couple" גבוה מסכום "single".
-
-            שלב 4: פלט
-            החזר אך ורק אובייקט JSON חוקי (ללא טקסט פתיחה או סיום), במבנה הבא בדיוק:
-
-            {
-            "nationalInsurance": {
-            "baseRates": {
-            "single": number,
-            "single_child": number, // Must be: Single Base + Child Supplement
-            "couple": number, // Must be: Single Base + Spouse Supplement
-            "couple_child": number, // Must be: Couple Total + Child Supplement
-            "age80PlusAddon": number,
-            "seniorityAdditionPerYear": number // e.g., 0.02 for 2%
-            },
-            "deferralBonusPerMonth": number, // e.g., 0.004166 for 5% per year
-            "incomeTestThreshold": {
-            "single": number, // Threshold from work
-            "couple": number // Threshold from work
-            }
-            },
-            "taxBrackets": [
-            { "limit": number, "rate": number }, // Bracket 1 (e.g. 10%)
-            { "limit": number, "rate": number }, // Bracket 2 (e.g. 14%)
-            { "limit": number, "rate": number }, // Bracket 3 (e.g. 20%)
-            { "limit": number, "rate": number }, // Bracket 4 (e.g. 31%)
-            { "limit": number, "rate": number }, // Bracket 5 (e.g. 35%)
-            { "limit": null, "rate": number } // Bracket 6 (e.g. 47%)
-            ]
-            }
-            `;
+            const prompt = generateFiscalPrompt(retryCount + 1);
 
             console.debug("AI Researcher Prompt:", prompt);
             setLastPrompt(prompt);
@@ -168,73 +214,61 @@ export function FiscalUpdateModal({
                     taxBrackets: rawFiscalData.taxBrackets
                 };
 
-                // GUARD RAIL: Explicitly sanitize "1756" (2025 rate) if the AI hallucinates it
-                // User reported regression where AI proposes 1756 instead of 1838.
-                // We force 1838 if we detect the outdated 2025 value.
-                if (fiscalData.nationalInsurance?.baseRates) {
-                    const singleRate = fiscalData.nationalInsurance.baseRates.single;
-                    // Check for 1756 or formatted "1,756" or anything close to it (1750-1760)
-                    if (singleRate && (singleRate === 1756 || singleRate === '1,756' || (typeof singleRate === 'number' && singleRate > 1750 && singleRate < 1760))) {
-                        console.warn("AI returned outdated 2025 rate (1756). Force correcting to 1838.");
-                        fiscalData.nationalInsurance.baseRates.single = 1838;
+                // STEP 1: Run comprehensive validation
+                console.log('Running validation on AI response:', fiscalData);
+                const validationResult = validateFiscalParameters(fiscalData);
 
-                        // Also fix couple rate if it looks like 2025 (2620 was 2025, 2762 is 2026)
-                        if (fiscalData.nationalInsurance.baseRates.couple && fiscalData.nationalInsurance.baseRates.couple < 2700) {
-                            fiscalData.nationalInsurance.baseRates.couple = 2762;
-                        }
-                    }
+                // STEP 2: Check for outdated year data
+                const singleRate = fiscalData.nationalInsurance?.baseRates?.single;
+                const outdatedCheck = singleRate ? detectOutdatedValues(Number(singleRate)) : { isOutdated: false };
+
+                if (outdatedCheck.isOutdated) {
+                    validationResult.errors.push(`${outdatedCheck.message}`);
+                    validationResult.isValid = false;
                 }
 
-                // COMPREHENSIVE DATA NORMALIZATION
-                // Fixes: 10% vs 0.1, "60,130" vs 60130, Infinity vs null
-                if (fiscalData.taxBrackets && Array.isArray(fiscalData.taxBrackets)) {
-                    fiscalData.taxBrackets = fiscalData.taxBrackets.map((b, index, arr) => {
-                        let { limit, rate } = b;
+                // STEP 3: If validation failed and we have retries left, retry
+                if (!validationResult.isValid && retryCount < MAX_RETRIES) {
+                    console.warn(`Validation failed (attempt ${retryCount + 1}):`, validationResult.errors);
+                    setStatusMessage(language === 'he'
+                        ? `אימות נכשל, מנסה שוב...`
+                        : `Validation failed, retrying...`);
 
-                        // 1. Normalize Rate (handle 35 vs 0.35)
-                        // If rate is > 1.0, assume it's a percentage (e.g. 10, 14, 35) and divide by 100
-                        let numericRate = Number(rate);
-                        if (numericRate > 1.0) {
-                            numericRate = numericRate / 100;
-                        }
-
-                        // 2. Normalize Limit
-                        let numericLimit = limit;
-                        // Handle "60,130" strings
-                        if (typeof limit === 'string') {
-                            const cleanStr = limit.replace(/,/g, '').toLowerCase();
-                            if (cleanStr === 'infinity' || cleanStr === 'null') {
-                                numericLimit = null;
-                            } else {
-                                numericLimit = parseFloat(cleanStr);
-                            }
-                        }
-
-                        // Handle Infinity/0 for last bracket
-                        // If it's the last bracket, or explicitly Infinity/0/null -> normalize to null
-                        const isLast = index === arr.length - 1;
-                        if (isLast || numericLimit === Infinity || numericLimit === 0 || numericLimit === null) {
-                            if (isLast) numericLimit = null;
-                        }
-
-                        return { limit: numericLimit, rate: numericRate };
-                    });
-
-                    // Special check: ensure we have the catch-all bracket if explicitly missing but previous ends at 60130
-                    const last = fiscalData.taxBrackets[fiscalData.taxBrackets.length - 1];
-                    // If last bracket has a real limit (e.g. 60130), we are missing the "infinity" bracket. Add it.
-                    if (last && typeof last.limit === 'number' && last.limit > 50000) {
-                        fiscalData.taxBrackets.push({ limit: null, rate: 0.47 });
-                    }
+                    // Wait a moment before retry
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    return handleAutoUpdate(retryCount + 1);
                 }
 
-                console.log('Normalized AI Fiscal Data:', fiscalData);
+                // STEP 4: If validation failed after all retries, show errors but use corrected data if available
+                if (!validationResult.isValid) {
+                    console.error('Validation failed after all retries:', validationResult.errors);
 
-                // SANITY CHECK: Compare against baseline and warn if significantly different
-                const warnings = [];
+                    // Use defaults if we can't salvage the data
+                    const fallbackData = DEFAULT_FISCAL_PARAMETERS;
 
-                // Check NI base rate
-                const aiSingle = fiscalData.nationalInsurance?.baseRates?.single;
+                    setSanityWarning([
+                        ...(language === 'he'
+                            ? ['AI החזיר נתונים לא תקינים. משתמש בברירת מחדל.']
+                            : ['AI returned invalid data. Using defaults.']),
+                        ...validationResult.errors.slice(0, 3) // Show first 3 errors
+                    ]);
+
+                    setProposedParameters(fallbackData);
+                    setAiResults(fiscalData); // Show raw AI data for debugging
+                    setStatusMessage('');
+                    setLoading(false);
+                    return;
+                }
+
+                // STEP 5: Use validated/corrected data
+                const validatedData = validationResult.correctedData || fiscalData;
+                console.log('Validated AI Fiscal Data:', validatedData);
+
+                // Collect warnings from validation
+                const warnings = [...validationResult.warnings];
+
+                // Additional sanity check: Compare against baseline
+                const aiSingle = validatedData.nationalInsurance?.baseRates?.single;
                 const baseSingle = baseParameters?.nationalInsurance?.baseRates?.single || NATIONAL_INSURANCE_RATES.baseRates.single;
                 if (aiSingle && baseSingle) {
                     const diffPercent = Math.abs((aiSingle - baseSingle) / baseSingle) * 100;
@@ -245,8 +279,8 @@ export function FiscalUpdateModal({
                     }
                 }
 
-                // Check first tax bracket (most likely to catch errors)
-                const aiFirstBracket = fiscalData.taxBrackets?.[0]?.limit;
+                // Check first tax bracket
+                const aiFirstBracket = validatedData.taxBrackets?.[0]?.limit;
                 const baseFirstBracket = baseParameters?.taxBrackets?.[0]?.limit || PENSION_TAX_BRACKETS[0].limit;
                 if (aiFirstBracket && baseFirstBracket) {
                     const diffPercent = Math.abs((aiFirstBracket - baseFirstBracket) / baseFirstBracket) * 100;
@@ -264,50 +298,35 @@ export function FiscalUpdateModal({
                 }
 
                 // Check if identical to base parameters
-                if (deepEqual(fiscalData, baseParameters)) {
+                if (deepEqual(validatedData, baseParameters)) {
                     setIsDuplicate(true);
-                    setProposedParameters(fiscalData); // Keep it to show user proof
+                    setProposedParameters(validatedData);
                 } else {
-                    setProposedParameters(fiscalData);
+                    setProposedParameters(validatedData);
                 }
-                setAiResults(fiscalData);
-                console.log('AI Fiscal Update - Successfully parsed & normalized:', fiscalData);
+                setAiResults(validatedData);
+                setStatusMessage('');
+                console.log('AI Fiscal Update - Successfully validated:', validatedData);
             } else {
                 console.warn('AI Fiscal Update - Invalid response structure:', result);
-                throw new Error("AI Update not fully wired. Using fallback.");
+                throw new Error(language === 'he' ? "תגובת AI לא תקינה" : "Invalid AI response structure");
             }
 
         } catch (err) {
-            // Fallback: Use baseline data, but show error
-            console.error("AI Update Failed:", err);
+            // If error and retries left, try again
+            if (retryCount < MAX_RETRIES) {
+                console.warn(`Error on attempt ${retryCount + 1}, retrying:`, err.message);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                return handleAutoUpdate(retryCount + 1);
+            }
+
+            // Fallback: Use defaults after all retries failed
+            console.error("AI Update Failed after retries:", err);
             setError(err.message || "AI Update Failed");
             setStatusMessage('');
 
-            const fallbackParams = {
-                nationalInsurance: {
-                    baseRates: {
-                        single: 1838,
-                        single_child: 2419,
-                        couple: 2762,
-                        couple_child: 3343,
-                        seniorityAdditionPerYear: 2
-                    },
-                    deferralBonusPerMonth: 5,
-                    incomeTestThreshold: {
-                        single: 20226,
-                        couple: 26968
-                    }
-                },
-                taxBrackets: [
-                    { limit: 7010, rate: 0.10 },
-                    { limit: 10060, rate: 0.14 },
-                    { limit: 16150, rate: 0.20 },
-                    { limit: 22440, rate: 0.31 },
-                    { limit: 46690, rate: 0.35 },
-                    { limit: 60130, rate: 0.47 },
-                    { limit: null, rate: 0.47 }
-                ]
-            };
+            // Use centralized defaults
+            const fallbackParams = DEFAULT_FISCAL_PARAMETERS;
 
             if (deepEqual(fallbackParams, baseParameters)) {
                 setIsDuplicate(true);
@@ -315,16 +334,15 @@ export function FiscalUpdateModal({
             setProposedParameters(fallbackParams);
             setAiResults(fallbackParams);
         } finally {
-            setLoading(false);
+            if (retryCount === 0 || retryCount >= MAX_RETRIES) {
+                setLoading(false);
+            }
         }
     };
 
     const handleReset = () => {
-        const defaultParams = {
-            taxBrackets: PENSION_TAX_BRACKETS,
-            nationalInsurance: NATIONAL_INSURANCE_RATES
-        };
-        setProposedParameters(defaultParams);
+        // Use centralized defaults
+        setProposedParameters(DEFAULT_FISCAL_PARAMETERS);
         setIsDuplicate(true);
         setAiResults(null);
     };

@@ -369,8 +369,9 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         };
     }, []);
 
-    // Monthly expenses from profile
-    const monthlyExpenses = parseFloat(inputs.monthlyNetIncomeDesired) || 10000;
+    // Monthly expenses - use average from results (considers life events) if available
+    // Falls back to initial value if no results yet
+    const monthlyExpenses = results?.averageNetWithdrawal || parseFloat(inputs.monthlyNetIncomeDesired) || 10000;
     const retirementStartAge = parseFloat(inputs.retirementStartAge) || 67;
     const retirementEndAge = parseFloat(inputs.retirementEndAge) || 90;
 
@@ -649,7 +650,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                         {/* Summary Cards */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                             <div className={`p-3 rounded-lg ${isLight ? 'bg-blue-50 border border-blue-100' : 'bg-blue-500/10 border border-blue-500/20'}`}>
-                                <div className={`text-xs ${isLight ? 'text-blue-600' : 'text-blue-400'}`}>{t('capitalAtRetirement') || 'הון בפרישה'}</div>
+                                <div className={`text-xs ${isLight ? 'text-blue-600' : 'text-blue-400'}`}>{t('capitalAtRetirement') || 'הון בסיום התקופה'}</div>
                                 <div className={`text-lg font-bold ${isLight ? 'text-blue-700' : 'text-blue-300'}`}>{formatCurrency(capitalAtRetirement)}</div>
                             </div>
                             <div className={`p-3 rounded-lg ${isLight ? 'bg-emerald-50 border border-emerald-100' : 'bg-emerald-500/10 border border-emerald-500/20'}`}>

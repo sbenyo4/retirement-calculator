@@ -1,5 +1,6 @@
 import { useReducer, useEffect } from 'react';
 import { SIMULATION_TYPES } from '../utils/simulation-calculator';
+import { safeLocalStorageSet, safeLocalStorageSetJSON, safeLocalStorageGetJSON } from '../utils/storage';
 
 const SETTINGS_ACTIONS = {
     SET_CALCULATION_MODE: 'SET_CALCULATION_MODE',
@@ -14,16 +15,11 @@ function getInitialSettings() {
     const savedProvider = localStorage.getItem('aiProvider') || 'gemini';
 
     // Safely parse and validate fiscalParameters
-    let fiscalParameters = null;
-    try {
-        const saved = JSON.parse(localStorage.getItem('fiscalParameters'));
-        // Only use saved params if they have the required structure
-        if (saved && saved.nationalInsurance && saved.nationalInsurance.incomeTestThreshold) {
-            fiscalParameters = saved;
-        }
-    } catch (e) {
-        console.warn('Invalid fiscalParameters in localStorage, using defaults');
-    }
+    const savedFiscal = safeLocalStorageGetJSON('fiscalParameters', null);
+    // Only use saved params if they have the required structure
+    const fiscalParameters = (savedFiscal?.nationalInsurance?.incomeTestThreshold)
+        ? savedFiscal
+        : null;
 
     return {
         calculationMode: 'mathematical', // Always start in mathematical mode on refresh
@@ -77,18 +73,18 @@ export function useAppSettings() {
 
     // Persistence for General Settings
     useEffect(() => {
-        localStorage.setItem('aiProvider', settings.aiProvider);
-        localStorage.setItem('aiModel', settings.aiModel);
-        localStorage.setItem('simulationType', settings.simulationType);
-        localStorage.setItem('familyStatus', settings.familyStatus);
+        safeLocalStorageSet('aiProvider', settings.aiProvider);
+        safeLocalStorageSet('aiModel', settings.aiModel);
+        safeLocalStorageSet('simulationType', settings.simulationType);
+        safeLocalStorageSet('familyStatus', settings.familyStatus);
         if (settings.fiscalParameters) {
-            localStorage.setItem('fiscalParameters', JSON.stringify(settings.fiscalParameters));
+            safeLocalStorageSetJSON('fiscalParameters', settings.fiscalParameters);
         }
     }, [settings.aiProvider, settings.aiModel, settings.simulationType, settings.familyStatus, settings.fiscalParameters]);
 
     // Persistence for API Key (Per Provider)
     useEffect(() => {
-        localStorage.setItem(`apiKeyOverride_${settings.aiProvider}`, settings.apiKeyOverride);
+        safeLocalStorageSet(`apiKeyOverride_${settings.aiProvider}`, settings.apiKeyOverride);
     }, [settings.apiKeyOverride, settings.aiProvider]);
 
     return { settings, dispatch, SETTINGS_ACTIONS };

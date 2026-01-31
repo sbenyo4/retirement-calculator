@@ -461,26 +461,28 @@ function MainApp() {
 
       {/* Models Manager Modal */}
       {showModelsManager && (
-        <Suspense fallback={
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
-          </div>
-        }>
-          <ModelsManager
-            apiKeys={{
-              gemini: settings.apiKeyOverride || import.meta.env.VITE_GEMINI_API_KEY,
-              openai: import.meta.env.VITE_OPENAI_API_KEY,
-              anthropic: import.meta.env.VITE_ANTHROPIC_API_KEY
-            }}
-            onClose={() => setShowModelsManager(false)}
-            onModelsUpdated={() => {
-              // Trigger refresh of models list by changing key
-              setModelsRefreshKey(prev => prev + 1);
-            }}
-            t={t}
-            language={language}
-          />
-        </Suspense>
+        <ErrorBoundary t={t}>
+          <Suspense fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+            </div>
+          }>
+            <ModelsManager
+              apiKeys={{
+                gemini: settings.apiKeyOverride || import.meta.env.VITE_GEMINI_API_KEY,
+                openai: import.meta.env.VITE_OPENAI_API_KEY,
+                anthropic: import.meta.env.VITE_ANTHROPIC_API_KEY
+              }}
+              onClose={() => setShowModelsManager(false)}
+              onModelsUpdated={() => {
+                // Trigger refresh of models list by changing key
+                setModelsRefreshKey(prev => prev + 1);
+              }}
+              t={t}
+              language={language}
+            />
+          </Suspense>
+        </ErrorBoundary>
       )}
     </div>
   );

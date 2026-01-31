@@ -36,9 +36,9 @@ export function calculateDecumulation({
     let currentMonth = startMonthIndex;
 
     let retirementBalance = balanceAtRetirement;
-    // We treat totalPrincipal as a proxy for the non-taxable portion, but in this simplified model 
-    // we often tax the 'interest' portion generated each month.
-    // The original code calculated effective tax rate for gross-up based on the ratio at retirement start.
+    // Track principal (cost basis) for REALISTIC tax calculation
+    // Tax is only paid on PROFIT portion of withdrawals, not on annual growth
+    let currentPrincipal = totalPrincipal;
     const principalAtRetirement = totalPrincipal;
 
     let ranOutAtAge = null;
@@ -64,6 +64,9 @@ export function calculateDecumulation({
     // --- BUCKETS SETUP ---
     let safeBalance = 0;
     let surplusBalance = 0;
+    // Track principal per bucket for accurate tax calculation
+    let safePrincipal = 0;
+    let surplusPrincipal = 0;
 
     if (enableBuckets) {
         // Calculate Gross Up Factor used for pre-pass
@@ -85,9 +88,15 @@ export function calculateDecumulation({
         if (balanceAtRetirement >= prePassRequiredCapital) {
             safeBalance = prePassRequiredCapital;
             surplusBalance = balanceAtRetirement - prePassRequiredCapital;
+            // Split principal proportionally between buckets
+            const safeRatio = safeBalance / balanceAtRetirement;
+            safePrincipal = currentPrincipal * safeRatio;
+            surplusPrincipal = currentPrincipal * (1 - safeRatio);
         } else {
             safeBalance = balanceAtRetirement;
             surplusBalance = 0;
+            safePrincipal = currentPrincipal;
+            surplusPrincipal = 0;
         }
     }
 
@@ -159,9 +168,9 @@ export function calculateDecumulation({
             }
         });
 
-        // Interest & Tax
+        // Interest calculation - NO ANNUAL TAX
+        // Tax is paid only on profit portion of WITHDRAWALS (realistic Israeli capital gains)
         let interest = retirementBalance * monthlyRate;
-        let tax = interest * taxRateDecimal;
         let effectiveInterest = interest;
 
         // Buckets Interest
@@ -185,30 +194,26 @@ export function calculateDecumulation({
             const safeInterest = safeBalance * safeMonthlyRate;
             const surplusInterest = surplusBalance * surplusMonthlyRate;
 
+            // Growth compounds tax-free (no annual tax deduction)
             safeBalance += safeInterest;
             surplusBalance += surplusInterest;
 
-            // Treat tax as withdrawal from buckets
-            // NOTE: For Survivor/Surplus bucket, we assume distinct "Tax Deferral" (Capital Gains).
-            // We do NOT deduct tax on the growth annually. We only pay tax upon withdrawal (which is calculated via grossWithdrawal logic if we pull from it).
-            // But since this loop calculates "tax on interest" style, we just EXCLUDE surplus growth from this immediate tax bite.
-            const safeTax = safeInterest * taxRateDecimal;
-            // const surplusTax = surplusInterest * taxRateDecimal; // Removed to allow gross compounding
-
-            // effectiveInterest in main view is sum
             effectiveInterest = safeInterest + surplusInterest;
-            // tax is also sum
-            tax = safeTax; // + surplusTax;
         }
 
         // Calculate withdrawal
         let netWithdrawal;
+
+        // For INTEREST_ONLY strategy, we need to calculate effective interest after tax
+        // Since we now tax on withdrawal, "interest only" means taking only the growth portion
+        const currentBalance = retirementBalance + effectiveInterest;
+
         switch (withdrawalStrategy) {
             case WITHDRAWAL_STRATEGIES.FOUR_PERCENT:
                 netWithdrawal = fourPercentMonthly;
                 break;
             case WITHDRAWAL_STRATEGIES.PERCENTAGE:
-                netWithdrawal = (retirementBalance * (withdrawalPercentage / 100)) / 12;
+                netWithdrawal = (currentBalance * (withdrawalPercentage / 100)) / 12;
                 break;
             case WITHDRAWAL_STRATEGIES.DYNAMIC:
                 if (i % 12 === 1 && i > 1) {
@@ -225,7 +230,8 @@ export function calculateDecumulation({
                 netWithdrawal = dynamicBaseWithdrawal;
                 break;
             case WITHDRAWAL_STRATEGIES.INTEREST_ONLY:
-                netWithdrawal = interest - tax;
+                // Take only the profit portion of interest (net of tax that would be due)
+                netWithdrawal = effectiveInterest * (1 - taxRateDecimal);
                 break;
             case WITHDRAWAL_STRATEGIES.FIXED:
             default:
@@ -239,11 +245,34 @@ export function calculateDecumulation({
         if (netWithdrawal < 0) {
             const surplusIncome = Math.abs(netWithdrawal);
             retirementBalance += surplusIncome;
-            if (enableBuckets) surplusBalance += surplusIncome; // Add income to surplus? Or safe? Usually surplus/cash.
+            // Income goes to principal since it's new money
+            currentPrincipal += surplusIncome;
+            if (enableBuckets) {
+                surplusBalance += surplusIncome;
+                surplusPrincipal += surplusIncome;
+            }
             netWithdrawal = 0;
         }
 
-        let grossWithdrawal = netWithdrawal + tax;
+        // REALISTIC TAX CALCULATION: Tax only on profit portion of withdrawal
+        // profitRatio = (balance - principal) / balance
+        // tax = withdrawal * profitRatio * taxRate
+        const preWithdrawalBalance = retirementBalance + effectiveInterest;
+        const principalForTax = enableBuckets ? (safePrincipal + surplusPrincipal) : currentPrincipal;
+        const profitRatio = preWithdrawalBalance > 0
+            ? Math.max(0, Math.min(1, (preWithdrawalBalance - principalForTax) / preWithdrawalBalance))
+            : 0;
+
+        // Gross-up: to get netWithdrawal after tax, we need grossWithdrawal where:
+        // netWithdrawal = grossWithdrawal - (grossWithdrawal * profitRatio * taxRate)
+        // netWithdrawal = grossWithdrawal * (1 - profitRatio * taxRate)
+        // grossWithdrawal = netWithdrawal / (1 - profitRatio * taxRate)
+        const effectiveTaxRate = profitRatio * taxRateDecimal;
+        let grossWithdrawal = effectiveTaxRate < 1
+            ? netWithdrawal / (1 - effectiveTaxRate)
+            : netWithdrawal;
+
+        let tax = grossWithdrawal * effectiveTaxRate;
 
         if (i === 1) {
             initialGrossWithdrawal = grossWithdrawal;
@@ -251,35 +280,45 @@ export function calculateDecumulation({
         }
 
         // Check availability
-        if (retirementBalance + effectiveInterest < grossWithdrawal) {
-            grossWithdrawal = retirementBalance + effectiveInterest;
+        if (preWithdrawalBalance < grossWithdrawal) {
+            grossWithdrawal = preWithdrawalBalance;
+            tax = grossWithdrawal * effectiveTaxRate;
             if (ranOutAtAge === null) {
                 ranOutAtAge = retirementStartAge + (i / 12);
             }
         }
 
-        retirementBalance = retirementBalance + effectiveInterest - grossWithdrawal;
+        retirementBalance = preWithdrawalBalance - grossWithdrawal;
 
-        // Buckets Withdrawal
+        // Update principal proportionally after withdrawal
+        // When we withdraw, we're withdrawing both principal and profit proportionally
+        const principalWithdrawn = grossWithdrawal * (principalForTax / preWithdrawalBalance);
+        currentPrincipal = Math.max(0, currentPrincipal - principalWithdrawn);
+
+        // Buckets Withdrawal with principal tracking
         if (enableBuckets) {
             let remainingWithdrawal = grossWithdrawal;
 
-            // Tax was already 'calculated' but we need to pay it from buckets. 
-            // The grossWithdrawal INCLUDES tax.
-            // But we already added Interest to buckets. 
-            // So we just subtract grossWithdrawal.
-
             if (safeBalance >= remainingWithdrawal) {
+                // Calculate principal reduction for safe bucket
+                const safePrincipalRatio = safeBalance > 0 ? (safePrincipal / safeBalance) : 0;
+                safePrincipal = Math.max(0, safePrincipal - remainingWithdrawal * safePrincipalRatio);
                 safeBalance -= remainingWithdrawal;
                 remainingWithdrawal = 0;
             } else {
+                // Deplete safe bucket
+                safePrincipal = 0;
                 remainingWithdrawal -= safeBalance;
                 safeBalance = 0;
 
                 if (surplusBalance >= remainingWithdrawal) {
+                    // Calculate principal reduction for surplus bucket
+                    const surplusPrincipalRatio = surplusBalance > 0 ? (surplusPrincipal / surplusBalance) : 0;
+                    surplusPrincipal = Math.max(0, surplusPrincipal - remainingWithdrawal * surplusPrincipalRatio);
                     surplusBalance -= remainingWithdrawal;
                     remainingWithdrawal = 0;
                 } else {
+                    surplusPrincipal = 0;
                     surplusBalance = 0;
                 }
             }
@@ -288,6 +327,7 @@ export function calculateDecumulation({
 
         accumulatedWithdrawals += grossWithdrawal;
         totalNetWithdrawal += netWithdrawal;
+
 
         // Required Capital PV Calculation
         let monthlyNeed = monthlyNetIncomeDesired + activeExpenseAdjustment - activeIncomeAdjustment;

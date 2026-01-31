@@ -1,17 +1,22 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { safeLocalStorageSet } from '../utils/storage';
 
 const ThemeContext = createContext();
 
 export function ThemeProvider({ children }) {
     // Initialize theme from localStorage, default to 'dark'
     const [theme, setTheme] = useState(() => {
-        const savedTheme = localStorage.getItem('theme');
-        return savedTheme || 'dark';
+        try {
+            const savedTheme = localStorage.getItem('theme');
+            return savedTheme || 'dark';
+        } catch {
+            return 'dark';
+        }
     });
 
     // Update localStorage and document class when theme changes
     useEffect(() => {
-        localStorage.setItem('theme', theme);
+        safeLocalStorageSet('theme', theme);
 
         // Update the root element class
         if (theme === 'light') {

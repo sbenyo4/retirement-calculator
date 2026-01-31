@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { safeLocalStorageSetJSON, safeLocalStorageGetJSON } from '../utils/storage';
 
 const STORAGE_KEY = 'ai_usage_data';
 
@@ -22,19 +23,15 @@ export function useRateLimit(userId = 'guest') {
     // Load usage data from localStorage
     useEffect(() => {
         const loadUsageData = () => {
-            const stored = localStorage.getItem(`${STORAGE_KEY}_${userId}`);
-            if (stored) {
-                try {
-                    const data = JSON.parse(stored);
-                    // Clean old data (older than 7 days)
-                    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-                    data.calls = data.calls.filter(call => call.timestamp > weekAgo);
-                    return data;
-                } catch (e) {
-                    console.error('Failed to parse usage data:', e);
-                }
+            const data = safeLocalStorageGetJSON(`${STORAGE_KEY}_${userId}`, { calls: [] });
+            // Clean old data (older than 7 days)
+            const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+            if (data.calls) {
+                data.calls = data.calls.filter(call => call.timestamp > weekAgo);
+            } else {
+                data.calls = [];
             }
-            return { calls: [] };
+            return data;
         };
 
         setUsageData(loadUsageData());
@@ -43,7 +40,7 @@ export function useRateLimit(userId = 'guest') {
     // Save usage data to localStorage
     useEffect(() => {
         if (usageData) {
-            localStorage.setItem(`${STORAGE_KEY}_${userId}`, JSON.stringify(usageData));
+            safeLocalStorageSetJSON(`${STORAGE_KEY}_${userId}`, usageData);
         }
     }, [usageData, userId]);
 

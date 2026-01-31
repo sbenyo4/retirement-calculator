@@ -198,10 +198,16 @@ export default function LifeEventsTimelineModal({
 
     const totalYears = Math.max(5, endYear - startYear);
 
+    // Stable reference for events using deep compare
+    const stableEvents = useMemo(() => events, [JSON.stringify(events)]);
+
     // Process events for timeline
     const { layoutEvents, totalHeight, outOfBoundsCount } = useMemo(() => {
         // Create a deep copy to ensure NO mutation of original data
-        const safeEvents = JSON.parse(JSON.stringify(events));
+        // Using structuredClone (native, faster than JSON.parse/stringify)
+        const safeEvents = typeof structuredClone === 'function'
+            ? structuredClone(stableEvents)
+            : stableEvents.map(e => ({ ...e, startDate: { ...e.startDate }, endDate: e.endDate ? { ...e.endDate } : null }));
 
         const processedEvents = safeEvents
             // Don't filter by enabled - let disabled events show as greyed out
@@ -346,7 +352,7 @@ export default function LifeEventsTimelineModal({
         const outOfBoundsCount = processedEvents.filter(e => e.startYear > endYear).length;
 
         return { layoutEvents: eventsWithPos, totalHeight: totalH, outOfBoundsCount };
-    }, [JSON.stringify(events), startYear, totalYears, endYear, isLight, retirementEndAge, baseCurrentAge, currentAge, birthDate, birthMonth]);
+    }, [stableEvents, startYear, totalYears, endYear, isLight, retirementEndAge, baseCurrentAge, currentAge, birthDate, birthMonth]);
 
     const getSmartMarkerPos = (targetAge, forcedMonth = null) => {
         // Calculate birth year accurately

@@ -755,6 +755,24 @@ export function ResultsDashboard({ results, inputs, setInputs, t, language, calc
                                 value={formatCurrency(balanceAtRetirement)}
                                 subtext={t('projectedSavings')}
                                 color="text-blue-400"
+                                extraContent={(() => {
+                                    const currentSavings = parseFloat(inputs.currentSavings || 0);
+                                    const monthlyContribution = parseFloat(inputs.monthlyContribution || 0);
+                                    const yearsUntilRetirement = parseFloat(inputs.retirementStartAge || 67) - parseFloat(inputs.currentAge || 30);
+                                    const totalContributions = monthlyContribution * 12 * yearsUntilRetirement;
+                                    const accumulatedFromToday = balanceAtRetirement - currentSavings;
+                                    const interestEarned = accumulatedFromToday - totalContributions;
+
+                                    return (
+                                        <div className="mt-1 pt-1 border-t border-white/10">
+                                            <div className="flex items-baseline gap-1 flex-wrap">
+                                                <span className="text-xs text-cyan-300 font-medium">{t('accumulatedFromToday') || 'נצבר מהיום'}:</span>
+                                                <span className="text-sm font-bold text-cyan-300">{formatCurrency(accumulatedFromToday)}</span>
+                                                <span className="text-[9px] text-gray-400">({t('deposits') || 'הפקדות'}: {formatCurrency(totalContributions)} | {t('interest') || 'ריבית'}: {formatCurrency(interestEarned)})</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                             />
                             <SummaryCard
                                 label={t('requiredCapital')}
