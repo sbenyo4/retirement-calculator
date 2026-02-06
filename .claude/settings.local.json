@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npm run build:*)",
       "Bash(dir \"c:\\\\Users\\\\sbeny\\\\.gemini\\\\antigravity\\\\scratch\\\\retirement-calculator\" /b)",
-      "Bash(del \"c:\\\\Users\\\\sbeny\\\\.gemini\\\\antigravity\\\\scratch\\\\retirement-calculator\\\\src\\\\components\\\\ErrorBoundary.jsx\")"
+      "Bash(del \"c:\\\\Users\\\\sbeny\\\\.gemini\\\\antigravity\\\\scratch\\\\retirement-calculator\\\\src\\\\components\\\\ErrorBoundary.jsx\")",
+      "Bash(node:*)"
     ]
   }
 }

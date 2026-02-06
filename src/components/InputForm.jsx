@@ -4,7 +4,7 @@ import { getAvailableProviders, getAvailableModels, generatePrompt } from '../ut
 import { calculateAgeFromDate } from '../utils/dateUtils';
 import { SIMULATION_TYPES } from '../utils/simulation-calculator';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
-import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, Coins, BarChart3, Landmark, PiggyBank, Wallet, Activity, Layers, ShieldCheck, Gem } from 'lucide-react';
+import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, TrendingDown, Coins, BarChart3, Landmark, PiggyBank, Wallet, Activity, Layers, ShieldCheck, Gem, Target } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 import LifeEventsManager from './LifeEventsManager';
 import VariableRatesModal from './VariableRatesModal';
@@ -32,7 +32,8 @@ export default function InputForm({
     setSimulationType,
     onAiCalculate,
     aiInputsChanged,
-    aiLoading
+    aiLoading,
+    goalSeekWithdrawal
     // Note: sensitivity props (showInterestSensitivity, etc.) were previously passed but are not used in this component
 }) {
     const { theme } = useTheme();
@@ -511,7 +512,7 @@ export default function InputForm({
                         />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-1">
+                    <div className="grid grid-cols-3 gap-1">
                         <InputGroup language={language}
                             label={t('currentSavings')}
                             name="currentSavings"
@@ -569,29 +570,48 @@ export default function InputForm({
                             prefix={currency}
                             icon={<Coins size={14} />}
                         />
+                        <InputGroup language={language}
+                            label={t('targetEndBalance')}
+                            name="targetEndBalance"
+                            value={inputs.targetEndBalance}
+                            onChange={handleChange}
+                            prefix={currency}
+                            icon={<Target size={14} className="text-cyan-400" />}
+                        />
                     </div>
 
-                    <InputGroup language={language}
-                        label={t('monthlyNetIncomeDesired')}
-                        name="monthlyNetIncomeDesired"
-                        value={
-                            // For strategies that calculate income, show calculated value
-                            (inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
+                    <div className="grid grid-cols-[1.3fr_0.7fr] gap-3">
+                        <InputGroup language={language}
+                            label={t('monthlyNetIncomeDesired')}
+                            name="monthlyNetIncomeDesired"
+                            value={
+                                goalSeekWithdrawal != null
+                                    ? goalSeekWithdrawal
+                                    : (inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
+                                        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
+                                        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY)
+                                        ? Math.round(netWithdrawal || 0)
+                                        : inputs.monthlyNetIncomeDesired
+                            }
+                            onChange={handleChange}
+                            prefix={currency}
+                            icon={<Wallet size={14} className="text-green-400" />}
+                            extraLabel={grossWithdrawal ? `(${t('gross')}: ${formatCurrency(grossWithdrawal)})` : null}
+                            disabled={
+                                goalSeekWithdrawal != null ||
+                                inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
                                 inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
-                                inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY)
-                                ? Math.round(netWithdrawal || 0)
-                                : inputs.monthlyNetIncomeDesired
-                        }
-                        onChange={handleChange}
-                        prefix={currency}
-                        icon={<Wallet size={14} className="text-green-400" />}
-                        extraLabel={grossWithdrawal ? `(${t('gross')}: ${formatCurrency(grossWithdrawal)})` : null}
-                        disabled={
-                            inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
-                            inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
-                            inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY
-                        }
-                    />
+                                inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY
+                            }
+                        />
+                        <InputGroup language={language}
+                            label={t('inflationRate')}
+                            name="inflationRate"
+                            value={inputs.inflationRate}
+                            onChange={handleChange}
+                            icon={<TrendingDown size={14} />}
+                        />
+                    </div>
 
                     <div className="grid grid-cols-[1.3fr_0.7fr] gap-3">
                         <div className="relative">

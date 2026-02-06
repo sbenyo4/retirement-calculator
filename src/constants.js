@@ -25,7 +25,9 @@ export const DEFAULT_INPUTS = {
     pensionIncomeSources: [],
     contributionYears: 35,
     bucketSafeRate: 0,
-    bucketSurplusRate: 0
+    bucketSurplusRate: 0,
+    inflationRate: 0,
+    targetEndBalance: ''
 };
 
 /**

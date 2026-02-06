@@ -6,7 +6,7 @@
 import {
     DEFAULT_NATIONAL_INSURANCE,
     DEFAULT_TAX_BRACKETS
-} from './fiscalDefaults';
+} from './fiscalDefaults.js';
 
 // Re-export centralized defaults for backward compatibility
 // These are imported from fiscalDefaults.js - the single source of truth

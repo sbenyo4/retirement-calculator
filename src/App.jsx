@@ -59,6 +59,7 @@ function MainApp() {
   const [aiInputsChanged, setAiInputsChanged] = useState(true);
   const [selectedProfileIds, setSelectedProfileIds] = useState([]);
   const [validationError, setValidationError] = useState(null);
+  const [goalSeekWithdrawal, setGoalSeekWithdrawal] = useState(null);
 
   // Sensitivity analysis state (for mathematical mode)
   const [showInterestSensitivity, setShowInterestSensitivity] = useState(false);
@@ -139,7 +140,37 @@ function MainApp() {
         // Clear validation error on successful calculation
         setValidationError(null);
 
-        const projection = calculateRetirementProjection(debouncedInputs, t);
+        let projection = calculateRetirementProjection(debouncedInputs, t);
+
+        // Goal-seek: if targetEndBalance is set, find withdrawal that achieves it
+        const targetEnd = parseFloat(debouncedInputs.targetEndBalance);
+        if (!isNaN(targetEnd) && targetEnd >= 0 && debouncedInputs.targetEndBalance !== '') {
+          let lo = 0;
+          let hi = projection.balanceAtRetirement / ((retirementEnd - retirementStart) * 12) * 3; // upper bound
+          for (let iter = 0; iter < 25; iter++) {
+            const mid = (lo + hi) / 2;
+            const testResult = calculateRetirementProjection({
+              ...debouncedInputs,
+              monthlyNetIncomeDesired: mid,
+              targetEndBalance: '' // prevent recursion
+            }, t);
+            if (testResult.balanceAtEnd > targetEnd) {
+              lo = mid;
+            } else {
+              hi = mid;
+            }
+          }
+          const optimalWithdrawal = Math.round((lo + hi) / 2);
+          projection = calculateRetirementProjection({
+            ...debouncedInputs,
+            monthlyNetIncomeDesired: optimalWithdrawal,
+            targetEndBalance: ''
+          }, t);
+          setGoalSeekWithdrawal(optimalWithdrawal);
+        } else {
+          setGoalSeekWithdrawal(null);
+        }
+
         setResults(projection);
 
         // Handle Simulation Mode
@@ -373,6 +404,7 @@ function MainApp() {
               capitalPreservation={results?.requiredCapitalForPerpetuity}
               capitalPreservationNeededToday={results?.pvOfCapitalPreservation}
               results={results}
+              goalSeekWithdrawal={goalSeekWithdrawal}
 
               // Settings Props
               calculationMode={settings.calculationMode}

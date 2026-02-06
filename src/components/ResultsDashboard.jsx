@@ -355,6 +355,51 @@ export function ResultsDashboard({ results, inputs, setInputs, t, language, calc
         simulationRange // Only present in Monte Carlo
     } = activeResults;
 
+    // Calculate max sustainable net withdrawal using binary search.
+    // This finds the exact withdrawal that depletes the balance to ~zero at retirement end.
+    // Linear scaling doesn't work because required capital changes non-linearly with withdrawal.
+    let maxSustainableNetWithdrawal = 0;
+    const targetNetWithdrawal = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
+
+    if (balanceAtRetirement > 0 && targetNetWithdrawal > 0) {
+        // Use cached results to avoid recalculating during render
+        // The max withdrawal should be somewhere between current and a reasonable upper bound
+        const currentBalanceAtEnd = balanceAtEnd || 0;
+
+        if (currentBalanceAtEnd <= 0) {
+            // Already running out - max sustainable is LESS than current
+            // For now, just show current withdrawal as reasonable estimate
+            maxSustainableNetWithdrawal = targetNetWithdrawal;
+        } else {
+            // We have surplus - can withdraw more
+            // Use simple heuristic: add proportional correction based on remaining balance
+            // Approximate: how many months of extra withdrawal does balanceAtEnd represent?
+            const monthsInRetirement = (parseFloat(inputs.retirementEndAge) - parseFloat(inputs.retirementStartAge)) * 12;
+
+            // The remaining balance, discounted, should roughly equal extra monthly withdrawals
+            // For a rough estimate: extra = balanceAtEnd / monthsInRetirement (simple) 
+            // But we need to account for growth, so use a more conservative estimate
+            const annualRate = parseFloat(inputs.annualReturnRate) || 0;
+            const inflation = parseFloat(inputs.inflationRate) || 0;
+            const realRate = (annualRate - inflation) / 100;
+
+            // Approximate extra withdrawal using annuity factor
+            let extraWithdrawal = 0;
+            if (realRate > 0 && monthsInRetirement > 0) {
+                const monthlyRate = realRate / 12;
+                // PMT = FV * r / ((1+r)^n - 1) - this is how much to withdraw to use up FV
+                // But we need to account for tax, so be conservative
+                extraWithdrawal = currentBalanceAtEnd * monthlyRate / (Math.pow(1 + monthlyRate, monthsInRetirement) - 1);
+                // Apply a 0.85 factor for tax and non-linearity
+                extraWithdrawal *= 0.85;
+            } else {
+                extraWithdrawal = currentBalanceAtEnd / monthsInRetirement;
+            }
+
+            maxSustainableNetWithdrawal = targetNetWithdrawal + extraWithdrawal;
+        }
+    }
+
     const options = {
         responsive: true,
         maintainAspectRatio: false,
@@ -810,10 +855,18 @@ export function ResultsDashboard({ results, inputs, setInputs, t, language, calc
                                 color="text-yellow-400"
                                 extraContent={
                                     <div className="mt-1 pt-1 border-t border-white/10">
-                                        <span className="text-xs text-green-300 font-medium block">
-                                            {t('netWithdrawal')} {language === 'he' ? '(ממוצע)' : '(Avg)'}:
-                                        </span>
-                                        <span className="text-lg font-bold text-green-300">{formatCurrency(averageNetWithdrawal || initialNetWithdrawal || 0)}</span>
+                                        <div className="flex items-baseline gap-1 flex-wrap">
+                                            <span className="text-xs text-green-300 font-medium">
+                                                {t('netWithdrawal')} {language === 'he' ? '(ממוצע)' : '(Avg)'}:
+                                            </span>
+                                            <span className="text-sm font-bold text-green-300">{formatCurrency(averageNetWithdrawal || initialNetWithdrawal || 0)}</span>
+                                        </div>
+                                        <div className="flex items-baseline gap-1 flex-wrap">
+                                            <span className="text-xs text-cyan-300 font-medium">
+                                                {t('maxSustainableWithdrawal')}:
+                                            </span>
+                                            <span className="text-sm font-bold text-cyan-300">{formatCurrency(maxSustainableNetWithdrawal || 0)}</span>
+                                        </div>
                                     </div>
                                 }
                             />

@@ -43,8 +43,29 @@ export function calculateRetirementProjection(inputs, t = null) {
         monthlyContribution,
         annualReturnRate,
         taxRate,
-        monthlyNetIncomeDesired
+        monthlyNetIncomeDesired,
+        inflationRate = 0
     } = parsedInputs;
+
+    // Adjust all return rates for inflation (real return = nominal - inflation)
+    // This makes all results expressed in today's purchasing power
+    const realReturnRate = annualReturnRate - inflationRate;
+    const realBucketSafeRate = (parsedInputs.bucketSafeRate || 0) - inflationRate;
+    const realBucketSurplusRate = (parsedInputs.bucketSurplusRate || 0) - inflationRate;
+
+    // Adjust variable rates for inflation
+    const adjustVariableRates = (rates) => {
+        if (!rates || typeof rates !== 'object') return rates;
+        const adjusted = {};
+        for (const [year, rate] of Object.entries(rates)) {
+            adjusted[year] = parseFloat(rate) - inflationRate;
+        }
+        return adjusted;
+    };
+
+    const realVariableRates = inflationRate ? adjustVariableRates(inputs.variableRates) : inputs.variableRates;
+    const realSafeVariableRates = inflationRate ? adjustVariableRates(inputs.safeVariableRates) : inputs.safeVariableRates;
+    const realSurplusVariableRates = inflationRate ? adjustVariableRates(inputs.surplusVariableRates) : inputs.surplusVariableRates;
 
     const startYear = new Date().getFullYear();
 
@@ -54,8 +75,8 @@ export function calculateRetirementProjection(inputs, t = null) {
         retirementStartAge,
         currentSavings,
         monthlyContribution,
-        annualReturnRate,
-        variableRates: inputs.variableRates,
+        annualReturnRate: realReturnRate,
+        variableRates: realVariableRates,
         variableRatesEnabled: inputs.variableRatesEnabled,
         lifeEvents: parsedInputs.lifeEvents,
         startYear
@@ -65,6 +86,16 @@ export function calculateRetirementProjection(inputs, t = null) {
 
     const monthsInRetirement = (retirementEndAge - retirementStartAge) * 12;
 
+    // Build adjusted inputs for decumulation with real rates
+    const realInputs = {
+        ...parsedInputs,
+        bucketSafeRate: realBucketSafeRate,
+        bucketSurplusRate: realBucketSurplusRate,
+        variableRates: realVariableRates,
+        safeVariableRates: realSafeVariableRates,
+        surplusVariableRates: realSurplusVariableRates
+    };
+
     const decumResult = calculateDecumulation({
         startMonthIndex: lastMonthIndex,
         monthsInRetirement,
@@ -72,8 +103,8 @@ export function calculateRetirementProjection(inputs, t = null) {
         totalPrincipal,
         currentAge,
         retirementStartAge,
-        inputs: parsedInputs,
-        annualReturnRate,
+        inputs: realInputs,
+        annualReturnRate: realReturnRate,
         taxRateDecimal: taxRate / 100,
         startYear,
         parameters: inputs.fiscalParameters || null // Pass dynamic parameters
@@ -82,8 +113,8 @@ export function calculateRetirementProjection(inputs, t = null) {
     // Determine effective rate for post-retirement (Used for Perpetuity Calc)
     // If buckets are enabled, the 'Safe Bucket Rate' is the assumption for living off interest (Perpetuity)
     const retirementAnnualReturnRate = parsedInputs.enableBuckets
-        ? (parsedInputs.bucketSafeRate || 0)
-        : annualReturnRate;
+        ? realBucketSafeRate
+        : realReturnRate;
 
     // 4. Statistics (Phase 3)
     const statsResult = calculateStatistics({
@@ -91,7 +122,7 @@ export function calculateRetirementProjection(inputs, t = null) {
         requiredCapitalAtRetirement: decumResult.requiredCapitalPV,
         monthlyNetIncomeDesired,
         monthlyContribution,
-        annualReturnRate, // Accumulation Rate (for PV to today)
+        annualReturnRate: realReturnRate, // Accumulation Rate (for PV to today)
         retirementAnnualReturnRate, // Decumulation Rate (for Perpetuity threshold)
         taxRateDecimal: taxRate / 100,
         monthsToRetirement: (retirementStartAge - currentAge) * 12,
@@ -127,6 +158,7 @@ export function calculateRetirementProjection(inputs, t = null) {
         initialNetWithdrawal: decumResult.initialNetWithdrawal,
         averageGrossWithdrawal: statsResult.averageGrossWithdrawal,
         averageNetWithdrawal: statsResult.averageNetWithdrawal,
+        maxSustainableNetWithdrawal: statsResult.maxSustainableNetWithdrawal,
         // NI Info
         incomeAtNIStart,
         niThreshold: niDetails.incomeTest.threshold

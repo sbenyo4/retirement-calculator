@@ -55,12 +55,21 @@ export function calculateStatistics({
     const averageGrossWithdrawal = accumulatedWithdrawals / monthsInRetirement;
     const averageNetWithdrawal = totalNetWithdrawal / monthsInRetirement;
 
+    // 5. Max sustainable net withdrawal (PMT that depletes balance to exactly 0)
+    let maxSustainableNetWithdrawal = 0;
+    if (effectiveMonthlyRate > 0) {
+        maxSustainableNetWithdrawal = balanceAtRetirement * effectiveMonthlyRate / (1 - Math.pow(1 + effectiveMonthlyRate, -monthsInRetirement));
+    } else {
+        maxSustainableNetWithdrawal = balanceAtRetirement / monthsInRetirement;
+    }
+
     return {
         requiredCapitalForPerpetuity,
         pvOfDeficit,
         pvOfCapitalPreservation,
         surplus,
         averageGrossWithdrawal,
-        averageNetWithdrawal
+        averageNetWithdrawal,
+        maxSustainableNetWithdrawal
     };
 }
