@@ -16,10 +16,11 @@ export const generateInsightPrompt = (inputs, results, language) => {
     const isHebrew = language === 'he';
     const currency = isHebrew ? '₪' : '$';
 
-    // Format Life Events if they exist
+    // Format Life Events if they exist (only active ones)
     let lifeEventsText = "None";
-    if (inputs.lifeEvents && inputs.lifeEvents.length > 0) {
-        lifeEventsText = inputs.lifeEvents.map(event =>
+    const activeEvents = (inputs.lifeEvents || []).filter(event => event.enabled !== false);
+    if (activeEvents.length > 0) {
+        lifeEventsText = activeEvents.map(event =>
             `- ${event.title || event.name}: ${currency}${event.amount || event.monthlyChange} (${event.type}, Start: ${event.startDate?.year})`
         ).join('\n    ');
     }
@@ -34,18 +35,23 @@ export const generateInsightPrompt = (inputs, results, language) => {
         }
     }
 
-    // Handle Bucket Variable Rates
+    // Handle Bucket Strategy
     let bucketRatesText = "";
-    if (inputs.enableBuckets && inputs.variableRatesEnabled) {
-        const safeRates = Object.values(inputs.safeVariableRates || {});
-        const surplusRates = Object.values(inputs.surplusVariableRates || {});
-        if (safeRates.length > 0) {
-            const avgSafe = (safeRates.reduce((a, b) => a + b, 0) / safeRates.length).toFixed(1);
-            bucketRatesText += `\n    - Safe Bucket Variable Rates: Avg ${avgSafe}%, Range ${Math.min(...safeRates)}% - ${Math.max(...safeRates)}%`;
-        }
-        if (surplusRates.length > 0) {
-            const avgSurplus = (surplusRates.reduce((a, b) => a + b, 0) / surplusRates.length).toFixed(1);
-            bucketRatesText += `\n    - Surplus Bucket Variable Rates: Avg ${avgSurplus}%, Range ${Math.min(...surplusRates)}% - ${Math.max(...surplusRates)}%`;
+    if (inputs.enableBuckets) {
+        bucketRatesText += `\n    - Withdrawal Strategy: Bucket Strategy (Two-bucket approach)`;
+        bucketRatesText += `\n    - Safe Bucket Rate: ${inputs.bucketSafeRate || 0}%`;
+        bucketRatesText += `\n    - Surplus/Growth Bucket Rate: ${inputs.bucketSurplusRate || 0}%`;
+        if (inputs.variableRatesEnabled) {
+            const safeRates = Object.values(inputs.safeVariableRates || {});
+            const surplusRates = Object.values(inputs.surplusVariableRates || {});
+            if (safeRates.length > 0) {
+                const avgSafe = (safeRates.reduce((a, b) => a + b, 0) / safeRates.length).toFixed(1);
+                bucketRatesText += `\n    - Safe Bucket Variable Rates: Avg ${avgSafe}%, Range ${Math.min(...safeRates)}% - ${Math.max(...safeRates)}%`;
+            }
+            if (surplusRates.length > 0) {
+                const avgSurplus = (surplusRates.reduce((a, b) => a + b, 0) / surplusRates.length).toFixed(1);
+                bucketRatesText += `\n    - Surplus Bucket Variable Rates: Avg ${avgSurplus}%, Range ${Math.min(...surplusRates)}% - ${Math.max(...surplusRates)}%`;
+            }
         }
     }
 
@@ -92,6 +98,11 @@ export const generateInsightPrompt = (inputs, results, language) => {
             sensitivtyScenarios.push({ name: "Improving Surplus Bucket Return by 1%", diff: resSurplus.balanceAtEnd - baseBalance });
         }
 
+        // 6. Inflation Impact (+1%)
+        const inflationInputs = { ...inputs, inflationRate: (parseFloat(inputs.inflationRate) || 0) + 1 };
+        const resInflation = calculateRetirementProjection(inflationInputs);
+        sensitivtyScenarios.push({ name: "Increasing Inflation by 1%", diff: resInflation.balanceAtEnd - baseBalance });
+
         // Format for AI
         // Sort by impact (absolute value)
         sensitivtyScenarios.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
@@ -117,16 +128,21 @@ export const generateInsightPrompt = (inputs, results, language) => {
 
     // National Insurance Context
     const niSource = inputs.pensionIncomeSources?.find(s => s.type === 'nationalInsurance');
-    const incomeAt67 = results.incomeAtNIStart?.nonWorkIncome || 0;
     const niThreshold = results.niThreshold || 20000; // Fallback or from results
+    // Check if user has any WORK income sources active at age 67
+    const workSources = (inputs.pensionIncomeSources || []).filter(s => s.type === 'work' && s.enabled !== false && 67 >= s.startAge && (s.endAge === null || 67 < s.endAge));
+    const workIncomeAt67 = workSources.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
+    const pensionIncomeAt67 = results.incomeAtNIStart?.nonWorkIncome || 0;
 
     const niContext = `
     National Insurance (Old Age Pension) Rules:
     - Base Start Age: 67
-    - Income Test (Mivchan Hakhnasot) applies between 67 and 70.
-    - If other non-work income (pensions, rent, etc.) exceeds the threshold (currently ~${currency}${niThreshold} Gross), the pension is reduced or cancelled until age 70.
-    - At age 70, the pension is paid regardless of income.
-    - Current Non-NI Pension Income at age 67: ${currency}${incomeAt67} (Gross).
+    - Income Test (Mivchan Hakhnasot) applies between ages 67-70, but ONLY to WORK INCOME (הכנסה מעבודה).
+    - IMPORTANT: Pension annuity income, savings withdrawals, and unrealized investment gains are NOT considered work income and do NOT affect eligibility.
+    - The work income threshold is ~${currency}${niThreshold}/month. Only if work income exceeds this, the pension is reduced/cancelled until age 70.
+    - At age 70, the pension is paid regardless of any income.
+    - User's work income at age 67: ${currency}${workIncomeAt67} (${workIncomeAt67 > 0 ? 'has work income' : 'not working - fully eligible for NI at 67'}).
+    - User's pension/annuity income at age 67: ${currency}${pensionIncomeAt67} (does NOT affect NI eligibility).
     `;
 
     const basePrompt = `
@@ -137,11 +153,15 @@ export const generateInsightPrompt = (inputs, results, language) => {
     - Current Age: ${inputs.currentAge}
     - Retirement Start Age: ${inputs.retirementStartAge}
     - Retirement End Age: ${inputs.retirementEndAge}
+    - Years Until Retirement: ${Math.max(0, Math.round((parseFloat(inputs.retirementStartAge) - parseFloat(inputs.currentAge)) * 10) / 10)}
+    - Years in Retirement (drawdown period): ${Math.round(parseFloat(inputs.retirementEndAge) - parseFloat(inputs.retirementStartAge))}
+    - Years from Early Retirement to Full Pension Age (67): ${Math.max(0, Math.round(67 - parseFloat(inputs.retirementStartAge)))}
     - Current Savings: ${currency}${inputs.currentSavings}
     - Monthly Contribution: ${currency}${inputs.monthlyContribution}
     - Desired Monthly Net Income: ${currency}${inputs.monthlyNetIncomeDesired}
     - Assumed Annual Return: ${returnRateText}${bucketRatesText}
-    - Inflation Type: ${inputs.inflationType || 'None'}
+    - Inflation Rate: ${inputs.inflationRate || 0}%
+    - Tax Rate on Capital Gains: ${inputs.taxRate || 25}%
     
     Pension Income Sources:
     ${pensionText}
@@ -192,6 +212,9 @@ export const generateInsightPrompt = (inputs, results, language) => {
     - LOOK at the "Sensitivity Analysis" section. Use it to populate the 'sensitivityAnalysis' field. 
       Identify the TOP 2 most impactful factors. Explain the #1 factor and correct mention the #2 factor for context.
       (e.g., "Delaying retirement is your strongest lever (+2M), followed by increasing safe yields (+500k). Saving more has minor impact.")
+    - Return Rate Risk Assessment: An annual return of ~4% is considered conservative/solid for a long-term diversified portfolio (not risky).
+      5-6% is moderate. Only rates above 7-8% should be flagged as aggressive or market-dependent.
+      When a bucket strategy is used, assess each bucket independently: a safe bucket at 3-4% is very conservative, a surplus bucket at 6-8% is reasonable for growth allocation.
     - If the user runs out of money early, emphasize increasing savings or delaying retirement.
     - If the user has a large surplus, suggest leaving a legacy or spending more.
     - Be empathetic but realistic.

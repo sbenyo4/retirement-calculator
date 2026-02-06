@@ -32,8 +32,8 @@ export function calculateRetirementProjection(inputs, t = null) {
             return [k, parseFloat(v) || 0];
         })
     );
-    // Ensure array
-    if (!parsedInputs.lifeEvents) parsedInputs.lifeEvents = [];
+    // Ensure array and filter only active events (LifeEventsManager uses 'enabled' property)
+    parsedInputs.lifeEvents = (parsedInputs.lifeEvents || []).filter(event => event.enabled !== false);
 
     const {
         currentAge,

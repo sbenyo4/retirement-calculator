@@ -848,7 +848,7 @@ function InputGroup({ label, name, value, onChange, icon, prefix, type = "text",
     return (
         <div className="flex flex-col gap-0.5">
             <div className="flex justify-between items-center min-h-6">
-                <label className={`text-xs font-medium flex items-center gap-1 h-4 ${isLight ? 'text-gray-700' : 'text-gray-200'}`}>
+                <label className={`text-xs font-medium flex items-center gap-1 h-4 whitespace-nowrap ${isLight ? 'text-gray-700' : 'text-gray-200'}`}>
                     {icon} {label}
                 </label>
                 {extraLabel && (
