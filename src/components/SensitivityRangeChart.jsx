@@ -30,7 +30,9 @@ const PARAMETER_TYPES = {
     SAFE_RATE: 'safeRate',
     SURPLUS_RATE: 'surplusRate',
     INCOME: 'income',
-    RETIREMENT_AGE: 'retirementAge'
+    RETIREMENT_AGE: 'retirementAge',
+    INFLATION: 'inflation',
+    TARGET_END_BALANCE: 'targetEndBalance'
 };
 
 const PARAMETER_CONFIG = {
@@ -87,6 +89,25 @@ const PARAMETER_CONFIG = {
         inputKey: 'retirementStartAge',
         format: (v) => `${v}`,
         unit: ''
+    },
+    [PARAMETER_TYPES.INFLATION]: {
+        min: 0,
+        max: 8,
+        step: 0.5,
+        defaultRange: [0, 5],
+        inputKey: 'inflationRate',
+        format: (v) => `${v}%`,
+        unit: '%'
+    },
+    [PARAMETER_TYPES.TARGET_END_BALANCE]: {
+        min: 0,
+        max: 5000000,
+        step: 500000,
+        defaultRange: [0, 3000000],
+        inputKey: '_targetEndBalance', // Special: not a direct input
+        format: (v, lang) => lang === 'he' ? `${(v / 1000000).toFixed(1)}M₪` : `$${(v / 1000000).toFixed(1)}M`,
+        unit: '',
+        isInverse: true // This parameter shows withdrawal needed for target balance
     }
 };
 
@@ -165,12 +186,16 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
         const newConfig = PARAMETER_CONFIG[newType];
         const newCurrentValue = parseFloat(inputs[newConfig.inputKey]) || newConfig.defaultRange[0];
 
-        if ([PARAMETER_TYPES.INTEREST, PARAMETER_TYPES.ACCUMULATION_RATE, PARAMETER_TYPES.SAFE_RATE, PARAMETER_TYPES.SURPLUS_RATE].includes(newType)) {
+        if ([PARAMETER_TYPES.INTEREST, PARAMETER_TYPES.ACCUMULATION_RATE, PARAMETER_TYPES.SAFE_RATE, PARAMETER_TYPES.SURPLUS_RATE, PARAMETER_TYPES.INFLATION].includes(newType)) {
             setRangeMin(Math.max(newConfig.min, newCurrentValue - 4));
             setRangeMax(Math.min(newConfig.max, newCurrentValue + 4));
         } else if (newType === PARAMETER_TYPES.INCOME) {
             setRangeMin(Math.max(newConfig.min, newCurrentValue - 5000));
             setRangeMax(Math.min(newConfig.max, newCurrentValue + 5000));
+        } else if (newType === PARAMETER_TYPES.TARGET_END_BALANCE) {
+            // For target end balance, use fixed range from 0 to 3M
+            setRangeMin(0);
+            setRangeMax(3000000);
         } else {
             setRangeMin(Math.max(newConfig.min, newCurrentValue - 5));
             setRangeMax(Math.min(newConfig.max, newCurrentValue + 5));
@@ -196,6 +221,53 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
         const effectiveMin = Math.max(config.min, rangeMin);
         const effectiveMax = Math.min(config.max, rangeMax);
 
+        // Special handling for TARGET_END_BALANCE - find withdrawal needed for each target
+        if (parameterType === PARAMETER_TYPES.TARGET_END_BALANCE) {
+            // Binary search to find withdrawal that gives target end balance
+            const findWithdrawalForTarget = (targetBalance) => {
+                let low = 1000;
+                let high = 100000;
+
+                // Binary search iterations
+                for (let i = 0; i < 25; i++) {
+                    const mid = (low + high) / 2;
+                    const testInputs = { ...inputs, monthlyNetIncomeDesired: mid };
+                    try {
+                        const result = calculateRetirementProjection(testInputs, t);
+                        if (result.balanceAtEnd > targetBalance) {
+                            // Can withdraw more
+                            low = mid;
+                        } else {
+                            // Need to withdraw less
+                            high = mid;
+                        }
+                    } catch (e) {
+                        break;
+                    }
+                }
+                // Return the converged value
+                return Math.round((low + high) / 2);
+            };
+
+            const currentTargetBalance = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
+
+            for (let targetBalance = effectiveMin; targetBalance <= effectiveMax; targetBalance += stepSize) {
+                const requiredWithdrawal = findWithdrawalForTarget(targetBalance);
+                const isCurrentTarget = Math.abs(targetBalance - 0) < stepSize / 2; // Current target is usually 0 or near the actual end balance
+
+                results.push({
+                    value: targetBalance,
+                    label: config.format(targetBalance, language),
+                    balanceAtEnd: requiredWithdrawal, // Store withdrawal in balanceAtEnd for chart display
+                    withdrawal: requiredWithdrawal,
+                    surplus: 0,
+                    isCurrent: isCurrentTarget
+                });
+            }
+            return results;
+        }
+
+        // Standard parameter handling
         for (let value = effectiveMin; value <= effectiveMax; value += stepSize) {
             const modifiedInputs = {
                 ...inputs,
@@ -223,17 +295,17 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
         }
 
         return results;
-    }, [inputs, rangeMin, rangeMax, stepSize, parameterType, config, currentValue, language]);
+    }, [inputs, rangeMin, rangeMax, stepSize, parameterType, config, currentValue, language, t]);
 
     // Helper to calculate Average Impact over the FULL VALID RANGE
     // This answers: "On average, how much does the balance change per 1 unit step across the whole likely range?"
-    const calculateAverageImpact = (baseInputs, key, configKey) => {
+    const calculateAverageImpact = (baseInputs, key, configKey, customStep = null) => {
         const conf = PARAMETER_CONFIG[configKey];
         if (!conf) return 0;
 
         let totalDiff = 0;
         let count = 0;
-        const step = conf.step;
+        const step = customStep || conf.step;
 
         // Define Range: Use defaultRange to be representative
         // This addresses user request to calculate "Average according to min/max"
@@ -332,10 +404,14 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
             // 3. Age
             candidates.push({ key: 'retirementStartAge', configKey: PARAMETER_TYPES.RETIREMENT_AGE, label: t('retirementAge') || 'Retirement Age' });
 
+            // 4. Inflation
+            candidates.push({ key: 'inflationRate', configKey: PARAMETER_TYPES.INFLATION, label: t('inflationRate') || 'Inflation Rate' });
+
 
             // Calculate Impact
             candidates.forEach(cand => {
                 const conf = PARAMETER_CONFIG[cand.configKey];
+                // Always use default step for fair comparison
                 const step = conf.step;
 
                 // Format Step Label
@@ -349,7 +425,7 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
                     thisStepLabel = `${step}%`;
                 }
 
-                // Calculate Average Global Impact
+                // Calculate Average Global Impact (always use default step for fair comparison)
                 const avgDiff = calculateAverageImpact(inputs, cand.key, cand.configKey);
 
                 if (avgDiff > maxDiff) {
@@ -369,30 +445,39 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
 
     // Chart data
     const chartData = useMemo(() => {
+        const isTargetBalance = parameterType === PARAMETER_TYPES.TARGET_END_BALANCE;
+        const chartLabel = isTargetBalance
+            ? (t('requiredWithdrawal') || 'Required Withdrawal')
+            : (t('balanceAtEndShort') || 'End Balance');
+
         return {
             labels: rangeResults.map(r => r.label),
             datasets: [{
-                label: t('balanceAtEndShort') || 'End Balance',
+                label: chartLabel,
                 data: rangeResults.map(r => r.balanceAtEnd),
                 backgroundColor: rangeResults.map(r =>
                     r.isCurrent
                         ? 'rgba(250, 204, 21, 0.8)' // Yellow for current
-                        : r.balanceAtEnd >= 0
-                            ? 'rgba(52, 211, 153, 0.7)' // Green
-                            : 'rgba(248, 113, 113, 0.7)' // Red
+                        : isTargetBalance
+                            ? 'rgba(99, 102, 241, 0.7)' // Indigo for target balance mode
+                            : r.balanceAtEnd >= 0
+                                ? 'rgba(52, 211, 153, 0.7)' // Green
+                                : 'rgba(248, 113, 113, 0.7)' // Red
                 ),
                 borderColor: rangeResults.map(r =>
                     r.isCurrent
                         ? 'rgb(250, 204, 21)'
-                        : r.balanceAtEnd >= 0
-                            ? 'rgb(52, 211, 153)'
-                            : 'rgb(248, 113, 113)'
+                        : isTargetBalance
+                            ? 'rgb(99, 102, 241)'
+                            : r.balanceAtEnd >= 0
+                                ? 'rgb(52, 211, 153)'
+                                : 'rgb(248, 113, 113)'
                 ),
                 borderWidth: rangeResults.map(r => r.isCurrent ? 3 : 1),
                 borderRadius: 4,
             }]
         };
-    }, [rangeResults, t]);
+    }, [rangeResults, t, parameterType]);
 
     // Calculate Average Change per Step
     const avgChange = useMemo(() => {
@@ -407,7 +492,11 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
             count++;
         }
 
-        return count > 0 ? totalDiff / count : 0;
+        const avgPerIndex = count > 0 ? totalDiff / count : 0;
+
+        // For TARGET_END_BALANCE, show the average withdrawal change per step
+        // For others, show the balance change per step
+        return avgPerIndex;
     }, [rangeResults]);
 
     // Chart options
@@ -432,7 +521,10 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
                             currency: language === 'he' ? 'ILS' : 'USD',
                             maximumFractionDigits: 0
                         }).format(value);
-                        return `${t('balanceAtEndShort') || 'End Balance'}: ${formatted}`;
+                        const labelText = parameterType === PARAMETER_TYPES.TARGET_END_BALANCE
+                            ? (t('requiredWithdrawal') || 'Required Withdrawal')
+                            : (t('balanceAtEndShort') || 'End Balance');
+                        return `${labelText}: ${formatted}`;
                     },
                     title: (items) => {
                         const idx = items[0].dataIndex;
@@ -482,11 +574,15 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
         { value: PARAMETER_TYPES.SAFE_RATE, label: t('safeRate') || 'Safe Rate' },
         { value: PARAMETER_TYPES.SURPLUS_RATE, label: t('surplusRate') || 'Surplus Rate' },
         { value: PARAMETER_TYPES.INCOME, label: t('monthlyIncome') || 'Monthly Income' },
-        { value: PARAMETER_TYPES.RETIREMENT_AGE, label: t('retirementAge') || 'Retirement Age' }
+        { value: PARAMETER_TYPES.RETIREMENT_AGE, label: t('retirementAge') || 'Retirement Age' },
+        { value: PARAMETER_TYPES.INFLATION, label: t('inflationRate') || 'Inflation Rate' },
+        { value: PARAMETER_TYPES.TARGET_END_BALANCE, label: t('targetEndBalance') || 'Target End Balance' }
     ] : [
         { value: PARAMETER_TYPES.INTEREST, label: t('interestRate') || 'Interest Rate' },
         { value: PARAMETER_TYPES.INCOME, label: t('monthlyIncome') || 'Monthly Income' },
-        { value: PARAMETER_TYPES.RETIREMENT_AGE, label: t('retirementAge') || 'Retirement Age' }
+        { value: PARAMETER_TYPES.RETIREMENT_AGE, label: t('retirementAge') || 'Retirement Age' },
+        { value: PARAMETER_TYPES.INFLATION, label: t('inflationRate') || 'Inflation Rate' },
+        { value: PARAMETER_TYPES.TARGET_END_BALANCE, label: t('targetEndBalance') || 'Target End Balance' }
     ];
 
     if (!isOpen) return null;
@@ -605,7 +701,7 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
                                 value={stepSize}
                                 onChange={(val) => setStepSize(parseFloat(val))}
                                 options={
-                                    [PARAMETER_TYPES.INTEREST, PARAMETER_TYPES.ACCUMULATION_RATE, PARAMETER_TYPES.SAFE_RATE, PARAMETER_TYPES.SURPLUS_RATE].includes(parameterType) ? [
+                                    [PARAMETER_TYPES.INTEREST, PARAMETER_TYPES.ACCUMULATION_RATE, PARAMETER_TYPES.SAFE_RATE, PARAMETER_TYPES.SURPLUS_RATE, PARAMETER_TYPES.INFLATION].includes(parameterType) ? [
                                         { value: 0.5, label: "0.5%" },
                                         { value: 1, label: "1%" },
                                         { value: 2, label: "2%" }
@@ -614,6 +710,10 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
                                         { value: 1000, label: "1,000" },
                                         { value: 2000, label: "2,000" },
                                         { value: 5000, label: "5,000" }
+                                    ] : parameterType === PARAMETER_TYPES.TARGET_END_BALANCE ? [
+                                        { value: 250000, label: "250K" },
+                                        { value: 500000, label: "500K" },
+                                        { value: 1000000, label: "1M" }
                                     ] : [
                                         { value: 1, label: `1 ${t('year') || 'year'}` },
                                         { value: 2, label: `2 ${t('years') || 'years'}` },
