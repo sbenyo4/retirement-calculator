@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { calculateRetirementProjection } from '../utils/calculator';
+import { getProjectedYear } from '../utils/dateUtils';
 import { AmortizationTable, AmortizationTableButton, AmortizationTableModal } from './AmortizationTable';
 import { SensitivityRangeChart, SensitivityRangeButton, SensitivityRangeModal } from './SensitivityRangeChart';
 import { SensitivityHeatmapButton, SensitivityHeatmapModal } from './SensitivityHeatmap';
@@ -441,21 +442,8 @@ export function ResultsDashboard({ results, inputs, setInputs, t, language, calc
         }
     };
 
-    // Calculate projected years for display
-    const currentYear = new Date().getFullYear();
-    const getProjectedYear = (targetAge) => {
-        if (!targetAge || !inputs.currentAge) return null;
-        const target = parseFloat(targetAge);
-        const current = parseFloat(inputs.currentAge);
-        if (isNaN(target) || isNaN(current)) return null;
-
-        if (inputs.birthdate) {
-            return new Date(inputs.birthdate).getFullYear() + target;
-        }
-        return Math.floor(currentYear + (target - current));
-    };
-    const startYear = getProjectedYear(inputs.retirementStartAge);
-    const endYear = getProjectedYear(inputs.retirementEndAge);
+    const startYear = getProjectedYear(inputs.retirementStartAge, inputs.currentAge, inputs.birthdate);
+    const endYear = getProjectedYear(inputs.retirementEndAge, inputs.currentAge, inputs.birthdate);
 
     // Calculate inputs for sensitivity tools (Heatmap/Range)
     // In comparison mode, use the first selected profile/scenario. Fallback to current inputs.

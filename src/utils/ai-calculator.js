@@ -345,13 +345,13 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
         };
 
         if (provider === 'gemini') {
-            console.log("Gemini API Key Status:", apiKey ? "Present (" + apiKey.slice(0, 4) + "...)" : "Missing");
+
 
             const genAI = new GoogleGenerativeAI(apiKey);
 
             // Helper to try generating content with a specific model
             const tryGenerate = async (modelId) => {
-                console.log(`Using Gemini model: ${modelId} with Search Grounding`);
+
 
                 // Only apply search tools to Gemini 1.5+ models which support it reliably
                 const tools = modelId.includes('1.5') || modelId.includes('2.0')
@@ -378,7 +378,7 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
                     const alternative = fallbacks.find(m => m !== model);
 
                     if (alternative) {
-                        console.log(`Retrying with fallback model: ${alternative}`);
+
                         responseText = await withRetry(() => tryGenerate(alternative), { onRetry });
                     } else {
                         throw primaryError;
@@ -425,7 +425,7 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
         }
 
         // Clean up response if it contains markdown code blocks or citations
-        console.debug("Raw AI Response:", responseText);
+
 
         // More robust JSON extraction:
         // 1. Remove markdown blocks if they exist

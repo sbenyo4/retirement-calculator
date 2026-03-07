@@ -81,7 +81,7 @@ export const VALIDATION_RANGES = {
 export function validateNationalInsurance(niData) {
     const errors = [];
     const warnings = [];
-    const correctedData = JSON.parse(JSON.stringify(niData || {}));
+    const correctedData = structuredClone(niData || {});
 
     if (!niData || !niData.baseRates) {
         return {

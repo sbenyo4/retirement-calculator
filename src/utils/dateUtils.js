@@ -11,3 +11,23 @@ export const calculateAgeFromDate = (dateString) => {
     const age = (today - birthDateObj) / (1000 * 60 * 60 * 24 * 365.25);
     return age;
 };
+
+/**
+ * Calculates the projected calendar year when a person reaches a target age.
+ * @param {number|string} targetAge - The target age to project to.
+ * @param {number|string} currentAge - The person's current age.
+ * @param {string} [birthdate] - Optional birthdate string (YYYY-MM-DD) for precise calculation.
+ * @param {boolean} [isAgeManual=false] - If true, ignores birthdate and uses currentAge-based arithmetic.
+ * @returns {number|null} The projected year, or null if inputs are invalid.
+ */
+export const getProjectedYear = (targetAge, currentAge, birthdate, isAgeManual = false) => {
+    if (!targetAge || !currentAge) return null;
+    const target = parseFloat(targetAge);
+    const current = parseFloat(currentAge);
+    if (isNaN(target) || isNaN(current)) return null;
+
+    if (birthdate && !isAgeManual) {
+        return new Date(birthdate).getFullYear() + target;
+    }
+    return Math.floor(new Date().getFullYear() + (target - current));
+};

@@ -4,6 +4,7 @@ import { NATIONAL_INSURANCE_RATES, PENSION_TAX_BRACKETS } from '../utils/pension
 import { Sparkles, Save, RotateCcw, Check, AlertTriangle, Code, Copy, Table } from 'lucide-react';
 import { deepEqual } from '../hooks/useDeepCompare';
 import { useTheme } from '../contexts/ThemeContext';
+import { formatCurrency as formatCurrencyUtil } from '../utils/formatters';
 import {
     DEFAULT_FISCAL_PARAMETERS,
     validateFiscalParameters,
@@ -189,7 +190,7 @@ Reference values for ${currentYear} (use if search fails):
 
             const prompt = generateFiscalPrompt(retryCount + 1);
 
-            console.debug("AI Researcher Prompt:", prompt);
+
             setLastPrompt(prompt);
 
             setStatusMessage(language === 'he' ? 'מנתח נתונים ומצליב מקורות...' : 'Analyzing data and cross-referencing...');
@@ -215,7 +216,7 @@ Reference values for ${currentYear} (use if search fails):
                 };
 
                 // STEP 1: Run comprehensive validation
-                console.log('Running validation on AI response:', fiscalData);
+
                 const validationResult = validateFiscalParameters(fiscalData);
 
                 // STEP 2: Check for outdated year data
@@ -262,7 +263,7 @@ Reference values for ${currentYear} (use if search fails):
 
                 // STEP 5: Use validated/corrected data
                 const validatedData = validationResult.correctedData || fiscalData;
-                console.log('Validated AI Fiscal Data:', validatedData);
+
 
                 // Collect warnings from validation
                 const warnings = [...validationResult.warnings];
@@ -306,7 +307,7 @@ Reference values for ${currentYear} (use if search fails):
                 }
                 setAiResults(validatedData);
                 setStatusMessage('');
-                console.log('AI Fiscal Update - Successfully validated:', validatedData);
+
             } else {
                 console.warn('AI Fiscal Update - Invalid response structure:', result);
                 throw new Error(language === 'he' ? "תגובת AI לא תקינה" : "Invalid AI response structure");
@@ -347,13 +348,7 @@ Reference values for ${currentYear} (use if search fails):
         setAiResults(null);
     };
 
-    const formatCurrency = (val) => {
-        return new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
-            style: 'currency',
-            currency: language === 'he' ? 'ILS' : 'USD',
-            maximumFractionDigits: 0
-        }).format(val);
-    };
+    const formatCurrency = (val) => formatCurrencyUtil(val, language);
 
     const areTaxBracketsEqual = (brackets1, brackets2) => {
         if (!brackets1 || !brackets2) return false;

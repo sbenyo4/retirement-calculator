@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
+import { formatCurrency as formatCurrencyUtil } from '../utils/formatters';
 import {
     X,
     Wallet,
@@ -86,14 +87,9 @@ function IncomeSourceRow({ source, onUpdate, onDelete, t, language, isLight }) {
     };
 
     const displayName = language === 'he' ? source.name : (source.nameEn || source.name);
+    const formatCurrency = (val) => formatCurrencyUtil(val, language);
 
-    const formatCurrency = (val) => {
-        return new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
-            style: 'currency',
-            currency: language === 'he' ? 'ILS' : 'USD',
-            maximumFractionDigits: 0
-        }).format(val);
-    };
+
 
     // Handle numeric input - allow empty string and valid numbers
     const handleNumberChange = (field) => (e) => {
@@ -191,13 +187,8 @@ function IncomeSourceRow({ source, onUpdate, onDelete, t, language, isLight }) {
  * Age Milestone Summary Card
  */
 function MilestoneSummary({ milestone, t, language, isLight, isExpanded, onToggle, pensionInterestRate }) {
-    const formatCurrency = (val) => {
-        return new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
-            style: 'currency',
-            currency: language === 'he' ? 'ILS' : 'USD',
-            maximumFractionDigits: 0
-        }).format(val);
-    };
+    const formatCurrency = (val) => formatCurrencyUtil(val, language);
+
 
     const { age, income, accumulatedCapital, monthlyDeficit, monthlySurplus, ageAtDepletion } = milestone;
     const isPositive = monthlySurplus > 0 || monthlyDeficit === 0;
@@ -293,7 +284,7 @@ function MilestoneSummary({ milestone, t, language, isLight, isExpanded, onToggl
  * Main Pension Income Modal
  */
 export function PensionIncomeModal({ inputs, results, onClose, onSave, t, language, aiProvider, aiModel, apiKeyOverride, fiscalParameters, familyStatus, onUpdateFiscalData }) {
-    console.log('PensionIncomeModal results:', results);
+
     const { theme } = useTheme();
     const isLight = theme === 'light';
     const [showFiscalModal, setShowFiscalModal] = useState(false);
@@ -482,7 +473,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         const isCouple = familyStatus && familyStatus.includes('couple');
         const field = isCouple ? 'couple' : 'single';
 
-        const newParams = JSON.parse(JSON.stringify(currentParams));
+        const newParams = structuredClone(currentParams);
         if (!newParams.nationalInsurance) newParams.nationalInsurance = {};
         // Ensure baseRates exists with defaults if missing
         if (!newParams.nationalInsurance.baseRates) {
@@ -551,14 +542,9 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         setIncomeSources(prev => prev.filter(s => s.id !== id));
     };
 
-    // Format currency
-    const formatCurrency = useCallback((val) => {
-        return new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
-            style: 'currency',
-            currency: language === 'he' ? 'ILS' : 'USD',
-            maximumFractionDigits: 0
-        }).format(val);
-    }, [language]);
+
+
+    const formatCurrency = useCallback((val) => formatCurrencyUtil(val, language), [language]);
 
     // Calculate total accumulated capital (base + lump sums)
     const totalAccumulatedCapital = useMemo(() => {

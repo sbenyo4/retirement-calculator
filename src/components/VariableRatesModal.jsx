@@ -3,6 +3,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useThemeClasses } from '../hooks/useThemeClasses';
 import { X, Dices, ArrowDown, Calculator, RotateCcw, TrendingUp, TrendingDown, Shuffle } from 'lucide-react';
 import { calculateRetirementProjection } from '../utils/calculator';
+import { formatCurrency as formatCurrencyUtil } from '../utils/formatters';
 
 export default function VariableRatesModal({
     isOpen,
@@ -201,13 +202,7 @@ export default function VariableRatesModal({
         }
     }, [rates, inputs, calculatedAverage, startYear, endYear]);
 
-    const formatCurrency = (val) => {
-        return new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-IL', {
-            style: 'currency',
-            currency: 'ILS',
-            maximumFractionDigits: 0
-        }).format(val);
-    };
+    const formatCurrency = (val) => formatCurrencyUtil(val, language);
 
     // ... handlers ...
 
@@ -438,8 +433,8 @@ export default function VariableRatesModal({
                         {language === 'he' ? 'תשואות משתנות' : 'Variable Returns'}
                         {bucketType !== 'accumulation' && (
                             <span className={`text-sm font-normal mx-2 px-2 py-0.5 rounded-full ${bucketType === 'safe'
-                                    ? (isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-500/20 text-blue-300')
-                                    : (isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-500/20 text-purple-300')
+                                ? (isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-500/20 text-blue-300')
+                                : (isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-500/20 text-purple-300')
                                 }`}>
                                 {bucketType === 'safe'
                                     ? (language === 'he' ? 'דלי בטוח' : 'Safe Bucket')

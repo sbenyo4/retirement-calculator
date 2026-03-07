@@ -106,7 +106,7 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language }
             }
         });
 
-        console.log('Saving models to localStorage:', modelsToSave);
+
         const result = safeLocalStorageSetJSON('ai_models_override', modelsToSave);
 
         if (!result.success) {

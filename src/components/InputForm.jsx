@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { getAvailableProviders, getAvailableModels, generatePrompt } from '../utils/ai-calculator';
-import { calculateAgeFromDate } from '../utils/dateUtils';
+import { calculateAgeFromDate, getProjectedYear as getProjectedYearUtil } from '../utils/dateUtils';
 import { SIMULATION_TYPES } from '../utils/simulation-calculator';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
 import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, TrendingDown, Coins, BarChart3, Landmark, PiggyBank, Wallet, Activity, Layers, ShieldCheck, Gem, Target } from 'lucide-react';
@@ -171,24 +171,9 @@ export default function InputForm({
     const availableProviders = getAvailableProviders();
     const availableModels = aiProvider ? getAvailableModels(aiProvider) : [];
 
-    // Calculate projected years
     const currentYear = new Date().getFullYear();
-    const getProjectedYear = (targetAge) => {
-        if (!targetAge || !inputs.currentAge) return null;
-        const target = parseFloat(targetAge);
-        const current = parseFloat(inputs.currentAge);
-        if (isNaN(target) || isNaN(current)) return null;
-
-        // Use birthdate for projection ONLY if age is NOT manual
-        if (inputs.birthdate && !isAgeManual) {
-            return new Date(inputs.birthdate).getFullYear() + target;
-        }
-        // Fallback or Manual Age: Use current year + age difference
-        return Math.floor(currentYear + (target - current));
-    };
-
-    const startYear = getProjectedYear(inputs.retirementStartAge);
-    const endYear = getProjectedYear(inputs.retirementEndAge);
+    const startYear = getProjectedYearUtil(inputs.retirementStartAge, inputs.currentAge, inputs.birthdate, isAgeManual);
+    const endYear = getProjectedYearUtil(inputs.retirementEndAge, inputs.currentAge, inputs.birthdate, isAgeManual);
 
     return (
         <div className="flex flex-col flex-1 min-h-0">
@@ -586,7 +571,7 @@ export default function InputForm({
                             name="monthlyNetIncomeDesired"
                             value={
                                 goalSeekWithdrawal != null
-                                    ? goalSeekWithdrawal
+                                    ? `${formatCurrency(goalSeekWithdrawal)} ${language === 'he' ? '→' : '←'} ${formatCurrency(parseFloat(inputs.monthlyNetIncomeDesired) || 0)} (${goalSeekWithdrawal >= (parseFloat(inputs.monthlyNetIncomeDesired) || 0) ? '+' : ''}${formatCurrency(goalSeekWithdrawal - (parseFloat(inputs.monthlyNetIncomeDesired) || 0))})`
                                     : (inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
                                         inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
                                         inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY)
@@ -594,7 +579,7 @@ export default function InputForm({
                                         : inputs.monthlyNetIncomeDesired
                             }
                             onChange={handleChange}
-                            prefix={currency}
+                            prefix={goalSeekWithdrawal != null ? null : currency}
                             icon={<Wallet size={14} className="text-green-400" />}
                             extraLabel={grossWithdrawal ? `(${t('gross')}: ${formatCurrency(grossWithdrawal)})` : null}
                             disabled={

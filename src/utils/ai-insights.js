@@ -158,10 +158,11 @@ export const generateInsightPrompt = (inputs, results, language) => {
     - Years from Early Retirement to Full Pension Age (67): ${Math.max(0, Math.round(67 - parseFloat(inputs.retirementStartAge)))}
     - Current Savings: ${currency}${inputs.currentSavings}
     - Monthly Contribution: ${currency}${inputs.monthlyContribution}
-    - Desired Monthly Net Income: ${currency}${inputs.monthlyNetIncomeDesired}
+    - Desired Monthly Net Income: ${currency}${inputs.monthlyNetIncomeDesired}${inputs.targetEndBalance && results.initialNetWithdrawal ? `\n    - Achievable Monthly Income (with target balance goal): ${currency}${Math.round(results.initialNetWithdrawal)} (${results.initialNetWithdrawal >= parseFloat(inputs.monthlyNetIncomeDesired || 0) ? `+${currency}${Math.round(results.initialNetWithdrawal - parseFloat(inputs.monthlyNetIncomeDesired || 0))} ABOVE desired` : `-${currency}${Math.round(parseFloat(inputs.monthlyNetIncomeDesired || 0) - results.initialNetWithdrawal)} BELOW desired — income reduction needed to meet target`})` : ''}
     - Assumed Annual Return: ${returnRateText}${bucketRatesText}
     - Inflation Rate: ${inputs.inflationRate || 0}%
     - Tax Rate on Capital Gains: ${inputs.taxRate || 25}%
+    - Target End Balance: ${inputs.targetEndBalance ? `${currency}${inputs.targetEndBalance}` : 'Not set (no legacy/inheritance goal)'}
     
     Pension Income Sources:
     ${pensionText}
@@ -176,7 +177,7 @@ export const generateInsightPrompt = (inputs, results, language) => {
     - Projected Balance at End of Retirement: ${currency}${results.balanceAtEnd}
     - Ran Out of Money At Age: ${results.ranOutAtAge || 'Never (Succesfully funded)'}
     - Required Capital at Retirement: ${currency}${results.requiredCapitalAtRetirement}
-    - Deficit (Needed Today): ${currency}${results.pvOfDeficit}
+    - Deficit (Needed Today): ${currency}${results.pvOfDeficit}${inputs.targetEndBalance ? `\n    - Target End Balance Goal: ${currency}${inputs.targetEndBalance}\n    - Gap to Target: ${currency}${Math.round(results.balanceAtEnd - parseFloat(inputs.targetEndBalance))} (${results.balanceAtEnd >= parseFloat(inputs.targetEndBalance) ? 'TARGET MET ✓' : 'SHORTFALL'})` : ''}
     
     Sensitivity Analysis (Impact of changes on Final Balance):
     ${sensitivityText}
@@ -218,6 +219,12 @@ export const generateInsightPrompt = (inputs, results, language) => {
     - If the user runs out of money early, emphasize increasing savings or delaying retirement.
     - If the user has a large surplus, suggest leaving a legacy or spending more.
     - Be empathetic but realistic.
+    - If the user has set a Target End Balance (inheritance/legacy goal), specifically analyze:
+      1. Whether the current plan achieves this target (compare "Projected Balance at End" vs the target).
+      2. If there is a gap, quantify it and suggest specific changes (more savings, later retirement, higher returns) that could close it.
+      3. If the target is already exceeded, acknowledge the success and note the surplus.
+      4. If the "Achievable Monthly Income" is lower than "Desired Monthly Net Income", explain the trade-off: reaching the target requires reducing monthly spending by the difference. Suggest whether the target is realistic or if it should be lowered.
+      5. If no target is set, skip this analysis entirely.
     `;
 
     return basePrompt;

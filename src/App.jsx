@@ -106,7 +106,7 @@ function MainApp() {
     const isModelValid = availableModels.some(m => m.id === settings.aiModel);
 
     if (!isModelValid && availableModels.length > 0) {
-      console.log(`Resetting invalid model ${settings.aiModel} to ${availableModels[0].id}`);
+
       dispatchSettings({ type: SETTINGS_ACTIONS.SET_AI_MODEL, payload: availableModels[0].id });
     }
   }, [settings.aiProvider, settings.aiModel]);
