@@ -916,6 +916,7 @@ export function ResultsDashboard({ results, inputs, setInputs, t, language, calc
                         </div>
                     </div>
 
+
                     {/* Amortization Table Modal */}
                     <AmortizationTableModal
                         isOpen={showAmortizationModal}

@@ -190,7 +190,7 @@ function IncomeSourceRow({ source, onUpdate, onDelete, t, language, isLight }) {
 /**
  * Age Milestone Summary Card
  */
-function MilestoneSummary({ milestone, t, language, isLight, isExpanded, onToggle }) {
+function MilestoneSummary({ milestone, t, language, isLight, isExpanded, onToggle, pensionInterestRate }) {
     const formatCurrency = (val) => {
         return new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
             style: 'currency',
@@ -256,6 +256,13 @@ function MilestoneSummary({ milestone, t, language, isLight, isExpanded, onToggl
                             <div className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{t('capitalLastsUntil') || 'הון יספיק עד גיל'}</div>
                             <div className={`font-medium ${ageAtDepletion ? (isLight ? 'text-orange-600' : 'text-orange-400') : (isLight ? 'text-emerald-600' : 'text-emerald-400')}`}>
                                 {ageAtDepletion ? ageAtDepletion : '∞'}
+                            </div>
+                        </div>
+                        <div>
+                            <div className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{t('interestOnlyIncome') || 'קצבה מריבית בלבד'}</div>
+                            <div className={`font-medium ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
+                                {formatCurrency(Math.round((accumulatedCapital || 0) * (pensionInterestRate / 100) / 12))}
+                                <span className={`text-[10px] opacity-60 ms-1`}>({pensionInterestRate}%)</span>
                             </div>
                         </div>
                     </div>
@@ -360,6 +367,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const [incomeSources, setIncomeSources] = useState(getSafeSources);
     const [showIncomeSources, setShowIncomeSources] = useState(true);
     const [expandedMilestone, setExpandedMilestone] = useState(null);
+    const [pensionInterestRate, setPensionInterestRate] = useState(4);
 
     // Lock body scroll when modal is open
     useEffect(() => {
@@ -631,6 +639,22 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                     >
                                         <Table size={14} />
                                     </button>
+                                    {/* Interest Rate Input */}
+                                    <div className={`flex items-center gap-1 px-2 py-1 rounded-full ${isLight ? 'bg-amber-50 border border-amber-200' : 'bg-amber-500/10 border border-amber-500/20'}`}
+                                        title={t('pensionInterestRate') || 'ריבית'}
+                                    >
+                                        <span className={`text-[10px] ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>{t('pensionInterestRate') || 'ריבית'}</span>
+                                        <input
+                                            type="number"
+                                            value={pensionInterestRate}
+                                            onChange={(e) => setPensionInterestRate(parseFloat(e.target.value) || 0)}
+                                            className={`w-10 px-1 py-0 rounded text-xs text-center no-spinner bg-transparent ${isLight ? 'text-amber-800' : 'text-amber-300'} font-bold`}
+                                            min="0"
+                                            max="100"
+                                            step="0.5"
+                                        />
+                                        <span className={`text-[10px] ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>%</span>
+                                    </div>
                                 </div>
                                 <p className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                                     {t('pensionIncomeDesc') || 'סיכום הכנסות בפרישה לפי גיל'}
@@ -753,6 +777,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                         isLight={isLight}
                                         isExpanded={expandedMilestone === idx}
                                         onToggle={() => setExpandedMilestone(expandedMilestone === idx ? null : idx)}
+                                        pensionInterestRate={pensionInterestRate}
                                     />
                                 ))}
                             </div>

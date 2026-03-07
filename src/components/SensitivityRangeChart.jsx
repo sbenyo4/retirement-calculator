@@ -101,10 +101,10 @@ const PARAMETER_CONFIG = {
     },
     [PARAMETER_TYPES.TARGET_END_BALANCE]: {
         min: 0,
-        max: 5000000,
+        max: 8000000,
         step: 500000,
-        defaultRange: [0, 3000000],
-        inputKey: '_targetEndBalance', // Special: not a direct input
+        defaultRange: [0, 8000000],
+        inputKey: 'targetEndBalance',
         format: (v, lang) => lang === 'he' ? `${(v / 1000000).toFixed(1)}M₪` : `$${(v / 1000000).toFixed(1)}M`,
         unit: '',
         isInverse: true // This parameter shows withdrawal needed for target balance
@@ -159,6 +159,14 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
         }
     }, [inputs.enableBuckets]);
 
+    // Lock background scroll when modal is open
+    React.useEffect(() => {
+        if (isOpen) {
+            document.body.style.overflow = 'hidden';
+            return () => { document.body.style.overflow = ''; };
+        }
+    }, [isOpen]);
+
     // Get config for current parameter
     const config = PARAMETER_CONFIG[parameterType];
 
@@ -193,9 +201,9 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
             setRangeMin(Math.max(newConfig.min, newCurrentValue - 5000));
             setRangeMax(Math.min(newConfig.max, newCurrentValue + 5000));
         } else if (newType === PARAMETER_TYPES.TARGET_END_BALANCE) {
-            // For target end balance, use fixed range from 0 to 3M
+            // For target end balance, use fixed range from 0 to 8M
             setRangeMin(0);
-            setRangeMax(3000000);
+            setRangeMax(8000000);
         } else {
             setRangeMin(Math.max(newConfig.min, newCurrentValue - 5));
             setRangeMax(Math.min(newConfig.max, newCurrentValue + 5));
@@ -253,7 +261,9 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
 
             for (let targetBalance = effectiveMin; targetBalance <= effectiveMax; targetBalance += stepSize) {
                 const requiredWithdrawal = findWithdrawalForTarget(targetBalance);
-                const isCurrentTarget = Math.abs(targetBalance - 0) < stepSize / 2; // Current target is usually 0 or near the actual end balance
+                const userTarget = parseFloat(inputs.targetEndBalance);
+                const hasTarget = !isNaN(userTarget) && inputs.targetEndBalance !== '';
+                const isCurrentTarget = hasTarget && Math.abs(targetBalance - userTarget) < stepSize / 2;
 
                 results.push({
                     value: targetBalance,
@@ -542,7 +552,11 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
                 offset: 6,
                 clip: false,
                 textAlign: 'center',
-                color: theme === 'light' ? '#1f2937' : '#f3f4f6',  // Dark in light mode, light in dark mode
+                color: (context) => {
+                    const idx = context.dataIndex;
+                    if (rangeResults[idx]?.isCurrent) return '#facc15'; // Yellow for current
+                    return theme === 'light' ? '#1f2937' : '#f3f4f6';
+                },
                 font: {
                     size: 10,
                     weight: '700'
@@ -554,7 +568,16 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
             x: {
                 grid: { display: false },
                 ticks: {
-                    color: '#9ca3af',
+                    color: (context) => {
+                        const idx = context.index;
+                        if (rangeResults[idx]?.isCurrent) return '#facc15'; // Yellow for current
+                        return '#9ca3af';
+                    },
+                    font: (context) => {
+                        const idx = context.index;
+                        if (rangeResults[idx]?.isCurrent) return { weight: '900' };
+                        return {};
+                    },
                     maxRotation: 45,
                     minRotation: 0
                 }
@@ -735,11 +758,13 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
                             <span className="font-medium">{t('averageChange') || 'Avg Change'}: <span className="font-bold">{formatCompactNumber(avgChange)}</span></span>
                         </div>
 
-                        {/* Current Value Indicator */}
-                        <div className="flex items-center gap-2">
-                            <span className="w-3 h-3 bg-yellow-400 rounded-sm"></span>
-                            <span className="font-medium">{t('currentValue') || 'Current Value'}: <span className="font-bold">{config.format(currentValue, language)}</span></span>
-                        </div>
+                        {/* Current Value Indicator - hidden for TARGET_END_BALANCE when no target is set */}
+                        {!(parameterType === PARAMETER_TYPES.TARGET_END_BALANCE && (inputs.targetEndBalance === '' || inputs.targetEndBalance === undefined)) && (
+                            <div className="flex items-center gap-2">
+                                <span className="w-3 h-3 bg-yellow-400 rounded-sm"></span>
+                                <span className="font-medium">{t('currentValue') || 'Current Value'}: <span className="font-bold">{config.format(currentValue, language)}</span></span>
+                            </div>
+                        )}
                     </div>
 
                     {/* Chart */}
