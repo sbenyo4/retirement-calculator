@@ -571,7 +571,7 @@ export default function InputForm({
                             name="monthlyNetIncomeDesired"
                             value={
                                 goalSeekWithdrawal != null
-                                    ? `${formatCurrency(goalSeekWithdrawal)} ${language === 'he' ? '→' : '←'} ${formatCurrency(parseFloat(inputs.monthlyNetIncomeDesired) || 0)} (${goalSeekWithdrawal >= (parseFloat(inputs.monthlyNetIncomeDesired) || 0) ? '+' : ''}${formatCurrency(goalSeekWithdrawal - (parseFloat(inputs.monthlyNetIncomeDesired) || 0))})`
+                                    ? ''
                                     : (inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
                                         inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
                                         inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY)
@@ -588,6 +588,21 @@ export default function InputForm({
                                 inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
                                 inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY
                             }
+                            richContent={goalSeekWithdrawal != null ? (() => {
+                                const desired = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
+                                const diff = goalSeekWithdrawal - desired;
+                                const isPositive = diff >= 0;
+                                return (
+                                    <div className="flex items-center gap-1 w-full text-xs truncate" style={{ direction: language === 'he' ? 'rtl' : 'ltr' }}>
+                                        <span className={isLight ? 'text-gray-900' : 'text-white'}>{formatCurrency(goalSeekWithdrawal)}</span>
+                                        <span className={isLight ? 'text-gray-400' : 'text-gray-500'}>→</span>
+                                        <span className={isLight ? 'text-gray-400' : 'text-gray-500'}>{formatCurrency(desired)}</span>
+                                        <span className={`font-medium ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                                            ({isPositive ? '+' : ''}{formatCurrency(diff)})
+                                        </span>
+                                    </div>
+                                );
+                            })() : null}
                         />
                         <InputGroup language={language}
                             label={t('inflationRate')}
@@ -826,7 +841,7 @@ export default function InputForm({
     );
 }
 
-function InputGroup({ label, name, value, onChange, icon, prefix, type = "text", extraLabel, extraContent, titleActions, disabled = false, error, disabledStyle = false, language, endAction }) {
+function InputGroup({ label, name, value, onChange, icon, prefix, type = "text", extraLabel, extraContent, titleActions, disabled = false, error, disabledStyle = false, language, endAction, richContent }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
 
@@ -871,8 +886,13 @@ function InputGroup({ label, name, value, onChange, icon, prefix, type = "text",
                                 : (isLight
                                     ? 'bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500'
                                     : 'bg-black/20 border border-white/50 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500')
-                            } ${disabledStyle ? 'opacity-50 grayscale' : ''}`}
+                            } ${disabledStyle ? 'opacity-50 grayscale' : ''} ${richContent ? 'text-transparent' : ''}`}
                     />
+                    {richContent && (
+                        <div className="absolute inset-0 flex items-center px-2 pointer-events-none">
+                            {richContent}
+                        </div>
+                    )}
                     {extraContent}
                 </div>
                 {endAction}
