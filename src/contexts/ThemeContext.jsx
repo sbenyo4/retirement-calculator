@@ -1,24 +1,33 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { safeLocalStorageSet } from '../utils/storage';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { useAuth } from './AuthContext';
+import { getUserSettings, setUserSettings } from '../utils/db';
 
 const ThemeContext = createContext();
 
 export function ThemeProvider({ children }) {
-    // Initialize theme from localStorage, default to 'dark'
-    const [theme, setTheme] = useState(() => {
-        try {
-            const savedTheme = localStorage.getItem('theme');
-            return savedTheme || 'dark';
-        } catch {
-            return 'dark';
-        }
-    });
+    const { currentUser } = useAuth();
+    const uid = currentUser?.uid;
+    const [theme, setTheme] = useState('dark'); // Default to dark
+    const isInitialLoad = useRef(true);
 
-    // Update localStorage and document class when theme changes
+    // Load theme from Firestore
     useEffect(() => {
-        safeLocalStorageSet('theme', theme);
+        if (!uid) return;
+        isInitialLoad.current = true;
 
-        // Update the root element class
+        getUserSettings(uid).then(settings => {
+            if (settings?.theme) {
+                setTheme(settings.theme);
+            }
+            setTimeout(() => { isInitialLoad.current = false; }, 100);
+        }).catch(err => {
+            console.error('Error loading theme:', err);
+            isInitialLoad.current = false;
+        });
+    }, [uid]);
+
+    // Update document class and save to Firestore when theme changes
+    useEffect(() => {
         if (theme === 'light') {
             document.documentElement.classList.add('light');
             document.documentElement.classList.remove('dark');
@@ -26,7 +35,14 @@ export function ThemeProvider({ children }) {
             document.documentElement.classList.add('dark');
             document.documentElement.classList.remove('light');
         }
-    }, [theme]);
+
+        // Save to Firestore
+        if (uid && !isInitialLoad.current) {
+            setUserSettings(uid, { theme }).catch(err => {
+                console.error('Error saving theme:', err);
+            });
+        }
+    }, [theme, uid]);
 
     const toggleTheme = () => {
         setTheme(prev => prev === 'dark' ? 'light' : 'dark');

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useThemeClasses } from '../hooks/useThemeClasses';
 import { EVENT_TYPES } from '../constants';
-import { Calendar, Plus, Edit2, Trash2, ToggleLeft, ToggleRight, TrendingUp, TrendingDown, DollarSign, BarChart3, ChevronUp, ChevronDown } from 'lucide-react';
+import { Calendar, Plus, Edit2, Trash2, ToggleLeft, ToggleRight, TrendingUp, TrendingDown, DollarSign, BarChart3, ChevronUp, ChevronDown, Copy } from 'lucide-react';
 import AddEventModal from './AddEventModal';
 import LifeEventsTimelineModal from './LifeEventsTimelineModal';
 
@@ -23,12 +23,15 @@ export default function LifeEventsManager({
     results,
     setInputs,
     calculationMode,
-    simulationType
+    simulationType,
+    profiles,
+    updateProfile
 }) {
     const classes = useThemeClasses();
     const [showAddModal, setShowAddModal] = useState(false);
     const [showTimelineModal, setShowTimelineModal] = useState(false);
     const [editingEvent, setEditingEvent] = useState(null);
+    const [copyingEvent, setCopyingEvent] = useState(null);
     const [viewOffset, setViewOffset] = useState(0);
     const [itemsPerView, setItemsPerView] = useState(6);
     const listContainerRef = useRef(null);
@@ -93,6 +96,42 @@ export default function LifeEventsManager({
 
     const handleScrollUp = () => setViewOffset(p => Math.max(0, p - 1));
     const handleScrollDown = () => setViewOffset(p => Math.min(Math.max(0, events.length - itemsPerView), p + 1));
+
+    const submitCopyEvent = async (targetProfileId) => {
+        if (!targetProfileId) return;
+        try {
+            const targetProfile = profiles.find(p => p.id === targetProfileId);
+            if (!targetProfile) return;
+            const newEvent = { ...copyingEvent, id: Date.now().toString() };
+            const targetInputs = targetProfile.data || {};
+            const targetEvents = targetInputs.lifeEvents || [];
+            
+            // Check if an event with the exact same description and type already exists
+            const existingIndex = targetEvents.findIndex(
+                e => e.description === copyingEvent.description && e.type === copyingEvent.type
+            );
+            
+            let updatedEvents;
+            if (existingIndex >= 0) {
+                // Overwrite the existing event but keep its original ID
+                updatedEvents = [...targetEvents];
+                updatedEvents[existingIndex] = { ...newEvent, id: targetEvents[existingIndex].id };
+            } else {
+                // Append as new
+                updatedEvents = [...targetEvents, newEvent];
+            }
+            
+            const updatedDataToSave = { ...targetInputs, lifeEvents: updatedEvents };
+            
+            if (updateProfile) {
+                await updateProfile(targetProfileId, updatedDataToSave);
+                setCopyingEvent(null);
+            }
+        } catch(e) {
+            console.error(e);
+            alert(language === 'he' ? 'שגיאה בהעתקת האירוע' : 'Error copying event');
+        }
+    };
 
 
 
@@ -295,6 +334,13 @@ export default function LifeEventsManager({
                                                     {event.enabled ? <ToggleRight className="w-4 h-4 text-green-500" /> : <ToggleLeft className="w-4 h-4" />}
                                                 </button>
                                                 <button
+                                                    onClick={() => setCopyingEvent(event)}
+                                                    className={`p-1 rounded hover:bg-white/10 ${classes.icon}`}
+                                                    title={language === 'he' ? 'העתק אירוע לפרופיל אחר' : 'Copy Event to Profile'}
+                                                >
+                                                    <Copy className="w-4 h-4 text-blue-400" />
+                                                </button>
+                                                <button
                                                     onClick={() => setEditingEvent(event)}
                                                     className={`p-1 rounded hover:bg-white/10 ${classes.icon}`}
                                                     title={t ? t('edit') : 'Edit'}
@@ -352,6 +398,7 @@ export default function LifeEventsManager({
                 results={results}
                 setInputs={setInputs}
                 onDeleteEvent={handleDeleteEvent}
+                setCopyingEvent={setCopyingEvent}
             />
 
             {/* Add/Edit Modal - only render here when timeline is closed */}
@@ -360,6 +407,7 @@ export default function LifeEventsManager({
                     <AddEventModal
                         key={`${language}-${editingEvent?.id || 'new'}`}
                         event={editingEvent}
+                        events={events}
                         onSave={editingEvent?.id ? handleEditEvent : handleAddEvent}
                         onCancel={() => {
                             setShowAddModal(false);
@@ -373,6 +421,64 @@ export default function LifeEventsManager({
                     />
                 )
             }
+
+            {/* Copy Event Modal */}
+            {copyingEvent && (
+                <div className="fixed inset-0 bg-black/60 z-[10000] flex items-center justify-center backdrop-blur-sm" onClick={() => setCopyingEvent(null)}>
+                    <div className={`relative overflow-hidden w-full max-w-sm rounded-xl shadow-2xl border ${classes.isLight ? 'bg-white border-gray-200' : 'border-white/20'}`} onClick={e => e.stopPropagation()} dir={language === 'he' ? 'rtl' : 'ltr'} style={{ cursor: 'default' }}>
+                        {!classes.isLight && (
+                            <>
+                                <div className="absolute inset-0 bg-gradient-to-br from-slate-900 to-indigo-950" />
+                                <div className="absolute inset-0 bg-white/5" />
+                            </>
+                        )}
+                        <div className="relative z-10 w-full h-full flex flex-col p-5">
+                            <h3 className={`font-bold flex items-center gap-2 mb-4 ${classes.headerLabel}`}>
+                                <Copy className="w-5 h-5 text-blue-500" />
+                                {language === 'he' ? 'העתק אירוע לפרופיל' : 'Copy Event to Profile'}
+                            </h3>
+                            <div className="mb-4">
+                                <div className={`p-4 rounded-xl mb-5 ${classes.isLight ? 'bg-gray-50 border border-gray-100' : 'bg-black/20 border border-white/10'}`}>
+                                    <p className={`text-sm font-bold ${classes.headerLabel}`}>
+                                        {copyingEvent.description || getEventTypeLabel(copyingEvent.type)}
+                                    </p>
+                                    <p className={`text-sm mt-1.5 ${classes.isLight ? 'text-blue-600' : 'text-blue-400'} font-bold`}>
+                                        {formatAmount(copyingEvent)}
+                                    </p>
+                                </div>
+                                <label className={`text-xs font-bold block mb-2 ${classes.label}`}>
+                                    {language === 'he' ? 'בחר פרופיל יעד:' : 'Select Target Profile:'}
+                                </label>
+                                <select 
+                                    id="targetProfileSelectToCopy"
+                                    className={`w-full p-3 rounded-lg text-sm border shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none ${classes.input}`}
+                                    style={{ backgroundColor: classes.isLight ? '#ffffff' : '#1e293b' }}
+                                >
+                                    <option value="" className={classes.secondaryText}>{language === 'he' ? '-- בחר פרופיל יעד --' : '-- Select Target Profile --'}</option>
+                                    {profiles && profiles.filter(p => !['tmp','guest','debug'].includes(p.id)).map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className={`flex justify-end gap-3 text-sm mt-6 pt-5 border-t ${classes.border}`}>
+                                <button 
+                                    onClick={() => setCopyingEvent(null)}
+                                    className={`px-4 py-2.5 rounded-lg font-bold transition-colors ${classes.buttonSecondary}`}
+                                >
+                                    {t ? t('cancel') : 'Cancel'}
+                                </button>
+                                <button 
+                                    onClick={() => submitCopyEvent(document.getElementById('targetProfileSelectToCopy').value)}
+                                    className="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white shadow-md font-bold transition-colors flex items-center gap-2"
+                                >
+                                    <Copy className="w-4 h-4" />
+                                    {language === 'he' ? 'בצע העתקה' : 'Copy'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div >
     );
 }

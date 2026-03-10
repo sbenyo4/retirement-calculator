@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { auth, googleProvider } from '../firebase';
-import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import { signInWithPopup, signOut, onAuthStateChanged, setPersistence, inMemoryPersistence } from 'firebase/auth';
+import { migrateFromLocalStorage } from '../utils/db';
 
 const AuthContext = createContext();
 
@@ -12,11 +13,20 @@ export function AuthProvider({ children }) {
     const [currentUser, setCurrentUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    function login() {
+    async function login() {
         googleProvider.setCustomParameters({
             prompt: 'select_account'
         });
-        return signInWithPopup(auth, googleProvider);
+        const result = await signInWithPopup(auth, googleProvider);
+
+        // One-time migration from localStorage to Firestore
+        try {
+            await migrateFromLocalStorage(result.user.uid);
+        } catch (err) {
+            console.error('Migration from localStorage failed:', err);
+        }
+
+        return result;
     }
 
     function logout() {
@@ -29,18 +39,8 @@ export function AuthProvider({ children }) {
             setLoading(false);
         });
 
-        // Logout on page refresh or close
-        const handleBeforeUnload = () => {
-            if (auth.currentUser) {
-                signOut(auth);
-            }
-        };
-
-        window.addEventListener('beforeunload', handleBeforeUnload);
-
         return () => {
             unsubscribe();
-            window.removeEventListener('beforeunload', handleBeforeUnload);
         };
     }, []);
 

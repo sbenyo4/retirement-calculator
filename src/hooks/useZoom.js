@@ -1,25 +1,40 @@
-import { useState, useEffect } from 'react';
-import { safeLocalStorageSet } from '../utils/storage';
+import { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { getUserSettings, setUserSettings } from '../utils/db';
 
 export function useZoom() {
-    // Read from localStorage or default to 100
-    const [zoomLevel, setZoomLevel] = useState(() => {
-        try {
-            const saved = localStorage.getItem('app_zoom_level');
-            return saved ? parseInt(saved, 10) : 100;
-        } catch {
-            return 100;
-        }
-    });
+    const { currentUser } = useAuth();
+    const uid = currentUser?.uid;
+    const [zoomLevel, setZoomLevel] = useState(100);
+    const isInitialLoad = useRef(true);
+
+    // Load zoom level from Firestore
+    useEffect(() => {
+        if (!uid) return;
+        isInitialLoad.current = true;
+
+        getUserSettings(uid).then(settings => {
+            if (settings?.zoomLevel) {
+                setZoomLevel(settings.zoomLevel);
+            }
+            setTimeout(() => { isInitialLoad.current = false; }, 100);
+        }).catch(err => {
+            console.error('Error loading zoom level:', err);
+            isInitialLoad.current = false;
+        });
+    }, [uid]);
 
     useEffect(() => {
         // Apply zoom to root element
-        // We use font-size percentage on html to scale rem units
         document.documentElement.style.fontSize = `${zoomLevel}%`;
 
-        // Save to localStorage
-        safeLocalStorageSet('app_zoom_level', zoomLevel.toString());
-    }, [zoomLevel]);
+        // Save to Firestore
+        if (uid && !isInitialLoad.current) {
+            setUserSettings(uid, { zoomLevel }).catch(err => {
+                console.error('Error saving zoom level:', err);
+            });
+        }
+    }, [zoomLevel, uid]);
 
     const toggleZoom = () => {
         setZoomLevel(prev => prev === 100 ? 90 : 100);

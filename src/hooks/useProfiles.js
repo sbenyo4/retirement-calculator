@@ -1,6 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { safeLocalStorageSet, safeLocalStorageSetJSON, safeLocalStorageGetJSON, safeLocalStorageRemove } from '../utils/storage';
+import {
+    getProfiles,
+    saveProfile as dbSaveProfile,
+    updateProfile as dbUpdateProfile,
+    deleteProfileDoc,
+    onProfilesSnapshot,
+    getUserSettings,
+    setUserSettings
+} from '../utils/db';
 
 export function useProfiles() {
     const { currentUser } = useAuth();
@@ -9,94 +17,113 @@ export function useProfiles() {
     const [profilesLoaded, setProfilesLoaded] = useState(false);
     const [saveError, setSaveError] = useState(null);
 
-    const storageKey = currentUser ? `retirementProfiles_${currentUser.uid}` : 'retirementProfiles_guest';
-    const lastProfileKey = currentUser ? `lastLoadedProfile_${currentUser.uid}` : 'lastLoadedProfile_guest';
+    const uid = currentUser?.uid;
 
+    // Subscribe to profiles in real-time
     useEffect(() => {
+        if (!uid) {
+            setProfiles([]);
+            setProfilesLoaded(true);
+            return;
+        }
+
         setProfilesLoaded(false);
 
-        // Load profiles
-        const parsed = safeLocalStorageGetJSON(storageKey, []);
-        if (Array.isArray(parsed)) {
-            setProfiles(parsed);
-        } else {
-            console.error('Invalid profiles data in localStorage: expected array');
-            setProfiles([]);
-        }
+        // Load last loaded profile ID from settings
+        getUserSettings(uid).then(settings => {
+            setLastLoadedProfileId(settings?.lastLoadedProfileId || null);
+        }).catch(err => {
+            console.error('Error loading lastLoadedProfileId:', err);
+        });
 
-        // Load last profile ID
-        try {
-            const lastId = localStorage.getItem(lastProfileKey);
-            setLastLoadedProfileId(lastId || null);
-        } catch {
-            setLastLoadedProfileId(null);
-        }
+        // Real-time listener for profiles
+        const unsubscribe = onProfilesSnapshot(uid, (profilesList) => {
+            setProfiles(profilesList);
+            setProfilesLoaded(true);
+        });
 
-        setProfilesLoaded(true);
-    }, [storageKey, lastProfileKey]);
+        return () => unsubscribe();
+    }, [uid]);
 
-    const saveProfile = (name, data) => {
+    const saveProfile = useCallback((name, data) => {
+        if (!uid) return null;
+
         const newProfile = {
             id: Date.now().toString(),
             name,
             data
         };
-        const updated = [...profiles, newProfile];
-        const result = safeLocalStorageSetJSON(storageKey, updated);
-        if (result.success) {
-            setProfiles(updated);
-            setSaveError(null);
-        } else {
-            setSaveError(result.error === 'quota' ? 'Storage full. Please delete some profiles.' : 'Failed to save profile.');
-        }
+
+        // Optimistic update
+        setProfiles(prev => [...prev, newProfile]);
+
+        // Write to Firestore
+        dbSaveProfile(uid, newProfile).catch(err => {
+            console.error('Error saving profile:', err);
+            setSaveError('Failed to save profile.');
+            // Revert on error
+            setProfiles(prev => prev.filter(p => p.id !== newProfile.id));
+        });
+
+        setSaveError(null);
         return newProfile;
-    };
+    }, [uid]);
 
-    const updateProfile = (id, data) => {
-        const updated = profiles.map(p =>
-            p.id === id ? { ...p, data } : p
-        );
-        const result = safeLocalStorageSetJSON(storageKey, updated);
-        if (result.success) {
-            setProfiles(updated);
-            setSaveError(null);
-        } else {
-            setSaveError(result.error === 'quota' ? 'Storage full. Please delete some profiles.' : 'Failed to update profile.');
-        }
-    };
+    const updateProfile = useCallback((id, data) => {
+        if (!uid) return;
 
-    const renameProfile = (id, newName) => {
-        const updated = profiles.map(p =>
-            p.id === id ? { ...p, name: newName } : p
-        );
-        const result = safeLocalStorageSetJSON(storageKey, updated);
-        if (result.success) {
-            setProfiles(updated);
-            setSaveError(null);
-        } else {
-            setSaveError(result.error === 'quota' ? 'Storage full.' : 'Failed to rename profile.');
-        }
-    };
+        // Optimistic update
+        setProfiles(prev => prev.map(p => p.id === id ? { ...p, data } : p));
 
-    const deleteProfile = (id) => {
-        const updated = profiles.filter(p => p.id !== id);
-        setProfiles(updated);
-        safeLocalStorageSetJSON(storageKey, updated);
+        dbUpdateProfile(uid, id, { data }).catch(err => {
+            console.error('Error updating profile:', err);
+            setSaveError('Failed to update profile.');
+        });
+
+        setSaveError(null);
+    }, [uid]);
+
+    const renameProfile = useCallback((id, newName) => {
+        if (!uid) return;
+
+        // Optimistic update
+        setProfiles(prev => prev.map(p => p.id === id ? { ...p, name: newName } : p));
+
+        dbUpdateProfile(uid, id, { name: newName }).catch(err => {
+            console.error('Error renaming profile:', err);
+            setSaveError('Failed to rename profile.');
+        });
+
+        setSaveError(null);
+    }, [uid]);
+
+    const deleteProfile = useCallback((id) => {
+        if (!uid) return;
+
+        // Optimistic update
+        setProfiles(prev => prev.filter(p => p.id !== id));
+
+        deleteProfileDoc(uid, id).catch(err => {
+            console.error('Error deleting profile:', err);
+            setSaveError('Failed to delete profile.');
+        });
+
         // Clear last loaded if it was this profile
         if (lastLoadedProfileId === id) {
             setLastLoadedProfileId(null);
-            safeLocalStorageRemove(lastProfileKey);
+            setUserSettings(uid, { lastLoadedProfileId: null }).catch(console.error);
         }
-        setSaveError(null);
-    };
 
-    const markProfileAsLoaded = (id) => {
+        setSaveError(null);
+    }, [uid, lastLoadedProfileId]);
+
+    const markProfileAsLoaded = useCallback((id) => {
+        if (!uid) return;
         setLastLoadedProfileId(id);
-        safeLocalStorageSet(lastProfileKey, id);
-    };
+        setUserSettings(uid, { lastLoadedProfileId: id }).catch(console.error);
+    }, [uid]);
 
     const clearSaveError = () => setSaveError(null);
 
     return { profiles, saveProfile, updateProfile, renameProfile, deleteProfile, lastLoadedProfileId, markProfileAsLoaded, profilesLoaded, saveError, clearSaveError };
 }
-

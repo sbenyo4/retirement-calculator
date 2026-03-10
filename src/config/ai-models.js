@@ -144,22 +144,15 @@ export function getAvailableProviders() {
 
 /**
  * Get available models for a provider
- * Checks localStorage for user-customized model list first
+ * Accepts an optional override object (from Firestore settings) instead of reading localStorage
  * @param {string} providerId - Provider ID
+ * @param {Object} [modelsOverride] - Optional override object { [providerId]: [...models] }
  * @returns {Array<Object>} Array of model objects
  */
-export function getAvailableModels(providerId) {
-    // Check localStorage for override first
-    try {
-        const override = localStorage.getItem('ai_models_override');
-        if (override) {
-            const parsed = JSON.parse(override);
-            if (parsed[providerId] && Array.isArray(parsed[providerId])) {
-                return parsed[providerId];
-            }
-        }
-    } catch (e) {
-        console.error('Failed to parse models override:', e);
+export function getAvailableModels(providerId, modelsOverride) {
+    // Check override first
+    if (modelsOverride && modelsOverride[providerId] && Array.isArray(modelsOverride[providerId])) {
+        return modelsOverride[providerId];
     }
 
     // Fallback to static config

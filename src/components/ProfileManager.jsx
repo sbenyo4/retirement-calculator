@@ -36,15 +36,77 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
 
     const optionClass = isLight ? "bg-white text-gray-900" : "bg-gray-800 text-white";
 
-    const [comparisonSnapshot, setComparisonSnapshot] = useState(null);
+    // Track the last known database state of the currently selected profile.
+    // This allows us to safely pull in background database updates (like latency-resolving Firebased syncs)
+    // IF the user hasn't made any manual unsaved changes to the form. 
+    const [lastKnownDbSnapshot, setLastKnownDbSnapshot] = useState(null);
 
-    // Initial snapshot on mount - assume current state is "saved" to avoid warnings on refresh
-    useEffect(() => {
-        if (!comparisonSnapshot && currentInputs && Object.keys(currentInputs).length > 0) {
-            setComparisonSnapshot(normalizeInputs(currentInputs));
+    // Normalize currentInputs to ensure types match (Strings -> Numbers) before comparison
+    const normalizedCurrent = currentInputs ? normalizeInputs(currentInputs) : null;
+
+    // Helper to strip pension data AND dynamically computed fields for comparison
+    const stripComputedFields = (data) => {
+        if (!data) return null;
+        // eslint-disable-next-line no-unused-vars
+        const { pensionIncomeSources, ...rest } = data;
+        
+        if (rest.lifeEvents && Array.isArray(rest.lifeEvents)) {
+            rest.lifeEvents = rest.lifeEvents.map(event => {
+                if (event.linkedTo) {
+                    // Start date is dynamically computed by App.jsx for linked events based on dynamic ages
+                    // Ignore it during equality checks so the "Unsaved Changes" yellow banner doesn't constantly false alarm upon profile switch.
+                    const { startDate, ...eventRest } = event;
+                    return eventRest;
+                }
+                return event;
+            });
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // Only run once on mount
+        
+        return rest;
+    };
+    
+    // Auto-sync background updates from Firebase
+    useEffect(() => {
+        if (!selectedProfileId || !profiles || !normalizedCurrent) return;
+
+        const dbProfile = profiles.find(p => p.id === selectedProfileId);
+        if (!dbProfile || !dbProfile.data) return;
+
+        const currentDbData = normalizeInputs(dbProfile.data);
+        
+        // If we just loaded a new profile, set the initial baseline
+        if (!lastKnownDbSnapshot || lastKnownDbSnapshot.id !== selectedProfileId) {
+            setLastKnownDbSnapshot({ id: selectedProfileId, data: currentDbData });
+            return;
+        }
+
+        // Did the background database change from what we last knew it was?
+        const isDbUpdated = !deepEqual(stripComputedFields(currentDbData), stripComputedFields(lastKnownDbSnapshot.data));
+        
+        if (isDbUpdated) {
+            // Did the user modify the inputs manually? (Does Current == Last Known DB)
+            const hasUserMadeChanges = !deepEqual(stripComputedFields(normalizedCurrent), stripComputedFields(lastKnownDbSnapshot.data));
+            
+            if (!hasUserMadeChanges) {
+                // The user hasn't touched the form, BUT the background database updated!
+                // This happens if a Firestore network request was delayed/reverted and just succeeded.
+                // We should silently pull these new DB changes into the active UI state.
+                const globalPension = getGlobalPensionSources();
+                onLoad({
+                    ...currentDbData,
+                    pensionIncomeSources: globalPension.length > 0 ? globalPension : (currentInputs?.pensionIncomeSources || [])
+                });
+                
+                // Update our tracker so we don't loop
+                setLastKnownDbSnapshot({ id: selectedProfileId, data: currentDbData });
+            } else {
+                // User HAS made changes, AND the database changed.
+                // We shouldn't ruthlessly overwrite the user's manual work.
+                // However, we still update the baseline so the UI calculates "Unsaved Changes" against the newest truth.
+                setLastKnownDbSnapshot({ id: selectedProfileId, data: currentDbData });
+            }
+        }
+    }, [profiles, selectedProfileId, normalizedCurrent, lastKnownDbSnapshot, currentInputs]);
 
     const saveProfile = () => {
         if (!newProfileName.trim()) return;
@@ -55,8 +117,6 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         const newProfile = onSaveProfile(newProfileName, dataToSave);
         setNewProfileName('');
         setSelectedProfileId(newProfile.id);
-        // Update snapshot to match new saved state
-        setComparisonSnapshot(normalizeInputs(currentInputs));
         showMessage(language === 'he' ? 'פרופיל נשמר!' : 'Profile saved!');
     };
 
@@ -67,8 +127,6 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         const { pensionIncomeSources, ...dataToSave } = currentInputs;
 
         onUpdateProfile(selectedProfileId, dataToSave);
-        // Update snapshot to match new saved state
-        setComparisonSnapshot(normalizeInputs(currentInputs));
         showMessage(language === 'he' ? 'פרופיל עודכן!' : 'Profile updated!');
     };
 
@@ -94,29 +152,10 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     };
 
     const getGlobalPensionSources = () => {
-        try {
-            // Scan ALL keys to find any pension data, preferring the one that matches current user if possible, 
-            // but falling back to any valid data to prevent loss.
-            const candidates = [];
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key && key.includes('retirementGlobal_pensionSources_')) {
-                    try {
-                        const raw = localStorage.getItem(key);
-                        if (raw) {
-                            const data = JSON.parse(raw);
-                            if (Array.isArray(data) && data.length > 0) {
-                                candidates.push({ key, data });
-                            }
-                        }
-                    } catch (e) { /* ignore */ }
-                }
-            }
-            // If candidates found, return the most recent or just the first one
-            // Ideally we'd timestamp them, but for now just returning the first valid one is better than reset
-            if (candidates.length > 0) return candidates[0].data;
-        } catch (e) {
-            console.error('Error reading global pension sources:', e);
+        // Pension sources are now loaded from Firestore via useRetirementData
+        // Just return the current pension sources from the inputs prop
+        if (Array.isArray(currentInputs?.pensionIncomeSources) && currentInputs.pensionIncomeSources.length > 0) {
+            return currentInputs.pensionIncomeSources;
         }
         return [];
     };
@@ -132,8 +171,6 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                 ...data,
                 pensionIncomeSources: globalPension.length > 0 ? globalPension : (currentInputs?.pensionIncomeSources || [])
             });
-            // Reset snapshot using the merged data
-            setComparisonSnapshot(data);
             showMessage(language === 'he' ? 'פרופיל נטען מחדש!' : 'Profile reloaded!');
         }
     };
@@ -159,8 +196,10 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                 pensionIncomeSources: globalPension.length > 0 ? globalPension : (currentInputs?.pensionIncomeSources || [])
             });
             setSelectedProfileId(id);
-            // Reset snapshot to the loaded profile data
-            setComparisonSnapshot(data);
+            // We NO LONGER set comparisonSnapshot here manually.
+            // When App.jsx receives onLoad, it updates `currentInputs` and passes it back down.
+            // Our new useEffect above will intercept the first render with the new profile 
+            // and set the snapshot perfectly aligned with App's normalized state.
 
             // Persist this as the last loaded profile
             if (onProfileLoad) {
@@ -169,20 +208,29 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         }
     };
 
-    // Normalize currentInputs to ensure types match (Strings -> Numbers) before comparison
-    const normalizedCurrent = currentInputs ? normalizeInputs(currentInputs) : null;
-
-    // Helper to strip pension data for comparison since it's global now
-    const stripPension = (data) => {
-        if (!data) return null;
-        // eslint-disable-next-line no-unused-vars
-        const { pensionIncomeSources, ...rest } = data;
-        return rest;
-    };
-
-    // Compare normalized current inputs with the SNAPSHOT instead of the database profile
-    // This ensures "Unsaved changes" only appears when user modifies data AFTER loading/refreshing
-    const hasChanges = comparisonSnapshot && normalizedCurrent && !deepEqual(stripPension(normalizedCurrent), stripPension(comparisonSnapshot));
+    // Determine hasChanges dynamically from the database profile
+    // This perfectly handles external updates (like event copying) and ignores App.jsx's 
+    // internal race conditions, because we just check if our current layout matches the db.
+    let hasChanges = false;
+    let differencesLog = [];
+    if (selectedProfileId && profiles && normalizedCurrent) {
+        const dbProfile = profiles.find(p => p.id === selectedProfileId);
+        if (dbProfile && dbProfile.data) {
+            const dbDataNormalized = normalizeInputs(dbProfile.data);
+            const normStripped = stripComputedFields(normalizedCurrent);
+            const dbStripped = stripComputedFields(dbDataNormalized);
+            hasChanges = !deepEqual(normStripped, dbStripped);
+            
+            if (hasChanges) {
+                // IMPORTANT DEBUG: Why do they differ?!
+                differencesLog = getDetailedDiff(normStripped, dbStripped);
+                // console.warn("PROFILE SYNC MISMATCH DETECTED:");
+                // console.warn("Normalized Current:", normStripped);
+                // console.warn("Normalized DB:", dbStripped);
+                // console.warn("Top-Level Diff:", differencesLog);
+            }
+        }
+    }
 
     return (
         <div className="mb-2">
@@ -255,7 +303,12 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                                 </button>
                                 {/* Update/save changes to profile */}
                                 <button
-                                    onClick={updateProfile}
+                                    onClick={() => {
+                                        if (differencesLog.length > 0) {
+                                            console.log("Unsaved changes being applied. Diff was:", differencesLog);
+                                        }
+                                        updateProfile();
+                                    }}
                                     className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors relative"
                                     title={language === 'he' ? 'שמור שינויים לפרופיל' : 'Save changes to profile'}
                                 >

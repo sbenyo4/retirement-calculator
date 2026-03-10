@@ -3,9 +3,9 @@ import { RefreshCw, Check, X, AlertCircle, Download, RotateCcw, Settings } from 
 import { useTheme } from '../contexts/ThemeContext';
 import { fetchAllAvailableModels, compareModels } from '../utils/ai-models-fetcher';
 import { AI_MODELS_CONFIG } from '../config/ai-models';
-import { safeLocalStorageSetJSON, safeLocalStorageGetJSON, safeLocalStorageRemove } from '../utils/storage';
+import { getUserSettings, setUserSettings } from '../utils/db';
 
-export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language }) {
+export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, uid }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
     const [loading, setLoading] = useState(false);
@@ -23,11 +23,19 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language }
         try {
             const fetched = await fetchAllAvailableModels(apiKeys);
 
-            // Get current config from localStorage if available, otherwise use static config
+            // Get current config from Firestore if available, otherwise use static config
             let currentConfig = AI_MODELS_CONFIG;
-            const override = safeLocalStorageGetJSON('ai_models_override', null);
+            let override = null;
+            if (uid) {
+                try {
+                    const settings = await getUserSettings(uid);
+                    override = settings?.aiModelsOverride || null;
+                } catch (err) {
+                    console.error('Error loading model override:', err);
+                }
+            }
             if (override) {
-                // Merge localStorage models into config structure
+                // Merge saved models into config structure
                 currentConfig = {};
                 Object.keys(AI_MODELS_CONFIG).forEach(providerId => {
                     currentConfig[providerId] = {
@@ -93,8 +101,8 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language }
         }));
     };
 
-    const handleApplyUpdates = () => {
-        // Save only selected models to localStorage
+    const handleApplyUpdates = async () => {
+        // Save only selected models to Firestore
         const modelsToSave = {};
         Object.keys(results).forEach(providerId => {
             if (results[providerId].status === 'success' && selectedModels[providerId]) {
@@ -106,11 +114,12 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language }
             }
         });
 
-
-        const result = safeLocalStorageSetJSON('ai_models_override', modelsToSave);
-
-        if (!result.success) {
-            setError(result.error === 'quota' ? 'Storage full. Please clear some data.' : 'Failed to save models.');
+        try {
+            if (uid) {
+                await setUserSettings(uid, { aiModelsOverride: modelsToSave });
+            }
+        } catch (err) {
+            setError('Failed to save models: ' + err.message);
             return;
         }
 
@@ -122,8 +131,15 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language }
         setTimeout(() => setSaveSuccess(false), 3000);
     };
 
-    const handleReset = () => {
-        safeLocalStorageRemove('ai_models_override');
+    const handleReset = async () => {
+        try {
+            if (uid) {
+                await setUserSettings(uid, { aiModelsOverride: null });
+            }
+        } catch (err) {
+            setError('Failed to reset models: ' + err.message);
+            return;
+        }
 
         // Trigger refresh in parent component
         onModelsUpdated?.();

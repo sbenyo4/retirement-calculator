@@ -1,7 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { safeLocalStorageSetJSON, safeLocalStorageGetJSON } from '../utils/storage';
-
-const STORAGE_KEY = 'ai_usage_data';
+import { getRateLimitData, setRateLimitData } from '../utils/db';
 
 // Rate limit configuration
 const DEFAULT_LIMITS = {
@@ -12,18 +10,20 @@ const DEFAULT_LIMITS = {
 
 /**
  * Custom hook for rate limiting AI API calls
- * @param {string} userId - User identifier (from auth or 'guest')
+ * @param {string} userId - User identifier (from auth)
  * @returns {Object} Rate limit state and helpers
  */
-export function useRateLimit(userId = 'guest') {
+export function useRateLimit(userId) {
     const [usageData, setUsageData] = useState(null);
     const [isLimited, setIsLimited] = useState(false);
     const [timeUntilReset, setTimeUntilReset] = useState(null);
+    const [loaded, setLoaded] = useState(false);
 
-    // Load usage data from localStorage
+    // Load usage data from Firestore
     useEffect(() => {
-        const loadUsageData = () => {
-            const data = safeLocalStorageGetJSON(`${STORAGE_KEY}_${userId}`, { calls: [] });
+        if (!userId) return;
+
+        getRateLimitData(userId).then(data => {
             // Clean old data (older than 7 days)
             const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
             if (data.calls) {
@@ -31,22 +31,26 @@ export function useRateLimit(userId = 'guest') {
             } else {
                 data.calls = [];
             }
-            return data;
-        };
-
-        setUsageData(loadUsageData());
+            setUsageData(data);
+            setLoaded(true);
+        }).catch(err => {
+            console.error('Error loading rate limit data:', err);
+            setUsageData({ calls: [] });
+            setLoaded(true);
+        });
     }, [userId]);
 
-    // Save usage data to localStorage
+    // Save usage data to Firestore when it changes
     useEffect(() => {
-        if (usageData) {
-            safeLocalStorageSetJSON(`${STORAGE_KEY}_${userId}`, usageData);
+        if (usageData && loaded && userId) {
+            setRateLimitData(userId, usageData).catch(err => {
+                console.error('Error saving rate limit data:', err);
+            });
         }
-    }, [usageData, userId]);
+    }, [usageData, userId, loaded]);
 
     /**
      * Check if rate limit is exceeded
-     * @returns {Object} { allowed: boolean, reason: string, resetTime: Date, current: number, limit: number }
      */
     const checkRateLimit = useCallback(() => {
         if (!usageData) return { allowed: true };
@@ -105,8 +109,6 @@ export function useRateLimit(userId = 'guest') {
 
     /**
      * Record a new AI call
-     * @param {string} provider - AI provider used
-     * @param {string} model - Model used
      */
     const recordCall = useCallback((provider, model) => {
         setUsageData(prev => ({
@@ -124,7 +126,6 @@ export function useRateLimit(userId = 'guest') {
 
     /**
      * Get usage statistics
-     * @returns {Object} Usage stats
      */
     const getUsageStats = useCallback(() => {
         if (!usageData) return { today: 0, thisHour: 0, thisMinute: 0, limits: DEFAULT_LIMITS };
@@ -145,7 +146,7 @@ export function useRateLimit(userId = 'guest') {
     }, [usageData]);
 
     /**
-     * Reset usage data (for development/testing)
+     * Reset usage data
      */
     const resetUsage = useCallback(() => {
         setUsageData({ calls: [] });

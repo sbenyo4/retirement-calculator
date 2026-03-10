@@ -2,7 +2,7 @@ import React, { useMemo, useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useThemeClasses } from '../hooks/useThemeClasses';
-import { X, Calendar, TrendingUp, TrendingDown, DollarSign, ArrowRight, ArrowLeft, Eye, EyeOff, ToggleLeft, ToggleRight, Filter, FilterX, Plus, Undo2, Redo2, AlertTriangle, Trash2 } from 'lucide-react';
+import { X, Calendar, TrendingUp, TrendingDown, DollarSign, ArrowRight, ArrowLeft, Eye, EyeOff, ToggleLeft, ToggleRight, Filter, FilterX, Plus, Undo2, Redo2, AlertTriangle, Trash2, Copy } from 'lucide-react';
 import { EVENT_TYPES } from '../constants';
 import { calculateTimelineLayout } from '../utils/timelineLayout';
 import AddEventModal from './AddEventModal';
@@ -30,7 +30,8 @@ export default function LifeEventsTimelineModal({
     handleEditEvent,  // Handler for editing event
     results,  // Full financial results for tooltips
     setInputs, // State setter for age sliders
-    onDeleteEvent // Handler for deleting event
+    onDeleteEvent, // Handler for deleting event
+    setCopyingEvent // Handler for copying event
 }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
@@ -845,16 +846,31 @@ export default function LifeEventsTimelineModal({
                                                         {event.isRecurring ? (
                                                             <div className="relative w-full h-full">
                                                                 <div dir={isRtl ? 'rtl' : 'ltr'} className={`absolute ${isTop ? 'top-0 -translate-y-full' : 'bottom-0 translate-y-full'} left-1/2 -translate-x-1/2 px-2 py-0.5 rounded shadow-sm border flex flex-col items-center whitespace-nowrap min-w-[100px] ${event.cardClass} group cursor-pointer`}>
-                                                                    <button
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            onDeleteWrapper(event.id);
-                                                                        }}
-                                                                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                                                                        title={t ? t('delete') : 'Delete'}
-                                                                    >
-                                                                        <X className="w-3 h-3" />
-                                                                    </button>
+                                                                    <div className="absolute -top-3 -right-3 flex gap-1 p-0.5 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                if (setCopyingEvent) {
+                                                                                    const originalEvent = originalEventsMap.get(String(event.id)) || event;
+                                                                                    setCopyingEvent(originalEvent);
+                                                                                }
+                                                                            }}
+                                                                            className="bg-blue-500 text-white rounded-full p-0.5 shadow-sm hover:scale-110 hover:bg-blue-400 transition-all"
+                                                                            title={language === 'he' ? 'העתק' : 'Copy'}
+                                                                        >
+                                                                            <Copy className="w-3 h-3" />
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                onDeleteWrapper(event.id);
+                                                                            }}
+                                                                            className="bg-red-500 text-white rounded-full p-0.5 shadow-sm hover:scale-110 hover:bg-red-400 transition-all"
+                                                                            title={t ? t('delete') : 'Delete'}
+                                                                        >
+                                                                            <X className="w-3 h-3" />
+                                                                        </button>
+                                                                    </div>
 
                                                                     <span className="text-[10px] uppercase font-bold tracking-wider">{formatMoney(event.monthlyChange)}</span>
                                                                     <span className="text-[8px] opacity-70 font-medium mt-0.5">
@@ -869,16 +885,31 @@ export default function LifeEventsTimelineModal({
                                                         ) : (
                                                             <div className="relative w-0 h-full flex items-center justify-center">
                                                                 <div dir={isRtl ? 'rtl' : 'ltr'} className={`absolute ${isTop ? '-top-2 -translate-y-full' : 'bottom-0 translate-y-full'} left-1/2 -translate-x-1/2 px-2 py-1 rounded shadow-sm border whitespace-nowrap text-center min-w-[80px] ${event.cardClass} group cursor-pointer`}>
-                                                                    <button
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            onDeleteWrapper(event.id);
-                                                                        }}
-                                                                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                                                                        title={t ? t('delete') : 'Delete'}
-                                                                    >
-                                                                        <X className="w-3 h-3" />
-                                                                    </button>
+                                                                    <div className="absolute -top-3 -right-3 flex gap-1 p-0.5 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                if (setCopyingEvent) {
+                                                                                    const originalEvent = originalEventsMap.get(String(event.id)) || event;
+                                                                                    setCopyingEvent(originalEvent);
+                                                                                }
+                                                                            }}
+                                                                            className="bg-blue-500 text-white rounded-full p-0.5 shadow-sm hover:scale-110 hover:bg-blue-400 transition-all"
+                                                                            title={language === 'he' ? 'העתק' : 'Copy'}
+                                                                        >
+                                                                            <Copy className="w-3 h-3" />
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                onDeleteWrapper(event.id);
+                                                                            }}
+                                                                            className="bg-red-500 text-white rounded-full p-0.5 shadow-sm hover:scale-110 hover:bg-red-400 transition-all"
+                                                                            title={t ? t('delete') : 'Delete'}
+                                                                        >
+                                                                            <X className="w-3 h-3" />
+                                                                        </button>
+                                                                    </div>
 
                                                                     <div className="text-xs font-bold">{formatMoney(event.amount)}</div>
                                                                     <div className="text-[9px] opacity-90 mb-0.5 font-medium">{formatDateShort(event.startDate)}</div>
@@ -954,6 +985,18 @@ export default function LifeEventsTimelineModal({
                                                             className="text-[10px] items-center gap-1 uppercase font-bold tracking-wider hover:opacity-100 flex"
                                                         >
                                                             {language === 'he' ? 'ערוך' : 'EDIT'}
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if (setCopyingEvent) {
+                                                                    const originalEvent = originalEventsMap.get(String(event.id)) || event;
+                                                                    setCopyingEvent(originalEvent);
+                                                                }
+                                                            }}
+                                                            className="text-[10px] items-center gap-1 uppercase font-bold tracking-wider hover:text-blue-500 hover:opacity-100 flex"
+                                                        >
+                                                            {language === 'he' ? 'העתק' : 'COPY'}
                                                         </button>
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); onDeleteWrapper(event.id); }}

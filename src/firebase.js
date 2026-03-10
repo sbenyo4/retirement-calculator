@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, setPersistence, inMemoryPersistence } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
 
 // Firebase configuration using environment variables for security
 // These values are loaded from .env file (never commit sensitive keys to git!)
@@ -24,4 +25,10 @@ if (missingKeys.length > 0) {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+
+// Force in-memory persistence (no session saved across refreshes)
+// This applies globally to the auth instance immediately and clears old IndexedDB sessions
+setPersistence(auth, inMemoryPersistence).catch(console.error);
+
+export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();

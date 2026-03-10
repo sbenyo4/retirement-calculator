@@ -25,6 +25,7 @@ const MONTHS = [
  */
 export default function AddEventModal({
     event = null, // If editing, pass existing event
+    events = [],  // Array of all current events for duplicate validation
     onSave,
     onCancel,
     t,
@@ -60,6 +61,23 @@ export default function AddEventModal({
     const [description, setDescription] = useState(event?.description || '');
     const [linkedTo, setLinkedTo] = useState(event?.linkedTo || null);
 
+    // Derived validation state
+    const isRecurring = eventType === EVENT_TYPES.INCOME_CHANGE || eventType === EVENT_TYPES.EXPENSE_CHANGE;
+    const isOneTime = eventType === EVENT_TYPES.ONE_TIME_INCOME || eventType === EVENT_TYPES.ONE_TIME_EXPENSE;
+
+    const isTitleEmpty = !description.trim();
+    const isAmountInvalid = isOneTime && (!amount || parseFloat(amount) <= 0);
+    const isMonthlyChangeInvalid = isRecurring && (!monthlyChange || parseFloat(monthlyChange) === 0);
+    const isStartDateInvalid = !startYear || !startMonth;
+    const isEndDateInvalid = isRecurring && hasEndDate && (!endYear || !endMonth);
+    const isDuplicate = description.trim() && events.some(e => 
+        e.description === description.trim() && 
+        e.type === eventType && 
+        e.id !== event?.id
+    );
+
+    const isValid = !isTitleEmpty && !isAmountInvalid && !isMonthlyChangeInvalid && !isStartDateInvalid && !isEndDateInvalid && !isDuplicate;
+
     // Synchronize form state when event prop changes (crucial for modal reuse)
     useEffect(() => {
         setEventType(event?.type || EVENT_TYPES.ONE_TIME_INCOME);
@@ -74,8 +92,6 @@ export default function AddEventModal({
         setLinkedTo(event?.linkedTo || null);
     }, [event, currentYear, currentMonth]);
 
-    const isRecurring = eventType === EVENT_TYPES.INCOME_CHANGE || eventType === EVENT_TYPES.EXPENSE_CHANGE;
-    const isOneTime = eventType === EVENT_TYPES.ONE_TIME_INCOME || eventType === EVENT_TYPES.ONE_TIME_EXPENSE;
 
     // Update fields when event type changes
     useEffect(() => {
@@ -105,26 +121,7 @@ export default function AddEventModal({
     }, [startYear, startMonth, endYear, endMonth, hasEndDate]);
 
     const handleSave = () => {
-        // Validation
-        if (!startYear || !startMonth) {
-            alert(t ? t('pleaseSelectStartDate') : 'Please select a start date');
-            return;
-        }
-
-        if (isRecurring && hasEndDate && (!endYear || !endMonth)) {
-            alert(t ? t('pleaseSelectEndDate') : 'Please select an end date');
-            return;
-        }
-
-        if (isOneTime && (!amount || parseFloat(amount) <= 0)) {
-            alert(t ? t('pleaseEnterAmount') : 'Please enter a valid amount');
-            return;
-        }
-
-        if (isRecurring && (!monthlyChange || parseFloat(monthlyChange) === 0)) {
-            alert(t ? t('pleaseEnterMonthlyChange') : 'Please enter a valid monthly change');
-            return;
-        }
+        if (!isValid) return;
 
         // Create event object
         const newEvent = {
@@ -595,15 +592,22 @@ export default function AddEventModal({
                             {/* Description */}
                             <div className="space-y-2">
                                 <label className={`text-xs font-medium ${classes.headerLabel}`}>
-                                    {t ? t('description') : 'Description (optional)'}
+                                    {t ? t('description') : 'Description (Required)'}
                                 </label>
-                                <input
-                                    type="text"
-                                    value={description}
-                                    onChange={(e) => setDescription(e.target.value)}
-                                    placeholder={t ? t('descriptionPlaceholder') : 'e.g., Inheritance, Consulting income...'}
-                                    className={`w-full rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${isLight ? 'bg-white border border-gray-300 text-gray-900' : 'bg-black/20 border border-white/50 text-white'}`}
-                                />
+                                <div>
+                                    <input
+                                        type="text"
+                                        value={description}
+                                        onChange={(e) => setDescription(e.target.value)}
+                                        placeholder={t ? t('descriptionPlaceholder') : 'e.g., Inheritance, Consulting income...'}
+                                        className={`w-full rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${isLight ? 'bg-white border border-gray-300 text-gray-900' : 'bg-black/20 border border-white/50 text-white'}`}
+                                    />
+                                    {isDuplicate && (
+                                        <p className="text-red-500 text-xs mt-1.5 font-medium">
+                                            {language === 'he' ? 'שגיאה: אירוע עם שם וסוג זהים כבר קיים בפרופיל זה' : 'Error: An event with this exact name and type already exists'}
+                                        </p>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -630,7 +634,8 @@ export default function AddEventModal({
                             </button>
                             <button
                                 onClick={handleSave}
-                                className={`${classes.buttonPrimary} px-4 py-2 rounded text-sm`}
+                                disabled={!isValid}
+                                className={`${classes.buttonPrimary} px-4 py-2 rounded text-sm transition-opacity ${!isValid ? 'opacity-50 cursor-not-allowed' : ''}`}
                             >
                                 {event
                                     ? (t ? t('saveChanges') : 'Save Changes')

@@ -33,7 +33,9 @@ export default function InputForm({
     onAiCalculate,
     aiInputsChanged,
     aiLoading,
-    goalSeekWithdrawal
+    goalSeekWithdrawal,
+    profiles,
+    updateProfile
     // Note: sensitivity props (showInterestSensitivity, etc.) were previously passed but are not used in this component
 }) {
     const { theme } = useTheme();
@@ -807,6 +809,8 @@ export default function InputForm({
                         setInputs={setInputs}
                         calculationMode={calculationMode}
                         simulationType={simulationType}
+                        profiles={profiles}
+                        updateProfile={updateProfile}
                     />
                 </div>
             )}

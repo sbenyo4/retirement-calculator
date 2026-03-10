@@ -428,6 +428,8 @@ function MainApp() {
               setShowIncomeSensitivity={setShowIncomeSensitivity}
               showAgeSensitivity={showAgeSensitivity}
               setShowAgeSensitivity={setShowAgeSensitivity}
+              profiles={profiles}
+              updateProfile={updateProfile}
             />
           </div>
 
@@ -501,9 +503,9 @@ function MainApp() {
           }>
             <ModelsManager
               apiKeys={{
-                gemini: settings.apiKeyOverride || import.meta.env.VITE_GEMINI_API_KEY,
-                openai: import.meta.env.VITE_OPENAI_API_KEY,
-                anthropic: import.meta.env.VITE_ANTHROPIC_API_KEY
+                gemini: settings.apiKeys?.gemini || settings.apiKeyOverride || import.meta.env.VITE_GEMINI_API_KEY,
+                openai: settings.apiKeys?.openai || import.meta.env.VITE_OPENAI_API_KEY,
+                anthropic: settings.apiKeys?.anthropic || import.meta.env.VITE_ANTHROPIC_API_KEY
               }}
               onClose={() => setShowModelsManager(false)}
               onModelsUpdated={() => {
@@ -512,6 +514,7 @@ function MainApp() {
               }}
               t={t}
               language={language}
+              uid={currentUser?.uid}
             />
           </Suspense>
         </ErrorBoundary>

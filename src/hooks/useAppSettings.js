@@ -1,6 +1,7 @@
-import { useReducer, useEffect } from 'react';
+import { useReducer, useEffect, useRef } from 'react';
 import { SIMULATION_TYPES } from '../utils/simulation-calculator';
-import { safeLocalStorageSet, safeLocalStorageSetJSON, safeLocalStorageGetJSON } from '../utils/storage';
+import { useAuth } from '../contexts/AuthContext';
+import { getUserSettings, setUserSettings } from '../utils/db';
 
 const SETTINGS_ACTIONS = {
     SET_CALCULATION_MODE: 'SET_CALCULATION_MODE',
@@ -8,38 +9,44 @@ const SETTINGS_ACTIONS = {
     SET_AI_MODEL: 'SET_AI_MODEL',
     SET_API_KEY_OVERRIDE: 'SET_API_KEY_OVERRIDE',
     SET_SIMULATION_TYPE: 'SET_SIMULATION_TYPE',
-    SET_FISCAL_DATA: 'SET_FISCAL_DATA'
+    SET_FISCAL_DATA: 'SET_FISCAL_DATA',
+    LOAD_FROM_DB: 'LOAD_FROM_DB'
 };
 
-function getInitialSettings() {
-    const savedProvider = localStorage.getItem('aiProvider') || 'gemini';
-
-    // Safely parse and validate fiscalParameters
-    const savedFiscal = safeLocalStorageGetJSON('fiscalParameters', null);
-    // Only use saved params if they have the required structure
-    const fiscalParameters = (savedFiscal?.nationalInsurance?.incomeTestThreshold)
-        ? savedFiscal
-        : null;
-
+function getDefaultSettings() {
     return {
-        calculationMode: 'mathematical', // Always start in mathematical mode on refresh
-        aiProvider: savedProvider,
-        aiModel: localStorage.getItem('aiModel') || 'gemini-2.5-flash',
-        apiKeyOverride: localStorage.getItem(`apiKeyOverride_${savedProvider}`) || '',
-        simulationType: localStorage.getItem('simulationType') || SIMULATION_TYPES.MONTE_CARLO,
-        familyStatus: localStorage.getItem('familyStatus') || 'single',
-        fiscalParameters
+        calculationMode: 'mathematical',
+        aiProvider: 'gemini',
+        aiModel: 'gemini-2.5-flash',
+        apiKeyOverride: '',
+        simulationType: SIMULATION_TYPES.MONTE_CARLO,
+        familyStatus: 'single',
+        fiscalParameters: null,
+        apiKeys: {} // Per-provider API key overrides
     };
 }
 
 function settingsReducer(state, action) {
     switch (action.type) {
+        case SETTINGS_ACTIONS.LOAD_FROM_DB: {
+            const db = action.payload;
+            return {
+                ...state,
+                aiProvider: db.aiProvider || state.aiProvider,
+                aiModel: db.aiModel || state.aiModel,
+                apiKeyOverride: db.apiKeys?.[db.aiProvider || state.aiProvider] || '',
+                simulationType: db.simulationType || state.simulationType,
+                familyStatus: db.familyStatus || state.familyStatus,
+                fiscalParameters: db.fiscalParameters || state.fiscalParameters,
+                apiKeys: db.apiKeys || state.apiKeys,
+            };
+        }
+
         case SETTINGS_ACTIONS.SET_CALCULATION_MODE:
             return { ...state, calculationMode: action.payload };
 
         case SETTINGS_ACTIONS.SET_AI_PROVIDER: {
-            // When provider changes, load the saved API key for that provider
-            const newApiKey = localStorage.getItem(`apiKeyOverride_${action.payload}`) || '';
+            const newApiKey = state.apiKeys[action.payload] || '';
             return {
                 ...state,
                 aiProvider: action.payload,
@@ -51,7 +58,14 @@ function settingsReducer(state, action) {
             return { ...state, aiModel: action.payload };
 
         case SETTINGS_ACTIONS.SET_API_KEY_OVERRIDE:
-            return { ...state, apiKeyOverride: action.payload };
+            return {
+                ...state,
+                apiKeyOverride: action.payload,
+                apiKeys: {
+                    ...state.apiKeys,
+                    [state.aiProvider]: action.payload
+                }
+            };
 
         case SETTINGS_ACTIONS.SET_SIMULATION_TYPE:
             return { ...state, simulationType: action.payload };
@@ -69,23 +83,51 @@ function settingsReducer(state, action) {
 }
 
 export function useAppSettings() {
-    const [settings, dispatch] = useReducer(settingsReducer, null, getInitialSettings);
+    const { currentUser } = useAuth();
+    const uid = currentUser?.uid;
+    const [settings, dispatch] = useReducer(settingsReducer, null, getDefaultSettings);
+    const isInitialLoad = useRef(true);
+    const loadedRef = useRef(false);
 
-    // Persistence for General Settings
+    // Load settings from Firestore on mount
     useEffect(() => {
-        safeLocalStorageSet('aiProvider', settings.aiProvider);
-        safeLocalStorageSet('aiModel', settings.aiModel);
-        safeLocalStorageSet('simulationType', settings.simulationType);
-        safeLocalStorageSet('familyStatus', settings.familyStatus);
+        if (!uid) return;
+        isInitialLoad.current = true;
+
+        getUserSettings(uid).then(dbSettings => {
+            if (dbSettings) {
+                dispatch({ type: SETTINGS_ACTIONS.LOAD_FROM_DB, payload: dbSettings });
+            }
+            loadedRef.current = true;
+            // Allow state to settle before enabling saves
+            setTimeout(() => { isInitialLoad.current = false; }, 100);
+        }).catch(err => {
+            console.error('Error loading settings from Firestore:', err);
+            loadedRef.current = true;
+            isInitialLoad.current = false;
+        });
+    }, [uid]);
+
+    // Persist settings to Firestore when they change
+    useEffect(() => {
+        if (!uid || !loadedRef.current || isInitialLoad.current) return;
+
+        const dataToSave = {
+            aiProvider: settings.aiProvider,
+            aiModel: settings.aiModel,
+            simulationType: settings.simulationType,
+            familyStatus: settings.familyStatus,
+            apiKeys: settings.apiKeys,
+        };
+
         if (settings.fiscalParameters) {
-            safeLocalStorageSetJSON('fiscalParameters', settings.fiscalParameters);
+            dataToSave.fiscalParameters = settings.fiscalParameters;
         }
-    }, [settings.aiProvider, settings.aiModel, settings.simulationType, settings.familyStatus, settings.fiscalParameters]);
 
-    // Persistence for API Key (Per Provider)
-    useEffect(() => {
-        safeLocalStorageSet(`apiKeyOverride_${settings.aiProvider}`, settings.apiKeyOverride);
-    }, [settings.apiKeyOverride, settings.aiProvider]);
+        setUserSettings(uid, dataToSave).catch(err => {
+            console.error('Error saving settings to Firestore:', err);
+        });
+    }, [settings.aiProvider, settings.aiModel, settings.simulationType, settings.familyStatus, settings.fiscalParameters, settings.apiKeys, uid]);
 
     return { settings, dispatch, SETTINGS_ACTIONS };
 }
