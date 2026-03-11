@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useDebouncedValue } from './useDebounce';
 import { useDeepCompareMemo } from './useDeepCompare';
 import { calculateRetirementProjection } from '../utils/calculator';
-import { calculateSimulation } from '../utils/simulation-calculator';
+import { useSimulationWorker } from './useSimulationWorker';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
 
 /**
@@ -23,6 +23,8 @@ export function useCalculation(inputs, settings, t) {
     // Refs for simulation change detection
     const lastSimInputs = useRef(null);
     const lastSimType = useRef(null);
+
+    const { runSimulation } = useSimulationWorker();
 
     // Debounce inputs for heavy calculations (300ms delay)
     const debouncedInputs = useDebouncedValue(inputs, 300);
@@ -81,22 +83,25 @@ export function useCalculation(inputs, settings, t) {
 
                 setResults(projection);
 
-                // Handle Simulation Mode
+                // Handle Simulation Mode (async via Web Worker)
                 // Also auto-trigger Monte Carlo for Dynamic strategy even in mathematical mode
                 const isDynamicStrategy = debouncedInputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC;
                 if (settings.calculationMode === 'simulations' || settings.calculationMode === 'compare' || isDynamicStrategy) {
-                    // Only calculate if inputs or type changed, or if we don't have results yet
-                    // Use deep comparison for efficient change detection
                     const shouldUpdate =
-                        !simulationResults ||
                         lastSimInputs.current !== memoizedDebouncedInputs ||
                         lastSimType.current !== settings.simulationType;
 
                     if (shouldUpdate) {
-                        const simResult = calculateSimulation(debouncedInputs, settings.simulationType);
-                        setSimulationResults(simResult);
+                        // Update refs immediately to prevent duplicate dispatches
                         lastSimInputs.current = memoizedDebouncedInputs;
                         lastSimType.current = settings.simulationType;
+
+                        runSimulation(
+                            debouncedInputs,
+                            settings.simulationType,
+                            (result) => setSimulationResults(result),
+                            (errorMessage) => console.error('Simulation error:', errorMessage)
+                        );
                     }
                 }
                 // We intentionally DO NOT clear simulationResults here so they persist when switching modes
