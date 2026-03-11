@@ -108,10 +108,13 @@ export function useAppSettings() {
         getUserSettings(uid).then(dbSettings => {
             if (dbSettings) {
                 dispatch({ type: SETTINGS_ACTIONS.LOAD_FROM_DB, payload: dbSettings });
+                // isInitialLoad stays true — the save effect will clear it
+                // after skipping the first post-dispatch run (deterministic)
+            } else {
+                // No saved settings — no dispatch, so clear immediately
+                isInitialLoad.current = false;
             }
             loadedRef.current = true;
-            // Allow state to settle before enabling saves
-            setTimeout(() => { isInitialLoad.current = false; }, 100);
         }).catch(err => {
             console.error('Error loading settings from Firestore:', err);
             loadedRef.current = true;
@@ -119,9 +122,20 @@ export function useAppSettings() {
         });
     }, [uid]);
 
+    // Stable string representation of apiKeys for dependency tracking
+    // (objects are compared by reference in useEffect dependencies)
+    const apiKeysStr = JSON.stringify(settings.apiKeys);
+
     // Persist settings to Firestore when they change
     useEffect(() => {
-        if (!uid || !loadedRef.current || isInitialLoad.current) return;
+        if (!uid || !loadedRef.current) return;
+
+        // Skip the first run after LOAD_FROM_DB dispatch — settings deps changed
+        // from loading, not from user action. Clear the flag for subsequent runs.
+        if (isInitialLoad.current) {
+            isInitialLoad.current = false;
+            return;
+        }
 
         const dataToSave = {
             aiProvider: settings.aiProvider,
@@ -135,13 +149,10 @@ export function useAppSettings() {
             dataToSave.fiscalParameters = settings.fiscalParameters;
         }
 
-        // We stringify apiKeys because objects are compared by reference in useEffect dependencies
-        const apiKeysString = JSON.stringify(settings.apiKeys);
-
         setUserSettings(uid, dataToSave).catch(err => {
             console.error('Error saving settings to Firestore:', err);
         });
-    }, [settings.aiProvider, settings.aiModel, settings.simulationType, settings.familyStatus, settings.fiscalParameters, JSON.stringify(settings.apiKeys), uid]);
+    }, [settings.aiProvider, settings.aiModel, settings.simulationType, settings.familyStatus, settings.fiscalParameters, apiKeysStr, uid]);
 
     return { settings, dispatch, SETTINGS_ACTIONS };
 }

@@ -1,5 +1,4 @@
 import { calculateRetirementProjection } from './calculator';
-import { WITHDRAWAL_STRATEGIES } from '../constants';
 
 export const SIMULATION_TYPES = {
     MONTE_CARLO: 'monte_carlo',
@@ -13,132 +12,6 @@ function randn_bm() {
     while (u === 0) u = Math.random();
     while (v === 0) v = Math.random();
     return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
-}
-
-/**
- * Simulates retirement with year-by-year varying returns
- * This allows dynamic withdrawal strategy to actually respond to market conditions
- */
-function simulateRetirementWithVariance(inputs, yearlyReturns) {
-    const currentAge = parseFloat(inputs.currentAge);
-    const retirementStartAge = parseFloat(inputs.retirementStartAge);
-    const retirementEndAge = parseFloat(inputs.retirementEndAge);
-    const currentSavings = parseFloat(inputs.currentSavings) || 0;
-    const monthlyContribution = parseFloat(inputs.monthlyContribution) || 0;
-    const monthlyNetIncomeDesired = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
-    const taxRateDecimal = (parseFloat(inputs.taxRate) || 0) / 100;
-    const withdrawalStrategy = inputs.withdrawalStrategy || WITHDRAWAL_STRATEGIES.FIXED;
-    const withdrawalPercentage = parseFloat(inputs.withdrawalPercentage) || 4;
-    const baseAnnualReturn = parseFloat(inputs.annualReturnRate) || 0;
-
-    const yearsToRetirement = retirementStartAge - currentAge;
-    const yearsInRetirement = retirementEndAge - retirementStartAge;
-    const monthsToRetirement = Math.floor(yearsToRetirement * 12);
-    const monthsInRetirement = Math.floor(yearsInRetirement * 12);
-
-    // Phase 1: Accumulation (use average return for simplicity, or first year returns)
-    const avgAccumulationReturn = baseAnnualReturn / 100;
-    const monthlyAccumulationRate = Math.pow(1 + avgAccumulationReturn, 1 / 12) - 1;
-
-    let balance = currentSavings;
-    for (let i = 0; i < monthsToRetirement; i++) {
-        balance = balance * (1 + monthlyAccumulationRate) + monthlyContribution;
-    }
-    const balanceAtRetirement = balance;
-
-    // Phase 2: Retirement with year-by-year varying returns
-    let retirementBalance = balanceAtRetirement;
-    let ranOutAtAge = null;
-    let initialGrossWithdrawal = 0;
-    let initialNetWithdrawal = 0;
-
-    // For 4% rule - calculate based on initial retirement balance
-    const fourPercentMonthly = (balanceAtRetirement * 0.04) / 12;
-
-    // For dynamic strategy tracking
-    let dynamicBaseWithdrawal = monthlyNetIncomeDesired;
-    let previousYearReturn = baseAnnualReturn / 100;
-    const expectedReturn = 0.07; // 7% expected annual return
-
-    for (let month = 1; month <= monthsInRetirement; month++) {
-        // Determine which year of retirement we're in (0-indexed)
-        const yearIndex = Math.floor((month - 1) / 12);
-        const currentYearReturn = yearlyReturns[yearIndex] !== undefined
-            ? yearlyReturns[yearIndex] / 100
-            : baseAnnualReturn / 100;
-        const currentMonthlyRate = Math.pow(1 + currentYearReturn, 1 / 12) - 1;
-
-        const interest = retirementBalance * currentMonthlyRate;
-        const tax = Math.max(0, interest) * taxRateDecimal;
-
-        // Calculate withdrawal based on strategy
-        let netWithdrawal;
-        switch (withdrawalStrategy) {
-            case WITHDRAWAL_STRATEGIES.FOUR_PERCENT:
-                netWithdrawal = fourPercentMonthly;
-                break;
-
-            case WITHDRAWAL_STRATEGIES.PERCENTAGE:
-                netWithdrawal = (retirementBalance * (withdrawalPercentage / 100)) / 12;
-                break;
-
-            case WITHDRAWAL_STRATEGIES.DYNAMIC:
-                // At the start of each new year, adjust based on ACTUAL previous year's return
-                if (month % 12 === 1 && month > 1) {
-                    const lastYearReturn = yearlyReturns[yearIndex - 1] !== undefined
-                        ? yearlyReturns[yearIndex - 1] / 100
-                        : previousYearReturn;
-
-                    if (lastYearReturn > expectedReturn) {
-                        // Good year: increase by up to 10%
-                        dynamicBaseWithdrawal = Math.min(
-                            dynamicBaseWithdrawal * 1.1,
-                            monthlyNetIncomeDesired * 1.2
-                        );
-                    } else if (lastYearReturn < expectedReturn - 0.05) {
-                        // Bad year: decrease by up to 10%
-                        dynamicBaseWithdrawal = Math.max(
-                            dynamicBaseWithdrawal * 0.9,
-                            monthlyNetIncomeDesired * 0.8
-                        );
-                    }
-                    previousYearReturn = lastYearReturn;
-                }
-                netWithdrawal = dynamicBaseWithdrawal;
-                break;
-
-            case WITHDRAWAL_STRATEGIES.FIXED:
-            default:
-                netWithdrawal = monthlyNetIncomeDesired;
-                break;
-        }
-
-        let grossWithdrawal = netWithdrawal + tax;
-
-        if (month === 1) {
-            initialGrossWithdrawal = grossWithdrawal;
-            initialNetWithdrawal = netWithdrawal;
-        }
-
-        // Check if we have enough money
-        if (retirementBalance + interest < grossWithdrawal) {
-            grossWithdrawal = retirementBalance + interest;
-            if (ranOutAtAge === null) {
-                ranOutAtAge = retirementStartAge + (month / 12);
-            }
-        }
-
-        retirementBalance = retirementBalance + interest - grossWithdrawal;
-        if (retirementBalance < 0) retirementBalance = 0;
-    }
-
-    return {
-        balanceAtRetirement,
-        balanceAtEnd: Math.max(0, retirementBalance),
-        ranOutAtAge,
-        initialGrossWithdrawal,
-        initialNetWithdrawal
-    };
 }
 
 /**
@@ -187,16 +60,33 @@ export function calculateSimulation(inputs, type) {
         const volatility = 15; // 15% standard deviation (realistic for equities)
         const meanReturn = baseInputs.annualReturnRate;
 
+        const currentAge = parseFloat(inputs.currentAge);
         const retirementStartAge = parseFloat(inputs.retirementStartAge);
         const retirementEndAge = parseFloat(inputs.retirementEndAge);
         const yearsInRetirement = Math.ceil(retirementEndAge - retirementStartAge);
+
+        // Calculate the calendar year when retirement starts
+        const startYear = new Date().getFullYear();
+        const retirementStartCalendarYear = startYear + Math.ceil(retirementStartAge - currentAge);
 
         for (let i = 0; i < iterations; i++) {
             // Generate year-by-year returns for this simulation
             const yearlyReturns = generateYearlyReturns(meanReturn, volatility, yearsInRetirement);
 
-            // Run simulation with varying returns
-            const simResult = simulateRetirementWithVariance(baseInputs, yearlyReturns);
+            // Convert random returns to variableRates format (calendar-year keyed)
+            // Only retirement years get randomized — accumulation uses the base rate
+            const simVariableRates = {};
+            for (let y = 0; y < yearsInRetirement; y++) {
+                simVariableRates[retirementStartCalendarYear + y] = yearlyReturns[y];
+            }
+
+            // Run through the real pipeline with randomized rates
+            // This accounts for life events, bucket strategy, realistic tax, and pension sources
+            const simResult = calculateRetirementProjection({
+                ...baseInputs,
+                variableRatesEnabled: true,
+                variableRates: simVariableRates
+            });
             results.push(simResult);
         }
 
@@ -235,4 +125,3 @@ export function calculateSimulation(inputs, type) {
     result.source = 'simulation';
     return result;
 }
-

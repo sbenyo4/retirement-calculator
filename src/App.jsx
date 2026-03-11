@@ -1,12 +1,11 @@
 
-import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
 import InputForm from './components/InputForm';
 import { ResultsDashboard } from './components/ResultsDashboard';
 import { ProfileManager } from './components/ProfileManager';
 import { calculateRetirementProjection } from './utils/calculator';
 import { calculateRetirementWithAI } from './utils/ai-calculator';
 import { getAvailableModels } from './config/ai-models';
-import { calculateSimulation } from './utils/simulation-calculator';
 import { translations } from './utils/translations';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
@@ -21,11 +20,10 @@ const ModelsManager = React.lazy(() => import('./components/ModelsManager').then
 
 // Hooks
 import { useProfiles } from './hooks/useProfiles';
-import { useDebouncedValue } from './hooks/useDebounce';
 import { useRateLimit } from './hooks/useRateLimit';
-import { useDeepCompareMemo } from './hooks/useDeepCompare';
 import { useAppSettings } from './hooks/useAppSettings';
 import { useRetirementData } from './hooks/useRetirementData';
+import { useCalculation } from './hooks/useCalculation';
 
 import { WITHDRAWAL_STRATEGIES } from './constants';
 import { Settings } from 'lucide-react';
@@ -51,15 +49,20 @@ function MainApp() {
   const { settings, dispatch: dispatchSettings, SETTINGS_ACTIONS } = useAppSettings();
   const { inputs, setInputs, saveGlobalPension } = useRetirementData();
 
-  const [results, setResults] = useState(null);
+  // Core calculation pipeline (projection, goal-seek, simulation)
+  const {
+    results,
+    simulationResults,
+    validationError,
+    goalSeekWithdrawal,
+    memoizedDebouncedInputs
+  } = useCalculation(inputs, settings, t);
+
   const [aiResults, setAiResults] = useState(null);
-  const [simulationResults, setSimulationResults] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(null);
   const [aiInputsChanged, setAiInputsChanged] = useState(true);
   const [selectedProfileIds, setSelectedProfileIds] = useState([]);
-  const [validationError, setValidationError] = useState(null);
-  const [goalSeekWithdrawal, setGoalSeekWithdrawal] = useState(null);
 
   // Sensitivity analysis state (for mathematical mode)
   const [showInterestSensitivity, setShowInterestSensitivity] = useState(false);
@@ -78,14 +81,9 @@ function MainApp() {
 
   // UI State
   const [showModelsManager, setShowModelsManager] = useState(false);
-  const [, setModelsRefreshKey] = useState(0);
-
-  // Refs
-  const lastSimInputs = useRef(null);
-  const lastSimType = useRef(null);
 
   // Helper to format rate limit messages
-  const formatLimitMessage = (limitCheck) => {
+  const formatLimitMessage = useCallback((limitCheck) => {
     if (!limitCheck || limitCheck.allowed) return null;
     const { reason, resetTime, limit } = limitCheck;
     if (reason === 'minute') {
@@ -98,7 +96,7 @@ function MainApp() {
       return t('rateLimitDay').replace('{limit}', limit);
     }
     return t('rateLimitReached');
-  };
+  }, [t, language]);
 
   // Validate AI Model on load/change (fix for persisted invalid models)
   useEffect(() => {
@@ -115,95 +113,6 @@ function MainApp() {
   useEffect(() => {
     setAiError(null);
   }, [settings.calculationMode]);
-
-  // Debounce inputs for heavy calculations (300ms delay)
-  const debouncedInputs = useDebouncedValue(inputs, 300);
-
-  // Use deep comparison memo for efficient change detection (replaces JSON.stringify)
-  const memoizedDebouncedInputs = useDeepCompareMemo(debouncedInputs);
-
-  // Standard Mathematical Calculation & Simulation
-  useEffect(() => {
-    const age = parseFloat(debouncedInputs.currentAge);
-    const retirementStart = parseFloat(debouncedInputs.retirementStartAge);
-    const retirementEnd = parseFloat(debouncedInputs.retirementEndAge);
-
-    // Basic validation to prevent obviously broken inputs
-    // Include age sequence validation to prevent console errors during profile loading
-    if (
-      !isNaN(age) && age >= 0 && age <= 120 &&
-      !isNaN(retirementStart) && retirementStart >= 0 && retirementStart <= 120 &&
-      !isNaN(retirementEnd) && retirementEnd >= 0 && retirementEnd <= 120 &&
-      retirementStart > age && retirementEnd > retirementStart
-    ) {
-      try {
-        // Clear validation error on successful calculation
-        setValidationError(null);
-
-        let projection = calculateRetirementProjection(debouncedInputs, t);
-
-        // Goal-seek: if targetEndBalance is set, find withdrawal that achieves it
-        const targetEnd = parseFloat(debouncedInputs.targetEndBalance);
-        if (!isNaN(targetEnd) && targetEnd >= 0 && debouncedInputs.targetEndBalance !== '') {
-          let lo = 0;
-          let hi = projection.balanceAtRetirement / ((retirementEnd - retirementStart) * 12) * 3; // upper bound
-          for (let iter = 0; iter < 25; iter++) {
-            const mid = (lo + hi) / 2;
-            const testResult = calculateRetirementProjection({
-              ...debouncedInputs,
-              monthlyNetIncomeDesired: mid,
-              targetEndBalance: '' // prevent recursion
-            }, t);
-            if (testResult.balanceAtEnd > targetEnd) {
-              lo = mid;
-            } else {
-              hi = mid;
-            }
-          }
-          const optimalWithdrawal = Math.round((lo + hi) / 2);
-          projection = calculateRetirementProjection({
-            ...debouncedInputs,
-            monthlyNetIncomeDesired: optimalWithdrawal,
-            targetEndBalance: ''
-          }, t);
-          setGoalSeekWithdrawal(optimalWithdrawal);
-        } else {
-          setGoalSeekWithdrawal(null);
-        }
-
-        setResults(projection);
-
-        // Handle Simulation Mode
-        // Also auto-trigger Monte Carlo for Dynamic strategy even in mathematical mode
-        const isDynamicStrategy = debouncedInputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC;
-        if (settings.calculationMode === 'simulations' || settings.calculationMode === 'compare' || isDynamicStrategy) {
-          // Only calculate if inputs or type changed, or if we don't have results yet
-          // Use deep comparison for efficient change detection
-          const shouldUpdate =
-            !simulationResults ||
-            lastSimInputs.current !== memoizedDebouncedInputs ||
-            lastSimType.current !== settings.simulationType;
-
-          if (shouldUpdate) {
-            const simResult = calculateSimulation(debouncedInputs, settings.simulationType);
-            setSimulationResults(simResult);
-            lastSimInputs.current = memoizedDebouncedInputs;
-            lastSimType.current = settings.simulationType;
-          }
-        }
-        // We intentionally DO NOT clear simulationResults here so they persist when switching modes
-      } catch (error) {
-        // Catch validation errors from calculator and display to user
-        console.error('Calculation error:', error);
-        setValidationError(error.message);
-        setResults(null); // Clear results when there's a validation error
-      }
-    } else {
-      // Clear results when basic age validation fails
-      setValidationError(null); // Don't show error for incomplete inputs
-      setResults(null);
-    }
-  }, [debouncedInputs, memoizedDebouncedInputs, settings.calculationMode, settings.simulationType, language]);
 
   // Mark inputs as changed when they change
   useEffect(() => {
@@ -301,7 +210,7 @@ function MainApp() {
   }, [selectedProfileIds, profiles]);
 
   // Manual AI Calculation Handler
-  const handleAiCalculate = async () => {
+  const handleAiCalculate = useCallback(async () => {
     // Check rate limit BEFORE calling API
     const limitCheck = checkRateLimit();
     if (!limitCheck.allowed) {
@@ -327,7 +236,7 @@ function MainApp() {
     } finally {
       setAiLoading(false);
     }
-  };
+  }, [checkRateLimit, formatLimitMessage, inputs, settings.aiProvider, settings.aiModel, settings.apiKeyOverride, results, recordCall, t]);
 
   const toggleLanguage = () => {
     setLanguage(prev => prev === 'en' ? 'he' : 'en');
@@ -511,8 +420,7 @@ function MainApp() {
               }}
               onClose={() => setShowModelsManager(false)}
               onModelsUpdated={() => {
-                // Trigger refresh of models list by changing key and forcing app to reload overrides from DB
-                setModelsRefreshKey(prev => prev + 1);
+                // Force app to reload overrides from DB
                 if (currentUser?.uid) {
                   import('./utils/db').then(({ getUserSettings }) => {
                       getUserSettings(currentUser.uid).then(db => {
