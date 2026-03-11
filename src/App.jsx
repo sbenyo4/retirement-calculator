@@ -24,6 +24,7 @@ import { useRateLimit } from './hooks/useRateLimit';
 import { useAppSettings } from './hooks/useAppSettings';
 import { useRetirementData } from './hooks/useRetirementData';
 import { useCalculation } from './hooks/useCalculation';
+import { useDeepCompareMemo } from './hooks/useDeepCompare';
 
 import { WITHDRAWAL_STRATEGIES } from './constants';
 import { Settings } from 'lucide-react';
@@ -191,23 +192,38 @@ function MainApp() {
     setAiInsightsData(null);
   }, [memoizedDebouncedInputs]);
 
-  // Calculate results for selected profiles - memoized for performance
-  const profileResults = useMemo(() => {
-    return selectedProfileIds.map(id => {
-      const profile = profiles.find(p => p.id === id);
-      if (!profile) return null;
+  // Stable reference for selected profiles' calculation data (avoids recalculation on rename)
+  const selectedProfilesData = useDeepCompareMemo(
+    selectedProfileIds.map(id => {
+      const p = profiles.find(pr => pr.id === id);
+      return p ? { id: p.id, data: p.data } : null;
+    }).filter(Boolean)
+  );
+
+  // Expensive calculations - only re-runs when profile data actually changes (not on rename)
+  const profileCalcResults = useMemo(() => {
+    const calcs = {};
+    for (const { id, data } of selectedProfilesData) {
       try {
-        return {
-          id: profile.id,
-          name: profile.name,
-          results: calculateRetirementProjection(profile.data, t)
-        };
+        calcs[id] = calculateRetirementProjection(data, t);
       } catch {
-        // Skip profiles with invalid data silently
-        return null;
+        // Skip profiles with invalid data
       }
-    }).filter(Boolean);
-  }, [selectedProfileIds, profiles]);
+    }
+    return calcs;
+  }, [selectedProfilesData, t]);
+
+  // Assemble with current names (cheap - re-runs freely on rename)
+  const profileResults = useMemo(() => {
+    return selectedProfileIds
+      .map(id => {
+        const calc = profileCalcResults[id];
+        if (!calc) return null;
+        const profile = profiles.find(p => p.id === id);
+        return { id, name: profile?.name || id, results: calc };
+      })
+      .filter(Boolean);
+  }, [selectedProfileIds, profiles, profileCalcResults]);
 
   // Manual AI Calculation Handler
   const handleAiCalculate = useCallback(async () => {
