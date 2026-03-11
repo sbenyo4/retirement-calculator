@@ -45,8 +45,24 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
                 });
             }
 
-            const comparison = compareModels(fetched, currentConfig);
+            // Fallback: Use currentConfig for fetched providers that didn't have an API key (are null/error)
+            // This prevents "Check Models" from vanishing Gemini when the user hasn't put in an API key.
+            const validFetched = { ...fetched };
+            Object.keys(currentConfig).forEach(providerId => {
+                if (!validFetched[providerId]) {
+                    validFetched[providerId] = [...currentConfig[providerId].models];
+                }
+            });
+
+            const comparison = compareModels(validFetched, currentConfig);
             setResults(comparison);
+            
+            // Auto expand Gemini so the user has immediate visual feedback that models were fetched
+            if (comparison['gemini']?.status === 'success') {
+                setExpandedProvider('gemini');
+            } else {
+                setExpandedProvider(Object.keys(comparison)[0]);
+            }
 
             // Initialize selection state: only existing models selected by default
             const initialSelection = {};

@@ -8,7 +8,7 @@ import { normalizeInputs, getDetailedDiff } from '../utils/profileUtils';
 
 import { calculateAgeFromDate } from '../utils/dateUtils';
 
-export function ProfileManager({ currentInputs, onLoad, t, language, profiles, onSaveProfile, onUpdateProfile, onRenameProfile, onDeleteProfile, onProfileLoad, lastLoadedProfileId }) {
+export function ProfileManager({ currentInputs, onLoad, t, language, profiles, onSaveProfile, onUpdateProfile, onRenameProfile, onDeleteProfile, onProfileLoad, lastLoadedProfileId, onSaveGlobalPension }) {
     const [newProfileName, setNewProfileName] = useState('');
     const [selectedProfileId, setSelectedProfileId] = useState('');
     const [saveMessage, setSaveMessage] = useState('');
@@ -44,13 +44,15 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     // Normalize currentInputs to ensure types match (Strings -> Numbers) before comparison
     const normalizedCurrent = currentInputs ? normalizeInputs(currentInputs) : null;
 
-    // Helper to strip pension data AND dynamically computed fields for comparison
     const stripComputedFields = (data) => {
         if (!data) return null;
         // eslint-disable-next-line no-unused-vars
         const { pensionIncomeSources, ...rest } = data;
         
-        if (rest.lifeEvents && Array.isArray(rest.lifeEvents)) {
+        // Normalize lifeEvents to prevent false mismatches (undefined vs [])
+        if (!rest.lifeEvents) {
+            rest.lifeEvents = [];
+        } else if (Array.isArray(rest.lifeEvents)) {
             rest.lifeEvents = rest.lifeEvents.map(event => {
                 if (event.linkedTo) {
                     // Start date is dynamically computed by App.jsx for linked events based on dynamic ages
@@ -115,6 +117,10 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         const { pensionIncomeSources, ...dataToSave } = currentInputs;
 
         const newProfile = onSaveProfile(newProfileName, dataToSave);
+        if (onSaveGlobalPension && pensionIncomeSources) {
+            onSaveGlobalPension(pensionIncomeSources);
+        }
+        
         setNewProfileName('');
         setSelectedProfileId(newProfile.id);
         showMessage(language === 'he' ? 'פרופיל נשמר!' : 'Profile saved!');
@@ -127,6 +133,10 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         const { pensionIncomeSources, ...dataToSave } = currentInputs;
 
         onUpdateProfile(selectedProfileId, dataToSave);
+        if (onSaveGlobalPension && pensionIncomeSources) {
+            onSaveGlobalPension(pensionIncomeSources);
+        }
+        
         showMessage(language === 'he' ? 'פרופיל עודכן!' : 'Profile updated!');
     };
 

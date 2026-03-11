@@ -10,7 +10,8 @@ const SETTINGS_ACTIONS = {
     SET_API_KEY_OVERRIDE: 'SET_API_KEY_OVERRIDE',
     SET_SIMULATION_TYPE: 'SET_SIMULATION_TYPE',
     SET_FISCAL_DATA: 'SET_FISCAL_DATA',
-    LOAD_FROM_DB: 'LOAD_FROM_DB'
+    LOAD_FROM_DB: 'LOAD_FROM_DB',
+    SET_MODELS_OVERRIDE: 'SET_MODELS_OVERRIDE'
 };
 
 function getDefaultSettings() {
@@ -22,7 +23,8 @@ function getDefaultSettings() {
         simulationType: SIMULATION_TYPES.MONTE_CARLO,
         familyStatus: 'single',
         fiscalParameters: null,
-        apiKeys: {} // Per-provider API key overrides
+        apiKeys: {}, // Per-provider API key overrides
+        aiModelsOverride: null // User-selected custom AI models
     };
 }
 
@@ -39,6 +41,7 @@ function settingsReducer(state, action) {
                 familyStatus: db.familyStatus || state.familyStatus,
                 fiscalParameters: db.fiscalParameters || state.fiscalParameters,
                 apiKeys: db.apiKeys || state.apiKeys,
+                aiModelsOverride: db.aiModelsOverride || state.aiModelsOverride,
             };
         }
 
@@ -57,15 +60,17 @@ function settingsReducer(state, action) {
         case SETTINGS_ACTIONS.SET_AI_MODEL:
             return { ...state, aiModel: action.payload };
 
-        case SETTINGS_ACTIONS.SET_API_KEY_OVERRIDE:
+        case SETTINGS_ACTIONS.SET_API_KEY_OVERRIDE: {
+            const newApiKeys = {
+                ...state.apiKeys,
+                [state.aiProvider]: action.payload
+            };
             return {
                 ...state,
                 apiKeyOverride: action.payload,
-                apiKeys: {
-                    ...state.apiKeys,
-                    [state.aiProvider]: action.payload
-                }
+                apiKeys: newApiKeys
             };
+        }
 
         case SETTINGS_ACTIONS.SET_SIMULATION_TYPE:
             return { ...state, simulationType: action.payload };
@@ -75,6 +80,12 @@ function settingsReducer(state, action) {
                 ...state,
                 fiscalParameters: action.payload.parameters || state.fiscalParameters,
                 familyStatus: action.payload.familyStatus || state.familyStatus
+            };
+
+        case SETTINGS_ACTIONS.SET_MODELS_OVERRIDE:
+            return {
+                ...state,
+                aiModelsOverride: action.payload
             };
 
         default:
@@ -124,10 +135,13 @@ export function useAppSettings() {
             dataToSave.fiscalParameters = settings.fiscalParameters;
         }
 
+        // We stringify apiKeys because objects are compared by reference in useEffect dependencies
+        const apiKeysString = JSON.stringify(settings.apiKeys);
+
         setUserSettings(uid, dataToSave).catch(err => {
             console.error('Error saving settings to Firestore:', err);
         });
-    }, [settings.aiProvider, settings.aiModel, settings.simulationType, settings.familyStatus, settings.fiscalParameters, settings.apiKeys, uid]);
+    }, [settings.aiProvider, settings.aiModel, settings.simulationType, settings.familyStatus, settings.fiscalParameters, JSON.stringify(settings.apiKeys), uid]);
 
     return { settings, dispatch, SETTINGS_ACTIONS };
 }

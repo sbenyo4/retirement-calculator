@@ -49,7 +49,7 @@ function MainApp() {
 
   // Use Custom Hooks for Logic
   const { settings, dispatch: dispatchSettings, SETTINGS_ACTIONS } = useAppSettings();
-  const { inputs, setInputs } = useRetirementData();
+  const { inputs, setInputs, saveGlobalPension } = useRetirementData();
 
   const [results, setResults] = useState(null);
   const [aiResults, setAiResults] = useState(null);
@@ -102,14 +102,14 @@ function MainApp() {
 
   // Validate AI Model on load/change (fix for persisted invalid models)
   useEffect(() => {
-    const availableModels = getAvailableModels(settings.aiProvider);
+    const availableModels = getAvailableModels(settings.aiProvider, settings.aiModelsOverride);
     const isModelValid = availableModels.some(m => m.id === settings.aiModel);
 
     if (!isModelValid && availableModels.length > 0) {
 
       dispatchSettings({ type: SETTINGS_ACTIONS.SET_AI_MODEL, payload: availableModels[0].id });
     }
-  }, [settings.aiProvider, settings.aiModel]);
+  }, [settings.aiProvider, settings.aiModel, settings.aiModelsOverride]);
 
   // Clear AI error when switching calculation modes
   useEffect(() => {
@@ -383,6 +383,7 @@ function MainApp() {
               onDeleteProfile={deleteProfile}
               onProfileLoad={markProfileAsLoaded}
               lastLoadedProfileId={lastLoadedProfileId}
+              onSaveGlobalPension={saveGlobalPension}
             />
             <div className="my-2 border-t border-white/10"></div>
             <InputForm
@@ -415,6 +416,7 @@ function MainApp() {
               setAiModel={(model) => dispatchSettings({ type: SETTINGS_ACTIONS.SET_AI_MODEL, payload: model })}
               apiKeyOverride={settings.apiKeyOverride}
               setApiKeyOverride={(key) => dispatchSettings({ type: SETTINGS_ACTIONS.SET_API_KEY_OVERRIDE, payload: key })}
+              aiModelsOverride={settings.aiModelsOverride}
               simulationType={settings.simulationType}
               setSimulationType={(type) => dispatchSettings({ type: SETTINGS_ACTIONS.SET_SIMULATION_TYPE, payload: type })}
               onAiCalculate={handleAiCalculate}
@@ -503,14 +505,21 @@ function MainApp() {
           }>
             <ModelsManager
               apiKeys={{
-                gemini: settings.apiKeys?.gemini || settings.apiKeyOverride || import.meta.env.VITE_GEMINI_API_KEY,
-                openai: settings.apiKeys?.openai || import.meta.env.VITE_OPENAI_API_KEY,
-                anthropic: settings.apiKeys?.anthropic || import.meta.env.VITE_ANTHROPIC_API_KEY
+                gemini: (settings.aiProvider === 'gemini' ? settings.apiKeyOverride : null) || settings.apiKeys?.gemini || import.meta.env.VITE_GEMINI_API_KEY,
+                openai: (settings.aiProvider === 'openai' ? settings.apiKeyOverride : null) || settings.apiKeys?.openai || import.meta.env.VITE_OPENAI_API_KEY,
+                anthropic: (settings.aiProvider === 'anthropic' ? settings.apiKeyOverride : null) || settings.apiKeys?.anthropic || import.meta.env.VITE_ANTHROPIC_API_KEY
               }}
               onClose={() => setShowModelsManager(false)}
               onModelsUpdated={() => {
-                // Trigger refresh of models list by changing key
+                // Trigger refresh of models list by changing key and forcing app to reload overrides from DB
                 setModelsRefreshKey(prev => prev + 1);
+                if (currentUser?.uid) {
+                  import('./utils/db').then(({ getUserSettings }) => {
+                      getUserSettings(currentUser.uid).then(db => {
+                          if (db) dispatchSettings({ type: SETTINGS_ACTIONS.LOAD_FROM_DB, payload: db });
+                      });
+                  });
+                }
               }}
               t={t}
               language={language}

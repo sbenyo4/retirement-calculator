@@ -35,7 +35,8 @@ export default function InputForm({
     aiLoading,
     goalSeekWithdrawal,
     profiles,
-    updateProfile
+    updateProfile,
+    aiModelsOverride
     // Note: sensitivity props (showInterestSensitivity, etc.) were previously passed but are not used in this component
 }) {
     const { theme } = useTheme();
@@ -171,7 +172,7 @@ export default function InputForm({
     };
 
     const availableProviders = getAvailableProviders();
-    const availableModels = aiProvider ? getAvailableModels(aiProvider) : [];
+    const availableModels = aiProvider ? getAvailableModels(aiProvider, aiModelsOverride) : [];
 
     const currentYear = new Date().getFullYear();
     const startYear = getProjectedYearUtil(inputs.retirementStartAge, inputs.currentAge, inputs.birthdate, isAgeManual);
@@ -235,7 +236,7 @@ export default function InputForm({
                                         value={aiProvider}
                                         onChange={(val) => {
                                             setAiProvider(val);
-                                            const models = getAvailableModels(val);
+                                            const models = getAvailableModels(val, aiModelsOverride);
                                             if (models.length > 0) setAiModel(models[0].id);
                                         }}
                                         options={availableProviders.map(p => ({ value: p.id, label: p.name }))}
@@ -357,7 +358,7 @@ export default function InputForm({
                                 value={aiProvider}
                                 onChange={(val) => {
                                     setAiProvider(val);
-                                    const models = getAvailableModels(val);
+                                    const models = getAvailableModels(val, aiModelsOverride);
                                     if (models.length > 0) setAiModel(models[0].id);
                                 }}
                                 options={availableProviders.map(p => ({ value: p.id, label: p.name }))}

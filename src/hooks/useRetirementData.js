@@ -4,10 +4,10 @@ import { normalizeInputs } from '../utils/profileUtils';
 import { createDefaultIncomeSources } from '../utils/pensionCalculator';
 import { useAuth } from '../contexts/AuthContext';
 import {
-    getCurrentSession,
-    setCurrentSession,
     getPensionSources,
-    setPensionSources
+    setPensionSources,
+    getProfiles,
+    getUserSettings
 } from '../utils/db';
 
 export function useRetirementData() {
@@ -28,45 +28,54 @@ export function useRetirementData() {
 
         async function loadData() {
             try {
-                // Load session inputs and pension sources in parallel
-                const [sessionInputs, pensionSources] = await Promise.all([
-                    getCurrentSession(uid),
-                    getPensionSources(uid)
-                ]);
+                // Initialize empty inputs
+                let baseInputs = normalizeInputs({});
 
-                if (cancelled) return;
+                // 1. Fetch Global Pension Sources
+                const pensionSources = await getPensionSources(uid);
 
-                let loadedInputs = sessionInputs
-                    ? normalizeInputs(sessionInputs)
-                    : normalizeInputs({});
-
-                // Override with global pension sources
                 if (Array.isArray(pensionSources)) {
-                    // Check if National Insurance exists
                     const niExists = pensionSources.some(s => s.type === 'nationalInsurance');
-
                     if (!niExists) {
                         try {
-                            const defaults = createDefaultIncomeSources(loadedInputs);
+                            const defaults = createDefaultIncomeSources(baseInputs);
                             const niSource = defaults.find(s => s.type === 'nationalInsurance');
-                            if (niSource) {
-                                pensionSources.push(niSource);
-                            }
+                            if (niSource) pensionSources.push(niSource);
                         } catch (err) {
                             console.error('Error recreating default NI source:', err);
                         }
                     }
-                    loadedInputs.pensionIncomeSources = pensionSources;
+                    baseInputs.pensionIncomeSources = pensionSources;
                 }
 
-                setInputs(loadedInputs);
+                // 2. Fetch the ID of the last active profile
+                const settings = await getUserSettings(uid);
+                const lastProfileId = settings?.lastLoadedProfileId;
+
+                // 3. If there is a last loaded profile, apply it
+                if (lastProfileId) {
+                    const profiles = await getProfiles(uid);
+                    const lastProfile = profiles.find(p => p.id === lastProfileId);
+                    
+                    if (lastProfile && lastProfile.data) {
+                        const profileData = normalizeInputs(lastProfile.data);
+                        // Merge the explicit data with the newly fetched global pension sources
+                        baseInputs = {
+                            ...profileData,
+                            pensionIncomeSources: baseInputs.pensionIncomeSources
+                        };
+                    }
+                }
+
+                if (cancelled) return;
+
+                setInputs(baseInputs);
             } catch (err) {
                 console.error('Error loading retirement data from Firestore:', err);
             } finally {
                 if (!cancelled) {
                     setLoaded(true);
-                    // Allow a tick for state to settle before enabling saves
-                    setTimeout(() => { isInitialLoad.current = false; }, 100);
+                    isInitialLoad.current = false;
                 }
             }
         }
@@ -75,31 +84,20 @@ export function useRetirementData() {
         return () => { cancelled = true; };
     }, [uid]);
 
-    // Debounced save to Firestore whenever inputs change
-    useEffect(() => {
-        if (!uid || !loaded || isInitialLoad.current) return;
+    // The auto-save debounce effect was intentionally removed to prevent overwriting
+    // the user's manual changes on refresh or navigation.
 
-        // Clear previous timer
-        if (debounceTimer.current) clearTimeout(debounceTimer.current);
-
-        debounceTimer.current = setTimeout(() => {
-            // Save full inputs for session
-            setCurrentSession(uid, inputs).catch(err => {
-                console.error('Error saving session to Firestore:', err);
-            });
-
-            // Save pension sources separately (global)
-            if (inputs.pensionIncomeSources) {
-                setPensionSources(uid, inputs.pensionIncomeSources).catch(err => {
-                    console.error('Error saving pension sources to Firestore:', err);
-                });
-            }
-        }, 300);
-
-        return () => {
-            if (debounceTimer.current) clearTimeout(debounceTimer.current);
-        };
-    }, [inputs, uid, loaded]);
+    /**
+     * Explicitly save global pension sources.
+     */
+    const saveGlobalPension = useCallback(async (pensionData) => {
+        if (!uid || !pensionData) return;
+        try {
+            await setPensionSources(uid, pensionData);
+        } catch (err) {
+            console.error('Error saving global pension sources:', err);
+        }
+    }, [uid]);
 
     /**
      * Safe wrapper for setInputs that preserves pension sources during partial updates.
@@ -119,5 +117,5 @@ export function useRetirementData() {
         });
     }, []);
 
-    return { inputs, setInputs: safeSetInputs };
+    return { inputs, setInputs: safeSetInputs, saveGlobalPension };
 }
