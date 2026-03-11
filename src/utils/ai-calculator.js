@@ -1,6 +1,3 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import OpenAI from "openai";
-import Anthropic from "@anthropic-ai/sdk";
 import { getProviderEnvKey } from '../config/ai-models';
 
 // Re-export for backward compatibility
@@ -345,7 +342,7 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
         };
 
         if (provider === 'gemini') {
-
+            const { GoogleGenerativeAI } = await import("@google/generative-ai");
 
             const genAI = new GoogleGenerativeAI(apiKey);
 
@@ -389,6 +386,7 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
             }
 
         } else if (provider === 'openai') {
+            const { default: OpenAI } = await import("openai");
             const openai = new OpenAI({
                 apiKey: apiKey,
                 dangerouslyAllowBrowser: true // Client-side usage
@@ -406,6 +404,7 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
 
             responseText = completion.choices[0].message.content;
         } else if (provider === 'anthropic') {
+            const { default: Anthropic } = await import("@anthropic-ai/sdk");
             const anthropic = new Anthropic({
                 apiKey: apiKey,
                 dangerouslyAllowBrowser: true // Client-side usage
