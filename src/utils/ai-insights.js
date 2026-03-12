@@ -1,6 +1,7 @@
 
 import { getProviderEnvKey } from '../config/ai-models';
 import { calculateRetirementProjection } from './calculator';
+import { withRetry, RETRY_CONFIG } from './ai-calculator';
 
 /**
  * Generates a specialized prompt for AI qualitative analysis of retirement data.
@@ -250,34 +251,50 @@ export async function getAIInsights(inputs, results, provider, model, apiKeyOver
     let responseText = "";
 
     try {
+        const onRetry = (attempt, error, delay) => {
+            console.log(`[Insight][${provider}] Retry ${attempt} in ${Math.round(delay)}ms due to: ${error.message}`);
+        };
+
         if (provider === 'gemini') {
             const { GoogleGenerativeAI } = await import("@google/generative-ai");
             const genAI = new GoogleGenerativeAI(apiKey);
-            const genModel = genAI.getGenerativeModel({
-                model: model,
-                generationConfig: { responseMimeType: "application/json" }
-            });
-            const result = await genModel.generateContent(prompt);
-            responseText = result.response.text();
+
+            responseText = await withRetry(async () => {
+                const genModel = genAI.getGenerativeModel({
+                    model: model,
+                    generationConfig: { responseMimeType: "application/json" }
+                });
+                const result = await genModel.generateContent(prompt);
+                const response = await result.response;
+                return response.text();
+            }, { onRetry });
 
         } else if (provider === 'openai') {
             const { default: OpenAI } = await import("openai");
             const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
-            const completion = await openai.chat.completions.create({
-                messages: [{ role: "user", content: prompt }],
-                model: model,
-                response_format: { type: "json_object" }
-            });
+
+            const completion = await withRetry(async () => {
+                return openai.chat.completions.create({
+                    messages: [{ role: "user", content: prompt }],
+                    model: model,
+                    response_format: { type: "json_object" }
+                });
+            }, { onRetry });
+
             responseText = completion.choices[0].message.content;
 
         } else if (provider === 'anthropic') {
             const { default: Anthropic } = await import("@anthropic-ai/sdk");
             const anthropic = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
-            const message = await anthropic.messages.create({
-                model: model,
-                max_tokens: 4096,
-                messages: [{ role: "user", content: prompt }]
-            });
+
+            const message = await withRetry(async () => {
+                return anthropic.messages.create({
+                    model: model,
+                    max_tokens: 4096,
+                    messages: [{ role: "user", content: prompt }]
+                });
+            }, { onRetry });
+
             responseText = message.content[0].text;
         }
 

@@ -6,12 +6,12 @@ export { getAvailableProviders, getAvailableModels } from '../config/ai-models';
 /**
  * Retry configuration
  */
-const RETRY_CONFIG = {
+export const RETRY_CONFIG = {
     maxRetries: 3,
     initialDelayMs: 1000,
     maxDelayMs: 10000,
     backoffMultiplier: 2,
-    timeoutMs: 30000, // 30 seconds timeout per request
+    timeoutMs: 60000, // Increased to 60 seconds timeout per request
 };
 
 /**
@@ -80,7 +80,7 @@ function withTimeout(promise, timeoutMs) {
  * @param {Object} options - Retry options
  * @returns {Promise} - Result of the function
  */
-async function withRetry(fn, options = {}) {
+export async function withRetry(fn, options = {}) {
     const {
         maxRetries = RETRY_CONFIG.maxRetries,
         initialDelayMs = RETRY_CONFIG.initialDelayMs,
@@ -348,16 +348,8 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
 
             // Helper to try generating content with a specific model
             const tryGenerate = async (modelId) => {
-
-
-                // Only apply search tools to Gemini 1.5+ models which support it reliably
-                const tools = modelId.includes('1.5') || modelId.includes('2.0')
-                    ? [{ googleSearchRetrieval: {} }]
-                    : [];
-
                 const genModel = genAI.getGenerativeModel({
                     model: modelId,
-                    tools: tools,
                     generationConfig: { temperature: 0 }
                 });
                 const result = await genModel.generateContent(prompt);

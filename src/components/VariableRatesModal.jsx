@@ -404,6 +404,46 @@ export default function VariableRatesModal({
         setRates(newRates);
     };
 
+    const handleSortBalanced = () => {
+        let currentRates = { ...rates };
+        const values = Object.values(rates).map(parseFloat);
+
+        // If all values are the same (variance is 0), generate random complexity first
+        const isFlat = values.every(v => Math.abs(v - values[0]) < 0.1);
+        if (isFlat) {
+            currentRates = generateRandomRates();
+        }
+
+        const years = [];
+        const sortedValues = [];
+        for (let y = startYear; y <= endYear; y++) {
+            years.push(y);
+            sortedValues.push(currentRates[y] !== undefined ? parseFloat(currentRates[y]) : averageRate);
+        }
+
+        // Sort descending first to get best to worst
+        sortedValues.sort((a, b) => b - a);
+
+        // Reorder into [Best, Worst, 2nd Best, 2nd Worst, ...]
+        const balancedValues = [];
+        let left = 0;
+        let right = sortedValues.length - 1;
+        while (left <= right) {
+            balancedValues.push(sortedValues[left]);
+            if (left < right) {
+                balancedValues.push(sortedValues[right]);
+            }
+            left++;
+            right--;
+        }
+
+        const newRates = {};
+        years.forEach((year, i) => {
+            newRates[year] = balancedValues[i];
+        });
+        setRates(newRates);
+    };
+
 
 
     const handleSave = () => {
@@ -461,10 +501,10 @@ export default function VariableRatesModal({
                     <button
                         onClick={handleReset}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isLight ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}
-                        title={language === 'he' ? 'אפס לממוצע' : 'Reset'}
+                        title={language === 'he' ? 'אפס לממוצע קבוע' : 'Reset to Constant Average'}
                     >
                         <RotateCcw size={14} />
-                        {language === 'he' ? 'אפס' : 'Reset'}
+                        {language === 'he' ? 'איפוס/ממוצע' : 'Reset/Avg'}
                     </button>
                     <button
                         onClick={handleFillDown}
@@ -477,29 +517,37 @@ export default function VariableRatesModal({
                 </div>
 
                 {/* Sequence Analysis Toolbar (New) */}
-                <div className="relative z-10 flex-none p-2 border-b border-gray-200 dark:border-white/10 flex gap-2 justify-center bg-white/5">
+                <div className="relative z-10 flex-none p-2 border-b border-gray-200 dark:border-white/10 flex gap-1.5 justify-center bg-white/5">
                     <button
                         onClick={handleSortOptimistic}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isLight ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-green-500/20 text-green-300 hover:bg-green-500/30'}`}
+                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${isLight ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-green-500/20 text-green-300 hover:bg-green-500/30'}`}
                         title={language === 'he' ? 'מיין: מהטוב לגרוע' : 'Sort: Best First'}
                     >
-                        <TrendingUp size={14} />
+                        <TrendingUp size={12} />
                         {language === 'he' ? 'אופטימי' : 'Optimistic'}
                     </button>
                     <button
+                        onClick={handleSortBalanced}
+                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${isLight ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30'}`}
+                        title={language === 'he' ? 'פזר: טוב, גרוע, טוב, גרוע...' : 'Balanced: Pair best with worst'}
+                    >
+                        <Calculator size={12} />
+                        {language === 'he' ? 'מאוזן' : 'Balanced'}
+                    </button>
+                    <button
                         onClick={handleSortPessimistic}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-500/20 text-red-300 hover:bg-red-500/30'}`}
+                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-500/20 text-red-300 hover:bg-red-500/30'}`}
                         title={language === 'he' ? 'מיין: מהגרוע לטוב' : 'Sort: Worst First'}
                     >
-                        <TrendingDown size={14} />
+                        <TrendingDown size={12} />
                         {language === 'he' ? 'פסימי' : 'Pessimistic'}
                     </button>
                     <button
                         onClick={handleShuffle}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isLight ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'}`}
+                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${isLight ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'}`}
                         title={language === 'he' ? 'ערבב סדר קיים' : 'Shuffle Order'}
                     >
-                        <Shuffle size={14} />
+                        <Shuffle size={12} />
                         {language === 'he' ? 'ערבב' : 'Shuffle'}
                     </button>
                 </div>

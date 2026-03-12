@@ -8,7 +8,7 @@ import { SensitivityHeatmapButton, SensitivityHeatmapModal } from './Sensitivity
 import { InflationButton, InflationModal } from './InflationRealityCheck';
 import { PensionIncomeButton, PensionIncomeModal } from './PensionIncomeModal';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
-import { LayoutDashboard, BrainCircuit, Settings } from 'lucide-react'; // Added Settings
+import { LayoutDashboard, BrainCircuit } from 'lucide-react';
 import AIInsightsView from './AIInsightsView';
 import { Line } from 'react-chartjs-2';
 import {
@@ -317,6 +317,33 @@ export function ResultsDashboard({ results, inputs, setInputs, t, language, calc
         }
     }, [activeResults?.history, isCompareMode, isAiMode, isSimMode, orderedColumns, sensitivityResults, t]);
 
+    // Calculate inputs for sensitivity tools (Heatmap/Range)
+    // In comparison mode, use the first selected profile/scenario. Fallback to current inputs.
+    const sensitivityInputs = useMemo(() => {
+        if (!isCompareMode) return inputs;
+
+        if (orderedColumns.length > 0) {
+            const firstCol = orderedColumns[0];
+            if (firstCol.type === 'profile' && firstCol.profileData) {
+                return firstCol.profileData;
+            }
+            // For math/sim/ai types, they use the current 'inputs' prop
+            return inputs;
+        }
+
+        return inputs;
+    }, [isCompareMode, inputs, orderedColumns]);
+
+    const sensitivitySourceName = useMemo(() => {
+        if (!isCompareMode) return t('currentInputs') || 'Current Inputs';
+
+        if (orderedColumns.length > 0) {
+            return orderedColumns[0].name;
+        }
+
+        return t('currentInputs') || 'Current Inputs';
+    }, [isCompareMode, orderedColumns, t]);
+
     // NOW we can have early returns (after all hooks are called)
     // Loading State
     if (aiLoading) {
@@ -444,33 +471,6 @@ export function ResultsDashboard({ results, inputs, setInputs, t, language, calc
 
     const startYear = getProjectedYear(inputs.retirementStartAge, inputs.currentAge, inputs.birthdate);
     const endYear = getProjectedYear(inputs.retirementEndAge, inputs.currentAge, inputs.birthdate);
-
-    // Calculate inputs for sensitivity tools (Heatmap/Range)
-    // In comparison mode, use the first selected profile/scenario. Fallback to current inputs.
-    const sensitivityInputs = useMemo(() => {
-        if (!isCompareMode) return inputs;
-
-        if (orderedColumns.length > 0) {
-            const firstCol = orderedColumns[0];
-            if (firstCol.type === 'profile' && firstCol.profileData) {
-                return firstCol.profileData;
-            }
-            // For math/sim/ai types, they use the current 'inputs' prop
-            return inputs;
-        }
-
-        return inputs;
-    }, [isCompareMode, inputs, orderedColumns]);
-
-    const sensitivitySourceName = useMemo(() => {
-        if (!isCompareMode) return t('currentInputs') || 'Current Inputs';
-
-        if (orderedColumns.length > 0) {
-            return orderedColumns[0].name;
-        }
-
-        return t('currentInputs') || 'Current Inputs';
-    }, [isCompareMode, orderedColumns, t]);
 
     return (
         <div className="space-y-3 h-full flex flex-col min-h-0">

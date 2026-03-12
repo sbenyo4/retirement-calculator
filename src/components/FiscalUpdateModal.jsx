@@ -369,7 +369,6 @@ Reference values for ${currentYear} (use if search fails):
             const l2 = parseVal(b2.limit);
 
             if (l1 !== l2) {
-                // console.log(`Bracket mismatch at index ${i}: limit ${l1} !== ${l2} (raw: ${b1.limit} vs ${b2.limit})`);
                 return false;
             }
 

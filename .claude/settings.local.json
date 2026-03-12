@@ -6,7 +6,8 @@
       "Bash(del \"c:\\\\Users\\\\sbeny\\\\.gemini\\\\antigravity\\\\scratch\\\\retirement-calculator\\\\src\\\\components\\\\ErrorBoundary.jsx\")",
       "Bash(node:*)",
       "Bash(npx vite build)",
-      "Bash(npx vitest run)"
+      "Bash(npx vitest run)",
+      "Bash(wc:*)"
     ]
   }
 }

@@ -113,7 +113,6 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     const saveProfile = () => {
         if (!newProfileName.trim()) return;
         // Decouple pension data: don't save it to profile
-        // eslint-disable-next-line no-unused-vars
         const { pensionIncomeSources, ...dataToSave } = currentInputs;
 
         const newProfile = onSaveProfile(newProfileName, dataToSave);
@@ -129,7 +128,6 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     const updateProfile = () => {
         if (!selectedProfileId) return;
         // Decouple pension data: don't save it to profile
-        // eslint-disable-next-line no-unused-vars
         const { pensionIncomeSources, ...dataToSave } = currentInputs;
 
         onUpdateProfile(selectedProfileId, dataToSave);
@@ -232,12 +230,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
             hasChanges = !deepEqual(normStripped, dbStripped);
             
             if (hasChanges) {
-                // IMPORTANT DEBUG: Why do they differ?!
                 differencesLog = getDetailedDiff(normStripped, dbStripped);
-                // console.warn("PROFILE SYNC MISMATCH DETECTED:");
-                // console.warn("Normalized Current:", normStripped);
-                // console.warn("Normalized DB:", dbStripped);
-                // console.warn("Top-Level Diff:", differencesLog);
             }
         }
     }

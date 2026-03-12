@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
 import InputForm from './components/InputForm';
-import { ResultsDashboard } from './components/ResultsDashboard';
+// ResultsDashboard is lazy-loaded below with ModelsManager
 import { ProfileManager } from './components/ProfileManager';
 import { calculateRetirementProjection } from './utils/calculator';
 import { calculateRetirementWithAI } from './utils/ai-calculator';
@@ -16,6 +16,7 @@ import { ZoomToggle } from './components/ZoomToggle';
 import ErrorBoundary from './components/common/ErrorBoundary';
 
 // Lazy-loaded components (loaded only when needed)
+const ResultsDashboard = React.lazy(() => import('./components/ResultsDashboard').then(m => ({ default: m.ResultsDashboard })));
 const ModelsManager = React.lazy(() => import('./components/ModelsManager').then(m => ({ default: m.ModelsManager })));
 
 // Hooks
@@ -27,6 +28,7 @@ import { useCalculation } from './hooks/useCalculation';
 import { useDeepCompareMemo } from './hooks/useDeepCompare';
 
 import { WITHDRAWAL_STRATEGIES } from './constants';
+import { getUserSettings } from './utils/db';
 import { Settings } from 'lucide-react';
 
 function App() {
@@ -79,6 +81,8 @@ function MainApp() {
     checkRateLimit,
     recordCall,
   } = useRateLimit(currentUser?.uid || 'guest');
+
+  const handleUpdateFiscalData = useCallback((data) => dispatchSettings({ type: SETTINGS_ACTIONS.SET_FISCAL_DATA, payload: data }), [dispatchSettings]);
 
   // UI State
   const [showModelsManager, setShowModelsManager] = useState(false);
@@ -374,46 +378,48 @@ function MainApp() {
                 </div>
               )}
               {results && (
-                <ResultsDashboard
-                  results={results}
-                  inputs={inputs}
-                  setInputs={setInputs}
-                  t={t}
-                  language={language}
+                <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"></div></div>}>
+                  <ResultsDashboard
+                    results={results}
+                    inputs={inputs}
+                    setInputs={setInputs}
+                    t={t}
+                    language={language}
 
-                  // Settings Props
-                  calculationMode={settings.calculationMode}
-                  aiProvider={settings.aiProvider}
-                  aiModel={settings.aiModel}
-                  apiKeyOverride={settings.apiKeyOverride}
-                  aiResults={aiResults}
-                  simulationResults={simulationResults}
-                  aiLoading={aiLoading}
-                  aiError={aiError}
-                  simulationType={settings.simulationType}
-                  profiles={profiles}
-                  selectedProfileIds={selectedProfileIds}
-                  setSelectedProfileIds={setSelectedProfileIds}
-                  profileResults={profileResults}
+                    // Settings Props
+                    calculationMode={settings.calculationMode}
+                    aiProvider={settings.aiProvider}
+                    aiModel={settings.aiModel}
+                    apiKeyOverride={settings.apiKeyOverride}
+                    aiResults={aiResults}
+                    simulationResults={simulationResults}
+                    aiLoading={aiLoading}
+                    aiError={aiError}
+                    simulationType={settings.simulationType}
+                    profiles={profiles}
+                    selectedProfileIds={selectedProfileIds}
+                    setSelectedProfileIds={setSelectedProfileIds}
+                    profileResults={profileResults}
 
-                  // Global Fiscal Settings
-                  fiscalParameters={settings.fiscalParameters}
-                  familyStatus={settings.familyStatus}
-                  onUpdateFiscalData={(data) => dispatchSettings({ type: SETTINGS_ACTIONS.SET_FISCAL_DATA, payload: data })}
+                    // Global Fiscal Settings
+                    fiscalParameters={settings.fiscalParameters}
+                    familyStatus={settings.familyStatus}
+                    onUpdateFiscalData={handleUpdateFiscalData}
 
-                  // Sensitivity analysis props
-                  showInterestSensitivity={showInterestSensitivity}
-                  setShowInterestSensitivity={setShowInterestSensitivity}
-                  showIncomeSensitivity={showIncomeSensitivity}
-                  setShowIncomeSensitivity={setShowIncomeSensitivity}
-                  showAgeSensitivity={showAgeSensitivity}
+                    // Sensitivity analysis props
+                    showInterestSensitivity={showInterestSensitivity}
+                    setShowInterestSensitivity={setShowInterestSensitivity}
+                    showIncomeSensitivity={showIncomeSensitivity}
+                    setShowIncomeSensitivity={setShowIncomeSensitivity}
+                    showAgeSensitivity={showAgeSensitivity}
 
-                  setShowAgeSensitivity={setShowAgeSensitivity}
+                    setShowAgeSensitivity={setShowAgeSensitivity}
 
-                  // AI Insights Props (Lifted State)
-                  aiInsightsData={aiInsightsData}
-                  setAiInsightsData={setAiInsightsData}
-                />
+                    // AI Insights Props (Lifted State)
+                    aiInsightsData={aiInsightsData}
+                    setAiInsightsData={setAiInsightsData}
+                  />
+                </Suspense>
               )}
             </ErrorBoundary>
           </div>
@@ -438,10 +444,8 @@ function MainApp() {
               onModelsUpdated={() => {
                 // Force app to reload overrides from DB
                 if (currentUser?.uid) {
-                  import('./utils/db').then(({ getUserSettings }) => {
-                      getUserSettings(currentUser.uid).then(db => {
-                          if (db) dispatchSettings({ type: SETTINGS_ACTIONS.LOAD_FROM_DB, payload: db });
-                      });
+                  getUserSettings(currentUser.uid).then(db => {
+                    if (db) dispatchSettings({ type: SETTINGS_ACTIONS.LOAD_FROM_DB, payload: db });
                   });
                 }
               }}
