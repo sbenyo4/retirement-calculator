@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import InputForm from './components/InputForm';
 // ResultsDashboard is lazy-loaded below with ModelsManager
 import { ProfileManager } from './components/ProfileManager';
@@ -18,6 +18,14 @@ import ErrorBoundary from './components/common/ErrorBoundary';
 // Lazy-loaded components (loaded only when needed)
 const ResultsDashboard = React.lazy(() => import('./components/ResultsDashboard').then(m => ({ default: m.ResultsDashboard })));
 const ModelsManager = React.lazy(() => import('./components/ModelsManager').then(m => ({ default: m.ModelsManager })));
+
+// Preload ResultsDashboard chunk on first user interaction
+let _preloaded = false;
+const preloadResultsDashboard = () => {
+  if (_preloaded) return;
+  _preloaded = true;
+  import('./components/ResultsDashboard');
+};
 
 // Hooks
 import { useProfiles } from './hooks/useProfiles';
@@ -83,6 +91,7 @@ function MainApp() {
   } = useRateLimit(currentUser?.uid || 'guest');
 
   const handleUpdateFiscalData = useCallback((data) => dispatchSettings({ type: SETTINGS_ACTIONS.SET_FISCAL_DATA, payload: data }), [dispatchSettings]);
+  const aiAbortRef = useRef(null);
 
   // UI State
   const [showModelsManager, setShowModelsManager] = useState(false);
@@ -239,10 +248,14 @@ function MainApp() {
       return;
     }
 
+    aiAbortRef.current?.abort();
+    const controller = new AbortController();
+    aiAbortRef.current = controller;
+
     setAiLoading(true);
     setAiError(null);
     try {
-      const result = await calculateRetirementWithAI(inputs, settings.aiProvider, settings.aiModel, settings.apiKeyOverride, results, t);
+      const result = await calculateRetirementWithAI(inputs, settings.aiProvider, settings.aiModel, settings.apiKeyOverride, results, t, { signal: controller.signal });
 
       // Record successful call
       recordCall(settings.aiProvider, settings.aiModel);
@@ -250,6 +263,7 @@ function MainApp() {
       setAiResults(result);
       setAiInputsChanged(false);
     } catch (error) {
+      if (error.name === 'AbortError') return;
       console.error("AI Error:", error);
       // Error message is already translated by the AI calculator
       setAiError(error.message || t('unknownError'));
@@ -299,7 +313,7 @@ function MainApp() {
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          <div className="lg:col-span-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 shadow-xl flex flex-col relative z-20 h-full">
+          <div className="lg:col-span-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 shadow-xl flex flex-col relative z-20 h-full" onFocus={preloadResultsDashboard}>
             <ProfileManager
               currentInputs={inputs}
               onLoad={setInputs}

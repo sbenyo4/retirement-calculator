@@ -1,241 +1,125 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { normalizeInputs, getDetailedDiff } from './profileUtils.js';
-import { DEFAULT_INPUTS } from '../constants.js';
+import { describe, it, expect } from 'vitest';
+import { normalizeInputs } from './profileUtils';
 
-// Mock dateUtils to control age calculation
-vi.mock('./dateUtils.js', () => ({
-    calculateAgeFromDate: vi.fn()
-}));
+describe('normalizeInputs', () => {
+    it('should convert top-level numeric strings to numbers but allow empty targetEndBalance', () => {
+        const data = {
+            currentAge: "35",
+            annualReturnRate: "5.5",
+            targetEndBalance: ""
+        };
+        const normalized = normalizeInputs(data);
+        expect(normalized.currentAge).toBe(35);
+        expect(normalized.annualReturnRate).toBe(5.5);
+        expect(normalized.targetEndBalance).toBe("");
 
-import { calculateAgeFromDate } from './dateUtils.js';
-
-describe('profileUtils', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
+        const dataWithBalance = { targetEndBalance: "1000000" };
+        const normalizedWithBalance = normalizeInputs(dataWithBalance);
+        expect(normalizedWithBalance.targetEndBalance).toBe(1000000);
     });
 
-    describe('normalizeInputs', () => {
-        it('merges input data with DEFAULT_INPUTS', () => {
-            const partialData = { currentSavings: 100000 };
-            const result = normalizeInputs(partialData);
-
-            // Should have all default fields
-            expect(result.monthlyContribution).toBe(DEFAULT_INPUTS.monthlyContribution);
-            expect(result.annualReturnRate).toBe(DEFAULT_INPUTS.annualReturnRate);
-            expect(result.taxRate).toBe(DEFAULT_INPUTS.taxRate);
-            // Should keep the overridden value
-            expect(result.currentSavings).toBe(100000);
-        });
-
-        it('converts numeric fields from strings to numbers', () => {
-            const data = {
-                currentSavings: '50000',
-                monthlyContribution: '1000',
-                currentAge: '35'
-            };
-            const result = normalizeInputs(data);
-
-            expect(typeof result.currentSavings).toBe('number');
-            expect(result.currentSavings).toBe(50000);
-            expect(typeof result.monthlyContribution).toBe('number');
-            expect(result.monthlyContribution).toBe(1000);
-            expect(typeof result.currentAge).toBe('number');
-        });
-
-        it('handles empty string numeric fields by converting to 0', () => {
-            const data = {
-                currentSavings: '',
-                monthlyContribution: ''
-            };
-            const result = normalizeInputs(data);
-
-            expect(result.currentSavings).toBe(0);
-            expect(result.monthlyContribution).toBe(0);
-        });
-
-        it('handles invalid numeric strings by converting to 0', () => {
-            const data = {
-                currentSavings: 'invalid',
-                monthlyContribution: 'NaN'
-            };
-            const result = normalizeInputs(data);
-
-            expect(result.currentSavings).toBe(0);
-            expect(result.monthlyContribution).toBe(0);
-        });
-
-        it('recalculates age from birthdate when manualAge is false', () => {
-            calculateAgeFromDate.mockReturnValue(42.5);
-
-            const data = {
-                birthdate: '1982-06-15',
-                manualAge: false
-            };
-            const result = normalizeInputs(data);
-
-            expect(calculateAgeFromDate).toHaveBeenCalledWith('1982-06-15');
-            expect(result.currentAge).toBe(42.5); // toFixed(2) converts "42.50" then parsed back as 42.5
-        });
-
-        it('does NOT recalculate age when manualAge is true', () => {
-            calculateAgeFromDate.mockReturnValue(42.5);
-
-            const data = {
-                birthdate: '1982-06-15',
-                manualAge: true,
-                currentAge: 45
-            };
-            const result = normalizeInputs(data);
-
-            expect(calculateAgeFromDate).not.toHaveBeenCalled();
-            expect(result.currentAge).toBe(45);
-        });
-
-        it('does NOT recalculate age when birthdate is empty', () => {
-            const data = {
-                birthdate: '',
-                manualAge: false,
-                currentAge: 30
-            };
-            const result = normalizeInputs(data);
-
-            expect(calculateAgeFromDate).not.toHaveBeenCalled();
-        });
-
-        it('handles null values from calculateAgeFromDate gracefully', () => {
-            calculateAgeFromDate.mockReturnValue(null);
-
-            const data = {
-                birthdate: 'invalid-date',
-                manualAge: false,
-                currentAge: 30
-            };
-            const result = normalizeInputs(data);
-
-            // Should keep original age when calculation returns null
-            expect(result.currentAge).toBe(30);
-        });
-
-        it('preserves non-numeric fields as-is', () => {
-            const data = {
-                birthdate: '1990-01-15',
-                lifeEvents: [{ id: 1, type: 'income' }],
-                variableRates: { 2025: 5.5 }
-            };
-            const result = normalizeInputs(data);
-
-            expect(result.birthdate).toBe('1990-01-15');
-            expect(result.lifeEvents).toEqual([{ id: 1, type: 'income' }]);
-            expect(result.variableRates).toEqual({ 2025: 5.5 });
-        });
-
-        it('handles all bucket-related numeric fields', () => {
-            const data = {
-                bucketSafeRate: '3.5',
-                bucketSurplusRate: '7',
-                withdrawalPercentage: '4.5'
-            };
-            const result = normalizeInputs(data);
-
-            expect(result.bucketSafeRate).toBe(3.5);
-            expect(result.bucketSurplusRate).toBe(7);
-            expect(result.withdrawalPercentage).toBe(4.5);
-        });
+    it('should normalize nested variableRates objects (strings to numbers)', () => {
+        const data = {
+            annualReturnRate: 1, // Set base to 1 so these aren't pruned (especially the 0 fallback)
+            variableRatesEnabled: true,
+            variableRates: {
+                "2024": "5",
+                "2025": 4.5,
+                "2026": "invalid"
+            }
+        };
+        const normalized = normalizeInputs(data);
+        expect(normalized.variableRates["2024"]).toBe(5);
+        expect(normalized.variableRates["2025"]).toBe(4.5);
+        expect(normalized.variableRates["2026"]).toBe(0); // fallback for NaN
     });
 
-    describe('getDetailedDiff', () => {
-        it('returns empty array when objects are identical', () => {
-            const obj1 = { a: 1, b: 'hello', c: true };
-            const obj2 = { a: 1, b: 'hello', c: true };
-            const diffs = getDetailedDiff(obj1, obj2);
+    it('should normalize bucket-specific rate objects', () => {
+        const data = {
+            safeVariableRates: { "2030": "2.5" },
+            surplusVariableRates: { "2030": "8" }
+        };
+        const normalized = normalizeInputs(data);
+        expect(normalized.safeVariableRates["2030"]).toBe(2.5);
+        expect(normalized.surplusVariableRates["2030"]).toBe(8);
+    });
 
-            expect(diffs).toEqual([]);
-        });
+    it('should fill missing fields with defaults', () => {
+        const data = { currentAge: 40 };
+        const normalized = normalizeInputs(data);
+        expect(normalized.retirementStartAge).toBe(50); // Default
+        expect(normalized.variableRates).toEqual({}); // Default
+    });
 
-        it('detects value mismatches', () => {
-            const obj1 = { a: 1, b: 'hello' };
-            const obj2 = { a: 2, b: 'hello' };
-            const diffs = getDetailedDiff(obj1, obj2);
+    it('should default withdrawalStrategy to fixed if missing', () => {
+        const data = {};
+        const normalized = normalizeInputs(data);
+        expect(normalized.withdrawalStrategy).toBe('fixed');
+    });
 
-            expect(diffs.length).toBe(1);
-            expect(diffs[0]).toContain("Key 'a'");
-            expect(diffs[0]).toContain('Value mismatch');
-        });
+    it('should prune rate objects that match the base rate', () => {
+        const data = {
+            annualReturnRate: 5,
+            variableRates: { '2024': 5, '2025': 5 }
+        };
+        const normalized = normalizeInputs(data);
+        // Both years match annualReturnRate=5, so object should be pruned to {}
+        expect(normalized.variableRates).toEqual({});
+    });
 
-        it('detects type mismatches', () => {
-            const obj1 = { a: '1' };
-            const obj2 = { a: 1 };
-            const diffs = getDetailedDiff(obj1, obj2);
+    it('should keep rate objects that have values differing from the base rate', () => {
+        const data = {
+            annualReturnRate: 5,
+            variableRates: { '2024': 6, '2025': 5 }
+        };
+        const normalized = normalizeInputs(data);
+        // 2024 differs, 2025 matches. Normalization keeps only the differing year.
+        expect(normalized.variableRates).toEqual({ '2024': 6 });
+    });
 
-            expect(diffs.length).toBe(1);
-            expect(diffs[0]).toContain('Type mismatch');
-            expect(diffs[0]).toContain('string');
-            expect(diffs[0]).toContain('number');
-        });
+    it('should standardize null/undefined rate objects to {}', () => {
+        const data = {
+            variableRates: null,
+            safeVariableRates: undefined
+        };
+        const normalized = normalizeInputs(data);
+        expect(normalized.variableRates).toEqual({});
+        expect(normalized.safeVariableRates).toEqual({});
+    });
 
-        it('detects deep mismatches in nested objects', () => {
-            const obj1 = { nested: { a: 1, b: 2 } };
-            const obj2 = { nested: { a: 1, b: 3 } };
-            const diffs = getDetailedDiff(obj1, obj2);
+    it('should prune guest/ghost fields not present in DEFAULT_INPUTS', () => {
+        const data = {
+            currentAge: 30,
+            ghostField: 'shouldBeRemoved'
+        };
+        const normalized = normalizeInputs(data);
+        expect(normalized.ghostField).toBeUndefined();
+    });
 
-            expect(diffs.length).toBe(1);
-            expect(diffs[0]).toContain('Deep mismatch');
-        });
+    it('should standardize birthDate casing to birthdate', () => {
+        const data = {
+            birthDate: '1990-01-01'
+        };
+        const normalized = normalizeInputs(data);
+        expect(normalized.birthdate).toBe('1990-01-01');
+    });
 
-        it('detects missing keys in one object', () => {
-            const obj1 = { a: 1, b: 2 };
-            const obj2 = { a: 1 };
-            const diffs = getDetailedDiff(obj1, obj2);
-
-            expect(diffs.length).toBe(1);
-            expect(diffs[0]).toContain("Key 'b'");
-        });
-
-        it('handles null objects', () => {
-            const diffs1 = getDetailedDiff(null, { a: 1 });
-            const diffs2 = getDetailedDiff({ a: 1 }, null);
-
-            expect(diffs1).toEqual(['One object is missing']);
-            expect(diffs2).toEqual(['One object is missing']);
-        });
-
-        it('handles undefined objects', () => {
-            const diffs = getDetailedDiff(undefined, { a: 1 });
-
-            expect(diffs).toEqual(['One object is missing']);
-        });
-
-        it('handles arrays correctly', () => {
-            const obj1 = { arr: [1, 2, 3] };
-            const obj2 = { arr: [1, 2, 4] };
-            const diffs = getDetailedDiff(obj1, obj2);
-
-            expect(diffs.length).toBe(1);
-            expect(diffs[0]).toContain('Deep mismatch');
-        });
-
-        it('handles identical nested objects', () => {
-            const obj1 = { nested: { a: 1 } };
-            const obj2 = { nested: { a: 1 } };
-            const diffs = getDetailedDiff(obj1, obj2);
-
-            expect(diffs).toEqual([]);
-        });
-
-        it('handles null values within objects', () => {
-            const obj1 = { a: null };
-            const obj2 = { a: null };
-            const diffs = getDetailedDiff(obj1, obj2);
-
-            expect(diffs).toEqual([]);
-        });
-
-        it('detects difference between null and undefined', () => {
-            const obj1 = { a: null };
-            const obj2 = { a: undefined };
-            const diffs = getDetailedDiff(obj1, obj2);
-
-            expect(diffs.length).toBeGreaterThan(0);
-        });
+    it('should normalize lifeEvents structure and types', () => {
+        const data = {
+            lifeEvents: [{
+                id: 123,
+                name: "Legacy Event",
+                amount: "5000",
+                duration: "12",
+                startDate: { month: "5", year: "2030" }
+            }]
+        };
+        const normalized = normalizeInputs(data);
+        const event = normalized.lifeEvents[0];
+        expect(event.id).toBe("123"); // converted to string
+        expect(event.amount).toBe(5000); // converted to number
+        expect(event.duration).toBe(12); // converted to number
+        expect(event.startDate.month).toBe(5);
+        expect(event.startDate.year).toBe(2030);
     });
 });

@@ -1,10 +1,10 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { Sparkles, AlertTriangle, CheckCircle, TrendingUp, Shield, Target, Brain } from 'lucide-react';
 import { getAIInsights } from '../utils/ai-insights';
 
-export default function AIInsightsView({ inputs, results, aiProvider, aiModel, apiKeyOverride, language = 'he', t, insightsData, onInsightsChange }) {
+function AIInsightsView({ inputs, results, aiProvider, aiModel, apiKeyOverride, language = 'he', t, insightsData, onInsightsChange }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
     const isHebrew = language === 'he';
@@ -12,16 +12,22 @@ export default function AIInsightsView({ inputs, results, aiProvider, aiModel, a
     const [loading, setLoading] = useState(false);
     // Local state removed in favor of lifted state
     const [error, setError] = useState(null);
+    const abortRef = useRef(null);
 
     const handleGenerate = async () => {
+        abortRef.current?.abort();
+        const controller = new AbortController();
+        abortRef.current = controller;
+
         setLoading(true);
         setError(null);
         try {
-            const data = await getAIInsights(inputs, results, aiProvider, aiModel, apiKeyOverride, language);
+            const data = await getAIInsights(inputs, results, aiProvider, aiModel, apiKeyOverride, language, { signal: controller.signal });
             if (onInsightsChange) {
                 onInsightsChange(data);
             }
         } catch (err) {
+            if (err.name === 'AbortError') return;
             setError(err.message);
         } finally {
             setLoading(false);
@@ -324,3 +330,5 @@ export default function AIInsightsView({ inputs, results, aiProvider, aiModel, a
         </div >
     );
 }
+
+export default React.memo(AIInsightsView);

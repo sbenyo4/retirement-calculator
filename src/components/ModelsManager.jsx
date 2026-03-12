@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { RefreshCw, Check, X, AlertCircle, Download, RotateCcw, Settings } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { fetchAllAvailableModels, compareModels } from '../utils/ai-models-fetcher';
@@ -15,13 +15,22 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
     const [selectedModels, setSelectedModels] = useState({});
 
     const [expandedProvider, setExpandedProvider] = useState(null);
+    const abortRef = useRef(null);
+
+    useEffect(() => {
+        return () => { abortRef.current?.abort(); };
+    }, []);
 
     const handleRefresh = async () => {
+        abortRef.current?.abort();
+        const controller = new AbortController();
+        abortRef.current = controller;
+
         setLoading(true);
         setError(null);
 
         try {
-            const fetched = await fetchAllAvailableModels(apiKeys);
+            const fetched = await fetchAllAvailableModels(apiKeys, { signal: controller.signal });
 
             // Get current config from Firestore if available, otherwise use static config
             let currentConfig = AI_MODELS_CONFIG;
@@ -79,6 +88,7 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
             });
             setSelectedModels(initialSelection);
         } catch (err) {
+            if (err.name === 'AbortError') return;
             setError(err.message);
         } finally {
             setLoading(false);

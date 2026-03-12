@@ -350,6 +350,14 @@ export const translations = {
         errorApiKeyDesc: 'Please check your API key settings.',
         aiRecommendedAge: 'AI Recommended Retirement Age',
         current: 'Current Plan',
+        copyEventToProfile: 'Copy Event to Profile',
+        selectTargetProfile: 'Select Target Profile:',
+        selectTargetProfilePlaceholder: '-- Select Target Profile --',
+        performCopy: 'Copy',
+        copyEventError: 'Error copying event',
+        manual: 'Manual',
+        variableRates: 'Variable Rates',
+        invalidAge: 'Invalid age',
     },
     he: {
         appTitle: "מתכנן פרישה",
@@ -703,5 +711,13 @@ export const translations = {
         errorApiKeyDesc: 'אנא בדוק את הגדרות המפתח שלך.',
         aiRecommendedAge: 'גיל פרישה מומלץ (AI)',
         current: 'תכנון נוכחי',
+        copyEventToProfile: 'העתק אירוע לפרופיל',
+        selectTargetProfile: 'בחר פרופיל יעד:',
+        selectTargetProfilePlaceholder: '-- בחר פרופיל יעד --',
+        performCopy: 'בצע העתקה',
+        copyEventError: 'שגיאה בהעתקת האירוע',
+        manual: 'ידני',
+        variableRates: 'ריביות משתנות',
+        invalidAge: 'גיל לא תקין',
     }
 };

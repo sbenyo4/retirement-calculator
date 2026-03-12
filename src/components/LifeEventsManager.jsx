@@ -32,9 +32,11 @@ export default function LifeEventsManager({
     const [showTimelineModal, setShowTimelineModal] = useState(false);
     const [editingEvent, setEditingEvent] = useState(null);
     const [copyingEvent, setCopyingEvent] = useState(null);
+    const [copyError, setCopyError] = useState(null);
     const [viewOffset, setViewOffset] = useState(0);
     const [itemsPerView, setItemsPerView] = useState(6);
     const listContainerRef = useRef(null);
+    const copyTargetRef = useRef(null);
 
     // Reset offset when events change length
     useEffect(() => {
@@ -79,19 +81,15 @@ export default function LifeEventsManager({
         setItemsPerView(Math.max(1, maxItemsWithButtons));
     };
 
-    // Observer for resize
+    // Observer for resize (ResizeObserver covers window resize too)
     useEffect(() => {
         if (!listContainerRef.current) return;
         const observer = new ResizeObserver(calculateItems);
         observer.observe(listContainerRef.current);
-        window.addEventListener('resize', calculateItems);
 
         calculateItems(); // Initial
 
-        return () => {
-            observer.disconnect();
-            window.removeEventListener('resize', calculateItems);
-        };
+        return () => observer.disconnect();
     }, [events.length]); // Re-calc if events count changes (to toggle buttons/no-buttons mode)
 
     const handleScrollUp = () => setViewOffset(p => Math.max(0, p - 1));
@@ -129,7 +127,7 @@ export default function LifeEventsManager({
             }
         } catch(e) {
             console.error(e);
-            alert(language === 'he' ? 'שגיאה בהעתקת האירוע' : 'Error copying event');
+            setCopyError(t ? t('copyEventError') : 'Error copying event');
         }
     };
 
@@ -268,6 +266,7 @@ export default function LifeEventsManager({
                             onClick={() => setShowTimelineModal(true)}
                             className={`${classes.buttonSecondary} rounded px-2 py-1 text-xs flex items-center gap-1 whitespace-nowrap`}
                             title={t ? t('viewTimeline') : 'Timeline'}
+                            aria-label={t ? t('viewTimeline') : 'Timeline'}
                         >
                             <BarChart3 className="w-3 h-3" />
                             <span className="hidden sm:inline">{t ? t('viewTimeline') : 'Timeline'}</span>
@@ -330,13 +329,15 @@ export default function LifeEventsManager({
                                                     onClick={() => handleToggleEvent(event.id)}
                                                     className={`p-1 rounded hover:bg-white/10 ${classes.icon}`}
                                                     title={event.enabled ? (t ? t('disable') : 'Disable') : (t ? t('enable') : 'Enable')}
+                                                    aria-label={event.enabled ? (t ? t('disable') : 'Disable') : (t ? t('enable') : 'Enable')}
                                                 >
                                                     {event.enabled ? <ToggleRight className="w-4 h-4 text-green-500" /> : <ToggleLeft className="w-4 h-4" />}
                                                 </button>
                                                 <button
-                                                    onClick={() => setCopyingEvent(event)}
+                                                    onClick={() => { setCopyError(null); setCopyingEvent(event); }}
                                                     className={`p-1 rounded hover:bg-white/10 ${classes.icon}`}
-                                                    title={language === 'he' ? 'העתק אירוע לפרופיל אחר' : 'Copy Event to Profile'}
+                                                    title={t ? t('copyEventToProfile') : 'Copy Event to Profile'}
+                                                    aria-label={t ? t('copyEventToProfile') : 'Copy Event to Profile'}
                                                 >
                                                     <Copy className="w-4 h-4 text-blue-400" />
                                                 </button>
@@ -344,6 +345,7 @@ export default function LifeEventsManager({
                                                     onClick={() => setEditingEvent(event)}
                                                     className={`p-1 rounded hover:bg-white/10 ${classes.icon}`}
                                                     title={t ? t('edit') : 'Edit'}
+                                                    aria-label={t ? t('edit') : 'Edit'}
                                                 >
                                                     <Edit2 className="w-4 h-4" />
                                                 </button>
@@ -351,6 +353,7 @@ export default function LifeEventsManager({
                                                     onClick={() => handleDeleteEvent(event.id)}
                                                     className={`p-1 rounded hover:bg-white/10 text-red-500`}
                                                     title={t ? t('delete') : 'Delete'}
+                                                    aria-label={t ? t('delete') : 'Delete'}
                                                 >
                                                     <Trash2 className="w-4 h-4" />
                                                 </button>
@@ -435,7 +438,7 @@ export default function LifeEventsManager({
                         <div className="relative z-10 w-full h-full flex flex-col p-5">
                             <h3 className={`font-bold flex items-center gap-2 mb-4 ${classes.headerLabel}`}>
                                 <Copy className="w-5 h-5 text-blue-500" />
-                                {language === 'he' ? 'העתק אירוע לפרופיל' : 'Copy Event to Profile'}
+                                {t ? t('copyEventToProfile') : 'Copy Event to Profile'}
                             </h3>
                             <div className="mb-4">
                                 <div className={`p-4 rounded-xl mb-5 ${classes.isLight ? 'bg-gray-50 border border-gray-100' : 'bg-black/20 border border-white/10'}`}>
@@ -447,19 +450,24 @@ export default function LifeEventsManager({
                                     </p>
                                 </div>
                                 <label className={`text-xs font-bold block mb-2 ${classes.label}`}>
-                                    {language === 'he' ? 'בחר פרופיל יעד:' : 'Select Target Profile:'}
+                                    {t ? t('selectTargetProfile') : 'Select Target Profile:'}
                                 </label>
-                                <select 
-                                    id="targetProfileSelectToCopy"
+                                <select
+                                    ref={copyTargetRef}
                                     className={`w-full p-3 rounded-lg text-sm border shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none ${classes.input}`}
                                     style={{ backgroundColor: classes.isLight ? '#ffffff' : '#1e293b' }}
                                 >
-                                    <option value="" className={classes.secondaryText}>{language === 'he' ? '-- בחר פרופיל יעד --' : '-- Select Target Profile --'}</option>
+                                    <option value="" className={classes.secondaryText}>{t ? t('selectTargetProfilePlaceholder') : '-- Select Target Profile --'}</option>
                                     {profiles && profiles.filter(p => !['tmp','guest','debug'].includes(p.id)).map(p => (
                                         <option key={p.id} value={p.id}>{p.name}</option>
                                     ))}
                                 </select>
                             </div>
+                            {copyError && (
+                                <div className={`rounded-lg p-3 flex items-center gap-2 text-sm ${classes.isLight ? 'bg-red-50 border border-red-200' : 'bg-red-500/20 border border-red-500'}`}>
+                                    <span className={classes.isLight ? 'text-red-700' : 'text-red-200'}>{copyError}</span>
+                                </div>
+                            )}
                             <div className={`flex justify-end gap-3 text-sm mt-6 pt-5 border-t ${classes.border}`}>
                                 <button 
                                     onClick={() => setCopyingEvent(null)}
@@ -468,11 +476,11 @@ export default function LifeEventsManager({
                                     {t ? t('cancel') : 'Cancel'}
                                 </button>
                                 <button 
-                                    onClick={() => submitCopyEvent(document.getElementById('targetProfileSelectToCopy').value)}
+                                    onClick={() => submitCopyEvent(copyTargetRef.current?.value)}
                                     className="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white shadow-md font-bold transition-colors flex items-center gap-2"
                                 >
                                     <Copy className="w-4 h-4" />
-                                    {language === 'he' ? 'בצע העתקה' : 'Copy'}
+                                    {t ? t('performCopy') : 'Copy'}
                                 </button>
                             </div>
                         </div>

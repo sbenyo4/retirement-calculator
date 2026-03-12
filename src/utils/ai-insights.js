@@ -238,7 +238,7 @@ export const generateInsightPrompt = (inputs, results, language) => {
  * @param {string} language 
  * @returns {Promise<Object>} The JSON response from the AI
  */
-export async function getAIInsights(inputs, results, provider, model, apiKeyOverride = null, language = 'he') {
+export async function getAIInsights(inputs, results, provider, model, apiKeyOverride = null, language = 'he', { signal } = {}) {
     const prompt = generateInsightPrompt(inputs, results, language);
 
     const envKey = getProviderEnvKey(provider);
@@ -251,6 +251,9 @@ export async function getAIInsights(inputs, results, provider, model, apiKeyOver
     let responseText = "";
 
     try {
+        // Check if already aborted
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
         const onRetry = (attempt, error, delay) => {
             console.log(`[Insight][${provider}] Retry ${attempt} in ${Math.round(delay)}ms due to: ${error.message}`);
         };
@@ -297,6 +300,9 @@ export async function getAIInsights(inputs, results, provider, model, apiKeyOver
 
             responseText = message.content[0].text;
         }
+
+        // Check if aborted while waiting for response
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
         // Parse JSON
         const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();

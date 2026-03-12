@@ -172,6 +172,7 @@ export default function AddEventModal({
                         <button
                             onClick={onCancel}
                             className={`p-1 rounded hover:bg-gray-200 dark:hover:bg-white/10 ${classes.icon}`}
+                            aria-label="Close"
                         >
                             <X className="w-5 h-5" />
                         </button>

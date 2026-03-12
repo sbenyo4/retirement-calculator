@@ -98,6 +98,7 @@ export function AmortizationTableModal({ isOpen, onClose, history, t, language }
                     <button
                         onClick={onClose}
                         className={`p-1 rounded-lg hover:bg-gray-500/20 transition-colors ${subTextColor}`}
+                        aria-label="Close"
                     >
                         <X size={20} />
                     </button>

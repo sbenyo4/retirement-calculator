@@ -3,10 +3,11 @@ import { AI_PROVIDERS, AI_MODELS_CONFIG } from '../config/ai-models';
 /**
  * Fetch available models from Gemini API
  */
-async function fetchGeminiModels(apiKey) {
+async function fetchGeminiModels(apiKey, signal) {
     try {
         const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+            `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
+            { signal }
         );
         const data = await response.json();
 
@@ -58,7 +59,7 @@ function getAnthropicModels() {
 /**
  * Fetch models for all providers
  */
-export async function fetchAllAvailableModels(apiKeys = {}) {
+export async function fetchAllAvailableModels(apiKeys = {}, { signal } = {}) {
     const results = {
         [AI_PROVIDERS.GEMINI]: null,
         [AI_PROVIDERS.OPENAI]: null,
@@ -67,7 +68,7 @@ export async function fetchAllAvailableModels(apiKeys = {}) {
 
     // Gemini (API-based if key provided)
     if (apiKeys.gemini) {
-        results[AI_PROVIDERS.GEMINI] = await fetchGeminiModels(apiKeys.gemini);
+        results[AI_PROVIDERS.GEMINI] = await fetchGeminiModels(apiKeys.gemini, signal);
     }
 
     // OpenAI (hardcoded - no public API for listing)

@@ -27,7 +27,9 @@ export const DEFAULT_INPUTS = {
     bucketSafeRate: 0,
     bucketSurplusRate: 0,
     inflationRate: 0,
-    targetEndBalance: ''
+    targetEndBalance: '',
+    withdrawalStrategy: 'fixed',
+    withdrawalPercentage: 4
 };
 
 /**

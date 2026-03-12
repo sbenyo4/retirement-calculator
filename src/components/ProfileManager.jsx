@@ -49,14 +49,56 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         // eslint-disable-next-line no-unused-vars
         const { pensionIncomeSources, ...rest } = data;
         
-        // Normalize lifeEvents to prevent false mismatches (undefined vs [])
+        // 1. Handle strategy/VR mutual exclusivity for comparison.
+        // The UI treats strategies (Fixed, 4%, etc.) and Variable Rates as
+        // mutually exclusive modes. When one is active, the other's fields
+        // are irrelevant and should be ignored to prevent false diffs.
+        const isEmptyObj = (obj) => !obj || typeof obj !== 'object' || Object.keys(obj).length === 0;
+        const vrEnabled = rest.variableRatesEnabled;
+
+        if (vrEnabled) {
+            // VR mode: the specific strategy/percentage fields are irrelevant
+            delete rest.withdrawalStrategy;
+            delete rest.withdrawalPercentage;
+            // Strip empty rate objects (VR on but no custom rates defined)
+            if (isEmptyObj(rest.variableRates)) delete rest.variableRates;
+        } else {
+            // Standard strategy mode: variable rate data is irrelevant
+            delete rest.variableRates;
+            if (rest.withdrawalStrategy !== 'percentage') {
+                delete rest.withdrawalPercentage;
+            }
+        }
+
+        // 2. Ignore bucket-specific settings if buckets are disabled
+        if (!rest.enableBuckets) {
+            delete rest.bucketSafeRate;
+            delete rest.bucketSurplusRate;
+            delete rest.safeVariableRates;
+            delete rest.surplusVariableRates;
+        } else {
+            // Even with buckets enabled, secondary VR rates only matter when VR is on
+            if (!vrEnabled) {
+                delete rest.safeVariableRates;
+                delete rest.surplusVariableRates;
+            } else {
+                if (isEmptyObj(rest.safeVariableRates)) delete rest.safeVariableRates;
+                if (isEmptyObj(rest.surplusVariableRates)) delete rest.surplusVariableRates;
+            }
+        }
+
+        // 3. Strip UI meta-flags (the effective mode is encoded by which fields remain)
+        delete rest.variableRatesEnabled;
+        delete rest.manualAge;
+
+        // 5. Normalize lifeEvents to prevent false mismatches (undefined vs [])
         if (!rest.lifeEvents) {
             rest.lifeEvents = [];
         } else if (Array.isArray(rest.lifeEvents)) {
             rest.lifeEvents = rest.lifeEvents.map(event => {
+                // If it's a linked event, App.jsx will RE-CALCULATE the startDate on every render/profile load.
+                // We MUST ignore startDate for these events to avoid immediate "Unsaved Changes" on load.
                 if (event.linkedTo) {
-                    // Start date is dynamically computed by App.jsx for linked events based on dynamic ages
-                    // Ignore it during equality checks so the "Unsaved Changes" yellow banner doesn't constantly false alarm upon profile switch.
                     const { startDate, ...eventRest } = event;
                     return eventRest;
                 }
@@ -231,6 +273,9 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
             
             if (hasChanges) {
                 differencesLog = getDetailedDiff(normStripped, dbStripped);
+                if (differencesLog.length > 0) {
+                    console.info("[ProfileDebug] Unsaved Changes Detected in fields:", differencesLog);
+                }
             }
         }
     }

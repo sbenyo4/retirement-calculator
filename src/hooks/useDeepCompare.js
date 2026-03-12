@@ -11,8 +11,9 @@ export function deepEqual(obj1, obj2) {
     // Fast path: reference equality
     if (obj1 === obj2) return true;
 
-    // Handle null/undefined
-    if (obj1 == null || obj2 == null) return obj1 === obj2;
+    // Handle null/undefined (treat them as equal)
+    if (obj1 == null && obj2 == null) return true;
+    if (obj1 == null || obj2 == null) return false;
 
     // Handle primitives and functions
     const type1 = typeof obj1;

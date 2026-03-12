@@ -282,7 +282,7 @@ function generateHistoryFromSummary(inputs, aiResult) {
     return history;
 }
 
-export async function calculateRetirementWithAI(inputs, provider, model, apiKeyOverride = null, mathematicalBaseline = null, t = null) {
+export async function calculateRetirementWithAI(inputs, provider, model, apiKeyOverride = null, mathematicalBaseline = null, t = null, { signal } = {}) {
     let prompt = inputs.prompt || generatePrompt(inputs);
 
     if (mathematicalBaseline) {
@@ -335,6 +335,9 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
 
     try {
         let responseText = "";
+
+        // Check if already aborted
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
         // Retry callback for logging
         const onRetry = (attempt, error, delay) => {
@@ -415,8 +418,8 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
             responseText = message.content[0].text;
         }
 
-        // Clean up response if it contains markdown code blocks or citations
-
+        // Check if aborted while waiting for response
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
         // More robust JSON extraction:
         // 1. Remove markdown blocks if they exist
@@ -474,25 +477,5 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
 
         // Generic error with original message
         throw new Error(formatError('errorGeneric', { error: error.message || 'Unknown error' }));
-    }
-}
-
-export async function listModelsFromAPI(apiKeyOverride = null) {
-    const apiKey = apiKeyOverride?.trim() || import.meta.env.VITE_GEMINI_API_KEY?.trim();
-    if (!apiKey) throw new Error("API Key is missing");
-
-    try {
-        // We use fetch directly to avoid SDK version issues for listing models
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-        const data = await response.json();
-
-        if (data.error) {
-            throw new Error(data.error.message);
-        }
-
-        return data.models || [];
-    } catch (error) {
-        console.error("List Models Error:", error);
-        throw error;
     }
 }

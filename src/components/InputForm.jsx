@@ -61,6 +61,7 @@ export default function InputForm({
     const showNeededTodayBtn = useRef(false);
     const showCapitalPreservationBtn = useRef(false);
     const [showApiKey, setShowApiKey] = useState(false);
+    const [promptText, setPromptText] = useState(null);
     // View Toggle State: 'parameters' | 'events'
     const [activeView, setActiveView] = useState('parameters');
     const previousVariableRatesState = useRef(false); // Store VR state before buckets toggle
@@ -109,7 +110,7 @@ export default function InputForm({
                 : 'Must be greater than start age';
         }
         if (!isNaN(currentAge) && (currentAge < 0 || currentAge > 120)) {
-            errors.currentAge = language === 'he' ? 'גיל לא תקין' : 'Invalid age';
+            errors.currentAge = t ? t('invalidAge') : 'Invalid age';
         }
 
         return errors;
@@ -222,9 +223,9 @@ export default function InputForm({
                                         <Sparkles size={10} /> {t('aiMode')}
                                     </label>
                                     <div className="flex gap-1">
-                                        <button onClick={() => { const prompt = generatePrompt(inputs); alert(prompt); }} className={`${iconClass} hover:text-blue-500`} title="Show Prompt"><Eye size={10} /></button>
+                                        <button onClick={() => { const prompt = generatePrompt(inputs); setPromptText(prompt); }} className={`${iconClass} hover:text-blue-500`} title="Show Prompt" aria-label="Show Prompt"><Eye size={10} /></button>
                                         <div className="relative group">
-                                            <button className={`${iconClass} hover:text-blue-500`} title="API Key"><Settings size={10} /></button>
+                                            <button className={`${iconClass} hover:text-blue-500`} title="API Key" aria-label="API Key"><Settings size={10} /></button>
                                             <div className={`absolute right-0 top-full mt-1 w-48 border rounded-lg p-2 shadow-xl hidden group-hover:block z-[100] ${isLight ? 'bg-white border-gray-200' : 'bg-gray-900 border-white/20'}`}>
                                                 <input type="password" value={apiKeyOverride} onChange={(e) => setApiKeyOverride(e.target.value)} placeholder="API Key" className={`w-full rounded py-0.5 px-1 text-[10px] ${inputClass}`} />
                                             </div>
@@ -304,10 +305,11 @@ export default function InputForm({
                                 <button
                                     onClick={() => {
                                         const prompt = generatePrompt(inputs);
-                                        alert(prompt);
+                                        setPromptText(prompt);
                                     }}
                                     className={`${iconClass} hover:text-blue-500 transition-colors`}
                                     title="Show Prompt"
+                                    aria-label="Show Prompt"
                                 >
                                     <Eye size={12} />
                                 </button>
@@ -316,6 +318,7 @@ export default function InputForm({
                                         onClick={() => setShowApiKey(!showApiKey)}
                                         className={`transition-colors ${showApiKey ? 'text-blue-500' : `${iconClass} hover:text-blue-500`}`}
                                         title="API Key Settings"
+                                        aria-label="API Key Settings"
                                     >
                                         <Settings size={12} />
                                     </button>
@@ -326,7 +329,7 @@ export default function InputForm({
                                                 <label className={`text-[10px] ${labelClass} flex items-center gap-1`}>
                                                     <span className="text-yellow-400">🔑</span> API Key Override
                                                 </label>
-                                                <button onClick={() => setShowApiKey(false)} className={`${iconClass} hover:text-blue-500`}>
+                                                <button onClick={() => setShowApiKey(false)} className={`${iconClass} hover:text-blue-500`} aria-label="Close">
                                                     <X size={12} />
                                                 </button>
                                             </div>
@@ -342,6 +345,7 @@ export default function InputForm({
                                                     onClick={() => setShowApiKey(false)}
                                                     className="bg-green-600/20 hover:bg-green-600/40 text-green-400 border border-green-600/50 rounded-lg px-2 flex items-center justify-center"
                                                     title="Done"
+                                                    aria-label="Done"
                                                 >
                                                     <Check size={12} />
                                                 </button>
@@ -464,7 +468,7 @@ export default function InputForm({
                             icon={<Calendar size={14} />}
                             extraContent={isAgeManual && (
                                 <span className={`absolute ${language === 'he' ? 'right-12' : 'right-8'} top-1/2 -translate-y-1/2 text-[10px] bg-yellow-500/20 text-yellow-500 px-1 rounded`}>
-                                    {language === 'he' ? 'ידני' : 'Manual'}
+                                    {t ? t('manual') : 'Manual'}
                                 </span>
                             )}
                             disabledStyle={isAgeManual} // Custom prop to style it as "ignored"
@@ -635,7 +639,7 @@ export default function InputForm({
                                             className={`p-1 transition-colors h-full flex items-center justify-center ${!inputs.variableRatesEnabled
                                                 ? 'text-gray-500 cursor-not-allowed opacity-40'
                                                 : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200')}`}
-                                            title={language === 'he' ? 'ריביות משתנות' : 'Variable Rates'}
+                                            title={t ? t('variableRates') : 'Variable Rates'}
                                         >
                                             <Activity size={16} />
                                         </button>
@@ -705,7 +709,7 @@ export default function InputForm({
                                         className={`p-1 transition-colors flex items-center justify-center ${!inputs.variableRatesEnabled
                                             ? 'text-gray-500 cursor-not-allowed opacity-40'
                                             : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200')}`}
-                                        title={language === 'he' ? 'ריביות משתנות' : 'Variable Rates'}
+                                        title={t ? t('variableRates') : 'Variable Rates'}
                                     >
                                         <Activity size={16} />
                                     </button>
@@ -728,7 +732,7 @@ export default function InputForm({
                                         className={`p-1 transition-colors flex items-center justify-center ${!inputs.variableRatesEnabled
                                             ? 'text-gray-500 cursor-not-allowed opacity-40'
                                             : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200')}`}
-                                        title={language === 'he' ? 'ריביות משתנות' : 'Variable Rates'}
+                                        title={t ? t('variableRates') : 'Variable Rates'}
                                     >
                                         <Activity size={16} />
                                     </button>
@@ -770,7 +774,7 @@ export default function InputForm({
                                     : (isLight ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-white/5 text-gray-400 hover:bg-white/10')
                                     }`}
                             >
-                                {language === 'he' ? 'ריביות משתנות' : 'Variable Rates'}
+                                {t ? t('variableRates') : 'Variable Rates'}
                             </button>
                         </div>
                         <p className={`text-[10px] px-1 ${labelClass}`}>
@@ -787,7 +791,7 @@ export default function InputForm({
                             <InputGroup language={language}
                                 label={t('withdrawalPercentageRate')}
                                 name="withdrawalPercentage"
-                                value={inputs.withdrawalPercentage || '4'}
+                                value={inputs.withdrawalPercentage || 4}
                                 onChange={handleChange}
                                 icon={<BarChart3 size={14} />}
                             />
@@ -842,6 +846,21 @@ export default function InputForm({
                 t={t}
                 inputs={inputs}
             />
+
+            {/* Prompt Preview Overlay */}
+            {promptText && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setPromptText(null)}>
+                    <div className={`relative w-full max-w-lg mx-4 rounded-xl shadow-2xl border max-h-[70vh] flex flex-col ${isLight ? 'bg-white border-gray-200' : 'bg-gray-900 border-white/20'}`} onClick={e => e.stopPropagation()}>
+                        <div className={`flex items-center justify-between p-3 border-b ${isLight ? 'border-gray-200' : 'border-white/10'}`}>
+                            <span className={`text-sm font-bold ${isLight ? 'text-gray-900' : 'text-white'}`}>AI Prompt</span>
+                            <button onClick={() => setPromptText(null)} className={`p-1 rounded-lg transition-colors ${isLight ? 'hover:bg-gray-100' : 'hover:bg-white/10'}`}>
+                                <X size={16} className={isLight ? 'text-gray-500' : 'text-gray-400'} />
+                            </button>
+                        </div>
+                        <pre className={`p-3 text-xs overflow-auto flex-1 whitespace-pre-wrap font-mono ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>{promptText}</pre>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
