@@ -579,9 +579,10 @@ export default function InputForm({
                             value={
                                 goalSeekWithdrawal != null
                                     ? ''
-                                    : (inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
+                                    : (!inputs.variableRatesEnabled && (
+                                        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
                                         inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
-                                        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY)
+                                        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY))
                                         ? Math.round(netWithdrawal || 0)
                                         : inputs.monthlyNetIncomeDesired
                             }
@@ -591,9 +592,10 @@ export default function InputForm({
                             extraLabel={grossWithdrawal ? `(${t('gross')}: ${formatCurrency(grossWithdrawal)})` : null}
                             disabled={
                                 goalSeekWithdrawal != null ||
-                                inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
-                                inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
-                                inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY
+                                (!inputs.variableRatesEnabled && (
+                                    inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
+                                    inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
+                                    inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY))
                             }
                             richContent={goalSeekWithdrawal != null ? (() => {
                                 const desired = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
