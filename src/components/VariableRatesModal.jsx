@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useThemeClasses } from '../hooks/useThemeClasses';
-import { X, Dices, ArrowDown, Calculator, RotateCcw, TrendingUp, TrendingDown, Shuffle } from 'lucide-react';
+import { X, Dices, ArrowDown, Calculator, RotateCcw, TrendingUp, TrendingDown, Shuffle, StepForward } from 'lucide-react';
 import { calculateRetirementProjection } from '../utils/calculator';
 import { formatCurrency as formatCurrencyUtil } from '../utils/formatters';
 
@@ -27,6 +27,10 @@ export default function VariableRatesModal({
     // Internal state for rates
     const [rates, setRates] = useState({});
     const [averageRate, setAverageRate] = useState(currentRate);
+    const [showStepForm, setShowStepForm] = useState(false);
+    const [stepYears, setStepYears] = useState(5);
+    const [stepTargetRate, setStepTargetRate] = useState(currentRate);
+    const [activeScope, setActiveScope] = useState('all'); // 'all' | 'a' | 'b'
 
     // Initialize rates when modal opens or defaults change
     useEffect(() => {
@@ -40,6 +44,9 @@ export default function VariableRatesModal({
             }
             setRates(initialRates);
             setAverageRate(parseFloat(currentRate) || 0);
+            setStepTargetRate(parseFloat(currentRate) || 0);
+            setShowStepForm(false);
+            setActiveScope('all');
         }
     }, [isOpen, startYear, endYear, currentRate, variableRates]);
 
@@ -116,6 +123,26 @@ export default function VariableRatesModal({
             }
         }
         return '';
+    };
+
+    // Scope helpers for split mode
+    const splitPoint = useMemo(() => {
+        const total = endYear - startYear + 1;
+        return Math.max(1, Math.min(total, parseInt(stepYears) || 5));
+    }, [stepYears, startYear, endYear]);
+
+    const getScopeYears = () => {
+        const allYears = [];
+        for (let y = startYear; y <= endYear; y++) allYears.push(y);
+        if (activeScope === 'all' || !showStepForm) return allYears;
+        if (activeScope === 'a') return allYears.slice(0, splitPoint);
+        return allYears.slice(splitPoint);
+    };
+
+    const getScopeBaseRate = () => {
+        if (activeScope === 'b' && showStepForm) return parseFloat(stepTargetRate) || 0;
+        if (activeScope === 'a' && showStepForm) return parseFloat(currentRate) || 0;
+        return averageRate;
     };
 
     // Calculate time-weighted average
@@ -214,17 +241,22 @@ export default function VariableRatesModal({
     };
 
     // Helper to generate random volatile rates (Time-Weighted)
-    const generateRandomRates = () => {
-        const years = [];
-        const weights = []; // Store month counts
-        let totalMonths = 0;
+    // Accepts optional scope: specific years and base rate to center around
+    const generateRandomRates = (scopeYears = null, baseRate = null) => {
+        const years = scopeYears || (() => {
+            const y = [];
+            for (let yr = startYear; yr <= endYear; yr++) y.push(yr);
+            return y;
+        })();
+        const targetAvg = baseRate !== null ? baseRate : averageRate;
 
-        for (let y = startYear; y <= endYear; y++) {
-            years.push(y);
+        const weights = [];
+        let totalMonths = 0;
+        years.forEach(y => {
             const m = getMonthsForYear(y);
             weights.push(m);
             totalMonths += m;
-        }
+        });
 
         const count = years.length;
         if (count === 0 || totalMonths === 0) return {};
@@ -232,24 +264,23 @@ export default function VariableRatesModal({
         const minRate = -10;
         const maxRate = 10;
 
-        // 1. Generate random volatility within clamped range centered on average
-        // Ensure initial rates are within bounds
-        const minAllowed = Math.max(minRate, averageRate - 10);
-        const maxAllowed = Math.min(maxRate, averageRate + 10);
+        // 1. Generate random volatility within clamped range centered on target
+        const minAllowed = Math.max(minRate, targetAvg - 10);
+        const maxAllowed = Math.min(maxRate, targetAvg + 10);
 
         let rawRates = years.map(() => {
             const range = maxAllowed - minAllowed;
             return minAllowed + (Math.random() * range);
         });
 
-        // 2. Adjust mean to match exactly the target 'averageRate' (Weighted)
+        // 2. Adjust mean to match exactly the target (Weighted)
         let currentWeightedSum = 0;
         rawRates.forEach((r, i) => {
             currentWeightedSum += r * weights[i];
         });
 
         const currentWeightedAvg = currentWeightedSum / totalMonths;
-        const correction = averageRate - currentWeightedAvg;
+        const correction = targetAvg - currentWeightedAvg;
 
         rawRates = rawRates.map(r => r + correction);
 
@@ -260,28 +291,24 @@ export default function VariableRatesModal({
         let quantizedRates = rawRates.map(r => Math.round(r * 2) / 2);
 
         // 5. Final Adjustment to maintain weighted average after rounding AND clamping
-        // Re-calculate drift after clamping
         let finalWeightedSum = 0;
         quantizedRates.forEach((r, i) => {
             finalWeightedSum += r * weights[i];
         });
 
-        const targetWeightedSum = averageRate * totalMonths;
+        const targetWeightedSum = targetAvg * totalMonths;
         let weightedDrift = targetWeightedSum - finalWeightedSum;
 
-        // Iterate to reduce drift, respecting clamp bounds
         let attempts = 0;
         while (Math.abs(weightedDrift) > 0.5 && attempts < 300) {
             const idx = Math.floor(Math.random() * count);
             const weight = weights[idx];
-            const currentRate = quantizedRates[idx];
+            const cr = quantizedRates[idx];
 
-            if (weightedDrift > 0 && currentRate < maxRate) {
-                // Need to increase sum, and we can increase this rate
+            if (weightedDrift > 0 && cr < maxRate) {
                 quantizedRates[idx] += 0.5;
                 weightedDrift -= 0.5 * weight;
-            } else if (weightedDrift < 0 && currentRate > minRate) {
-                // Need to decrease sum, and we can decrease this rate
+            } else if (weightedDrift < 0 && cr > minRate) {
                 quantizedRates[idx] -= 0.5;
                 weightedDrift += 0.5 * weight;
             }
@@ -295,156 +322,148 @@ export default function VariableRatesModal({
         return newRates;
     };
 
+    // All handlers are scope-aware: when split mode is active and a scope
+    // is selected (A or B), operations only affect that group's years.
     const handleRandomize = () => {
-        const newRates = generateRandomRates();
-        if (Object.keys(newRates).length > 0) setRates(newRates);
+        const scopeYears = getScopeYears();
+        const baseRate = getScopeBaseRate();
+        const randomRates = generateRandomRates(scopeYears, baseRate);
+        if (Object.keys(randomRates).length > 0) {
+            setRates(prev => ({ ...prev, ...randomRates }));
+        }
     };
 
-    const handleReset = () => { // Reset to Constant Average
-        const newRates = {};
-        for (let y = startYear; y <= endYear; y++) {
-            newRates[y] = averageRate;
-        }
-        setRates(newRates);
+    const handleReset = () => {
+        const scopeYears = getScopeYears();
+        const baseRate = getScopeBaseRate();
+        setRates(prev => {
+            const newRates = { ...prev };
+            scopeYears.forEach(y => { newRates[y] = baseRate; });
+            return newRates;
+        });
     };
 
     const handleFillDown = () => {
-        const keys = Object.keys(rates).sort();
-        if (keys.length === 0) return;
-        const firstVal = rates[keys[0]];
-        const newRates = {};
-        for (let y = startYear; y <= endYear; y++) {
-            newRates[y] = firstVal;
-        }
-        setRates(newRates);
+        const scopeYears = getScopeYears();
+        if (scopeYears.length === 0) return;
+        const firstVal = rates[scopeYears[0]];
+        setRates(prev => {
+            const newRates = { ...prev };
+            scopeYears.forEach(y => { newRates[y] = firstVal; });
+            return newRates;
+        });
     };
 
     const handleSortOptimistic = () => {
-        let currentRates = { ...rates };
-        const values = Object.values(rates).map(parseFloat);
+        const scopeYears = getScopeYears();
+        const baseRate = getScopeBaseRate();
+        const values = scopeYears.map(y => parseFloat(rates[y]) || 0);
 
-        // If all values are the same (variance is 0), generate random complexity first
         const isFlat = values.every(v => Math.abs(v - values[0]) < 0.1);
+        let sortedValues;
         if (isFlat) {
-            currentRates = generateRandomRates();
+            const randomRates = generateRandomRates(scopeYears, baseRate);
+            sortedValues = scopeYears.map(y => parseFloat(randomRates[y]) || baseRate);
+        } else {
+            sortedValues = [...values];
         }
-
-        const years = [];
-        const sortedValues = [];
-        for (let y = startYear; y <= endYear; y++) {
-            years.push(y);
-            sortedValues.push(currentRates[y] !== undefined ? parseFloat(currentRates[y]) : averageRate);
-        }
-
-        // Sort Descending
         sortedValues.sort((a, b) => b - a);
 
-        const newRates = {};
-        years.forEach((year, i) => {
-            newRates[year] = sortedValues[i];
+        setRates(prev => {
+            const newRates = { ...prev };
+            scopeYears.forEach((y, i) => { newRates[y] = sortedValues[i]; });
+            return newRates;
         });
-        setRates(newRates);
     };
 
     const handleSortPessimistic = () => {
-        let currentRates = { ...rates };
-        const values = Object.values(rates).map(parseFloat);
+        const scopeYears = getScopeYears();
+        const baseRate = getScopeBaseRate();
+        const values = scopeYears.map(y => parseFloat(rates[y]) || 0);
 
-        // If all values are the same (variance is 0), generate random complexity first
         const isFlat = values.every(v => Math.abs(v - values[0]) < 0.1);
+        let sortedValues;
         if (isFlat) {
-            currentRates = generateRandomRates();
+            const randomRates = generateRandomRates(scopeYears, baseRate);
+            sortedValues = scopeYears.map(y => parseFloat(randomRates[y]) || baseRate);
+        } else {
+            sortedValues = [...values];
         }
-
-        const years = [];
-        const sortedValues = [];
-        for (let y = startYear; y <= endYear; y++) {
-            years.push(y);
-            sortedValues.push(currentRates[y] !== undefined ? parseFloat(currentRates[y]) : averageRate);
-        }
-
-        // Sort Ascending
         sortedValues.sort((a, b) => a - b);
 
-        const newRates = {};
-        years.forEach((year, i) => {
-            newRates[year] = sortedValues[i];
+        setRates(prev => {
+            const newRates = { ...prev };
+            scopeYears.forEach((y, i) => { newRates[y] = sortedValues[i]; });
+            return newRates;
         });
-        setRates(newRates);
     };
 
     const handleShuffle = () => {
-        let values = Object.values(rates).map(parseFloat);
+        const scopeYears = getScopeYears();
+        const values = scopeYears.map(y => parseFloat(rates[y]) || 0);
 
-        // If all values are the same (variance is 0), generate random complexity first
-        // Otherwise a shuffle does nothing visible
         const isFlat = values.every(v => Math.abs(v - values[0]) < 0.1);
         if (isFlat) {
             handleRandomize();
             return;
         }
 
-        // True Fisher-Yates Shuffle (Permutation)
-        // Keeps the exact same set of numbers, just changes order.
-        // This ensures Best/Worst case bounds remain identical.
+        // Fisher-Yates Shuffle on scope values only
         for (let i = values.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [values[i], values[j]] = [values[j], values[i]];
         }
 
-        const years = [];
-        for (let y = startYear; y <= endYear; y++) {
-            years.push(y);
-        }
-
-        const newRates = {};
-        years.forEach((year, i) => {
-            newRates[year] = values[i];
+        setRates(prev => {
+            const newRates = { ...prev };
+            scopeYears.forEach((y, i) => { newRates[y] = values[i]; });
+            return newRates;
         });
-        setRates(newRates);
     };
 
     const handleSortBalanced = () => {
-        let currentRates = { ...rates };
-        const values = Object.values(rates).map(parseFloat);
+        const scopeYears = getScopeYears();
+        const baseRate = getScopeBaseRate();
+        const values = scopeYears.map(y => parseFloat(rates[y]) || 0);
 
-        // If all values are the same (variance is 0), generate random complexity first
         const isFlat = values.every(v => Math.abs(v - values[0]) < 0.1);
+        let sortedValues;
         if (isFlat) {
-            currentRates = generateRandomRates();
+            const randomRates = generateRandomRates(scopeYears, baseRate);
+            sortedValues = scopeYears.map(y => parseFloat(randomRates[y]) || baseRate);
+        } else {
+            sortedValues = [...values];
         }
-
-        const years = [];
-        const sortedValues = [];
-        for (let y = startYear; y <= endYear; y++) {
-            years.push(y);
-            sortedValues.push(currentRates[y] !== undefined ? parseFloat(currentRates[y]) : averageRate);
-        }
-
-        // Sort descending first to get best to worst
         sortedValues.sort((a, b) => b - a);
 
-        // Reorder into [Best, Worst, 2nd Best, 2nd Worst, ...]
+        // Interleave: [Best, Worst, 2nd Best, 2nd Worst, ...]
         const balancedValues = [];
         let left = 0;
         let right = sortedValues.length - 1;
         while (left <= right) {
             balancedValues.push(sortedValues[left]);
-            if (left < right) {
-                balancedValues.push(sortedValues[right]);
-            }
+            if (left < right) balancedValues.push(sortedValues[right]);
             left++;
             right--;
         }
 
-        const newRates = {};
-        years.forEach((year, i) => {
-            newRates[year] = balancedValues[i];
+        setRates(prev => {
+            const newRates = { ...prev };
+            scopeYears.forEach((y, i) => { newRates[y] = balancedValues[i]; });
+            return newRates;
         });
-        setRates(newRates);
     };
 
-
+    const handleApplyStepRate = () => {
+        const years = [];
+        for (let y = startYear; y <= endYear; y++) years.push(y);
+        const n = Math.max(1, Math.min(years.length, parseInt(stepYears) || 5));
+        const base = parseFloat(currentRate) || 0;
+        const target = parseFloat(stepTargetRate) || 0;
+        const newRates = {};
+        years.forEach((year, i) => { newRates[year] = i < n ? base : target; });
+        setRates(newRates);
+    };
 
     const handleSave = () => {
         onSave(rates);
@@ -550,7 +569,97 @@ export default function VariableRatesModal({
                         <Shuffle size={12} />
                         {language === 'he' ? 'ערבב' : 'Shuffle'}
                     </button>
+                    <button
+                        onClick={() => setShowStepForm(prev => !prev)}
+                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${
+                            showStepForm
+                                ? (isLight ? 'bg-teal-200 text-teal-800' : 'bg-teal-500/30 text-teal-200')
+                                : (isLight ? 'bg-teal-100 text-teal-700 hover:bg-teal-200' : 'bg-teal-500/20 text-teal-300 hover:bg-teal-500/30')
+                        }`}
+                        title={language === 'he' ? 'ריבית מדורגת' : 'Step Rate'}
+                    >
+                        <StepForward size={12} />
+                        {language === 'he' ? 'מדורג' : 'Step'}
+                    </button>
                 </div>
+
+                {/* Step Rate Inline Form + Scope Selector */}
+                {showStepForm && (
+                    <div className="relative z-10 flex-none px-3 py-2 border-b border-gray-200 dark:border-white/10 bg-white/5 animate-in fade-in slide-in-from-top-1 space-y-1.5">
+                        <div className="flex items-center gap-1.5 justify-center">
+                            <input
+                                type="number"
+                                min="1"
+                                max={endYear - startYear + 1}
+                                value={stepYears}
+                                onChange={(e) => setStepYears(e.target.value)}
+                                className={`w-12 text-center text-xs py-1 rounded-md border no-spinner ${
+                                    isLight
+                                        ? 'bg-white border-gray-300 text-gray-900'
+                                        : 'bg-black/30 border-white/20 text-white'
+                                } focus:outline-none focus:ring-1 focus:ring-teal-500`}
+                            />
+                            <span className={`text-[10px] ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                                {language === 'he' ? 'שנים' : 'yrs'} @
+                            </span>
+                            <span className={`text-xs font-bold ${isLight ? 'text-gray-700' : 'text-gray-200'}`}>
+                                {currentRate}%
+                            </span>
+                            <span className={`text-[10px] ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                                {language === 'he' ? 'ואז' : 'then'}
+                            </span>
+                            <input
+                                type="number"
+                                step="0.5"
+                                value={stepTargetRate}
+                                onChange={(e) => setStepTargetRate(e.target.value)}
+                                className={`w-14 text-center text-xs py-1 rounded-md border no-spinner ${
+                                    isLight
+                                        ? 'bg-white border-gray-300 text-gray-900'
+                                        : 'bg-black/30 border-white/20 text-white'
+                                } focus:outline-none focus:ring-1 focus:ring-teal-500`}
+                            />
+                            <span className={`text-[10px] ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>%</span>
+                            <button
+                                onClick={handleApplyStepRate}
+                                className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors ${
+                                    isLight
+                                        ? 'bg-teal-600 text-white hover:bg-teal-700'
+                                        : 'bg-teal-500 text-white hover:bg-teal-400'
+                                }`}
+                            >
+                                {language === 'he' ? 'החל' : 'Apply'}
+                            </button>
+                        </div>
+                        {/* Scope selector — controls which group the toolbar buttons affect */}
+                        <div className="flex items-center gap-1 justify-center">
+                            <span className={`text-[10px] ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
+                                {language === 'he' ? 'טווח:' : 'Scope:'}
+                            </span>
+                            {[
+                                { id: 'all', label: language === 'he' ? 'הכל' : 'All' },
+                                { id: 'a', label: `${language === 'he' ? 'א' : 'A'} (${startYear}–${startYear + splitPoint - 1})` },
+                                { id: 'b', label: `${language === 'he' ? 'ב' : 'B'} (${startYear + splitPoint}–${endYear})` },
+                            ].map(scope => (
+                                <button
+                                    key={scope.id}
+                                    onClick={() => setActiveScope(scope.id)}
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                                        activeScope === scope.id
+                                            ? (scope.id === 'a'
+                                                ? (isLight ? 'bg-teal-600 text-white' : 'bg-teal-500 text-white')
+                                                : scope.id === 'b'
+                                                    ? (isLight ? 'bg-orange-500 text-white' : 'bg-orange-500 text-white')
+                                                    : (isLight ? 'bg-gray-700 text-white' : 'bg-gray-400 text-gray-900'))
+                                            : (isLight ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-white/10 text-gray-400 hover:bg-white/20')
+                                    }`}
+                                >
+                                    {scope.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* Summary Stats */}
                 <div className="relative z-10 flex-none px-4 py-2 flex justify-between items-center text-xs">
@@ -571,8 +680,18 @@ export default function VariableRatesModal({
                         {Array.from({ length: endYear - startYear + 1 }, (_, i) => {
                             const year = startYear + i;
                             const rate = rates[year] !== undefined ? rates[year] : averageRate;
+                            const isGroupA = showStepForm && i < splitPoint;
+                            const isGroupB = showStepForm && i >= splitPoint;
+                            const isSplitBoundary = showStepForm && i === splitPoint;
                             return (
-                                <div key={year} className="flex items-center gap-2">
+                                <div key={year}>
+                                {isSplitBoundary && (
+                                    <div className="border-t-2 border-dashed border-orange-400/40 my-1.5" />
+                                )}
+                                <div className={`flex items-center gap-2 ${
+                                    isGroupA ? 'border-l-2 border-teal-400/60 pl-1' :
+                                    isGroupB ? 'border-l-2 border-orange-400/60 pl-1' : ''
+                                }`}>
                                     <div className="w-16 flex flex-col items-start justify-center">
                                         <span className={`text-xs font-mono font-bold ${year === retirementStartYear
                                             ? 'text-emerald-600 dark:text-emerald-400'
@@ -620,6 +739,7 @@ export default function VariableRatesModal({
                                             style={{ width: `${Math.min(100, Math.abs(rate) * 5)}%` }} // Scale visuals
                                         />
                                     </div>
+                                </div>
                                 </div>
                             );
                         })}
