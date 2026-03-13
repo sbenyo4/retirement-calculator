@@ -15,6 +15,16 @@ function randn_bm() {
 }
 
 /**
+ * Estimates realistic volatility from the expected return rate.
+ * Low returns (bonds/cash) → minimal volatility, higher returns (equities) → proportionally higher.
+ */
+function estimateVolatility(meanReturn) {
+    const rate = Math.abs(meanReturn);
+    if (rate <= 3) return Math.max(0.5, rate * 0.5); // Bonds: 4% return → 2% vol
+    return 1.5 + (rate - 3) * 1.5;                   // Equities: 6%→6%, 8%→9%, 10%→12%
+}
+
+/**
  * Generates an array of yearly returns with random variance
  */
 function generateYearlyReturns(meanReturn, volatility, years) {
@@ -39,6 +49,10 @@ export function calculateSimulation(inputs, type) {
             ...baseInputs,
             annualReturnRate: Math.max(0, baseInputs.annualReturnRate - 2),
         };
+        if (baseInputs.enableBuckets) {
+            conservativeInputs.bucketSafeRate = Math.max(0, (parseFloat(baseInputs.bucketSafeRate) || 0) - 2);
+            conservativeInputs.bucketSurplusRate = Math.max(0, (parseFloat(baseInputs.bucketSurplusRate) || 0) - 2);
+        }
         const result = calculateRetirementProjection(conservativeInputs);
         result.source = 'simulation';
         return result;
@@ -47,8 +61,12 @@ export function calculateSimulation(inputs, type) {
     if (type === SIMULATION_TYPES.OPTIMISTIC) {
         const optimisticInputs = {
             ...baseInputs,
-            annualReturnRate: baseInputs.annualReturnRate + 1.5
+            annualReturnRate: baseInputs.annualReturnRate + 1.5,
         };
+        if (baseInputs.enableBuckets) {
+            optimisticInputs.bucketSafeRate = (parseFloat(baseInputs.bucketSafeRate) || 0) + 1.5;
+            optimisticInputs.bucketSurplusRate = (parseFloat(baseInputs.bucketSurplusRate) || 0) + 1.5;
+        }
         const result = calculateRetirementProjection(optimisticInputs);
         result.source = 'simulation';
         return result;
@@ -57,8 +75,15 @@ export function calculateSimulation(inputs, type) {
     if (type === SIMULATION_TYPES.MONTE_CARLO) {
         const iterations = 500;
         const results = [];
-        const volatility = 15; // 15% standard deviation (realistic for equities)
         const meanReturn = baseInputs.annualReturnRate;
+        const volatility = estimateVolatility(meanReturn);
+
+        // Bucket-specific parameters
+        const useBuckets = baseInputs.enableBuckets;
+        const safeMeanReturn = parseFloat(baseInputs.bucketSafeRate) || 0;
+        const surplusMeanReturn = parseFloat(baseInputs.bucketSurplusRate) || 0;
+        const safeVolatility = estimateVolatility(safeMeanReturn);
+        const surplusVolatility = estimateVolatility(surplusMeanReturn);
 
         const currentAge = parseFloat(inputs.currentAge);
         const retirementStartAge = parseFloat(inputs.retirementStartAge);
@@ -80,13 +105,32 @@ export function calculateSimulation(inputs, type) {
                 simVariableRates[retirementStartCalendarYear + y] = yearlyReturns[y];
             }
 
-            // Run through the real pipeline with randomized rates
-            // This accounts for life events, bucket strategy, realistic tax, and pension sources
-            const simResult = calculateRetirementProjection({
+            const simInputs = {
                 ...baseInputs,
                 variableRatesEnabled: true,
                 variableRates: simVariableRates
-            });
+            };
+
+            // When buckets are enabled, also randomize bucket-specific rates
+            // Without this, decumulation uses fixed safe/surplus rates and all iterations are identical
+            if (useBuckets) {
+                const safeReturns = generateYearlyReturns(safeMeanReturn, safeVolatility, yearsInRetirement);
+                const surplusReturns = generateYearlyReturns(surplusMeanReturn, surplusVolatility, yearsInRetirement);
+
+                const simSafeRates = {};
+                const simSurplusRates = {};
+                for (let y = 0; y < yearsInRetirement; y++) {
+                    simSafeRates[retirementStartCalendarYear + y] = safeReturns[y];
+                    simSurplusRates[retirementStartCalendarYear + y] = surplusReturns[y];
+                }
+
+                simInputs.safeVariableRates = simSafeRates;
+                simInputs.surplusVariableRates = simSurplusRates;
+            }
+
+            // Run through the real pipeline with randomized rates
+            // This accounts for life events, bucket strategy, realistic tax, and pension sources
+            const simResult = calculateRetirementProjection(simInputs);
             results.push(simResult);
         }
 
