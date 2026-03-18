@@ -1,6 +1,6 @@
 
 import { EVENT_TYPES } from '../../constants.js';
-import { getMonthFromDate, getMonthlyAmount, isEventActive } from './helpers.js';
+import { getMonthFromDate, getMonthlyAmount } from './helpers.js';
 
 /**
  * Logic for initializing and managing buckets.
@@ -64,40 +64,31 @@ export function calculatePrePassRequiredCapital({
     let prePassRequiredCapital = 0;
     const safeMonthlyRate = (bucketSafeRate / 100 / 12) * (1 - taxRateDecimal);
 
-    // Clone event trackers for Pre-Pass
-    let ppActiveExpense = 0;
-    let ppActiveIncome = 0;
+    // Pre-calculate event month ranges — dates never change during the loop
+    const eventMonthRanges = lifeEvents.map(event => ({
+        startMonth: getMonthFromDate(event.startDate),
+        endMonth: event.endDate ? getMonthFromDate(event.endDate) : null
+    }));
 
-    // Initialize active events state at start of retirement
-    lifeEvents.forEach(event => {
-        if (!event.enabled) return;
-        if (isEventActive(event, monthsToRetirement + 1)) {
-            if (event.type === EVENT_TYPES.EXPENSE_CHANGE) ppActiveExpense += getMonthlyAmount(event);
-            else if (event.type === EVENT_TYPES.INCOME_CHANGE) ppActiveIncome += getMonthlyAmount(event);
-        }
-    });
-
-    // Run Pre-Pass Loop to calculate precise liability
+    // Run Pre-Pass Loop to calculate precise liability.
+    // Uses stateless per-month recalculation (mirrors decumulation.js) to avoid
+    // double-counting events that start on the first retirement month and to keep
+    // end-boundary logic identical to isEventActive (currentMonth <= endMonth).
     for (let j = 1; j <= monthsInRetirement; j++) {
         const currentSimMonth = monthsToRetirement + j;
 
-        // Update Event States for this month
-        lifeEvents.forEach(event => {
+        // Recalculate active adjustments from scratch each month — same as decumulation.js
+        let ppActiveExpense = 0;
+        let ppActiveIncome = 0;
+        lifeEvents.forEach((event, idx) => {
             if (!event.enabled) return;
-
-            const eventStartMonth = getMonthFromDate(event.startDate);
-            const eventEndMonth = event.endDate ? getMonthFromDate(event.endDate) : Infinity;
-
-            // Check for state changes (Start or End)
-            if (eventStartMonth === currentSimMonth) {
-                if (event.type === EVENT_TYPES.EXPENSE_CHANGE) ppActiveExpense += getMonthlyAmount(event);
-                else if (event.type === EVENT_TYPES.INCOME_CHANGE) ppActiveIncome += getMonthlyAmount(event);
-            }
-
-            // Check for endings
-            if (eventEndMonth !== Infinity && currentSimMonth === eventEndMonth + 1) {
-                if (event.type === EVENT_TYPES.EXPENSE_CHANGE) ppActiveExpense -= getMonthlyAmount(event);
-                else if (event.type === EVENT_TYPES.INCOME_CHANGE) ppActiveIncome -= getMonthlyAmount(event);
+            if (event.type === EVENT_TYPES.EXPENSE_CHANGE || event.type === EVENT_TYPES.INCOME_CHANGE) {
+                const { startMonth, endMonth } = eventMonthRanges[idx];
+                if (startMonth !== null && currentSimMonth >= startMonth && (endMonth === null || currentSimMonth <= endMonth)) {
+                    const amount = getMonthlyAmount(event);
+                    if (event.type === EVENT_TYPES.EXPENSE_CHANGE) ppActiveExpense += amount;
+                    else ppActiveIncome += amount;
+                }
             }
         });
 

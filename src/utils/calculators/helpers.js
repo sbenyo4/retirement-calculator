@@ -1,6 +1,4 @@
 
-import { EVENT_TYPES } from '../../constants.js';
-
 // --- Date & Event Helpers ---
 
 /**
@@ -10,8 +8,9 @@ import { EVENT_TYPES } from '../../constants.js';
  */
 export const getMonthFromDate = (date) => {
     if (!date) return null;
-    const currentYear = new Date().getFullYear();
-    const currentMonth = new Date().getMonth() + 1;
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
     const yearsFromNow = date.year - currentYear;
     const monthsFromNow = yearsFromNow * 12 + (date.month - currentMonth);
     return Math.max(0, monthsFromNow); // Don't allow negative months
@@ -58,8 +57,11 @@ export const getMonthlyAmount = (event) => {
 export const getMonthlyRateForMonth = (monthIndex, startYear, variableRatesEnabled, variableRates, defaultAnnualRate) => {
     const yearOffset = Math.floor(monthIndex / 12);
     const currentCalcYear = startYear + yearOffset;
-    const yearRate = (variableRatesEnabled && variableRates && variableRates[currentCalcYear] !== undefined)
-        ? variableRates[currentCalcYear]
-        : defaultAnnualRate;
+    let yearRate = defaultAnnualRate;
+    if (variableRatesEnabled && variableRates && variableRates[currentCalcYear] !== undefined) {
+        const parsed = parseFloat(variableRates[currentCalcYear]);
+        if (!isNaN(parsed)) yearRate = parsed;
+        // if parsed is NaN (non-numeric string), fall back to defaultAnnualRate
+    }
     return yearRate / 100 / 12;
 };

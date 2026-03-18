@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run test:run:*)"
+      "Bash(npm run test:run:*)",
+      "Bash(npm test:*)",
+      "Bash(grep -v \"//\")",
+      "Bash(node -e \":*)"
     ]
   }
 }

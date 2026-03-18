@@ -61,6 +61,70 @@ describe('Tax Calculation Realism', () => {
         expect(withTaxResult.balanceAtEnd).toBeLessThan(noTaxResult.balanceAtEnd);
     });
 
+    describe('interest_only withdrawal strategy', () => {
+        const interestOnlyInputs = {
+            ...baseInputs,
+            withdrawalStrategy: 'interestOnly',
+            // One-year accumulation so principal ≈ currentSavings (known cost basis)
+            currentAge: 59,
+            retirementStartAge: 60,
+            monthlyContribution: 0,
+        };
+
+        it('portfolio balance should remain flat (gross withdrawal = interest earned)', () => {
+            // With all-principal portfolio (profit ratio ~0), tax is ~0, and gross ≈ net ≈ interest.
+            // Balance should hold steady each year.
+            const result = calculateRetirementProjection({
+                ...interestOnlyInputs,
+                currentSavings: 1000000,
+                annualReturnRate: 6,
+                taxRate: 0, // zero tax: gross=net=interest, balance strictly flat
+            });
+
+            const startBalance = result.balanceAtRetirement;
+            const endBalance = result.balanceAtEnd;
+            // Allow <1% drift from floating-point only
+            const drift = Math.abs(endBalance - startBalance) / startBalance;
+            expect(drift).toBeLessThan(0.01);
+        });
+
+        it('with tax > 0, balance still stays approximately flat (gross = interest, tax paid from withdrawal)', () => {
+            // profit ratio will grow over time, but each month grossWithdrawal = effectiveInterest
+            // so the principal portion is preserved; balance drifts only from the profit ratio changing
+            const result = calculateRetirementProjection({
+                ...interestOnlyInputs,
+                currentSavings: 1000000,
+                annualReturnRate: 6,
+                taxRate: 25,
+            });
+
+            const startBalance = result.balanceAtRetirement;
+            const endBalance = result.balanceAtEnd;
+            // Balance should stay within 3% of start (slight drift as profit ratio changes)
+            const drift = Math.abs(endBalance - startBalance) / startBalance;
+            expect(drift).toBeLessThan(0.03);
+        });
+
+        it('net withdrawal should be less than gross interest when tax > 0', () => {
+            const withTax = calculateRetirementProjection({
+                ...interestOnlyInputs,
+                currentSavings: 1000000,
+                annualReturnRate: 6,
+                taxRate: 25,
+            });
+
+            const noTax = calculateRetirementProjection({
+                ...interestOnlyInputs,
+                currentSavings: 1000000,
+                annualReturnRate: 6,
+                taxRate: 0,
+            });
+
+            // With tax, user receives less net per month (tax is deducted from interest income)
+            expect(withTax.averageNetWithdrawal).toBeLessThan(noTax.averageNetWithdrawal);
+        });
+    });
+
     it('higher returns should result in higher ending balance when not running out', () => {
         const lowReturnResult = calculateRetirementProjection({
             ...baseInputs,

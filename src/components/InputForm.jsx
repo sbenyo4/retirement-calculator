@@ -825,7 +825,7 @@ export default function InputForm({
                 isOpen={showVariableRates}
                 onClose={() => setShowVariableRates(false)}
                 startYear={inputs.enableBuckets ? (activeVRType === 'accumulation' ? currentYear : startYear) : currentYear}
-                endYear={inputs.enableBuckets ? (activeVRType === 'accumulation' ? (startYear - 1) : endYear) : endYear}
+                endYear={inputs.enableBuckets ? (activeVRType === 'accumulation' ? startYear : endYear + 1) : endYear + 1}
                 retirementStartYear={startYear}
                 retirementEndYear={endYear}
                 currentRate={

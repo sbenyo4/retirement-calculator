@@ -61,7 +61,7 @@ export function calculateNationalInsurance(age, contributionYears = 35, paramete
     };
 
     const status = familyStatus || 'single';
-    const threshold = rates.incomeTestThreshold[status === 'couple' ? 'couple' : 'single'] || 20226;
+    const threshold = rates.incomeTestThreshold[status === 'couple' ? 'couple' : 'single'] || 13970;
 
     // Eligibility check - Old Age pension starts at age 67
     if (age < 67) {
@@ -273,6 +273,17 @@ export function calculateCapitalDuration(capital, monthlyDeficit, annualReturnRa
         months++;
     }
 
+    // If capital is still positive after the cap, the return rate sustains the withdrawal —
+    // capital never depletes. Return Infinity so callers display correctly (no depletion age).
+    if (remainingCapital > 0) {
+        return {
+            yearsUntilDepletion: Infinity,
+            months,
+            monthlyDeficit,
+            annualReturnRate
+        };
+    }
+
     const years = months / 12;
 
     return {
@@ -449,7 +460,7 @@ export function calculateRetirementIncomeSummary({
         niDetails: niDetailsInitial
     };
 
-    const milestones = sortedAges.map((age, index) => {
+    const milestones = sortedAges.map((age) => {
         // Calculate income from all sources *except* National Insurance first,
         // as NI depends on other non-work income.
         const incomeExcludingNI = calculateIncomeAtAge(nonNISources, age, parameters);
@@ -553,9 +564,7 @@ export function calculateRetirementIncomeSummary({
  * @returns {PensionIncomeSource[]} Default income sources
  */
 export function createDefaultIncomeSources(inputs) {
-    const retirementStartAge = parseFloat(inputs.retirementStartAge) || 50;
     const retirementEndAge = parseFloat(inputs.retirementEndAge) || 67;
-    const currentAge = parseFloat(inputs.currentAge) || 40;
 
     // Pension starts at retirement END age (after early retirement self-funded period)
     const pensionStartAge = retirementEndAge;

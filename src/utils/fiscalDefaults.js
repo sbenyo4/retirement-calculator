@@ -178,14 +178,14 @@ export function validateNationalInsurance(niData) {
         if (thresholds.single) {
             const val = Number(thresholds.single);
             if (isNaN(val) || val < ranges.incomeTestSingle.min || val > ranges.incomeTestSingle.max) {
-                errors.push(`Income test single threshold ${val} outside valid range (${ranges.incomeTestSingle.min}-${ranges.incomeTestSingle.max}). Expected ~20226.`);
+                errors.push(`Income test single threshold ${val} outside valid range (${ranges.incomeTestSingle.min}-${ranges.incomeTestSingle.max}). Expected ~13970.`);
             }
         }
 
         if (thresholds.couple) {
             const val = Number(thresholds.couple);
             if (isNaN(val) || val < ranges.incomeTestCouple.min || val > ranges.incomeTestCouple.max) {
-                errors.push(`Income test couple threshold ${val} outside valid range (${ranges.incomeTestCouple.min}-${ranges.incomeTestCouple.max}). Expected ~26968.`);
+                errors.push(`Income test couple threshold ${val} outside valid range (${ranges.incomeTestCouple.min}-${ranges.incomeTestCouple.max}). Expected ~19483.`);
             }
         }
     } else {

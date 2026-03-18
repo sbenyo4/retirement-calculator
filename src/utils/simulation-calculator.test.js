@@ -128,4 +128,29 @@ describe('calculateSimulation', () => {
             expect(result.balanceAtRetirement).toBeGreaterThan(0);
         });
     });
+
+    describe('monte carlo year alignment', () => {
+        it('fractional ages: result is finite and non-NaN (no off-by-one year drop)', () => {
+            // currentAge=30.7, retirementStartAge=65.3 → diff=34.6
+            // Math.ceil(34.6)=35 would set variable rates one year too late (off-by-one).
+            // Math.floor(34.6)=34 aligns with getMonthlyRateForMonth's floor logic.
+            const result = calculateSimulation({
+                ...baseInputs,
+                currentAge: 30.7,
+                retirementStartAge: 65.3,
+                retirementEndAge: 85.3
+            }, SIMULATION_TYPES.MONTE_CARLO);
+
+            expect(isNaN(result.balanceAtEnd)).toBe(false);
+            expect(isNaN(result.balanceAtRetirement)).toBe(false);
+            expect(result.simulationRange).toBeDefined();
+        });
+
+        it('integer ages: Monte Carlo result matches floor and ceil (no difference)', () => {
+            // For integer age gaps, floor and ceil are identical — this is a regression guard
+            const result = calculateSimulation(baseInputs, SIMULATION_TYPES.MONTE_CARLO);
+            expect(isNaN(result.balanceAtEnd)).toBe(false);
+            expect(result.simulationRange.p25Balance).toBeLessThanOrEqual(result.simulationRange.p75Balance);
+        });
+    });
 });

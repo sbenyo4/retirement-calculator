@@ -380,7 +380,8 @@ export function ResultsDashboard({ results, inputs, setInputs, t, language, calc
         initialNetWithdrawal,
         averageGrossWithdrawal,
         averageNetWithdrawal,
-        simulationRange // Only present in Monte Carlo
+        simulationRange, // Only present in Monte Carlo
+        effectiveRetirementRate // Variable-rate-aware rate used for statistics
     } = activeResults;
 
     // Calculate max sustainable net withdrawal using binary search.
@@ -407,9 +408,12 @@ export function ResultsDashboard({ results, inputs, setInputs, t, language, calc
             // The remaining balance, discounted, should roughly equal extra monthly withdrawals
             // For a rough estimate: extra = balanceAtEnd / monthsInRetirement (simple) 
             // But we need to account for growth, so use a more conservative estimate
-            const annualRate = parseFloat(inputs.annualReturnRate) || 0;
+            // effectiveRetirementRate is already a real rate (inflation-adjusted), passed from the
+            // calculator so the heuristic is consistent with statistics (respects variable rates).
             const inflation = parseFloat(inputs.inflationRate) || 0;
-            const realRate = (annualRate - inflation) / 100;
+            const realRate = effectiveRetirementRate != null
+                ? effectiveRetirementRate / 100
+                : (parseFloat(inputs.annualReturnRate) || 0 - inflation) / 100;
 
             // Approximate extra withdrawal using annuity factor
             let extraWithdrawal = 0;

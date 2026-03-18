@@ -171,6 +171,169 @@ describe('calculateRetirementProjection', () => {
         });
     });
 
+    describe('variable rates', () => {
+        const startYear = new Date().getFullYear();
+
+        it('numeric variable rates produce same result as equivalent fixed rate', () => {
+            const fixedResult = calculateRetirementProjection({
+                ...baseInputs,
+                annualReturnRate: 5
+            });
+
+            // Every year set to 5 (as numbers) — should match fixed 5%
+            const rates = {};
+            for (let y = startYear; y <= startYear + 30; y++) rates[y] = 5;
+            const variableResult = calculateRetirementProjection({
+                ...baseInputs,
+                variableRatesEnabled: true,
+                variableRates: rates
+            });
+
+            expect(variableResult.balanceAtRetirement).toBeCloseTo(fixedResult.balanceAtRetirement, 0);
+        });
+
+        it('string variable rates are parsed and produce same result as numeric rates', () => {
+            const rates = {};
+            for (let y = startYear; y <= startYear + 30; y++) rates[y] = 7;
+            const numericResult = calculateRetirementProjection({
+                ...baseInputs,
+                variableRatesEnabled: true,
+                variableRates: rates
+            });
+
+            // Same rates stored as strings — must produce identical result
+            const stringRates = {};
+            for (let y = startYear; y <= startYear + 30; y++) stringRates[y] = '7';
+            const stringResult = calculateRetirementProjection({
+                ...baseInputs,
+                variableRatesEnabled: true,
+                variableRates: stringRates
+            });
+
+            expect(stringResult.balanceAtRetirement).toBeCloseTo(numericResult.balanceAtRetirement, 0);
+            expect(stringResult.balanceAtEnd).toBeCloseTo(numericResult.balanceAtEnd, 0);
+        });
+
+        it('non-numeric string rate falls back to default annual rate', () => {
+            const defaultResult = calculateRetirementProjection({
+                ...baseInputs,
+                annualReturnRate: 5
+            });
+
+            // One year has a bad value; should fall back to 5% for that year
+            const rates = {};
+            for (let y = startYear; y <= startYear + 30; y++) rates[y] = 'bad_value';
+            const badRateResult = calculateRetirementProjection({
+                ...baseInputs,
+                variableRatesEnabled: true,
+                variableRates: rates,
+                annualReturnRate: 5 // fallback
+            });
+
+            // Result should be close to the fixed-rate default (all years use fallback)
+            expect(badRateResult.balanceAtRetirement).toBeCloseTo(defaultResult.balanceAtRetirement, 0);
+            // Result must not be NaN
+            expect(isNaN(badRateResult.balanceAtRetirement)).toBe(false);
+            expect(isNaN(badRateResult.balanceAtEnd)).toBe(false);
+        });
+
+        it('zero percent variable rate is treated as 0%, not as falsy fallback', () => {
+            const rates = {};
+            for (let y = startYear; y <= startYear + 30; y++) rates[y] = 0;
+            const zeroRateResult = calculateRetirementProjection({
+                ...baseInputs,
+                variableRatesEnabled: true,
+                variableRates: rates,
+                annualReturnRate: 5 // must NOT be used — rates explicitly set to 0
+            });
+
+            const fixedZeroResult = calculateRetirementProjection({
+                ...baseInputs,
+                annualReturnRate: 0
+            });
+
+            expect(zeroRateResult.balanceAtRetirement).toBeCloseTo(fixedZeroResult.balanceAtRetirement, 0);
+        });
+    });
+
+    describe('inflation adjustment', () => {
+        const thisYear = new Date().getFullYear();
+
+        it('non-numeric variable rate with inflation does not produce NaN balance', () => {
+            const rates = {};
+            for (let y = thisYear; y <= thisYear + 30; y++) rates[y] = 'bad_value';
+
+            const result = calculateRetirementProjection({
+                ...baseInputs,
+                annualReturnRate: 5,
+                inflationRate: 2,
+                variableRatesEnabled: true,
+                variableRates: rates
+            });
+
+            // Non-numeric entries must not propagate NaN through inflation adjustment
+            expect(isNaN(result.balanceAtRetirement)).toBe(false);
+            expect(isNaN(result.balanceAtEnd)).toBe(false);
+        });
+
+        it('numeric variable rates with inflation are adjusted correctly', () => {
+            const rates = {};
+            for (let y = thisYear; y <= thisYear + 30; y++) rates[y] = 7;
+
+            const result = calculateRetirementProjection({
+                ...baseInputs,
+                annualReturnRate: 7,
+                inflationRate: 2,
+                variableRatesEnabled: true,
+                variableRates: rates
+            });
+
+            // 7% nominal - 2% inflation = 5% real — should match fixed 5% real
+            const fixedRealResult = calculateRetirementProjection({
+                ...baseInputs,
+                annualReturnRate: 5
+            });
+
+            expect(result.balanceAtRetirement).toBeCloseTo(fixedRealResult.balanceAtRetirement, 0);
+        });
+    });
+
+    describe('step mode parity', () => {
+        // Regression: step mode with 0 years (all years at target rate) must produce the same
+        // requiredCapitalAtRetirement and surplus as setting that rate as the fixed base rate.
+        // Root cause was that requiredCapitalPV used a constant discount rate derived from
+        // annualReturnRate even when variable rates were set uniformly to a different value.
+        const startYear = new Date().getFullYear();
+
+        it('uniform variable rate produces same requiredCapitalAtRetirement as equivalent fixed rate', () => {
+            const TARGET_RATE = 6;
+            const BASE_RATE = 5; // deliberately different from target
+
+            // All years at 6% via variable rates (step mode with 0 years at base)
+            const rates = {};
+            for (let y = startYear; y <= startYear + 50; y++) rates[y] = TARGET_RATE;
+            const stepResult = calculateRetirementProjection({
+                ...baseInputs,
+                annualReturnRate: BASE_RATE,
+                variableRatesEnabled: true,
+                variableRates: rates
+            });
+
+            // 6% set directly as the fixed rate (no variable rates)
+            const directResult = calculateRetirementProjection({
+                ...baseInputs,
+                annualReturnRate: TARGET_RATE,
+                variableRatesEnabled: false
+            });
+
+            expect(stepResult.balanceAtRetirement).toBeCloseTo(directResult.balanceAtRetirement, 0);
+            expect(stepResult.requiredCapitalAtRetirement).toBeCloseTo(directResult.requiredCapitalAtRetirement, 0);
+            expect(stepResult.surplus).toBeCloseTo(directResult.surplus, 0);
+            expect(stepResult.requiredCapitalForPerpetuity).toBeCloseTo(directResult.requiredCapitalForPerpetuity, 0);
+            expect(stepResult.maxSustainableNetWithdrawal).toBeCloseTo(directResult.maxSustainableNetWithdrawal, 0);
+        });
+    });
+
     describe('bankruptcy detection', () => {
         it('should detect when savings run out', () => {
             const bankruptInputs = {

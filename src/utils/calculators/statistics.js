@@ -33,7 +33,9 @@ export function calculateStatistics({
     if (surplus < 0) {
         const deficitAmount = Math.abs(surplus);
         const currentMonthlyRate = annualReturnRate / 100 / 12;
-        if (currentMonthlyRate > 0) {
+        if (currentMonthlyRate !== 0) {
+            // Works for both positive and negative rates.
+            // Negative rate: (1+r)^n < 1 → PV > FV, correctly reflecting a larger present deficit.
             pvOfDeficit = deficitAmount / Math.pow(1 + currentMonthlyRate, monthsToRetirement);
         } else {
             pvOfDeficit = deficitAmount;
@@ -56,8 +58,9 @@ export function calculateStatistics({
     const averageNetWithdrawal = totalNetWithdrawal / monthsInRetirement;
 
     // 5. Max sustainable net withdrawal (PMT that depletes balance to exactly 0)
+    // PMT formula is valid for any non-zero rate (including negative). Only r=0 requires special handling.
     let maxSustainableNetWithdrawal = 0;
-    if (effectiveMonthlyRate > 0) {
+    if (effectiveMonthlyRate !== 0) {
         maxSustainableNetWithdrawal = balanceAtRetirement * effectiveMonthlyRate / (1 - Math.pow(1 + effectiveMonthlyRate, -monthsInRetirement));
     } else {
         maxSustainableNetWithdrawal = balanceAtRetirement / monthsInRetirement;

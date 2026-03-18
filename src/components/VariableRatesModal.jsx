@@ -128,7 +128,8 @@ export default function VariableRatesModal({
     // Scope helpers for split mode
     const splitPoint = useMemo(() => {
         const total = endYear - startYear + 1;
-        return Math.max(1, Math.min(total, parseInt(stepYears) || 5));
+        const parsed = parseInt(stepYears, 10);
+        return Math.max(0, Math.min(total, isNaN(parsed) ? 5 : parsed));
     }, [stepYears, startYear, endYear]);
 
     const getScopeYears = () => {
@@ -457,7 +458,8 @@ export default function VariableRatesModal({
     const handleApplyStepRate = () => {
         const years = [];
         for (let y = startYear; y <= endYear; y++) years.push(y);
-        const n = Math.max(1, Math.min(years.length, parseInt(stepYears) || 5));
+        const parsed = parseInt(stepYears, 10);
+        const n = Math.max(0, Math.min(years.length, isNaN(parsed) ? 5 : parsed));
         const base = parseFloat(currentRate) || 0;
         const target = parseFloat(stepTargetRate) || 0;
         const newRates = {};
@@ -589,7 +591,7 @@ export default function VariableRatesModal({
                         <div className="flex items-center gap-1.5 justify-center">
                             <input
                                 type="number"
-                                min="1"
+                                min="0"
                                 max={endYear - startYear + 1}
                                 value={stepYears}
                                 onChange={(e) => setStepYears(e.target.value)}

@@ -90,9 +90,10 @@ export function calculateSimulation(inputs, type) {
         const retirementEndAge = parseFloat(inputs.retirementEndAge);
         const yearsInRetirement = Math.ceil(retirementEndAge - retirementStartAge);
 
-        // Calculate the calendar year when retirement starts
+        // Calculate the calendar year when retirement starts.
+        // Uses Math.floor to match getMonthlyRateForMonth's yearOffset = Math.floor(monthIndex / 12).
         const startYear = new Date().getFullYear();
-        const retirementStartCalendarYear = startYear + Math.ceil(retirementStartAge - currentAge);
+        const retirementStartCalendarYear = startYear + Math.floor(retirementStartAge - currentAge);
 
         for (let i = 0; i < iterations; i++) {
             // Generate year-by-year returns for this simulation

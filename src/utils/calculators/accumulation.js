@@ -1,6 +1,6 @@
 
 import { EVENT_TYPES } from '../../constants.js';
-import { getMonthFromDate, isEventActive, getMonthlyAmount, getMonthlyRateForMonth } from './helpers.js';
+import { getMonthFromDate, getMonthlyAmount, getMonthlyRateForMonth } from './helpers.js';
 
 /**
  * Calculates the accumulation phase (Now -> Retirement Start).
@@ -50,11 +50,17 @@ export function calculateAccumulation({
     // Track active monthly contribution (can be modified by INCOME_CHANGE events)
     let activeMonthlyContribution = monthlyContribution;
 
+    // Pre-calculate event month ranges — dates never change during the loops
+    const eventMonthRanges = lifeEvents.map(event => ({
+        startMonth: getMonthFromDate(event.startDate),
+        endMonth: event.endDate ? getMonthFromDate(event.endDate) : null
+    }));
+
     // Pre-scan for events active at start (Month 0)
-    lifeEvents.forEach(event => {
+    lifeEvents.forEach((event, idx) => {
         if (!event.enabled) return;
-        const start = getMonthFromDate(event.startDate);
-        if (start <= 0 && isEventActive(event, 0)) {
+        const { startMonth, endMonth } = eventMonthRanges[idx];
+        if (startMonth !== null && startMonth <= 0 && (endMonth === null || endMonth >= 0)) {
             const amount = getMonthlyAmount(event);
             if (event.type === EVENT_TYPES.INCOME_CHANGE) {
                 activeMonthlyContribution += amount;
@@ -69,10 +75,10 @@ export function calculateAccumulation({
         const monthlyRate = getMonthlyRateForMonth(currentMonth, startYear, variableRatesEnabled, variableRates, annualReturnRate);
 
         // Apply life events for this month
-        lifeEvents.forEach(event => {
+        lifeEvents.forEach((event, idx) => {
             if (!event.enabled) return; // Skip disabled events
 
-            const eventStartMonth = getMonthFromDate(event.startDate);
+            const { startMonth: eventStartMonth, endMonth: eventEndMonth } = eventMonthRanges[idx];
 
             // Check if this is the exact month the event starts
             if (eventStartMonth === currentMonth) {
@@ -101,15 +107,12 @@ export function calculateAccumulation({
             }
 
             // Check if recurring event should end this month
-            if (event.endDate) {
-                const eventEndMonth = getMonthFromDate(event.endDate);
-                if (eventEndMonth === currentMonth) {
-                    const amount = getMonthlyAmount(event);
-                    if (event.type === EVENT_TYPES.INCOME_CHANGE) {
-                        activeMonthlyContribution -= amount;
-                    } else if (event.type === EVENT_TYPES.EXPENSE_CHANGE) {
-                        activeMonthlyContribution += amount;
-                    }
+            if (eventEndMonth !== null && eventEndMonth === currentMonth) {
+                const amount = getMonthlyAmount(event);
+                if (event.type === EVENT_TYPES.INCOME_CHANGE) {
+                    activeMonthlyContribution -= amount;
+                } else if (event.type === EVENT_TYPES.EXPENSE_CHANGE) {
+                    activeMonthlyContribution += amount;
                 }
             }
         });

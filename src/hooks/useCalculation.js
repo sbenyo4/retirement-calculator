@@ -50,7 +50,20 @@ export function useCalculation(inputs, settings, t) {
                 // Clear validation error on successful calculation
                 setValidationError(null);
 
+                // Timeout guard: calculations are synchronous on the main thread.
+                // A deadline check after each expensive step prevents the UI from hanging
+                // if inputs cause unexpectedly slow execution (e.g. 25 goal-seek iterations
+                // each running a full projection, or NaN propagation leading to a very slow path).
+                const TIMEOUT_MS = 5000;
+                const calcStart = Date.now();
+                const checkTimeout = () => {
+                    if (Date.now() - calcStart > TIMEOUT_MS) {
+                        throw new Error(t ? t('calculationTimeout') : 'Calculation timed out. Try simplifying your inputs.');
+                    }
+                };
+
                 let projection = calculateRetirementProjection(debouncedInputs, t);
+                checkTimeout();
 
                 // Goal-seek: if targetEndBalance is set, find withdrawal that achieves it
                 const targetEnd = parseFloat(debouncedInputs.targetEndBalance);
@@ -58,6 +71,7 @@ export function useCalculation(inputs, settings, t) {
                     let lo = 0;
                     let hi = projection.balanceAtRetirement / ((retirementEnd - retirementStart) * 12) * 3; // upper bound
                     for (let iter = 0; iter < 25; iter++) {
+                        checkTimeout();
                         const mid = (lo + hi) / 2;
                         const testResult = calculateRetirementProjection({
                             ...debouncedInputs,
@@ -70,6 +84,7 @@ export function useCalculation(inputs, settings, t) {
                             hi = mid;
                         }
                     }
+                    checkTimeout();
                     const optimalWithdrawal = Math.round((lo + hi) / 2);
                     projection = calculateRetirementProjection({
                         ...debouncedInputs,

@@ -9,6 +9,9 @@ export function useSimulationWorker() {
     const workerRef = useRef(null);
     const requestIdRef = useRef(0);
     const callbacksRef = useRef(null);
+    // Single-entry cache: avoids re-running expensive simulations (e.g. Monte Carlo)
+    // when called with identical inputs (React Strict Mode, defensive against future refactors).
+    const cacheRef = useRef({ key: null, result: null });
 
     useEffect(() => {
         try {
@@ -54,15 +57,26 @@ export function useSimulationWorker() {
     }, []);
 
     const runSimulation = useCallback((inputs, simulationType, onResult, onError) => {
+        const cacheKey = simulationType + '|' + JSON.stringify(inputs);
+        if (cacheRef.current.key === cacheKey && cacheRef.current.result !== null) {
+            onResult(cacheRef.current.result);
+            return;
+        }
+
         const currentRequestId = ++requestIdRef.current;
 
+        const handleResult = (result) => {
+            cacheRef.current = { key: cacheKey, result };
+            onResult(result);
+        };
+
         if (workerRef.current) {
-            callbacksRef.current = { requestId: currentRequestId, onResult, onError };
+            callbacksRef.current = { requestId: currentRequestId, onResult: handleResult, onError };
             workerRef.current.postMessage({ requestId: currentRequestId, inputs, simulationType });
         } else {
             try {
                 const result = calculateSimulation(inputs, simulationType);
-                onResult(result);
+                handleResult(result);
             } catch (err) {
                 onError(err.message);
             }

@@ -58,7 +58,9 @@ export function calculateRetirementProjection(inputs, t = null) {
         if (!rates || typeof rates !== 'object') return rates;
         const adjusted = {};
         for (const [year, rate] of Object.entries(rates)) {
-            adjusted[year] = parseFloat(rate) - inflationRate;
+            const parsed = parseFloat(rate);
+            // Non-numeric entries are left out; downstream NaN guards fall back to the default rate
+            if (!isNaN(parsed)) adjusted[year] = parsed - inflationRate;
         }
         return adjusted;
     };
@@ -116,14 +118,45 @@ export function calculateRetirementProjection(inputs, t = null) {
         ? realBucketSafeRate
         : realReturnRate;
 
+    // When variable rates are enabled, derive the effective average rate for each phase.
+    // This makes perpetuity and max-sustainable-withdrawal statistics consistent with the
+    // simulation — especially when step mode sets all retirement years to a single target rate.
+    let effectiveAccumRate = realReturnRate;
+    let effectiveRetirementRate = retirementAnnualReturnRate;
+    if (parsedInputs.variableRatesEnabled && realVariableRates) {
+        const retirCalStart = startYear + Math.floor(retirementStartAge - currentAge);
+        const retirCalEnd = startYear + Math.floor(retirementEndAge - currentAge);
+
+        const accumRateValues = [];
+        for (let y = startYear; y < retirCalStart; y++) {
+            const r = parseFloat(realVariableRates[y]);
+            if (!isNaN(r)) accumRateValues.push(r);
+        }
+        if (accumRateValues.length > 0) {
+            effectiveAccumRate = accumRateValues.reduce((a, b) => a + b, 0) / accumRateValues.length;
+        }
+
+        // Don't override bucket perpetuity rate — that's governed by the safe-bucket rate
+        if (!parsedInputs.enableBuckets) {
+            const retirRateValues = [];
+            for (let y = retirCalStart; y <= retirCalEnd; y++) {
+                const r = parseFloat(realVariableRates[y]);
+                if (!isNaN(r)) retirRateValues.push(r);
+            }
+            if (retirRateValues.length > 0) {
+                effectiveRetirementRate = retirRateValues.reduce((a, b) => a + b, 0) / retirRateValues.length;
+            }
+        }
+    }
+
     // 4. Statistics (Phase 3)
     const statsResult = calculateStatistics({
         balanceAtRetirement,
         requiredCapitalAtRetirement: decumResult.requiredCapitalPV,
         monthlyNetIncomeDesired,
         monthlyContribution,
-        annualReturnRate: realReturnRate, // Accumulation Rate (for PV to today)
-        retirementAnnualReturnRate, // Decumulation Rate (for Perpetuity threshold)
+        annualReturnRate: effectiveAccumRate, // Accumulation Rate (for PV to today)
+        retirementAnnualReturnRate: effectiveRetirementRate, // Decumulation Rate (for Perpetuity threshold)
         taxRateDecimal: taxRate / 100,
         monthsToRetirement: (retirementStartAge - currentAge) * 12,
         monthsInRetirement,
@@ -159,6 +192,8 @@ export function calculateRetirementProjection(inputs, t = null) {
         averageGrossWithdrawal: statsResult.averageGrossWithdrawal,
         averageNetWithdrawal: statsResult.averageNetWithdrawal,
         maxSustainableNetWithdrawal: statsResult.maxSustainableNetWithdrawal,
+        // Effective rates used for statistics (account for variable rates when enabled)
+        effectiveRetirementRate,
         // NI Info
         incomeAtNIStart,
         niThreshold: niDetails.incomeTest.threshold
