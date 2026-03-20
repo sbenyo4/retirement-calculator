@@ -50,6 +50,7 @@ export function calculateDecumulation({
     // Strategies setup
     const fourPercentMonthly = (balanceAtRetirement * 0.04) / 12;
     let dynamicBaseWithdrawal = monthlyNetIncomeDesired;
+    let dynamicAnnualGrowth = 1; // cumulative (1+r) product over the current 12-month window
 
     // Required Capital PV Accumulator
     let requiredCapitalPV = 0;
@@ -107,20 +108,6 @@ export function calculateDecumulation({
         endMonth: event.endDate ? getMonthFromDate(event.endDate) : null
     }));
 
-    // Pre-scan for events active at start of retirement
-    lifeEvents.forEach((event, idx) => {
-        if (!event.enabled) return;
-        const { startMonth, endMonth } = eventMonthRanges[idx];
-        if (startMonth !== null && (startMonthIndex + 1) >= startMonth && (endMonth === null || (startMonthIndex + 1) <= endMonth)) {
-            const monthlyAmount = getMonthlyAmount(event);
-            if (event.type === EVENT_TYPES.EXPENSE_CHANGE) {
-                activeExpenseAdjustment += monthlyAmount;
-            } else if (event.type === EVENT_TYPES.INCOME_CHANGE) {
-                activeIncomeAdjustment += monthlyAmount;
-            }
-        }
-    });
-
     for (let i = 1; i <= monthsInRetirement; i++) {
         currentMonth++;
         const monthlyRate = getMonthlyRateForMonth(currentMonth, startYear, variableRatesEnabled, variableRates, annualReturnRate);
@@ -136,21 +123,36 @@ export function calculateDecumulation({
                 switch (event.type) {
                     case EVENT_TYPES.ONE_TIME_INCOME:
                         retirementBalance += event.amount;
+                        // New funds are cost-basis — no profit on them, so no tax
+                        currentPrincipal += event.amount;
                         if (enableBuckets) {
                             surplusBalance += event.amount;
+                            surplusPrincipal += event.amount;
                         }
                         break;
                     case EVENT_TYPES.ONE_TIME_EXPENSE:
                         retirementBalance -= event.amount;
+                        // Reduce principal proportionally to the fraction of balance spent
+                        if (retirementBalance + event.amount > 0) {
+                            const expenseFraction = event.amount / (retirementBalance + event.amount);
+                            currentPrincipal = Math.max(0, currentPrincipal - currentPrincipal * expenseFraction);
+                        }
                         if (enableBuckets) {
                             let expenseRemaining = event.amount;
                             if (safeBalance >= expenseRemaining) {
+                                const safeFraction = expenseRemaining / safeBalance;
+                                safePrincipal = Math.max(0, safePrincipal - safePrincipal * safeFraction);
                                 safeBalance -= expenseRemaining;
                                 expenseRemaining = 0;
                             } else {
+                                safePrincipal = 0;
                                 expenseRemaining -= safeBalance;
                                 safeBalance = 0;
-                                surplusBalance -= expenseRemaining;
+                                if (surplusBalance > 0) {
+                                    const surplusFraction = Math.min(1, expenseRemaining / surplusBalance);
+                                    surplusPrincipal = Math.max(0, surplusPrincipal - surplusPrincipal * surplusFraction);
+                                }
+                                surplusBalance = Math.max(0, surplusBalance - expenseRemaining);
                             }
                         }
                         break;
@@ -228,16 +230,18 @@ export function calculateDecumulation({
                 netWithdrawal = (currentBalance * (withdrawalPercentage / 100)) / 12;
                 break;
             case WITHDRAWAL_STRATEGIES.DYNAMIC:
-                if (i % 12 === 1 && i > 1) {
-                    const prevYearRate = getMonthlyRateForMonth(currentMonth - 1, startYear, variableRatesEnabled, variableRates, annualReturnRate);
-                    const yearlyReturnRate = Math.pow(1 + prevYearRate, 12) - 1;
-                    const expectedReturn = 0.07;
-
+                // Accumulate actual monthly growth throughout the year
+                dynamicAnnualGrowth *= (1 + monthlyRate);
+                if (i % 12 === 0) {
+                    // End of a full year: compare actual compounded return against expected
+                    const yearlyReturnRate = dynamicAnnualGrowth - 1;
+                    const expectedReturn = annualReturnRate / 100;
                     if (yearlyReturnRate > expectedReturn) {
                         dynamicBaseWithdrawal = Math.min(dynamicBaseWithdrawal * 1.1, monthlyNetIncomeDesired * 1.2);
                     } else if (yearlyReturnRate < expectedReturn - 0.05) {
                         dynamicBaseWithdrawal = Math.max(dynamicBaseWithdrawal * 0.9, monthlyNetIncomeDesired * 0.8);
                     }
+                    dynamicAnnualGrowth = 1; // reset for next year
                 }
                 netWithdrawal = dynamicBaseWithdrawal;
                 break;
@@ -369,7 +373,7 @@ export function calculateDecumulation({
                     // Calculate principal reduction for surplus bucket
                     const surplusPrincipalRatio = surplusBalance > 0 ? (surplusPrincipal / surplusBalance) : 0;
                     surplusPrincipal = Math.max(0, surplusPrincipal - remainingWithdrawal * surplusPrincipalRatio);
-                    surplusBalance -= remainingWithdrawal;
+                    surplusBalance = Math.max(0, surplusBalance - remainingWithdrawal);
                     remainingWithdrawal = 0;
                 } else {
                     surplusPrincipal = 0;

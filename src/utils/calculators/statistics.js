@@ -21,10 +21,10 @@ export function calculateStatistics({
     const rateForPerpetuity = retirementAnnualReturnRate !== null ? retirementAnnualReturnRate : annualReturnRate;
     const effectiveMonthlyRate = (rateForPerpetuity / 100 / 12) * (1 - taxRateDecimal);
 
-    let requiredCapitalForPerpetuity = 0;
-    if (effectiveMonthlyRate > 0) {
-        requiredCapitalForPerpetuity = monthlyNetIncomeDesired / effectiveMonthlyRate;
-    }
+    // At zero or negative real return, sustaining a perpetual withdrawal requires infinite capital.
+    const requiredCapitalForPerpetuity = effectiveMonthlyRate > 0
+        ? monthlyNetIncomeDesired / effectiveMonthlyRate
+        : Infinity;
 
     // 2. PV of Deficit
     let pvOfDeficit = 0;

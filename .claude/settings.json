@@ -4,7 +4,9 @@
       "Bash(npm run test:run:*)",
       "Bash(npm test:*)",
       "Bash(grep -v \"//\")",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Read(//c/Users/sbeny/.claude/projects/c--Users-sbeny--gemini-antigravity-scratch-retirement-calculator/memory/**)",
+      "Bash(sort -t'|' -k2 -rn)"
     ]
   }
 }

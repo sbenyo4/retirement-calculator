@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useDebouncedValue } from '../hooks/useDebounce';
 import { useTheme } from '../contexts/ThemeContext';
 import { useThemeClasses } from '../hooks/useThemeClasses';
 import { X, Dices, ArrowDown, Calculator, RotateCcw, TrendingUp, TrendingDown, Shuffle, StepForward } from 'lucide-react';
@@ -26,6 +27,7 @@ export default function VariableRatesModal({
 
     // Internal state for rates
     const [rates, setRates] = useState({});
+    const debouncedRates = useDebouncedValue(rates, 300);
     const [averageRate, setAverageRate] = useState(currentRate);
     const [showStepForm, setShowStepForm] = useState(false);
     const [stepYears, setStepYears] = useState(5);
@@ -161,7 +163,7 @@ export default function VariableRatesModal({
         }
 
         return totalMonths > 0 ? (totalWeightedRate / totalMonths) : 0;
-    }, [rates, startYear, endYear, inputs]);
+    }, [rates, startYear, endYear, retirementStartYear, inputs]);
 
     // Step 4: Live Calculation Logic
     const { projectedBalance, averageBalance, gap, minBalance, maxBalance, minGap, maxGap, spread } = useMemo(() => {
@@ -175,7 +177,7 @@ export default function VariableRatesModal({
             const scenarioInputs = {
                 ...inputs,
                 variableRatesEnabled: true,
-                [ratesKey]: rates
+                [ratesKey]: debouncedRates
             };
             const projection = calculateRetirementProjection(scenarioInputs);
             const finalBal = projection.balanceAtEnd || 0;
@@ -195,7 +197,7 @@ export default function VariableRatesModal({
             const values = [];
             for (let y = startYear; y <= endYear; y++) {
                 years.push(y);
-                values.push(rates[y] !== undefined ? parseFloat(rates[y]) : calculatedAverage);
+                values.push(debouncedRates[y] !== undefined ? parseFloat(debouncedRates[y]) : calculatedAverage);
             }
 
             // Optimistic (Best First - Descending)
@@ -228,7 +230,7 @@ export default function VariableRatesModal({
             console.warn("Calculation error (likely invalid inputs):", error.message);
             return zeroResult;
         }
-    }, [rates, inputs, calculatedAverage, startYear, endYear]);
+    }, [debouncedRates, inputs, calculatedAverage, startYear, endYear]);
 
     const formatCurrency = (val) => formatCurrencyUtil(val, language);
 

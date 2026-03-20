@@ -76,4 +76,60 @@ describe('calculateStatistics', () => {
             expect(isNaN(result.maxSustainableNetWithdrawal)).toBe(false);
         });
     });
+
+    describe('requiredCapitalForPerpetuity', () => {
+        it('is finite and correct for a positive real return', () => {
+            // effectiveMonthlyRate = (5/100/12) * (1-0.25) = 0.003125
+            // perpetuity = 3000 / 0.003125 = 960000
+            const result = calculateStatistics({
+                ...baseArgs,
+                annualReturnRate: 5,
+                retirementAnnualReturnRate: 5,
+                taxRateDecimal: 0.25,
+            });
+            expect(result.requiredCapitalForPerpetuity).toBeCloseTo(960000, 0);
+        });
+
+        it('is Infinity when effective retirement rate is zero (fix: was incorrectly 0)', () => {
+            // effectiveMonthlyRate = 0 when annualReturnRate = 0
+            const result = calculateStatistics({
+                ...baseArgs,
+                annualReturnRate: 0,
+                retirementAnnualReturnRate: 0,
+                taxRateDecimal: 0.25,
+            });
+            expect(result.requiredCapitalForPerpetuity).toBe(Infinity);
+        });
+
+        it('is Infinity when effective retirement rate is negative', () => {
+            // effectiveMonthlyRate < 0: a shrinking portfolio can never sustain a perpetuity
+            const result = calculateStatistics({
+                ...baseArgs,
+                annualReturnRate: -3,
+                retirementAnnualReturnRate: -3,
+                taxRateDecimal: 0.25,
+            });
+            expect(result.requiredCapitalForPerpetuity).toBe(Infinity);
+        });
+
+        it('is Infinity when tax rate is 100% (effectiveRate = 0 despite positive gross rate)', () => {
+            const result = calculateStatistics({
+                ...baseArgs,
+                annualReturnRate: 5,
+                retirementAnnualReturnRate: 5,
+                taxRateDecimal: 1.0,
+            });
+            expect(result.requiredCapitalForPerpetuity).toBe(Infinity);
+        });
+
+        it('pvOfCapitalPreservation is also Infinity when perpetuity capital is Infinity', () => {
+            const result = calculateStatistics({
+                ...baseArgs,
+                annualReturnRate: 0,
+                retirementAnnualReturnRate: 0,
+                taxRateDecimal: 0.25,
+            });
+            expect(result.pvOfCapitalPreservation).toBe(Infinity);
+        });
+    });
 });

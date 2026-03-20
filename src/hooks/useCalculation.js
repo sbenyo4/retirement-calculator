@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useDebouncedValue } from './useDebounce';
 import { useDeepCompareMemo } from './useDeepCompare';
-import { calculateRetirementProjection } from '../utils/calculator';
 import { useSimulationWorker } from './useSimulationWorker';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
 
@@ -9,22 +8,27 @@ import { WITHDRAWAL_STRATEGIES } from '../constants';
  * Encapsulates the core calculation pipeline: debouncing, projection,
  * goal-seek, and simulation triggering.
  *
+ * Projection + goal-seek run off the main thread via the Web Worker.
+ * Simulation (Monte Carlo / conservative / optimistic) also runs off-thread.
+ *
  * @param {Object} inputs - Current retirement inputs from useRetirementData
  * @param {Object} settings - App settings from useAppSettings (needs calculationMode, simulationType)
- * @param {Function} t - Translation function
- * @returns {{ results, simulationResults, validationError, goalSeekWithdrawal, memoizedDebouncedInputs }}
+ * @returns {{ results, simulationResults, validationError, simulationError, goalSeekWithdrawal, memoizedDebouncedInputs }}
  */
-export function useCalculation(inputs, settings, t) {
+export function useCalculation(inputs, settings) {
     const [results, setResults] = useState(null);
     const [simulationResults, setSimulationResults] = useState(null);
     const [validationError, setValidationError] = useState(null);
+    const [simulationError, setSimulationError] = useState(null);
     const [goalSeekWithdrawal, setGoalSeekWithdrawal] = useState(null);
 
     // Refs for simulation change detection
     const lastSimInputs = useRef(null);
     const lastSimType = useRef(null);
+    // Generation counter: incremented on each effect run so stale async results are discarded.
+    const generationRef = useRef(0);
 
-    const { runSimulation } = useSimulationWorker();
+    const { runSimulation, runProjection } = useSimulationWorker();
 
     // Debounce inputs for heavy calculations (300ms delay)
     const debouncedInputs = useDebouncedValue(inputs, 300);
@@ -46,97 +50,71 @@ export function useCalculation(inputs, settings, t) {
             !isNaN(retirementEnd) && retirementEnd >= 0 && retirementEnd <= 120 &&
             retirementStart > age && retirementEnd > retirementStart
         ) {
-            try {
-                // Clear validation error on successful calculation
-                setValidationError(null);
+            setValidationError(null);
 
-                // Timeout guard: calculations are synchronous on the main thread.
-                // A deadline check after each expensive step prevents the UI from hanging
-                // if inputs cause unexpectedly slow execution (e.g. 25 goal-seek iterations
-                // each running a full projection, or NaN propagation leading to a very slow path).
-                const TIMEOUT_MS = 5000;
-                const calcStart = Date.now();
-                const checkTimeout = () => {
-                    if (Date.now() - calcStart > TIMEOUT_MS) {
-                        throw new Error(t ? t('calculationTimeout') : 'Calculation timed out. Try simplifying your inputs.');
-                    }
-                };
+            // Capture generation and settings for the async callback closure.
+            // If inputs change before the worker responds, the stale result is discarded.
+            const generation = ++generationRef.current;
+            const { calculationMode, simulationType } = settings;
+            const capturedMemoInputs = memoizedDebouncedInputs;
 
-                let projection = calculateRetirementProjection(debouncedInputs, t);
-                checkTimeout();
+            runProjection(
+                debouncedInputs,
+                ({ projection, goalSeekWithdrawal: gsw }) => {
+                    if (generationRef.current !== generation) return; // stale — discard
 
-                // Goal-seek: if targetEndBalance is set, find withdrawal that achieves it
-                const targetEnd = parseFloat(debouncedInputs.targetEndBalance);
-                if (!isNaN(targetEnd) && targetEnd >= 0 && debouncedInputs.targetEndBalance !== '') {
-                    let lo = 0;
-                    let hi = projection.balanceAtRetirement / ((retirementEnd - retirementStart) * 12) * 3; // upper bound
-                    for (let iter = 0; iter < 25; iter++) {
-                        checkTimeout();
-                        const mid = (lo + hi) / 2;
-                        const testResult = calculateRetirementProjection({
-                            ...debouncedInputs,
-                            monthlyNetIncomeDesired: mid,
-                            targetEndBalance: '' // prevent recursion
-                        }, t);
-                        if (testResult.balanceAtEnd > targetEnd) {
-                            lo = mid;
-                        } else {
-                            hi = mid;
+                    setResults(projection);
+                    setGoalSeekWithdrawal(gsw ?? null);
+
+                    // Handle Simulation Mode (async via Web Worker)
+                    // Also auto-trigger Monte Carlo for Dynamic strategy even in mathematical mode
+                    const isDynamicStrategy = debouncedInputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC;
+                    if (calculationMode === 'simulations' || calculationMode === 'compare' || isDynamicStrategy) {
+                        const shouldUpdate =
+                            lastSimInputs.current !== capturedMemoInputs ||
+                            lastSimType.current !== simulationType;
+
+                        if (shouldUpdate) {
+                            lastSimInputs.current = capturedMemoInputs;
+                            lastSimType.current = simulationType;
+
+                            runSimulation(
+                                debouncedInputs,
+                                simulationType,
+                                (result) => {
+                                    if (generationRef.current !== generation) return; // stale — discard
+                                    setSimulationError(null);
+                                    setSimulationResults(result);
+                                },
+                                (errorMessage) => {
+                                    console.error('Simulation error:', errorMessage);
+                                    setSimulationError(errorMessage);
+                                }
+                            );
                         }
                     }
-                    checkTimeout();
-                    const optimalWithdrawal = Math.round((lo + hi) / 2);
-                    projection = calculateRetirementProjection({
-                        ...debouncedInputs,
-                        monthlyNetIncomeDesired: optimalWithdrawal,
-                        targetEndBalance: ''
-                    }, t);
-                    setGoalSeekWithdrawal(optimalWithdrawal);
-                } else {
-                    setGoalSeekWithdrawal(null);
+                    // We intentionally DO NOT clear simulationResults here so they persist when switching modes
+                },
+                (errorMessage) => {
+                    if (generationRef.current !== generation) return; // stale — discard
+                    console.error('Calculation error:', errorMessage);
+                    setValidationError(errorMessage);
+                    setResults(null);
                 }
-
-                setResults(projection);
-
-                // Handle Simulation Mode (async via Web Worker)
-                // Also auto-trigger Monte Carlo for Dynamic strategy even in mathematical mode
-                const isDynamicStrategy = debouncedInputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC;
-                if (settings.calculationMode === 'simulations' || settings.calculationMode === 'compare' || isDynamicStrategy) {
-                    const shouldUpdate =
-                        lastSimInputs.current !== memoizedDebouncedInputs ||
-                        lastSimType.current !== settings.simulationType;
-
-                    if (shouldUpdate) {
-                        // Update refs immediately to prevent duplicate dispatches
-                        lastSimInputs.current = memoizedDebouncedInputs;
-                        lastSimType.current = settings.simulationType;
-
-                        runSimulation(
-                            debouncedInputs,
-                            settings.simulationType,
-                            (result) => setSimulationResults(result),
-                            (errorMessage) => console.error('Simulation error:', errorMessage)
-                        );
-                    }
-                }
-                // We intentionally DO NOT clear simulationResults here so they persist when switching modes
-            } catch (error) {
-                // Catch validation errors from calculator and display to user
-                console.error('Calculation error:', error);
-                setValidationError(error.message);
-                setResults(null); // Clear results when there's a validation error
-            }
+            );
         } else {
             // Clear results when basic age validation fails
             setValidationError(null); // Don't show error for incomplete inputs
             setResults(null);
         }
-    }, [debouncedInputs, memoizedDebouncedInputs, settings.calculationMode, settings.simulationType]);
+    }, [debouncedInputs, memoizedDebouncedInputs, settings.calculationMode, settings.simulationType, runProjection, runSimulation]);
 
     return {
         results,
         simulationResults,
         validationError,
+        simulationError,
+        dismissSimulationError: () => setSimulationError(null),
         goalSeekWithdrawal,
         memoizedDebouncedInputs
     };

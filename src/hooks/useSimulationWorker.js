@@ -1,14 +1,56 @@
 import { useRef, useCallback, useEffect } from 'react';
 import { calculateSimulation } from '../utils/simulation-calculator';
+import { calculateRetirementProjection } from '../utils/calculator';
+import { WITHDRAWAL_STRATEGIES } from '../constants';
 
 /**
- * Manages a Web Worker for simulation calculations.
+ * Sync fallback for projection+goal-seek when the worker is unavailable.
+ * Mirrors runProjectionWithGoalSeek in simulation.worker.js.
+ */
+function runProjectionSync(inputs) {
+    let projection = calculateRetirementProjection(inputs);
+    let goalSeekWithdrawal = null;
+
+    const targetEnd = parseFloat(inputs.targetEndBalance);
+    const retirementStart = parseFloat(inputs.retirementStartAge);
+    const retirementEnd = parseFloat(inputs.retirementEndAge);
+    const isFixedStrategy = !inputs.withdrawalStrategy ||
+        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FIXED;
+
+    if (isFixedStrategy && !isNaN(targetEnd) && targetEnd >= 0 && inputs.targetEndBalance !== '') {
+        let lo = 0;
+        let hi = projection.balanceAtRetirement / ((retirementEnd - retirementStart) * 12) * 3;
+        for (let iter = 0; iter < 25; iter++) {
+            const mid = (lo + hi) / 2;
+            const test = calculateRetirementProjection({
+                ...inputs,
+                monthlyNetIncomeDesired: mid,
+                targetEndBalance: ''
+            });
+            if (test.balanceAtEnd > targetEnd) lo = mid;
+            else hi = mid;
+        }
+        goalSeekWithdrawal = Math.round((lo + hi) / 2);
+        projection = calculateRetirementProjection({
+            ...inputs,
+            monthlyNetIncomeDesired: goalSeekWithdrawal,
+            targetEndBalance: ''
+        });
+    }
+
+    return { projection, goalSeekWithdrawal };
+}
+
+/**
+ * Manages a Web Worker for simulation and projection calculations.
  * Falls back to synchronous execution when Worker is unavailable (tests, CSP).
  */
 export function useSimulationWorker() {
     const workerRef = useRef(null);
     const requestIdRef = useRef(0);
-    const callbacksRef = useRef(null);
+    // Separate callback slots so projection and simulation can be in-flight simultaneously.
+    const simCallbackRef = useRef(null);
+    const projCallbackRef = useRef(null);
     // Single-entry cache: avoids re-running expensive simulations (e.g. Monte Carlo)
     // when called with identical inputs (React Strict Mode, defensive against future refactors).
     const cacheRef = useRef({ key: null, result: null });
@@ -21,20 +63,21 @@ export function useSimulationWorker() {
             );
 
             worker.onmessage = (e) => {
-                const { requestId, result, error } = e.data;
-                const pending = callbacksRef.current;
+                const { requestId, type, result, error } = e.data;
 
-                if (!pending || pending.requestId !== requestId) {
-                    return;
-                }
-
-                if (error) {
-                    pending.onError(error);
+                if (type === 'projection') {
+                    const pending = projCallbackRef.current;
+                    if (!pending || pending.requestId !== requestId) return;
+                    if (error) pending.onError(error);
+                    else pending.onResult(result);
+                    projCallbackRef.current = null;
                 } else {
-                    pending.onResult(result);
+                    const pending = simCallbackRef.current;
+                    if (!pending || pending.requestId !== requestId) return;
+                    if (error) pending.onError(error);
+                    else pending.onResult(result);
+                    simCallbackRef.current = null;
                 }
-
-                callbacksRef.current = null;
             };
 
             worker.onerror = (e) => {
@@ -52,7 +95,8 @@ export function useSimulationWorker() {
                 workerRef.current.terminate();
                 workerRef.current = null;
             }
-            callbacksRef.current = null;
+            simCallbackRef.current = null;
+            projCallbackRef.current = null;
         };
     }, []);
 
@@ -71,7 +115,7 @@ export function useSimulationWorker() {
         };
 
         if (workerRef.current) {
-            callbacksRef.current = { requestId: currentRequestId, onResult: handleResult, onError };
+            simCallbackRef.current = { requestId: currentRequestId, onResult: handleResult, onError };
             workerRef.current.postMessage({ requestId: currentRequestId, inputs, simulationType });
         } else {
             try {
@@ -83,5 +127,21 @@ export function useSimulationWorker() {
         }
     }, []);
 
-    return { runSimulation };
+    const runProjection = useCallback((inputs, onResult, onError) => {
+        const currentRequestId = ++requestIdRef.current;
+
+        if (workerRef.current) {
+            projCallbackRef.current = { requestId: currentRequestId, onResult, onError };
+            workerRef.current.postMessage({ requestId: currentRequestId, type: 'projection', inputs });
+        } else {
+            try {
+                const result = runProjectionSync(inputs);
+                onResult(result);
+            } catch (err) {
+                onError(err.message);
+            }
+        }
+    }, []);
+
+    return { runSimulation, runProjection };
 }

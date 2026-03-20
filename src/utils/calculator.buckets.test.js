@@ -1,6 +1,6 @@
 
 import { calculateRetirementProjection } from './calculator';
-import { WITHDRAWAL_STRATEGIES } from '../constants';
+import { WITHDRAWAL_STRATEGIES, EVENT_TYPES } from '../constants';
 
 describe('Separate Buckets Strategy', () => {
     const baseInputs = {
@@ -153,6 +153,50 @@ describe('Separate Buckets Strategy', () => {
         });
         // With taxRate=0, grossWithdrawal === netWithdrawal every month
         expect(result.initialGrossWithdrawal).toBeCloseTo(result.initialNetWithdrawal, 5);
+    });
+
+    test('one-time expense exceeding both buckets: surplusBalance never goes negative', () => {
+        const now = new Date();
+        const retirementYear = now.getFullYear() + (baseInputs.retirementStartAge - baseInputs.currentAge);
+        const result = calculateRetirementProjection({
+            ...baseInputs,
+            enableBuckets: true,
+            bucketSafeRate: 2,
+            bucketSurplusRate: 7,
+            lifeEvents: [{
+                id: '1',
+                enabled: true,
+                type: EVENT_TYPES.ONE_TIME_EXPENSE,
+                startDate: { year: retirementYear + 1, month: 1 },
+                amount: 9999999, // far exceeds both buckets combined
+            }],
+        });
+        const decumHistory = result.history.filter(h => h.phase === 'decumulation');
+        decumHistory.forEach(h => {
+            expect(h.safeBucket).toBeGreaterThanOrEqual(0);
+            expect(h.surplusBucket).toBeGreaterThanOrEqual(0);
+        });
+    });
+
+    test('floating-point: surplusBalance is never a tiny negative after normal withdrawals', () => {
+        // Bucket withdrawal previously used surplusBalance -= remainingWithdrawal without clamping,
+        // which could leave surplusBalance as -0.000001 due to floating-point arithmetic.
+        const result = calculateRetirementProjection({
+            ...baseInputs,
+            currentAge: 64,
+            retirementStartAge: 65,
+            retirementEndAge: 67,
+            currentSavings: 50000,
+            monthlyNetIncomeDesired: 2000,
+            enableBuckets: true,
+            bucketSafeRate: 0,
+            bucketSurplusRate: 5,
+        });
+        const decumHistory = result.history.filter(h => h.phase === 'decumulation');
+        decumHistory.forEach(h => {
+            expect(h.safeBucket).toBeGreaterThanOrEqual(0);
+            expect(h.surplusBucket).toBeGreaterThanOrEqual(0);
+        });
     });
 
     test('bucket variable rate NaN guard: non-numeric string falls back to fixed rate', () => {

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { calculateSimulation, SIMULATION_TYPES } from './simulation-calculator';
 
 describe('SIMULATION_TYPES', () => {
@@ -151,6 +151,31 @@ describe('calculateSimulation', () => {
             const result = calculateSimulation(baseInputs, SIMULATION_TYPES.MONTE_CARLO);
             expect(isNaN(result.balanceAtEnd)).toBe(false);
             expect(result.simulationRange.p25Balance).toBeLessThanOrEqual(result.simulationRange.p75Balance);
+        });
+    });
+
+    describe('Monte Carlo accumulation phase randomization', () => {
+        it('p25 balanceAtRetirement differs from p75 balanceAtRetirement (accumulation is now randomized)', () => {
+            // Before the fix, all 500 iterations used the same fixed rate for accumulation,
+            // so balanceAtRetirement was identical across all iterations — p25 === p75.
+            // Now accumulation is randomized, so percentiles must differ.
+            const result = calculateSimulation(baseInputs, SIMULATION_TYPES.MONTE_CARLO);
+            expect(result.simulationRange.p25Balance).toBeLessThan(result.simulationRange.p75Balance);
+        });
+
+        it('spread between p25 and p75 is larger with long accumulation than with short accumulation', () => {
+            // More accumulation years → more compounding of variance → wider spread.
+            const longAccum = calculateSimulation(
+                { ...baseInputs, currentAge: 25, retirementStartAge: 65, retirementEndAge: 85 },
+                SIMULATION_TYPES.MONTE_CARLO
+            );
+            const shortAccum = calculateSimulation(
+                { ...baseInputs, currentAge: 45, retirementStartAge: 50, retirementEndAge: 70 },
+                SIMULATION_TYPES.MONTE_CARLO
+            );
+            const longSpread = longAccum.simulationRange.p75Balance - longAccum.simulationRange.p25Balance;
+            const shortSpread = shortAccum.simulationRange.p75Balance - shortAccum.simulationRange.p25Balance;
+            expect(longSpread).toBeGreaterThan(shortSpread);
         });
     });
 });

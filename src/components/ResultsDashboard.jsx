@@ -239,6 +239,7 @@ export function ResultsDashboard({ results, inputs, setInputs, t, language, calc
     }, [language]);
 
     const formatCurrency = useCallback((value) => {
+        if (!Number.isFinite(value)) return '∞';
         return currencyFormatter.format(value);
     }, [currencyFormatter]);
 
@@ -381,56 +382,10 @@ export function ResultsDashboard({ results, inputs, setInputs, t, language, calc
         averageGrossWithdrawal,
         averageNetWithdrawal,
         simulationRange, // Only present in Monte Carlo
-        effectiveRetirementRate // Variable-rate-aware rate used for statistics
     } = activeResults;
 
-    // Calculate max sustainable net withdrawal using binary search.
-    // This finds the exact withdrawal that depletes the balance to ~zero at retirement end.
-    // Linear scaling doesn't work because required capital changes non-linearly with withdrawal.
-    let maxSustainableNetWithdrawal = 0;
-    const targetNetWithdrawal = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
-
-    if (balanceAtRetirement > 0 && targetNetWithdrawal > 0) {
-        // Use cached results to avoid recalculating during render
-        // The max withdrawal should be somewhere between current and a reasonable upper bound
-        const currentBalanceAtEnd = balanceAtEnd || 0;
-
-        if (currentBalanceAtEnd <= 0) {
-            // Already running out - max sustainable is LESS than current
-            // For now, just show current withdrawal as reasonable estimate
-            maxSustainableNetWithdrawal = targetNetWithdrawal;
-        } else {
-            // We have surplus - can withdraw more
-            // Use simple heuristic: add proportional correction based on remaining balance
-            // Approximate: how many months of extra withdrawal does balanceAtEnd represent?
-            const monthsInRetirement = (parseFloat(inputs.retirementEndAge) - parseFloat(inputs.retirementStartAge)) * 12;
-
-            // The remaining balance, discounted, should roughly equal extra monthly withdrawals
-            // For a rough estimate: extra = balanceAtEnd / monthsInRetirement (simple) 
-            // But we need to account for growth, so use a more conservative estimate
-            // effectiveRetirementRate is already a real rate (inflation-adjusted), passed from the
-            // calculator so the heuristic is consistent with statistics (respects variable rates).
-            const inflation = parseFloat(inputs.inflationRate) || 0;
-            const realRate = effectiveRetirementRate != null
-                ? effectiveRetirementRate / 100
-                : (parseFloat(inputs.annualReturnRate) || 0 - inflation) / 100;
-
-            // Approximate extra withdrawal using annuity factor
-            let extraWithdrawal = 0;
-            if (realRate > 0 && monthsInRetirement > 0) {
-                const monthlyRate = realRate / 12;
-                // PMT = FV * r / ((1+r)^n - 1) - this is how much to withdraw to use up FV
-                // But we need to account for tax, so be conservative
-                extraWithdrawal = currentBalanceAtEnd * monthlyRate / (Math.pow(1 + monthlyRate, monthsInRetirement) - 1);
-                // Apply a 0.85 factor for tax and non-linearity
-                extraWithdrawal *= 0.85;
-            } else {
-                extraWithdrawal = currentBalanceAtEnd / monthsInRetirement;
-            }
-
-            maxSustainableNetWithdrawal = targetNetWithdrawal + extraWithdrawal;
-        }
-    }
+    // Use the exact PMT-based value already computed by statistics.js
+    const maxSustainableNetWithdrawal = activeResults.maxSustainableNetWithdrawal || 0;
 
     const options = {
         responsive: true,

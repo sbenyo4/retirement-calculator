@@ -89,7 +89,7 @@ export function calculateAccumulation({
                         break;
 
                     case EVENT_TYPES.ONE_TIME_EXPENSE:
-                        balance -= event.amount;
+                        balance = Math.max(0, balance - event.amount);
                         // Also reduce principal if we're spending saved money
                         totalPrincipal = Math.max(0, totalPrincipal - event.amount);
                         break;
@@ -123,7 +123,7 @@ export function calculateAccumulation({
 
         // Contribution (using active contribution which may have been modified by events)
         balance += activeMonthlyContribution;
-        totalPrincipal += activeMonthlyContribution;
+        totalPrincipal = Math.max(0, totalPrincipal + activeMonthlyContribution);
 
         if (i % 12 === 0) { // Record yearly for chart data
             history.push({

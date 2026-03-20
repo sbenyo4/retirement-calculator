@@ -88,6 +88,7 @@ export function calculateSimulation(inputs, type) {
         const currentAge = parseFloat(inputs.currentAge);
         const retirementStartAge = parseFloat(inputs.retirementStartAge);
         const retirementEndAge = parseFloat(inputs.retirementEndAge);
+        const yearsInAccumulation = Math.ceil(retirementStartAge - currentAge);
         const yearsInRetirement = Math.ceil(retirementEndAge - retirementStartAge);
 
         // Calculate the calendar year when retirement starts.
@@ -96,12 +97,15 @@ export function calculateSimulation(inputs, type) {
         const retirementStartCalendarYear = startYear + Math.floor(retirementStartAge - currentAge);
 
         for (let i = 0; i < iterations; i++) {
-            // Generate year-by-year returns for this simulation
+            // Generate year-by-year returns for accumulation and retirement phases
+            const accumReturns = generateYearlyReturns(meanReturn, volatility, yearsInAccumulation);
             const yearlyReturns = generateYearlyReturns(meanReturn, volatility, yearsInRetirement);
 
             // Convert random returns to variableRates format (calendar-year keyed)
-            // Only retirement years get randomized — accumulation uses the base rate
             const simVariableRates = {};
+            for (let y = 0; y < yearsInAccumulation; y++) {
+                simVariableRates[startYear + y] = accumReturns[y];
+            }
             for (let y = 0; y < yearsInRetirement; y++) {
                 simVariableRates[retirementStartCalendarYear + y] = yearlyReturns[y];
             }

@@ -21,7 +21,7 @@ export const calculateAgeFromDate = (dateString) => {
  * @returns {number|null} The projected year, or null if inputs are invalid.
  */
 export const getProjectedYear = (targetAge, currentAge, birthdate, isAgeManual = false) => {
-    if (!targetAge || !currentAge) return null;
+    if (targetAge == null || currentAge == null || targetAge === '' || currentAge === '') return null;
     const target = parseFloat(targetAge);
     const current = parseFloat(currentAge);
     if (isNaN(target) || isNaN(current)) return null;

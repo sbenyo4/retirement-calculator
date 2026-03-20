@@ -119,7 +119,7 @@ export default function InputForm({
     const handleChange = (e) => {
         const { name, value } = e.target;
         // Allow empty string or valid number/decimal input
-        if (value === '' || /^\d*\.?\d*$/.test(value)) {
+        if (value === '' || /^-?\d*\.?\d*$/.test(value)) {
             // For age-related fields, cap at 120
             let finalValue = value;
             if ((name === 'currentAge' || name === 'retirementStartAge' || name === 'retirementEndAge') && value !== '') {

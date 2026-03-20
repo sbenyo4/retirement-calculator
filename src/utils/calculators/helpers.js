@@ -13,7 +13,7 @@ export const getMonthFromDate = (date) => {
     const currentMonth = now.getMonth() + 1;
     const yearsFromNow = date.year - currentYear;
     const monthsFromNow = yearsFromNow * 12 + (date.month - currentMonth);
-    return Math.max(0, monthsFromNow); // Don't allow negative months
+    return monthsFromNow;
 };
 
 /**

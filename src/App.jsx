@@ -65,9 +65,11 @@ function MainApp() {
     results,
     simulationResults,
     validationError,
+    simulationError,
+    dismissSimulationError,
     goalSeekWithdrawal,
     memoizedDebouncedInputs
-  } = useCalculation(inputs, settings, t);
+  } = useCalculation(inputs, settings);
 
   const [aiResults, setAiResults] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -388,6 +390,20 @@ function MainApp() {
                   </h3>
                   <div className="text-red-200 whitespace-pre-line">
                     {validationError}
+                  </div>
+                </div>
+              )}
+              {simulationError && (
+                <div className="bg-yellow-900/50 border border-yellow-500 rounded-xl p-4 mb-4 text-white">
+                  <h3 className="text-lg font-bold mb-2 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span>⚠️</span>
+                      <span>{language === 'he' ? 'שגיאת סימולציה' : 'Simulation Error'}</span>
+                    </div>
+                    <button onClick={dismissSimulationError} className="text-yellow-300 hover:text-white transition-colors text-lg leading-none">✕</button>
+                  </h3>
+                  <div className="text-yellow-200 whitespace-pre-line">
+                    {simulationError}
                   </div>
                 </div>
               )}
