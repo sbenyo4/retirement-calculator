@@ -121,8 +121,10 @@ export function calculateAccumulation({
         const interest = balance * monthlyRate;
         balance += interest;
 
-        // Contribution (using active contribution which may have been modified by events)
-        balance += activeMonthlyContribution;
+        // Contribution (using active contribution which may have been modified by events).
+        // Clamp to 0: a large expense event can make activeMonthlyContribution negative,
+        // but a portfolio balance cannot go below zero (bankruptcy).
+        balance = Math.max(0, balance + activeMonthlyContribution);
         totalPrincipal = Math.max(0, totalPrincipal + activeMonthlyContribution);
 
         if (i % 12 === 0) { // Record yearly for chart data

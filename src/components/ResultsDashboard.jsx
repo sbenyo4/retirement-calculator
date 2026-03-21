@@ -34,7 +34,7 @@ ChartJS.register(
     Filler
 );
 
-export function ResultsDashboard({ results, inputs, setInputs, t, language, calculationMode, aiResults, simulationResults, aiLoading, aiError, simulationType, profiles, selectedProfileIds, setSelectedProfileIds, profileResults, showInterestSensitivity, setShowInterestSensitivity, showIncomeSensitivity, setShowIncomeSensitivity, showAgeSensitivity, setShowAgeSensitivity, aiProvider, aiModel, apiKeyOverride, aiInsightsData, setAiInsightsData, fiscalParameters, familyStatus, onUpdateFiscalData }) {
+export const ResultsDashboard = React.memo(function ResultsDashboard({ results, inputs, setInputs, t, language, calculationMode, aiResults, simulationResults, aiLoading, aiError, simulationType, profiles, selectedProfileIds, setSelectedProfileIds, profileResults, showInterestSensitivity, setShowInterestSensitivity, showIncomeSensitivity, setShowIncomeSensitivity, showAgeSensitivity, setShowAgeSensitivity, aiProvider, aiModel, apiKeyOverride, aiInsightsData, setAiInsightsData, fiscalParameters, familyStatus, onUpdateFiscalData }) {
     // ALL HOOKS MUST BE AT THE TOP - React rules of hooks
     const { theme } = useTheme();
     const isLight = theme === 'light';
@@ -938,7 +938,7 @@ export function ResultsDashboard({ results, inputs, setInputs, t, language, calc
             )}
         </div>
     );
-}
+});
 
 function SummaryCard({ label, value, subtext, color, extraContent }) {
     const { theme } = useTheme();

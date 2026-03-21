@@ -13,13 +13,14 @@ import { WITHDRAWAL_STRATEGIES } from '../constants';
  *
  * @param {Object} inputs - Current retirement inputs from useRetirementData
  * @param {Object} settings - App settings from useAppSettings (needs calculationMode, simulationType)
- * @returns {{ results, simulationResults, validationError, simulationError, goalSeekWithdrawal, memoizedDebouncedInputs }}
+ * @returns {{ results, simulationResults, validationError, simulationError, isCalculating, goalSeekWithdrawal, memoizedDebouncedInputs }}
  */
 export function useCalculation(inputs, settings) {
     const [results, setResults] = useState(null);
     const [simulationResults, setSimulationResults] = useState(null);
     const [validationError, setValidationError] = useState(null);
     const [simulationError, setSimulationError] = useState(null);
+    const [isCalculating, setIsCalculating] = useState(false);
     const [goalSeekWithdrawal, setGoalSeekWithdrawal] = useState(null);
 
     // Refs for simulation change detection
@@ -51,6 +52,7 @@ export function useCalculation(inputs, settings) {
             retirementStart > age && retirementEnd > retirementStart
         ) {
             setValidationError(null);
+            setIsCalculating(true);
 
             // Capture generation and settings for the async callback closure.
             // If inputs change before the worker responds, the stale result is discarded.
@@ -63,6 +65,7 @@ export function useCalculation(inputs, settings) {
                 ({ projection, goalSeekWithdrawal: gsw }) => {
                     if (generationRef.current !== generation) return; // stale — discard
 
+                    setIsCalculating(false);
                     setResults(projection);
                     setGoalSeekWithdrawal(gsw ?? null);
 
@@ -98,12 +101,14 @@ export function useCalculation(inputs, settings) {
                 (errorMessage) => {
                     if (generationRef.current !== generation) return; // stale — discard
                     console.error('Calculation error:', errorMessage);
+                    setIsCalculating(false);
                     setValidationError(errorMessage);
                     setResults(null);
                 }
             );
         } else {
             // Clear results when basic age validation fails
+            setIsCalculating(false);
             setValidationError(null); // Don't show error for incomplete inputs
             setResults(null);
         }
@@ -114,6 +119,7 @@ export function useCalculation(inputs, settings) {
         simulationResults,
         validationError,
         simulationError,
+        isCalculating,
         dismissSimulationError: () => setSimulationError(null),
         goalSeekWithdrawal,
         memoizedDebouncedInputs

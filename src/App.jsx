@@ -3,7 +3,6 @@ import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } fr
 import InputForm from './components/InputForm';
 // ResultsDashboard is lazy-loaded below with ModelsManager
 import { ProfileManager } from './components/ProfileManager';
-import { calculateRetirementProjection } from './utils/calculator';
 import { calculateRetirementWithAI } from './utils/ai-calculator';
 import { getAvailableModels } from './config/ai-models';
 import { translations } from './utils/translations';
@@ -33,6 +32,7 @@ import { useRateLimit } from './hooks/useRateLimit';
 import { useAppSettings } from './hooks/useAppSettings';
 import { useRetirementData } from './hooks/useRetirementData';
 import { useCalculation } from './hooks/useCalculation';
+import { useSimulationWorker } from './hooks/useSimulationWorker';
 import { useDeepCompareMemo } from './hooks/useDeepCompare';
 
 import { WITHDRAWAL_STRATEGIES } from './constants';
@@ -70,6 +70,10 @@ function MainApp() {
     goalSeekWithdrawal,
     memoizedDebouncedInputs
   } = useCalculation(inputs, settings);
+
+  // Separate worker instance for profile comparison projections (keeps the main
+  // calculation worker free and moves profile work off the main thread).
+  const { runProjection: runProfileProjection } = useSimulationWorker();
 
   const [aiResults, setAiResults] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -192,7 +196,7 @@ function MainApp() {
       }
       return prev;
     });
-  }, [inputs.retirementStartAge, inputs.retirementEndAge, inputs.currentAge, inputs.birthdate]);
+  }, [inputs.retirementStartAge, inputs.retirementEndAge, inputs.currentAge, inputs.birthdate, setInputs]);
 
   // Sync selected selectedProfileIds with available profiles (cleanup deleted profiles)
   useEffect(() => {
@@ -215,18 +219,30 @@ function MainApp() {
     }).filter(Boolean)
   );
 
-  // Expensive calculations - only re-runs when profile data actually changes (not on rename)
-  const profileCalcResults = useMemo(() => {
-    const calcs = {};
-    for (const { id, data } of selectedProfilesData) {
-      try {
-        calcs[id] = calculateRetirementProjection(data, t);
-      } catch {
-        // Skip profiles with invalid data
-      }
+  // Profile projections run off the main thread via the worker, sequentially.
+  // Only re-runs when profile data actually changes (not on rename).
+  const [profileCalcResults, setProfileCalcResults] = useState({});
+  useEffect(() => {
+    if (selectedProfilesData.length === 0) {
+      setProfileCalcResults({});
+      return;
     }
-    return calcs;
-  }, [selectedProfilesData, t]);
+    const collected = {};
+    let i = 0;
+    function runNext() {
+      if (i >= selectedProfilesData.length) {
+        setProfileCalcResults(collected);
+        return;
+      }
+      const { id, data } = selectedProfilesData[i++];
+      runProfileProjection(
+        data,
+        ({ projection }) => { collected[id] = projection; runNext(); },
+        () => { runNext(); } // skip profiles with invalid data
+      );
+    }
+    runNext();
+  }, [selectedProfilesData, runProfileProjection]);
 
   // Assemble with current names (cheap - re-runs freely on rename)
   const profileResults = useMemo(() => {
@@ -315,7 +331,7 @@ function MainApp() {
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          <div className="lg:col-span-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 shadow-xl flex flex-col relative z-20 h-full" onFocus={preloadResultsDashboard}>
+          <div className="lg:col-span-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 shadow-xl flex flex-col relative z-20 h-full" onFocus={preloadResultsDashboard} onPointerEnter={preloadResultsDashboard}>
             <ProfileManager
               currentInputs={inputs}
               onLoad={setInputs}
@@ -411,7 +427,7 @@ function MainApp() {
                 <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"></div></div>}>
                   <ResultsDashboard
                     results={results}
-                    inputs={inputs}
+                    inputs={memoizedDebouncedInputs}
                     setInputs={setInputs}
                     t={t}
                     language={language}

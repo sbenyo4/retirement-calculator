@@ -1,10 +1,11 @@
 
-import { WITHDRAWAL_STRATEGIES } from '../constants.js';
+
 import { validateInputs } from './calculators/validators.js';
 import { calculateAccumulation } from './calculators/accumulation.js';
 import { calculateDecumulation } from './calculators/decumulation.js';
 import { calculateStatistics } from './calculators/statistics.js';
 import { calculateIncomeAtAge, calculateNationalInsurance } from './pensionCalculator.js';
+import { mergeScenarioIntoRates } from './scenarioUtils.js';
 
 /**
  * Calculates the future value and required capital for retirement.
@@ -65,9 +66,31 @@ export function calculateRetirementProjection(inputs, t = null) {
         return adjusted;
     };
 
-    const realVariableRates = inflationRate ? adjustVariableRates(inputs.variableRates) : inputs.variableRates;
-    const realSafeVariableRates = inflationRate ? adjustVariableRates(inputs.safeVariableRates) : inputs.safeVariableRates;
-    const realSurplusVariableRates = inflationRate ? adjustVariableRates(inputs.surplusVariableRates) : inputs.surplusVariableRates;
+    // Merge scenario rates on top of variable rates (both nominal, before inflation adjustment).
+    // Scenario years override whatever the user set in variableRates for those years.
+    const variableRatesWithScenario = mergeScenarioIntoRates(
+        inputs.variableRates, inputs.scenario, inputs.scenarioEnabled, annualReturnRate
+    );
+    // When scenario is active, implicitly enable variable rates even if the toggle is off,
+    // so getMonthlyRateForMonth will use the merged map for scenario years.
+    const effectiveVariableRatesEnabled = inputs.variableRatesEnabled ||
+        (inputs.scenarioEnabled && Object.keys(variableRatesWithScenario).length > 0);
+
+    // Merge scenario into bucket rate maps only when the user opted in via affectsSafeBucket.
+    // Default: safe bucket is shielded from the crash (bonds/cash less correlated to equities).
+    const scenarioAffectsSafe = inputs.scenarioEnabled && inputs.scenario?.affectsSafeBucket;
+    const safeVariableRatesWithScenario = mergeScenarioIntoRates(
+        inputs.safeVariableRates, inputs.scenario, scenarioAffectsSafe,
+        parsedInputs.bucketSafeRate
+    );
+    const surplusVariableRatesWithScenario = mergeScenarioIntoRates(
+        inputs.surplusVariableRates, inputs.scenario, inputs.scenarioEnabled,
+        parsedInputs.bucketSurplusRate
+    );
+
+    const realVariableRates = inflationRate ? adjustVariableRates(variableRatesWithScenario) : variableRatesWithScenario;
+    const realSafeVariableRates = inflationRate ? adjustVariableRates(safeVariableRatesWithScenario) : safeVariableRatesWithScenario;
+    const realSurplusVariableRates = inflationRate ? adjustVariableRates(surplusVariableRatesWithScenario) : surplusVariableRatesWithScenario;
 
     const startYear = new Date().getFullYear();
 
@@ -79,7 +102,7 @@ export function calculateRetirementProjection(inputs, t = null) {
         monthlyContribution,
         annualReturnRate: realReturnRate,
         variableRates: realVariableRates,
-        variableRatesEnabled: inputs.variableRatesEnabled,
+        variableRatesEnabled: effectiveVariableRatesEnabled,
         lifeEvents: parsedInputs.lifeEvents,
         startYear
     });
@@ -91,6 +114,7 @@ export function calculateRetirementProjection(inputs, t = null) {
     // Build adjusted inputs for decumulation with real rates
     const realInputs = {
         ...parsedInputs,
+        variableRatesEnabled: effectiveVariableRatesEnabled,
         bucketSafeRate: realBucketSafeRate,
         bucketSurplusRate: realBucketSurplusRate,
         variableRates: realVariableRates,

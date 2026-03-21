@@ -71,11 +71,9 @@ export function calculateDecumulation({
     let surplusPrincipal = 0;
 
     if (enableBuckets) {
-        // Calculate Gross Up Factor used for pre-pass
+        // Calculate profit ratio at retirement for pre-pass principal ratio evolution
         const totalProfitAtRetirement = retirementBalance - principalAtRetirement;
         const profitRatioAtRetirement = retirementBalance > 0 ? (totalProfitAtRetirement / retirementBalance) : 0;
-        const effectiveTaxRate = Math.max(0, profitRatioAtRetirement * taxRateDecimal);
-        const grossUpFactor = 1 / (1 - effectiveTaxRate);
 
         const prePassRequiredCapital = calculatePrePassRequiredCapital({
             monthsToRetirement: startMonthIndex,
@@ -84,7 +82,10 @@ export function calculateDecumulation({
             monthlyNetIncomeDesired,
             bucketSafeRate,
             taxRateDecimal,
-            grossUpFactor
+            profitRatioAtRetirement,
+            safeVariableRates,
+            variableRatesEnabled,
+            startYear
         });
 
         if (balanceAtRetirement >= prePassRequiredCapital) {
@@ -185,11 +186,15 @@ export function calculateDecumulation({
         let effectiveInterest = interest;
 
         // Buckets Interest
+        let pvSafeAnnualRate = bucketSafeRate; // used below for requiredCapitalPV discount
         if (enableBuckets) {
-            // Calculate the year for this month of retirement (i is 1-indexed retirement month)
-            // startMonthIndex is months from today to retirement, startYear is current year
-            const retirementStartYear = startYear + Math.floor(startMonthIndex / 12);
-            const monthYear = retirementStartYear + Math.floor((i - 1) / 12);
+            // Use the same shifted-year system as getMonthlyRateForMonth:
+            // year = startYear + floor(currentMonth / 12), where currentMonth = startMonthIndex + i.
+            // The old formula (retirementStartYear + floor((i-1)/12)) used anniversary-based
+            // year boundaries from retirement start, which diverges from calendar years when
+            // startMonthIndex is not a multiple of 12, causing scenario rates to apply to the
+            // wrong 12-month windows and producing non-monotonic results as crash year changes.
+            const monthYear = startYear + Math.floor(currentMonth / 12);
 
             // Use variable rates if enabled, otherwise use fixed rates.
             // Guard against non-numeric strings (same pattern as getMonthlyRateForMonth).
@@ -197,13 +202,14 @@ export function calculateDecumulation({
                 ? parseFloat(safeVariableRates[monthYear])
                 : NaN;
             const safeAnnualRate = !isNaN(parsedSafeRate) ? parsedSafeRate : bucketSafeRate;
+            pvSafeAnnualRate = safeAnnualRate; // expose for PV calculation
             const parsedSurplusRate = variableRatesEnabled && surplusVariableRates[monthYear] !== undefined
                 ? parseFloat(surplusVariableRates[monthYear])
                 : NaN;
             const surplusAnnualRate = !isNaN(parsedSurplusRate) ? parsedSurplusRate : bucketSurplusRate;
 
-            const safeMonthlyRate = safeAnnualRate / 100 / 12;
-            const surplusMonthlyRate = surplusAnnualRate / 100 / 12;
+            const safeMonthlyRate = Math.pow(1 + safeAnnualRate / 100, 1 / 12) - 1;
+            const surplusMonthlyRate = Math.pow(1 + surplusAnnualRate / 100, 1 / 12) - 1;
 
             const safeInterest = safeBalance * safeMonthlyRate;
             const surplusInterest = surplusBalance * surplusMonthlyRate;
@@ -402,7 +408,7 @@ export function calculateDecumulation({
         // Non-bucket: uses the variable-rate-aware monthlyRate so step-mode rates are reflected.
         // Bucket: uses the fixed safe-bucket rate (liability side governed by safe rate).
         const pvMonthlyRate = enableBuckets
-            ? (bucketSafeRate / 100 / 12) * (1 - taxRateDecimal)
+            ? (Math.pow(1 + pvSafeAnnualRate / 100, 1 / 12) - 1) * (1 - taxRateDecimal)
             : monthlyRate * (1 - taxRateDecimal);
         requiredCapitalCumulativeFactor *= (1 + pvMonthlyRate);
 

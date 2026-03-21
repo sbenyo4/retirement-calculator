@@ -19,7 +19,7 @@ export function calculateStatistics({
     // 1. Capital Preservation (Perpetuity)
     // Use Retirement Rate if provided, else fall back to Accumulation Rate
     const rateForPerpetuity = retirementAnnualReturnRate !== null ? retirementAnnualReturnRate : annualReturnRate;
-    const effectiveMonthlyRate = (rateForPerpetuity / 100 / 12) * (1 - taxRateDecimal);
+    const effectiveMonthlyRate = (Math.pow(1 + rateForPerpetuity / 100, 1 / 12) - 1) * (1 - taxRateDecimal);
 
     // At zero or negative real return, sustaining a perpetual withdrawal requires infinite capital.
     const requiredCapitalForPerpetuity = effectiveMonthlyRate > 0
@@ -54,16 +54,18 @@ export function calculateStatistics({
     }
 
     // 4. Averages
-    const averageGrossWithdrawal = accumulatedWithdrawals / monthsInRetirement;
-    const averageNetWithdrawal = totalNetWithdrawal / monthsInRetirement;
+    const averageGrossWithdrawal = monthsInRetirement > 0 ? accumulatedWithdrawals / monthsInRetirement : 0;
+    const averageNetWithdrawal = monthsInRetirement > 0 ? totalNetWithdrawal / monthsInRetirement : 0;
 
     // 5. Max sustainable net withdrawal (PMT that depletes balance to exactly 0)
     // PMT formula is valid for any non-zero rate (including negative). Only r=0 requires special handling.
     let maxSustainableNetWithdrawal = 0;
-    if (effectiveMonthlyRate !== 0) {
-        maxSustainableNetWithdrawal = balanceAtRetirement * effectiveMonthlyRate / (1 - Math.pow(1 + effectiveMonthlyRate, -monthsInRetirement));
-    } else {
-        maxSustainableNetWithdrawal = balanceAtRetirement / monthsInRetirement;
+    if (monthsInRetirement > 0) {
+        if (effectiveMonthlyRate !== 0) {
+            maxSustainableNetWithdrawal = balanceAtRetirement * effectiveMonthlyRate / (1 - Math.pow(1 + effectiveMonthlyRate, -monthsInRetirement));
+        } else {
+            maxSustainableNetWithdrawal = balanceAtRetirement / monthsInRetirement;
+        }
     }
 
     return {

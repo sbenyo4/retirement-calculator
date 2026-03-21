@@ -60,8 +60,9 @@ export const getMonthlyRateForMonth = (monthIndex, startYear, variableRatesEnabl
     let yearRate = defaultAnnualRate;
     if (variableRatesEnabled && variableRates && variableRates[currentCalcYear] !== undefined) {
         const parsed = parseFloat(variableRates[currentCalcYear]);
-        if (!isNaN(parsed)) yearRate = parsed;
-        // if parsed is NaN (non-numeric string), fall back to defaultAnnualRate
+        if (!isNaN(parsed)) {
+            yearRate = parsed;
+        }
     }
-    return yearRate / 100 / 12;
+    return Math.pow(1 + yearRate / 100, 1 / 12) - 1;
 };

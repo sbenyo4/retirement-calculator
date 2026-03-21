@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useDebouncedValue } from '../hooks/useDebounce';
 import { useTheme } from '../contexts/ThemeContext';
 import { useThemeClasses } from '../hooks/useThemeClasses';
@@ -9,6 +9,8 @@ import { formatCurrency as formatCurrencyUtil } from '../utils/formatters';
 export default function VariableRatesModal({
     isOpen,
     onClose,
+    onCancel,
+    onPreview,
     startYear,
     endYear,
     retirementStartYear,
@@ -19,7 +21,7 @@ export default function VariableRatesModal({
     onSave,
     language,
     t,
-    inputs // Step 4: Receive inputs
+    inputs
 }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
@@ -34,23 +36,31 @@ export default function VariableRatesModal({
     const [stepTargetRate, setStepTargetRate] = useState(currentRate);
     const [activeScope, setActiveScope] = useState('all'); // 'all' | 'a' | 'b'
 
-    // Initialize rates when modal opens or defaults change
+    // Guard: don't fire onPreview during initial population of rates
+    const previewReadyRef = useRef(false);
+
+    // Initialize rates on open only — not on every prop change, which would
+    // cause a re-init loop when onPreview updates inputs (and thus variableRates prop)
     useEffect(() => {
-        if (isOpen) {
-            const initialRates = { ...variableRates };
-            // Ensure all years exist
-            for (let y = startYear; y <= endYear; y++) {
-                if (initialRates[y] === undefined) {
-                    initialRates[y] = currentRate;
-                }
-            }
-            setRates(initialRates);
-            setAverageRate(parseFloat(currentRate) || 0);
-            setStepTargetRate(parseFloat(currentRate) || 0);
-            setShowStepForm(false);
-            setActiveScope('all');
+        if (!isOpen) { previewReadyRef.current = false; return; }
+        const initialRates = { ...variableRates };
+        for (let y = startYear; y <= endYear; y++) {
+            if (initialRates[y] === undefined) initialRates[y] = currentRate;
         }
-    }, [isOpen, startYear, endYear, currentRate, variableRates]);
+        setRates(initialRates);
+        setAverageRate(parseFloat(currentRate) || 0);
+        setStepTargetRate(parseFloat(currentRate) || 0);
+        setShowStepForm(false);
+        setActiveScope('all');
+        // Allow preview after React flushes the state updates above
+        setTimeout(() => { previewReadyRef.current = true; }, 0);
+    }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Live preview: push debounced rates to parent so the chart updates immediately
+    useEffect(() => {
+        if (!isOpen || !onPreview || !previewReadyRef.current) return;
+        onPreview(debouncedRates);
+    }, [debouncedRates]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Helper: Calculate months in year for weighting
     const getMonthsForYear = (year) => {
@@ -477,7 +487,7 @@ export default function VariableRatesModal({
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999] p-4" onClick={onClose}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999] p-4" onClick={onCancel ?? onClose}>
             <div
                 className={`rounded-2xl w-full max-w-sm h-[700px] shadow-xl flex flex-col relative overflow-hidden ${isLight ? 'bg-white border border-gray-200' : 'border border-white/30'}`}
                 onClick={e => e.stopPropagation()}
@@ -506,7 +516,7 @@ export default function VariableRatesModal({
                             </span>
                         )}
                     </h3>
-                    <button onClick={onClose} className={`p-1 rounded hover:bg-gray-200 dark:hover:bg-white/10 ${classes.icon}`}>
+                    <button onClick={onCancel ?? onClose} className={`p-1 rounded hover:bg-gray-200 dark:hover:bg-white/10 ${classes.icon}`}>
                         <X className="w-5 h-5" />
                     </button>
                 </div>

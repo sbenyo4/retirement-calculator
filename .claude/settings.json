@@ -6,7 +6,9 @@
       "Bash(grep -v \"//\")",
       "Bash(node -e \":*)",
       "Read(//c/Users/sbeny/.claude/projects/c--Users-sbeny--gemini-antigravity-scratch-retirement-calculator/memory/**)",
-      "Bash(sort -t'|' -k2 -rn)"
+      "Bash(sort -t'|' -k2 -rn)",
+      "Bash(npx --yes tsc --noEmit)",
+      "Bash(grep -n \"useThemeClasses\" /c/Users/sbeny/.gemini/antigravity/scratch/retirement-calculator/src/components/*.jsx)"
     ]
   }
 }

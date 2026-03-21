@@ -29,7 +29,18 @@ export const DEFAULT_INPUTS = {
     inflationRate: 0,
     targetEndBalance: '',
     withdrawalStrategy: 'fixed',
-    withdrawalPercentage: 4
+    withdrawalPercentage: 4,
+    scenarioEnabled: false,
+    scenario: {
+        type: 'crash',
+        startYear: null,         // null → modal will default to retirementStartYear
+        crashDepth: -40,
+        recoveryYears: 5,
+        recoveryShape: 'linear', // 'linear' | 'v' | 'u'  (only used in rate mode)
+        recoveryMode: 'rate',    // 'rate' = rate recovers to base | 'value' = geo mean = targetAvgRate
+        targetAvgRate: null,     // null → falls back to annualReturnRate in value mode
+        affectsSafeBucket: false // when true, safe bucket rate also crashes
+    }
 };
 
 /**

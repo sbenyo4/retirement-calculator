@@ -8,6 +8,7 @@ import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X,
 import { CustomSelect } from './common/CustomSelect';
 import LifeEventsManager from './LifeEventsManager';
 import VariableRatesModal from './VariableRatesModal';
+import ScenarioModal from './ScenarioModal';
 
 export default function InputForm({
     inputs,
@@ -67,6 +68,9 @@ export default function InputForm({
     const previousVariableRatesState = useRef(false); // Store VR state before buckets toggle
     const [showVariableRates, setShowVariableRates] = useState(false);
     const [activeVRType, setActiveVRType] = useState('accumulation'); // 'accumulation' | 'safe' | 'surplus'
+    const [showScenario, setShowScenario] = useState(false);
+    const scenarioSnapshotRef = useRef(null);
+    const variableRatesSnapshotRef = useRef(null);
 
     // Helper to check if variable rates are active (different from default)
     const hasActiveVariableRates = useMemo(() => {
@@ -634,6 +638,7 @@ export default function InputForm({
                                     <div className="flex h-full">
                                         <button
                                             onClick={() => {
+                                                variableRatesSnapshotRef.current = { variableRates: inputs.variableRates, safeVariableRates: inputs.safeVariableRates, surplusVariableRates: inputs.surplusVariableRates, variableRatesEnabled: inputs.variableRatesEnabled };
                                                 setActiveVRType('accumulation');
                                                 setShowVariableRates(true);
                                             }}
@@ -648,6 +653,17 @@ export default function InputForm({
                                         <div className={`w-px mx-0.5 ${isLight ? 'bg-gray-300' : 'bg-gray-700'}`}></div>
 
 
+                                        <div className={`w-px mx-0.5 ${isLight ? 'bg-gray-300' : 'bg-gray-700'}`}></div>
+                                        <button
+                                            onClick={() => { scenarioSnapshotRef.current = { scenarioEnabled: inputs.scenarioEnabled, scenario: inputs.scenario }; setShowScenario(true); }}
+                                            className={`p-1 transition-colors h-full flex items-center justify-center ${inputs.scenarioEnabled
+                                                ? 'text-orange-400'
+                                                : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200')}`}
+                                            title={language === 'he' ? 'תרחיש שוק' : 'Market Scenario'}
+                                        >
+                                            <TrendingDown size={16} />
+                                        </button>
+                                        <div className={`w-px mx-0.5 ${isLight ? 'bg-gray-300' : 'bg-gray-700'}`}></div>
                                         <button
                                             onClick={() => {
                                                 if (inputs.enableBuckets) {
@@ -704,6 +720,7 @@ export default function InputForm({
                                 endAction={
                                     <button
                                         onClick={() => {
+                                            variableRatesSnapshotRef.current = { variableRates: inputs.variableRates, safeVariableRates: inputs.safeVariableRates, surplusVariableRates: inputs.surplusVariableRates, variableRatesEnabled: inputs.variableRatesEnabled };
                                             setActiveVRType('safe');
                                             setShowVariableRates(true);
                                         }}
@@ -727,6 +744,7 @@ export default function InputForm({
                                 endAction={
                                     <button
                                         onClick={() => {
+                                            variableRatesSnapshotRef.current = { variableRates: inputs.variableRates, safeVariableRates: inputs.safeVariableRates, surplusVariableRates: inputs.surplusVariableRates, variableRatesEnabled: inputs.variableRatesEnabled };
                                             setActiveVRType('surplus');
                                             setShowVariableRates(true);
                                         }}
@@ -824,6 +842,15 @@ export default function InputForm({
             <VariableRatesModal
                 isOpen={showVariableRates}
                 onClose={() => setShowVariableRates(false)}
+                onCancel={() => {
+                    if (variableRatesSnapshotRef.current) setInputs(prev => ({ ...prev, ...variableRatesSnapshotRef.current }));
+                    setShowVariableRates(false);
+                }}
+                onPreview={(newRates) => {
+                    const key = activeVRType === 'accumulation' ? 'variableRates' :
+                        activeVRType === 'safe' ? 'safeVariableRates' : 'surplusVariableRates';
+                    setInputs(prev => ({ ...prev, [key]: newRates, variableRatesEnabled: true }));
+                }}
                 startYear={inputs.enableBuckets ? (activeVRType === 'accumulation' ? currentYear : startYear) : currentYear}
                 endYear={inputs.enableBuckets ? (activeVRType === 'accumulation' ? startYear : endYear + 1) : endYear + 1}
                 retirementStartYear={startYear}
@@ -847,6 +874,17 @@ export default function InputForm({
                 language={language}
                 t={t}
                 inputs={inputs}
+            />
+
+            <ScenarioModal
+                isOpen={showScenario}
+                onClose={() => setShowScenario(false)}
+                onSave={(updates) => setInputs(prev => ({ ...prev, ...updates }))}
+                onPreview={(updates) => setInputs(prev => ({ ...prev, ...updates }))}
+                onCancel={() => { if (scenarioSnapshotRef.current) setInputs(prev => ({ ...prev, ...scenarioSnapshotRef.current })); setShowScenario(false); }}
+                inputs={inputs}
+                language={language}
+                t={t}
             />
 
             {/* Prompt Preview Overlay */}

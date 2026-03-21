@@ -26,16 +26,21 @@ body {
   top: 0 !important;
 }
 
-/* Hide numbers input arrows */
-.no-spinner::-webkit-outer-spin-button,
-.no-spinner::-webkit-inner-spin-button {
+/* Hide number input spinners globally and fix RTL minus sign position */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
 
-.no-spinner {
+input[type="number"] {
   appearance: textfield;
   -moz-appearance: textfield;
+  direction: ltr;
+}
+
+[dir="rtl"] input[type="number"] {
+  text-align: right;
 }
 
 /* Custom Scrollbar */
