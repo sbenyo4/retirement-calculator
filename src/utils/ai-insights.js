@@ -114,6 +114,16 @@ export const generateInsightPrompt = (inputs, results, language) => {
         sensitivityText = "Data unavailable";
     }
 
+    // Format Crash Scenario
+    let crashScenarioText = "None (base case — no market crash simulated)";
+    if (inputs.scenarioEnabled && inputs.scenario) {
+        const s = inputs.scenario;
+        const bucketNote = inputs.enableBuckets
+            ? (s.affectsSafeBucket ? " Affects BOTH safe and surplus buckets." : " Affects surplus bucket only (safe bucket protected).")
+            : "";
+        crashScenarioText = `ACTIVE — Market crash scenario is enabled:\n    - Crash Start Year: ${s.startYear}\n    - Crash Depth: ${s.crashDepth}%\n    - Recovery Period: ${s.recoveryYears} years (${s.recoveryShape} recovery)\n    - Recovery Mode: ${s.recoveryMode === 'rate' ? `Target avg rate of ${s.targetAvgRate}% during recovery` : 'Recover to original value'}\n    -${bucketNote || ' No bucket strategy active.'}`;
+    }
+
     // Format Pension Sources
     let pensionText = "None";
     if (inputs.pensionIncomeSources && inputs.pensionIncomeSources.length > 0) {
@@ -169,7 +179,10 @@ export const generateInsightPrompt = (inputs, results, language) => {
     
     Significant Life Events (One-time or recurring changes):
     ${lifeEventsText}
-    
+
+    Market Crash Scenario:
+    ${crashScenarioText}
+
     Simulation Results (Base Case):
     - Projected Balance at Retirement: ${currency}${results.balanceAtRetirement}
     - Projected Balance at End of Retirement: ${currency}${results.balanceAtEnd}
@@ -214,6 +227,7 @@ export const generateInsightPrompt = (inputs, results, language) => {
     - Return Rate Risk Assessment: An annual return of ~4% is considered conservative/solid for a long-term diversified portfolio (not risky).
       5-6% is moderate. Only rates above 7-8% should be flagged as aggressive or market-dependent.
       When a bucket strategy is used, assess each bucket independently: a safe bucket at 3-4% is very conservative, a surplus bucket at 6-8% is reasonable for growth allocation.
+    - If a Market Crash Scenario is active, specifically address: how severe the crash is, whether the recovery timeline is realistic, and whether the plan survives the crash (based on the simulation results). If the safe bucket is protected, note that as a risk-mitigation strength.
     - If the user runs out of money early, emphasize increasing savings or delaying retirement.
     - If the user has a large surplus, suggest leaving a legacy or spending more.
     - Be empathetic but realistic.
@@ -254,9 +268,7 @@ export async function getAIInsights(inputs, results, provider, model, apiKeyOver
         // Check if already aborted
         if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
-        const onRetry = (attempt, error, delay) => {
-            console.log(`[Insight][${provider}] Retry ${attempt} in ${Math.round(delay)}ms due to: ${error.message}`);
-        };
+        const onRetry = null;
 
         if (provider === 'gemini') {
             const { GoogleGenerativeAI } = await import("@google/generative-ai");

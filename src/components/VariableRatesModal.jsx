@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useDraggable } from '../hooks/useDraggable';
 import { useDebouncedValue } from '../hooks/useDebounce';
 import { useTheme } from '../contexts/ThemeContext';
 import { useThemeClasses } from '../hooks/useThemeClasses';
@@ -26,6 +27,8 @@ export default function VariableRatesModal({
     const { theme } = useTheme();
     const isLight = theme === 'light';
     const classes = useThemeClasses();
+
+    const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
 
     // Internal state for rates
     const [rates, setRates] = useState({});
@@ -492,6 +495,7 @@ export default function VariableRatesModal({
                 className={`rounded-2xl w-full max-w-sm h-[700px] shadow-xl flex flex-col relative overflow-hidden ${isLight ? 'bg-white border border-gray-200' : 'border border-white/30'}`}
                 onClick={e => e.stopPropagation()}
                 dir={language === 'he' ? 'rtl' : 'ltr'}
+                style={dragStyle}
             >
                 {!isLight && (
                     <>
@@ -501,7 +505,7 @@ export default function VariableRatesModal({
                 )}
 
                 {/* Header */}
-                <div className="relative z-10 flex-none flex items-center justify-between p-4 border-b border-gray-200 dark:border-white/10">
+                <div className="relative z-10 flex-none flex items-center justify-between p-4 border-b border-gray-200 dark:border-white/10 cursor-grab active:cursor-grabbing" onMouseDown={onDragMouseDown}>
                     <h3 className={`text-lg font-semibold ${classes.headerLabel}`}>
                         {language === 'he' ? 'תשואות משתנות' : 'Variable Returns'}
                         {bucketType !== 'accumulation' && (

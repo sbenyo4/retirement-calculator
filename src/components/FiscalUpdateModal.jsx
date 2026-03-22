@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useDraggable } from '../hooks/useDraggable';
 import { calculateRetirementWithAI } from '../utils/ai-calculator';
 import { NATIONAL_INSURANCE_RATES, PENSION_TAX_BRACKETS } from '../utils/pensionCalculator';
 import { Sparkles, Save, RotateCcw, Check, AlertTriangle, Code, Copy, Table } from 'lucide-react';
@@ -25,6 +26,7 @@ export function FiscalUpdateModal({
 }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
+    const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [proposedParameters, setProposedParameters] = useState(null);
@@ -435,7 +437,7 @@ Reference values for ${currentYear} (use if search fails):
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-            <div className={`relative w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden ${theme === 'light' ? 'bg-white' : ''} border ${theme === 'light' ? 'border-gray-200' : 'border-white/30'} flex flex-col`}>
+            <div className={`relative w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden ${theme === 'light' ? 'bg-white' : ''} border ${theme === 'light' ? 'border-gray-200' : 'border-white/30'} flex flex-col`} style={dragStyle}>
                 {theme !== 'light' && (
                     <>
                         <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" />
@@ -443,7 +445,7 @@ Reference values for ${currentYear} (use if search fails):
                     </>
                 )}
                 <div className="relative z-10 p-6">
-                    <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                    <h2 className="text-xl font-bold mb-4 flex items-center gap-2 cursor-grab active:cursor-grabbing" onMouseDown={onDragMouseDown}>
                         <Sparkles className="text-purple-500" />
                         {language === 'he' ? 'עדכון נתונים מערכתיים' : 'System Parameters Update'}
                     </h2>

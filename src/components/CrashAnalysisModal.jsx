@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { X, BarChart2, TrendingDown, TrendingUp, Plus, Trash2 } from 'lucide-react';
+import { useDraggable } from '../hooks/useDraggable';
+import { X, BarChart2, TrendingDown, TrendingUp, Plus, Trash2, Info } from 'lucide-react';
 import { Bar } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -8,6 +9,7 @@ import {
 } from 'chart.js';
 import { useTheme } from '../contexts/ThemeContext';
 import { calculateRetirementProjection } from '../utils/calculator';
+import { generateScenarioRates } from '../utils/scenarioUtils';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend);
 
@@ -35,6 +37,8 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
     // ── Sweep state ────────────────────────────────────────────────────────
     const [sweepResults, setSweepResults] = useState(null);
     const [isSweeping, setIsSweeping] = useState(false);
+    const [selectedYear, setSelectedYear] = useState(null);
+    const sweepChartRef = useRef(null);
 
     // ── Compare state ──────────────────────────────────────────────────────
     const [compareRows, setCompareRows] = useState([]);
@@ -141,6 +145,9 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
         }, 10);
     }, [analysisInputs]);
 
+    const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
+    const { dragStyle: detailDragStyle, onDragMouseDown: onDetailDragMouseDown } = useDraggable(selectedYear !== null);
+
     // Reset when closed
     useEffect(() => {
         if (!isOpen) {
@@ -148,6 +155,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
             setCompareResults(null);
             compareInitRef.current = false;
             setActiveTab('sweep');
+            setSelectedYear(null);
             return;
         }
         runSweep();
@@ -231,11 +239,77 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
         };
     }, [compareResults, compareRows, he]);
 
-    const makeChartOptions = useCallback((getTooltipItems) => {
+    // ── Click handler for sweep chart bars ───────────────────────────────
+    const handleSweepChartClick = useCallback((event, _activeElements, chart) => {
+        // Chart.js passes a ChartEvent wrapper; extract the native DOM event
+        const nativeEvent = event.native || event;
+        // Use 'nearest' with intersect: false so clicks near a bar also register
+        const elements = chart.getElementsAtEventForMode(
+            nativeEvent, 'nearest', { intersect: false, axis: 'x' }, true
+        );
+        // Only react to bar dataset clicks (dataset index 0), not the baseline line
+        const barElement = elements.find(el => el.datasetIndex === 0);
+        if (!barElement) return;
+        const clickedYear = sweepResults?.sweep[barElement.index]?.year;
+        if (clickedYear != null) {
+            setSelectedYear(prev => prev === clickedYear ? null : clickedYear);
+        }
+    }, [sweepResults]);
+
+    // ── Year detail data ────────────────────────────────────────────────────
+    const yearDetail = useMemo(() => {
+        if (selectedYear == null || !sweepResults) return null;
+        const scenario = analysisInputs?.scenario || {};
+        const baseRate = parseFloat(analysisInputs?.annualReturnRate) || 6;
+        const crashDepth = scenario.crashDepth ?? -20;
+        const recoveryYears = scenario.recoveryYears ?? 5;
+
+        // Generate the rate overrides for this crash year
+        const scenarioForYear = { ...scenario, startYear: selectedYear };
+        const rates = generateScenarioRates(scenarioForYear, baseRate);
+
+        // Build per-year schedule
+        const schedule = [];
+        for (let y = currentYear; y <= retirementEndYear; y++) {
+            let rate = baseRate;
+            let type = 'normal'; // normal | crash | recovery
+            if (rates[y] !== undefined) {
+                rate = rates[y];
+                type = y === selectedYear ? 'crash' : 'recovery';
+            }
+            const phase = y < retirementStartYear ? 'accumulation' : 'retirement';
+            // Check if this recovery year actually fits within simulation
+            const isTruncated = type === 'recovery' && y > retirementEndYear;
+            schedule.push({ year: y, rate, type, phase, isTruncated });
+        }
+
+        // Stats
+        const recoveryEnd = selectedYear + recoveryYears;
+        const recoveryUsed = Math.min(recoveryYears, Math.max(0, retirementEndYear - selectedYear));
+        const normalYearsAfter = Math.max(0, retirementEndYear - Math.min(recoveryEnd, retirementEndYear));
+        const fullRecovery = recoveryUsed >= recoveryYears;
+
+        // Get sweep result for this year
+        const sweepEntry = sweepResults.sweep.find(s => s.year === selectedYear);
+
+        return {
+            schedule,
+            recoveryUsed,
+            recoveryTotal: recoveryYears,
+            normalYearsAfter,
+            fullRecovery,
+            crashDepth,
+            sweepEntry,
+            baseRate
+        };
+    }, [selectedYear, sweepResults, analysisInputs, currentYear, retirementEndYear, retirementStartYear]);
+
+    const makeChartOptions = useCallback((getTooltipItems, onClick) => {
         const textColor = isLight ? '#374151' : '#d1d5db';
         const gridColor = isLight ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)';
         return {
             responsive: true, maintainAspectRatio: false,
+            onClick,
             plugins: {
                 legend: { display: false },
                 tooltip: {
@@ -265,7 +339,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                 `${he ? 'הפרש' : 'Diff'}: ${sign}${fmt(r.diff)} (${sign}${r.pctDiff.toFixed(1)}%)`
             ]
         };
-    }), [makeChartOptions, sweepResults, he]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, handleSweepChartClick), [makeChartOptions, sweepResults, he, handleSweepChartClick]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const compareOptions = useMemo(() => makeChartOptions((idx) => {
         const row = compareRows[idx];
@@ -281,7 +355,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                 `${he ? 'הפרש' : 'Diff'}: ${sign}${fmt(res.diff)} (${sign}${res.pctDiff.toFixed(1)}%)`
             ]
         };
-    }), [makeChartOptions, compareRows, compareResults, retirementStartYear, he]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, null), [makeChartOptions, compareRows, compareResults, retirementStartYear, he]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── Sweep stats ────────────────────────────────────────────────────────
     const sweepStats = useMemo(() => {
@@ -325,6 +399,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                     isLight ? 'bg-white border border-gray-200 text-gray-900' : 'border border-white/30 text-white'
                 }`}
                 dir={he ? 'rtl' : 'ltr'}
+                style={dragStyle}
             >
                 {!isLight && (
                     <>
@@ -335,7 +410,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                 <div className="relative z-10 p-5 max-h-[88vh] overflow-y-auto">
 
                     {/* Header */}
-                    <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center justify-between mb-3 cursor-grab active:cursor-grabbing" onMouseDown={onDragMouseDown}>
                         <div className="flex items-center gap-2">
                             <BarChart2 size={18} className="text-orange-400" />
                             <h2 className="text-base font-bold">{he ? 'ניתוח קריסות' : 'Crash Analysis'}</h2>
@@ -370,11 +445,14 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                     {/* ════════════ SWEEP TAB ════════════ */}
                     {activeTab === 'sweep' && (
                         <>
-                            <div className={`rounded-xl p-3 mb-3 ${isLight ? 'bg-gray-50' : 'bg-black/20'}`} style={{ height: 220 }}>
+                            <div className={`rounded-xl p-3 mb-1 ${isLight ? 'bg-gray-50' : 'bg-black/20'}`} style={{ height: 220 }}>
                                 {isSweeping
                                     ? <div className="flex items-center justify-center h-full text-sm text-gray-400">{he ? 'מחשב...' : 'Calculating...'}</div>
-                                    : sweepChartData && <Bar data={sweepChartData} options={sweepOptions} />
+                                    : sweepChartData && <Bar ref={sweepChartRef} data={sweepChartData} options={sweepOptions} />
                                 }
+                            </div>
+                            <div className={`text-center text-[10px] mb-2 ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
+                                {he ? 'לחץ על עמודה לפרטים' : 'Click a bar for details'}
                             </div>
 
                             {/* Legend */}
@@ -522,6 +600,109 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
 
                 </div>
             </div>
+
+            {/* ═══════ Year Detail — separate floating modal ═══════ */}
+            {yearDetail && (
+                <div
+                    className={`absolute rounded-2xl shadow-2xl overflow-hidden w-[340px] ${
+                        isLight ? 'bg-white border border-gray-200 text-gray-900' : 'border border-white/30 text-white'
+                    }`}
+                    dir={he ? 'rtl' : 'ltr'}
+                    style={{ top: '20%', right: 'calc(50% + 177px)', ...detailDragStyle }}
+                >
+                    {!isLight && (
+                        <>
+                            <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" />
+                            <div className="absolute inset-0 bg-white/10" />
+                        </>
+                    )}
+                    <div className="relative z-10 max-h-[80vh] overflow-y-auto">
+                        {/* Header */}
+                        <div
+                            className={`flex items-center justify-between px-4 py-3 cursor-grab active:cursor-grabbing ${isLight ? 'bg-gray-50 border-b border-gray-100' : 'bg-white/5 border-b border-white/10'}`}
+                            onMouseDown={onDetailDragMouseDown}
+                        >
+                            <div className="flex items-center gap-2">
+                                <Info size={14} className="text-orange-400" />
+                                <span className="text-sm font-bold">
+                                    {he ? `פירוט שנת קריסה ${selectedYear}` : `Crash year ${selectedYear}`}
+                                </span>
+                                {yearDetail.sweepEntry && (
+                                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                                        yearDetail.sweepEntry.pctDiff >= 0
+                                            ? (isLight ? 'bg-green-100 text-green-700' : 'bg-green-900/30 text-green-400')
+                                            : (isLight ? 'bg-red-100 text-red-700' : 'bg-red-900/30 text-red-400')
+                                    }`}>
+                                        <span dir="ltr">{fmtDiff(yearDetail.sweepEntry.pctDiff)}</span>
+                                    </span>
+                                )}
+                            </div>
+                            <button onClick={() => setSelectedYear(null)} className={`transition-colors ${isLight ? 'text-gray-400 hover:text-gray-600' : 'text-gray-400 hover:text-gray-200'}`}>
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        {/* Rate schedule pills */}
+                        <div className="px-4 py-3">
+                            <div className="flex flex-wrap gap-1.5">
+                                {yearDetail.schedule.map(s => {
+                                    const isCrash = s.type === 'crash';
+                                    const isRecovery = s.type === 'recovery';
+                                    const bgColor = isCrash
+                                        ? (isLight ? 'bg-red-100 border-red-300 text-red-800' : 'bg-red-900/40 border-red-700/50 text-red-300')
+                                        : isRecovery
+                                            ? (isLight ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-amber-900/30 border-amber-700/40 text-amber-300')
+                                            : (isLight ? 'bg-gray-50 border-gray-200 text-gray-600' : 'bg-white/5 border-white/10 text-gray-400');
+                                    const phaseIcon = s.phase === 'accumulation' ? '💰' : '🏖️';
+                                    return (
+                                        <div key={s.year}
+                                            className={`flex flex-col items-center px-2 py-1.5 rounded-lg border text-[11px] leading-tight min-w-[48px] ${bgColor}`}
+                                        >
+                                            <span className="font-semibold">{s.year}</span>
+                                            <span className="font-bold tabular-nums" dir="ltr">{s.rate >= 0 ? '+' : ''}{s.rate.toFixed(1)}%</span>
+                                            <span className="opacity-70">{phaseIcon}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Summary stats */}
+                        <div className={`px-4 py-2.5 flex flex-wrap gap-x-4 gap-y-1.5 text-xs border-t ${isLight ? 'bg-gray-50/50 border-gray-100' : 'bg-white/[0.02] border-white/5'}`}>
+                            <span>
+                                <span className={isLight ? 'text-gray-500' : 'text-gray-500'}>{he ? 'ירידה:' : 'Drop:'} </span>
+                                <strong className="text-red-400" dir="ltr">{yearDetail.crashDepth}%</strong>
+                            </span>
+                            <span>
+                                <span className={isLight ? 'text-gray-500' : 'text-gray-500'}>{he ? 'שנות התאוששות:' : 'Recovery:'} </span>
+                                <strong className={yearDetail.fullRecovery ? 'text-green-400' : 'text-orange-400'}>
+                                    {yearDetail.recoveryUsed}/{yearDetail.recoveryTotal}
+                                    {!yearDetail.fullRecovery && (he ? ' ⚠️ חלקי' : ' ⚠️ partial')}
+                                </strong>
+                            </span>
+                            <span>
+                                <span className={isLight ? 'text-gray-500' : 'text-gray-500'}>{he ? 'שנות נורמלי אחרי:' : 'Normal after:'} </span>
+                                <strong>{yearDetail.normalYearsAfter}</strong>
+                            </span>
+                            {yearDetail.sweepEntry && (
+                                <span>
+                                    <span className={isLight ? 'text-gray-500' : 'text-gray-500'}>{he ? 'יתרה סופית:' : 'Final:'} </span>
+                                    <strong>{fmt(yearDetail.sweepEntry.balance)}</strong>
+                                </span>
+                            )}
+                        </div>
+
+                        {/* Legend */}
+                        <div className={`px-4 py-2 flex flex-wrap gap-3 text-[10px] border-t ${isLight ? 'border-gray-100 text-gray-600' : 'border-white/5 text-gray-300'}`}>
+                            {legendItem('bg-red-500/60', he ? 'קריסה' : 'Crash')}
+                            {legendItem('bg-amber-500/50', he ? 'התאוששות' : 'Recovery')}
+                            {legendItem(isLight ? 'bg-gray-300/60' : 'bg-white/10', he ? 'נורמלי' : 'Normal')}
+                            <span className="flex items-center gap-1">💰 {he ? 'צבירה' : 'Accum.'}</span>
+                            <span className="flex items-center gap-1">🏖️ {he ? 'פרישה' : 'Retire'}</span>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -58,9 +58,9 @@ export default function InputForm({
         ? "bg-slate-50 border border-gray-300 text-gray-900 placeholder-gray-400 focus:ring-blue-500 shadow-sm"
         : "bg-black/20 border border-white/50 text-white placeholder-gray-500";
 
-    // Store whether buttons should be visible (persist across re-renders)
-    const showNeededTodayBtn = useRef(false);
-    const showCapitalPreservationBtn = useRef(false);
+    // Track whether buttons have ever had a positive value (show once unlocked, never hide)
+    const [showNeededTodayBtn, setShowNeededTodayBtn] = useState(false);
+    const [showCapitalPreservationBtn, setShowCapitalPreservationBtn] = useState(false);
     const [showApiKey, setShowApiKey] = useState(false);
     const [promptText, setPromptText] = useState(null);
     // View Toggle State: 'parameters' | 'events'
@@ -79,10 +79,10 @@ export default function InputForm({
         return Object.values(inputs.variableRates).some(r => r !== parseFloat(inputs.annualReturnRate));
     }, [inputs.variableRates, inputs.annualReturnRate]);
 
-    // Update button visibility based on values
+    // Update button visibility based on values (once shown, never hidden)
     useEffect(() => {
-        if (neededToday > 0) showNeededTodayBtn.current = true;
-        if (capitalPreservationNeededToday > 0 || capitalPreservation > 0) showCapitalPreservationBtn.current = true;
+        if (neededToday > 0) setShowNeededTodayBtn(true);
+        if (capitalPreservationNeededToday > 0 || capitalPreservation > 0) setShowCapitalPreservationBtn(true);
     }, [neededToday, capitalPreservationNeededToday, capitalPreservation]);
 
     // Memoized currency formatter for performance
@@ -518,7 +518,7 @@ export default function InputForm({
                             icon={<Coins size={14} />}
                             titleActions={
                                 <>
-                                    {showNeededTodayBtn.current && (
+                                    {showNeededTodayBtn && (
                                         <button
                                             onClick={() => {
                                                 const current = parseFloat(inputs.currentSavings) || 0;
@@ -536,7 +536,7 @@ export default function InputForm({
                                             </svg>
                                         </button>
                                     )}
-                                    {showCapitalPreservationBtn.current && (
+                                    {showCapitalPreservationBtn && (
                                         <button
                                             onClick={() => {
                                                 const current = parseFloat(inputs.currentSavings) || 0;

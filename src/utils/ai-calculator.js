@@ -339,10 +339,7 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
         // Check if already aborted
         if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
-        // Retry callback for logging
-        const onRetry = (attempt, error, delay) => {
-            console.log(`[${provider}] Retry ${attempt} in ${Math.round(delay)}ms due to: ${error.message}`);
-        };
+        const onRetry = null;
 
         if (provider === 'gemini') {
             const { GoogleGenerativeAI } = await import("@google/generative-ai");

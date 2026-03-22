@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useDraggable } from '../hooks/useDraggable';
 import { useTheme } from '../contexts/ThemeContext';
 import { useThemeClasses } from '../hooks/useThemeClasses';
 import { EVENT_TYPES } from '../constants';
@@ -38,6 +39,7 @@ export default function AddEventModal({
     const { theme } = useTheme();
     const isLight = theme === 'light';
     const classes = useThemeClasses();
+    const { dragStyle, onDragMouseDown } = useDraggable(true);
     const currency = language === 'he' ? '₪' : '$';
     const currentYear = new Date().getFullYear();
     const currentMonth = new Date().getMonth() + 1;
@@ -149,6 +151,7 @@ export default function AddEventModal({
             <div
                 className={`rounded-2xl w-full max-w-lg h-[600px] shadow-xl flex flex-col relative overflow-hidden ${isLight ? 'bg-white border border-gray-200' : 'border border-white/30'}`}
                 onClick={(e) => e.stopPropagation()}
+                style={dragStyle}
             >
                 {!isLight && (
                     <>
@@ -162,7 +165,7 @@ export default function AddEventModal({
                     dir={language === 'he' ? 'rtl' : 'ltr'}
                 >
                     {/* Header */}
-                    <div className="flex-none flex items-center justify-between p-4 border-b border-gray-200 dark:border-white/10">
+                    <div className="flex-none flex items-center justify-between p-4 border-b border-gray-200 dark:border-white/10 cursor-grab active:cursor-grabbing" onMouseDown={onDragMouseDown}>
                         <h3 className={`text-lg font-semibold ${classes.headerLabel}`}>
                             {event
                                 ? (t ? t('editEvent') : 'Edit Event')

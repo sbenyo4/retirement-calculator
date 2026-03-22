@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, TrendingDown, BarChart2 } from 'lucide-react';
+import { useDraggable } from '../hooks/useDraggable';
 import { useTheme } from '../contexts/ThemeContext';
 import { generateScenarioRates } from '../utils/scenarioUtils';
 import CrashAnalysisModal from './CrashAnalysisModal';
@@ -112,6 +113,8 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
         scenario: { type: 'crash', startYear, crashDepth, recoveryYears, recoveryShape, recoveryMode, targetAvgRate, affectsSafeBucket }
     }), [inputs, startYear, crashDepth, recoveryYears, recoveryShape, recoveryMode, targetAvgRate, affectsSafeBucket]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
+
     if (!isOpen) return null;
 
     const he = language === 'he';
@@ -122,6 +125,7 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
             <div
                 className={`relative w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden ${isLight ? 'bg-white border border-gray-200 text-gray-900' : 'border border-white/30 text-white'}`}
                 dir={he ? 'rtl' : 'ltr'}
+                style={dragStyle}
             >
                 {!isLight && (
                     <>
@@ -132,7 +136,7 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
                 <div className="relative z-10 p-5">
 
                 {/* Header */}
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-4 cursor-grab active:cursor-grabbing" onMouseDown={onDragMouseDown}>
                     <div className="flex items-center gap-2">
                         <TrendingDown size={18} className="text-orange-400" />
                         <h2 className="text-base font-bold">{he ? 'תרחיש שוק' : 'Market Scenario'}</h2>

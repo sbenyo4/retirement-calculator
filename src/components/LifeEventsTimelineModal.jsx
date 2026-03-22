@@ -1,4 +1,5 @@
 import React, { useMemo, useEffect, useRef, useState } from 'react';
+import { useDraggable } from '../hooks/useDraggable';
 import ReactDOM from 'react-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useThemeClasses } from '../hooks/useThemeClasses';
@@ -36,6 +37,7 @@ export default function LifeEventsTimelineModal({
     const { theme } = useTheme();
     const isLight = theme === 'light';
     const classes = useThemeClasses();
+    const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
     const currencySymbol = language === 'he' ? '₪' : '$';
     const isRtl = language === 'he';
     const scrollContainerRef = useRef(null);
@@ -386,7 +388,7 @@ export default function LifeEventsTimelineModal({
                 className={`w-[95vw] max-w-6xl h-auto max-h-[90vh] min-h-[480px] rounded-2xl shadow-2xl flex flex-col select-none relative overflow-hidden ${isLight ? 'bg-white' : 'border border-white/30'}`}
                 onClick={e => e.stopPropagation()}
                 dir={language === 'he' ? 'rtl' : 'ltr'}
-                style={{ cursor: 'default' }}
+                style={{ cursor: 'default', ...dragStyle }}
             >
                 {!isLight && (
                     <>
@@ -394,7 +396,7 @@ export default function LifeEventsTimelineModal({
                         <div className="absolute inset-0 bg-white/10" />
                     </>
                 )}
-                <div className={`p-4 border-b ${isLight ? 'border-gray-200' : 'border-white/10'} bg-transparent shrink-0 relative`}>
+                <div className={`p-4 border-b ${isLight ? 'border-gray-200' : 'border-white/10'} bg-transparent shrink-0 relative cursor-grab active:cursor-grabbing`} onMouseDown={onDragMouseDown}>
                     {/* Action Buttons - Absolutely Positioned to prevent overflow clipping */}
                     <div className={`absolute top-4 ${language === 'he' ? 'left-4' : 'right-4'} flex items-center gap-2 z-10`}>
                         <button

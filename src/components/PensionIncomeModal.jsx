@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useDraggable } from '../hooks/useDraggable';
 import { useTheme } from '../contexts/ThemeContext';
 import { formatCurrency as formatCurrencyUtil } from '../utils/formatters';
 import {
@@ -287,6 +288,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
 
     const { theme } = useTheme();
     const isLight = theme === 'light';
+    const { dragStyle, onDragMouseDown } = useDraggable(true);
     const [showFiscalModal, setShowFiscalModal] = useState(false);
     const [showBracketTable, setShowBracketTable] = useState(false);
 
@@ -593,7 +595,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                 <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
                 {/* Modal */}
-                <div className={`relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden ${isLight ? 'bg-white' : ''} border ${isLight ? 'border-gray-200' : 'border-white/30'}`}>
+                <div className={`relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden ${isLight ? 'bg-white' : ''} border ${isLight ? 'border-gray-200' : 'border-white/30'}`} style={dragStyle}>
                     {!isLight && (
                         <>
                             <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" />
@@ -601,7 +603,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                         </>
                     )}
                     {/* Header */}
-                    <div className={`relative z-10 flex items-center justify-between p-4 border-b ${isLight ? 'border-slate-200 bg-gradient-to-r from-emerald-50 to-teal-50' : 'border-white/10 bg-gradient-to-r from-emerald-900/30 to-teal-900/30'}`}>
+                    <div className={`relative z-10 flex items-center justify-between p-4 border-b cursor-grab active:cursor-grabbing ${isLight ? 'border-slate-200 bg-gradient-to-r from-emerald-50 to-teal-50' : 'border-white/10 bg-gradient-to-r from-emerald-900/30 to-teal-900/30'}`} onMouseDown={onDragMouseDown}>
                         <div className="flex items-center gap-3">
                             <div className={`p-2 rounded-lg ${isLight ? 'bg-emerald-100 text-emerald-600' : 'bg-emerald-500/20 text-emerald-400'}`}>
                                 <Wallet size={20} />

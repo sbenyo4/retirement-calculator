@@ -230,7 +230,6 @@ export async function migrateFromLocalStorage(uid) {
         await batch.commit();
         // Clear localStorage after successful migration
         localStorage.clear();
-        console.log('Migration from localStorage to Firestore completed successfully.');
         return true;
     }
 

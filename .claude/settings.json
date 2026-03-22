@@ -8,7 +8,14 @@
       "Read(//c/Users/sbeny/.claude/projects/c--Users-sbeny--gemini-antigravity-scratch-retirement-calculator/memory/**)",
       "Bash(sort -t'|' -k2 -rn)",
       "Bash(npx --yes tsc --noEmit)",
-      "Bash(grep -n \"useThemeClasses\" /c/Users/sbeny/.gemini/antigravity/scratch/retirement-calculator/src/components/*.jsx)"
+      "Bash(grep -n \"useThemeClasses\" /c/Users/sbeny/.gemini/antigravity/scratch/retirement-calculator/src/components/*.jsx)",
+      "Bash(grep -n \"\\\\.map\" /c/Users/sbeny/.gemini/antigravity/scratch/retirement-calculator/src/components/*.jsx)",
+      "Bash(grep -n \"\\\\.map.*=>\" src/components/*.jsx)",
+      "Bash(grep -rn \"value=\\\\|defaultValue=\" src/components/*.jsx)",
+      "Bash(grep -rn href= src/components/*.jsx)",
+      "Bash(grep -rn src= src/components/*.jsx)",
+      "Bash(grep -rn \"type=\"\"number\"\"\" src/components/*.jsx)",
+      "Bash(grep -rn \"import.*useState\\\\|import.*useEffect\" src/components/*.jsx src/hooks/*.js)"
     ]
   }
 }

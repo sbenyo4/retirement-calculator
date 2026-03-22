@@ -88,11 +88,18 @@ export function calculateAccumulation({
                         totalPrincipal += event.amount;
                         break;
 
-                    case EVENT_TYPES.ONE_TIME_EXPENSE:
+                    case EVENT_TYPES.ONE_TIME_EXPENSE: {
+                        // Reduce principal proportionally to the fraction of balance spent
+                        // (mirrors the logic in decumulation.js — only the profit portion is "profit",
+                        // the rest is principal; spending proportionally reduces both).
+                        const expenseAmount = Math.min(event.amount, balance);
+                        if (balance > 0) {
+                            const expenseFraction = expenseAmount / balance;
+                            totalPrincipal = Math.max(0, totalPrincipal - totalPrincipal * expenseFraction);
+                        }
                         balance = Math.max(0, balance - event.amount);
-                        // Also reduce principal if we're spending saved money
-                        totalPrincipal = Math.max(0, totalPrincipal - event.amount);
                         break;
+                    }
 
                     case EVENT_TYPES.INCOME_CHANGE:
                         // This modifies monthly contribution going forward

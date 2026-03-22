@@ -4,7 +4,7 @@ import { Save, Trash2, Upload, RotateCcw, Pencil, Check, X } from 'lucide-react'
 import { CustomSelect } from './common/CustomSelect';
 import { DEFAULT_INPUTS } from '../constants';
 import { deepEqual } from '../hooks/useDeepCompare';
-import { normalizeInputs, getDetailedDiff } from '../utils/profileUtils';
+import { normalizeInputs } from '../utils/profileUtils';
 
 import { calculateAgeFromDate } from '../utils/dateUtils';
 
@@ -262,7 +262,6 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     // This perfectly handles external updates (like event copying) and ignores App.jsx's 
     // internal race conditions, because we just check if our current layout matches the db.
     let hasChanges = false;
-    let differencesLog = [];
     if (selectedProfileId && profiles && normalizedCurrent) {
         const dbProfile = profiles.find(p => p.id === selectedProfileId);
         if (dbProfile && dbProfile.data) {
@@ -270,13 +269,6 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
             const normStripped = stripComputedFields(normalizedCurrent);
             const dbStripped = stripComputedFields(dbDataNormalized);
             hasChanges = !deepEqual(normStripped, dbStripped);
-            
-            if (hasChanges) {
-                differencesLog = getDetailedDiff(normStripped, dbStripped);
-                if (differencesLog.length > 0) {
-                    console.info("[ProfileDebug] Unsaved Changes Detected in fields:", differencesLog);
-                }
-            }
         }
     }
 
@@ -352,9 +344,6 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                                 {/* Update/save changes to profile */}
                                 <button
                                     onClick={() => {
-                                        if (differencesLog.length > 0) {
-                                            console.log("Unsaved changes being applied. Diff was:", differencesLog);
-                                        }
                                         updateProfile();
                                     }}
                                     className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors relative"
