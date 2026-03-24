@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useDraggable } from '../hooks/useDraggable';
 import { X, BarChart2, TrendingDown, TrendingUp, Plus, Trash2, Info, Sparkles, Loader2 } from 'lucide-react';
 import { Bar } from 'react-chartjs-2';
@@ -56,6 +56,28 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
     const aiAbortRef = useRef(null);
     const aiCacheKeyRef = useRef(null);
 
+    // ── Local safe-bucket override ─────────────────────────────────────────
+    const [localAffectsSafe, setLocalAffectsSafe] = useState(
+        analysisInputs?.scenario?.affectsSafeBucket ?? false
+    );
+    useEffect(() => {
+        setLocalAffectsSafe(analysisInputs?.scenario?.affectsSafeBucket ?? false);
+    }, [analysisInputs?.scenario?.affectsSafeBucket]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const effectiveInputs = useMemo(() => ({
+        ...analysisInputs,
+        scenario: { ...(analysisInputs?.scenario || {}), affectsSafeBucket: localAffectsSafe }
+    }), [analysisInputs, localAffectsSafe]);
+
+    // The active sweep (for detail panel + tooltips) based on current toggle
+    const activeSweep = useMemo(() => {
+        if (!sweepResults) return null;
+        if (sweepResults.hasAlt) {
+            return localAffectsSafe ? sweepResults.sweepAffected : sweepResults.sweepShielded;
+        }
+        return sweepResults.sweepShielded;
+    }, [sweepResults, localAffectsSafe]);
+
     const currentYear = new Date().getFullYear();
 
     const retirementStartYear = useMemo(() => {
@@ -81,38 +103,43 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
     // ── Sweep logic ────────────────────────────────────────────────────────
     const runSweep = useCallback(() => {
         setIsSweeping(true);
-        setSweepResults(null);
         setTimeout(() => {
             try {
-                const baseline = calculateRetirementProjection({ ...analysisInputs, scenarioEnabled: false });
+                const baseline = calculateRetirementProjection({ ...effectiveInputs, scenarioEnabled: false });
                 const baseBalance = baseline.balanceAtEnd;
-                const sweep = [];
-                for (let year = currentYear; year <= retirementEndYear - 1; year++) {
-                    try {
-                        const r = calculateRetirementProjection({
-                            ...analysisInputs, scenarioEnabled: true,
-                            scenario: { ...analysisInputs.scenario, startYear: year }
-                        });
-                        const diff = r.balanceAtEnd - baseBalance;
-                        sweep.push({
-                            year, balance: r.balanceAtEnd, diff,
-                            pctDiff: baseBalance > 0 ? (diff / baseBalance) * 100 : 0,
-                            isPreRetirement: year < retirementStartYear
-                        });
-                    } catch {
-                        sweep.push({ year, balance: 0, diff: -baseBalance, pctDiff: -100,
-                            isPreRetirement: year < retirementStartYear, error: true });
+                const hasBuckets = !!effectiveInputs.enableBuckets;
+
+                const calcSweep = (affectsSafe) => {
+                    const sweep = [];
+                    for (let year = currentYear; year <= retirementEndYear - 1; year++) {
+                        try {
+                            const r = calculateRetirementProjection({
+                                ...effectiveInputs, scenarioEnabled: true,
+                                scenario: { ...effectiveInputs.scenario, startYear: year, affectsSafeBucket: affectsSafe }
+                            });
+                            const diff = r.balanceAtEnd - baseBalance;
+                            sweep.push({ year, balance: r.balanceAtEnd, diff,
+                                pctDiff: baseBalance > 0 ? (diff / baseBalance) * 100 : 0,
+                                isPreRetirement: year < retirementStartYear });
+                        } catch {
+                            sweep.push({ year, balance: 0, diff: -baseBalance, pctDiff: -100,
+                                isPreRetirement: year < retirementStartYear, error: true });
+                        }
                     }
-                }
-                setSweepResults({ baseline: baseBalance, sweep });
+                    return sweep;
+                };
+
+                const sweepShielded = calcSweep(false);
+                const sweepAffected = hasBuckets ? calcSweep(true) : null;
+                setSweepResults({ baseline: baseBalance, sweepShielded, sweepAffected, hasAlt: hasBuckets });
             } catch (e) { console.error('Sweep failed:', e); }
             setIsSweeping(false);
         }, 50);
-    }, [analysisInputs, currentYear, retirementEndYear, retirementStartYear]);
+    }, [effectiveInputs, currentYear, retirementEndYear, retirementStartYear]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── Compare logic ──────────────────────────────────────────────────────
     const buildDefaultRows = useCallback(() => {
-        const s = analysisInputs?.scenario || {};
+        const s = effectiveInputs?.scenario || {};
         const depth = s.crashDepth ?? -20;
         const recYears = s.recoveryYears ?? 5;
         return [
@@ -121,21 +148,21 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
             { id: uid(), year: retirementStartYear,      depth, recYears },
             { id: uid(), year: retirementStartYear + 3,  depth, recYears },
         ].filter(r => r.year >= currentYear && r.year < retirementEndYear);
-    }, [analysisInputs, currentYear, retirementStartYear, retirementEndYear]);
+    }, [effectiveInputs, currentYear, retirementStartYear, retirementEndYear]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const runCompare = useCallback((rows) => {
         if (!rows.length) return;
         setIsComparing(true);
         setTimeout(() => {
             try {
-                const baseline = calculateRetirementProjection({ ...analysisInputs, scenarioEnabled: false });
+                const baseline = calculateRetirementProjection({ ...effectiveInputs, scenarioEnabled: false });
                 const baseBalance = baseline.balanceAtEnd;
                 const results = rows.map(row => {
                     try {
                         const r = calculateRetirementProjection({
-                            ...analysisInputs, scenarioEnabled: true,
+                            ...effectiveInputs, scenarioEnabled: true,
                             scenario: {
-                                ...analysisInputs.scenario,
+                                ...effectiveInputs.scenario,
                                 startYear: row.year,
                                 crashDepth: row.depth,
                                 recoveryYears: row.recYears
@@ -152,7 +179,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
             } catch (e) { console.error('Compare failed:', e); }
             setIsComparing(false);
         }, 10);
-    }, [analysisInputs]);
+    }, [effectiveInputs]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
     const { dragStyle: detailDragStyle, onDragMouseDown: onDetailDragMouseDown } = useDraggable(selectedYear !== null);
@@ -178,14 +205,15 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
 
     const runAIAnalysis = useCallback(async () => {
         if (!sweepResults || !aiProvider || isLoadingAI) return;
-        const s = analysisInputs?.scenario || {};
+        const s = effectiveInputs?.scenario || {};
+        const activeSweepForAI = localAffectsSafe ? sweepResults.sweepAffected : sweepResults.sweepShielded;
         const currentKey = JSON.stringify({
             baseline: sweepResults.baseline,
-            worstYear: sweepResults.sweep?.reduce((a, b) => b.balance < a.balance ? b : a, sweepResults.sweep[0])?.year,
+            worstYear: activeSweepForAI?.reduce((a, b) => b.balance < a.balance ? b : a, activeSweepForAI[0])?.year,
             crashDepth: s.crashDepth, recoveryYears: s.recoveryYears,
             recoveryShape: s.recoveryShape, recoveryMode: s.recoveryMode,
-            targetAvgRate: s.targetAvgRate, affectsSafeBucket: s.affectsSafeBucket,
-            enableBuckets: analysisInputs?.enableBuckets,
+            targetAvgRate: s.targetAvgRate, affectsSafeBucket: localAffectsSafe,
+            enableBuckets: effectiveInputs?.enableBuckets,
         });
         if (currentKey === aiCacheKeyRef.current && aiInsight) {
             setAiPanelVisible(true);
@@ -200,8 +228,9 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
         setAiError(null);
         setAiInsight(null);
         try {
+            const sweepForAI = { ...sweepResults, sweep: activeSweepForAI };
             const result = await getCrashAIInsights(
-                analysisInputs, sweepResults, aiProvider, aiModel, apiKeyOverride, language,
+                effectiveInputs, sweepForAI, aiProvider, aiModel, apiKeyOverride, language,
                 { signal: controller.signal }
             );
             setAiInsight(result);
@@ -227,6 +256,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
         return () => clearTimeout(compareDebounceRef.current);
     }, [compareRows, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
+
     // ── Row mutation helpers ───────────────────────────────────────────────
     const updateRow = (id, field, value) =>
         setCompareRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
@@ -245,26 +275,48 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
     // ── Chart data ─────────────────────────────────────────────────────────
     const sweepChartData = useMemo(() => {
         if (!sweepResults) return null;
-        const { baseline, sweep } = sweepResults;
-        return {
-            labels: sweep.map(r => String(r.year)),
-            datasets: [
-                {
-                    type: 'bar', label: he ? 'יתרה סופית' : 'Final Balance',
-                    data: sweep.map(r => r.balance),
-                    backgroundColor: sweep.map(r => r.balance >= baseline ? 'rgba(34,197,94,0.65)' : 'rgba(239,68,68,0.65)'),
-                    borderColor:     sweep.map(r => r.balance >= baseline ? 'rgba(34,197,94,1)'    : 'rgba(239,68,68,1)'),
-                    borderWidth: 1, borderRadius: 3, order: 2
-                },
-                {
-                    type: 'line', label: he ? 'ללא קריסה' : 'No crash',
-                    data: Array(sweep.length).fill(baseline),
-                    borderColor: 'rgba(251,191,36,0.9)', borderWidth: 2,
-                    borderDash: [6, 3], pointRadius: 0, fill: false, order: 1
-                }
-            ]
+        const { baseline, sweepShielded, sweepAffected, hasAlt } = sweepResults;
+        const baselineDataset = {
+            type: 'line', label: he ? 'ללא קריסה' : 'No crash',
+            data: Array(sweepShielded.length).fill(baseline),
+            borderColor: 'rgba(251,191,36,0.9)', borderWidth: 2,
+            borderDash: [6, 3], pointRadius: 0, fill: false, order: 1
         };
-    }, [sweepResults, he]);
+        if (!hasAlt || !sweepAffected) {
+            return {
+                labels: sweepShielded.map(r => String(r.year)),
+                datasets: [
+                    { type: 'bar', label: he ? 'יתרה סופית' : 'Final Balance',
+                      data: sweepShielded.map(r => r.balance),
+                      backgroundColor: sweepShielded.map(r => r.balance >= baseline ? 'rgba(34,197,94,0.65)' : 'rgba(239,68,68,0.65)'),
+                      borderColor: sweepShielded.map(r => r.balance >= baseline ? 'rgba(34,197,94,1)' : 'rgba(239,68,68,1)'),
+                      borderWidth: 1, borderRadius: 3, order: 2 },
+                    baselineDataset
+                ]
+            };
+        }
+        // Shielded always shown; affected added only when toggle is on
+        const shieldedDataset = {
+            type: 'bar', label: he ? 'מוגן' : 'Shielded',
+            data: sweepShielded.map(r => r.balance),
+            backgroundColor: sweepShielded.map(r => r.balance >= baseline ? 'rgba(34,197,94,0.65)' : 'rgba(239,68,68,0.65)'),
+            borderColor: sweepShielded.map(r => r.balance >= baseline ? 'rgba(34,197,94,1)' : 'rgba(239,68,68,1)'),
+            borderWidth: 1, borderRadius: 3, order: 2, categoryPercentage: 0.9, barPercentage: 0.85
+        };
+        const affectedDataset = {
+            type: 'bar', label: he ? 'מושפע' : 'Affected',
+            data: sweepAffected.map(r => r.balance),
+            backgroundColor: sweepAffected.map(r => r.balance >= baseline ? 'rgba(96,165,250,0.65)' : 'rgba(251,146,60,0.65)'),
+            borderColor: sweepAffected.map(r => r.balance >= baseline ? 'rgba(96,165,250,1)' : 'rgba(251,146,60,1)'),
+            borderWidth: 1, borderRadius: 3, order: 3, categoryPercentage: 0.9, barPercentage: 0.85
+        };
+        return {
+            labels: sweepShielded.map(r => String(r.year)),
+            datasets: localAffectsSafe
+                ? [shieldedDataset, affectedDataset, baselineDataset]
+                : [shieldedDataset, baselineDataset]
+        };
+    }, [sweepResults, localAffectsSafe, he]);
 
     const compareChartData = useMemo(() => {
         if (!compareResults || !compareRows.length) return null;
@@ -298,10 +350,11 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
         const elements = chart.getElementsAtEventForMode(
             nativeEvent, 'nearest', { intersect: false, axis: 'x' }, true
         );
-        // Only react to bar dataset clicks (dataset index 0), not the baseline line
-        const barElement = elements.find(el => el.datasetIndex === 0);
+        // React to bar datasets (0 = shielded, 1 = affected), not the baseline line
+        const barElement = elements.find(el => el.datasetIndex === 0 || el.datasetIndex === 1);
         if (!barElement) return;
-        const clickedYear = sweepResults?.sweep[barElement.index]?.year;
+        const refSweep = sweepResults?.sweepShielded ?? sweepResults?.sweep;
+        const clickedYear = refSweep?.[barElement.index]?.year;
         if (clickedYear != null) {
             setSelectedYear(prev => prev === clickedYear ? null : clickedYear);
         }
@@ -340,8 +393,8 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
         const normalYearsAfter = Math.max(0, retirementEndYear - Math.min(recoveryEnd, retirementEndYear));
         const fullRecovery = recoveryUsed >= recoveryYears;
 
-        // Get sweep result for this year
-        const sweepEntry = sweepResults.sweep.find(s => s.year === selectedYear);
+        // Get sweep result for this year (from active scenario)
+        const sweepEntry = activeSweep?.find(s => s.year === selectedYear);
 
         return {
             schedule,
@@ -353,7 +406,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
             sweepEntry,
             baseRate
         };
-    }, [selectedYear, sweepResults, analysisInputs, currentYear, retirementEndYear, retirementStartYear]);
+    }, [selectedYear, sweepResults, activeSweep, analysisInputs, currentYear, retirementEndYear, retirementStartYear]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const makeChartOptions = useCallback((getTooltipItems, onClick) => {
         const textColor = isLight ? '#374151' : '#d1d5db';
@@ -379,18 +432,19 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
     }, [isLight]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const sweepOptions = useMemo(() => makeChartOptions((idx) => {
-        const r = sweepResults?.sweep[idx];
+        const r = activeSweep?.[idx];
         if (!r) return null;
         const sign = r.diff >= 0 ? '+' : '';
         const phase = r.isPreRetirement ? (he ? ' (צבירה)' : ' (accum.)') : (he ? ' (פרישה)' : ' (retire.)');
+        const label = sweepResults?.hasAlt ? ` — ${localAffectsSafe ? (he ? 'מושפע' : 'Affected') : (he ? 'מוגן' : 'Shielded')}` : '';
         return {
-            title: `${r.year}${phase}`,
+            title: `${r.year}${phase}${label}`,
             lines: [
                 `${he ? 'יתרה' : 'Balance'}: ${fmt(r.balance)}`,
                 `${he ? 'הפרש' : 'Diff'}: ${sign}${fmt(r.diff)} (${sign}${r.pctDiff.toFixed(1)}%)`
             ]
         };
-    }, handleSweepChartClick), [makeChartOptions, sweepResults, he, handleSweepChartClick]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, handleSweepChartClick), [makeChartOptions, activeSweep, sweepResults, localAffectsSafe, he, handleSweepChartClick]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const compareOptions = useMemo(() => makeChartOptions((idx) => {
         const row = compareRows[idx];
@@ -410,14 +464,14 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
 
     // ── Sweep stats ────────────────────────────────────────────────────────
     const sweepStats = useMemo(() => {
-        if (!sweepResults?.sweep?.length) return null;
-        const { sweep, baseline } = sweepResults;
-        const valid = sweep.filter(r => !r.error);
+        if (!activeSweep?.length) return null;
+        const { baseline } = sweepResults;
+        const valid = activeSweep.filter(r => !r.error);
         if (!valid.length) return null;
         const best  = valid.reduce((a, b) => b.balance > a.balance ? b : a, valid[0]);
         const worst = valid.reduce((a, b) => b.balance < a.balance ? b : a, valid[0]);
         return { best, worst, aboveCount: valid.filter(r => r.balance >= baseline).length, total: valid.length, baseline };
-    }, [sweepResults]);
+    }, [activeSweep, sweepResults]);
 
     // ── Styling helpers ────────────────────────────────────────────────────
     const scenario = analysisInputs?.scenario || {};
@@ -458,7 +512,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                         <div className="absolute inset-0 bg-white/10" />
                     </>
                 )}
-                <div className="relative z-10 p-5 max-h-[88vh] overflow-y-auto">
+                <div className="relative z-10 p-5 max-h-[88vh] overflow-y-auto" dir="ltr" style={{ scrollbarWidth: 'thin', scrollBehavior: 'smooth' }}><div dir={he ? 'rtl' : 'ltr'}>
 
                     {/* Header */}
                     <div className="flex items-center justify-between mb-3 cursor-grab active:cursor-grabbing" onMouseDown={onDragMouseDown}>
@@ -503,8 +557,16 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                         <span>{he ? 'התאוששות:' : 'Recovery:'} <strong>{scenario.recoveryYears ?? 5} {he ? 'שנים' : 'yrs'}</strong></span>
                         <span>{he ? 'מודל:' : 'Mode:'} <strong>{recoveryLabel}</strong></span>
                         {analysisInputs?.enableBuckets && (
-                            <span>{he ? 'דלי בטוח:' : 'Safe:'}{' '}
-                                <strong>{scenario.affectsSafeBucket ? (he ? 'מושפע' : 'affected') : (he ? 'מוגן' : 'shielded')}</strong>
+                            <span className="flex items-center gap-1.5">
+                                {he ? 'דלי בטוח:' : 'Safe bucket:'}
+                                <button
+                                    onClick={() => setLocalAffectsSafe(v => !v)}
+                                    className={`relative inline-flex w-8 h-4 rounded-full transition-colors ${localAffectsSafe ? 'bg-orange-500' : (isLight ? 'bg-gray-300' : 'bg-gray-600')}`}
+                                    title={localAffectsSafe ? (he ? 'לחץ להגן על הדלי הבטוח' : 'Click to shield safe bucket') : (he ? 'לחץ להשפיע על הדלי הבטוח' : 'Click to affect safe bucket')}
+                                >
+                                    <span className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-all duration-200" style={{ left: localAffectsSafe ? 18 : 2 }} />
+                                </button>
+                                <strong className={localAffectsSafe ? 'text-orange-400' : ''}>{localAffectsSafe ? (he ? 'מושפע' : 'affected') : (he ? 'מוגן' : 'shielded')}</strong>
                             </span>
                         )}
                     </div>
@@ -523,9 +585,16 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                             </div>
 
                             {/* Legend */}
-                            <div className="flex gap-4 mb-3 text-xs px-1">
-                                {legendItem('bg-green-500 opacity-75', he ? 'מעל baseline' : 'Above baseline')}
-                                {legendItem('bg-red-500 opacity-75', he ? 'מתחת ל-baseline' : 'Below baseline')}
+                            <div className="flex flex-wrap gap-3 mb-3 text-xs px-1">
+                                {sweepResults?.hasAlt ? (<>
+                                    {legendItem('bg-green-500 opacity-75', he ? 'מוגן — מעל' : 'Shielded — above')}
+                                    {legendItem('bg-red-500 opacity-75', he ? 'מוגן — מתחת' : 'Shielded — below')}
+                                    {legendItem('bg-blue-400 opacity-75', he ? 'מושפע — מעל' : 'Affected — above')}
+                                    {legendItem('bg-orange-400 opacity-75', he ? 'מושפע — מתחת' : 'Affected — below')}
+                                </>) : (<>
+                                    {legendItem('bg-green-500 opacity-75', he ? 'מעל baseline' : 'Above baseline')}
+                                    {legendItem('bg-red-500 opacity-75', he ? 'מתחת ל-baseline' : 'Below baseline')}
+                                </>)}
                                 <span className="flex items-center gap-1.5">
                                     <span className="inline-block w-6 border-t-2 border-dashed border-yellow-400" />
                                     {he ? 'ללא קריסה' : 'No crash'}
@@ -671,6 +740,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                         {he ? 'סגור' : 'Close'}
                     </button>
 
+                </div>{/* end content dir */}
                 </div>
             </div>
 
@@ -689,7 +759,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                             <div className="absolute inset-0 bg-white/10" />
                         </>
                     )}
-                    <div className="relative z-10 max-h-[80vh] overflow-y-auto">
+                    <div className="relative z-10 max-h-[80vh] overflow-y-auto" dir="ltr" style={{ scrollbarWidth: 'thin', scrollBehavior: 'smooth' }}><div dir={he ? 'rtl' : 'ltr'}>
                         {/* Header */}
                         <div
                             className={`flex items-center justify-between px-4 py-3 cursor-grab active:cursor-grabbing ${isLight ? 'bg-gray-50 border-b border-gray-100' : 'bg-white/5 border-b border-white/10'}`}
@@ -773,6 +843,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                             <span className="flex items-center gap-1">💰 {he ? 'צבירה' : 'Accum.'}</span>
                             <span className="flex items-center gap-1">🏖️ {he ? 'פרישה' : 'Retire'}</span>
                         </div>
+                    </div>{/* end content dir */}
                     </div>
                 </div>
             )}
