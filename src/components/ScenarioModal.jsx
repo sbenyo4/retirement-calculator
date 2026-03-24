@@ -5,7 +5,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { generateScenarioRates } from '../utils/scenarioUtils';
 import CrashAnalysisModal from './CrashAnalysisModal';
 
-export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCancel, inputs, language, t }) {
+export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCancel, inputs, language, t, aiProvider, aiModel, apiKeyOverride }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
 
@@ -332,6 +332,9 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
             onClose={() => setShowAnalysis(false)}
             analysisInputs={analysisInputs}
             language={language}
+            aiProvider={aiProvider}
+            aiModel={aiModel}
+            apiKeyOverride={apiKeyOverride}
         />
         </>
     );

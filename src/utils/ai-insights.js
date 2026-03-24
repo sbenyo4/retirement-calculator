@@ -243,13 +243,131 @@ export const generateInsightPrompt = (inputs, results, language) => {
 };
 
 /**
+ * Generates a prompt for AI analysis of crash simulation results.
+ */
+export const generateCrashInsightPrompt = (analysisInputs, sweepResults, language) => {
+    const isHebrew = language === 'he';
+    const currency = isHebrew ? '₪' : '$';
+    const s = analysisInputs?.scenario || {};
+    const baseline = sweepResults?.baseline ?? 0;
+    const sweep = sweepResults?.sweep ?? [];
+    const valid = sweep.filter(r => !r.error);
+    if (!valid.length) return null;
+
+    const best = valid.reduce((a, b) => b.balance > a.balance ? b : a, valid[0]);
+    const worst = valid.reduce((a, b) => b.balance < a.balance ? b : a, valid[0]);
+    const fmtNum = (v) => `${currency}${Math.round(Math.abs(v)).toLocaleString()}`;
+
+    // Bucket comparison: at worst year, compare shielded vs exposed
+    let bucketComparisonText = 'N/A — no bucket strategy active';
+    if (analysisInputs?.enableBuckets) {
+        try {
+            const withProtection = calculateRetirementProjection({
+                ...analysisInputs, scenarioEnabled: true,
+                scenario: { ...s, startYear: worst.year, affectsSafeBucket: false }
+            });
+            const withoutProtection = calculateRetirementProjection({
+                ...analysisInputs, scenarioEnabled: true,
+                scenario: { ...s, startYear: worst.year, affectsSafeBucket: true }
+            });
+            const diff = withProtection.balanceAtEnd - withoutProtection.balanceAtEnd;
+            bucketComparisonText = `At worst crash year (${worst.year}):
+    - Safe bucket SHIELDED: ${fmtNum(withProtection.balanceAtEnd)} final balance
+    - Safe bucket EXPOSED: ${fmtNum(withoutProtection.balanceAtEnd)} final balance
+    - Value of protection: ${fmtNum(diff)} (${diff >= 0 ? 'shielding is better' : 'exposing is better — unusual'})
+    - Current setting: safe bucket is ${s.affectsSafeBucket ? 'EXPOSED (affected by crash)' : 'SHIELDED (protected from crash)'}`;
+        } catch {
+            bucketComparisonText = 'Calculation unavailable';
+        }
+    }
+
+    return `Act as a senior financial advisor specializing in sequence-of-returns risk.
+Analyze the following crash simulation results and provide specific, data-driven insights.
+
+CRASH PARAMETERS:
+- Depth: ${Math.abs(s.crashDepth ?? 20)}% drop
+- Recovery: ${s.recoveryYears ?? 5} years (${s.recoveryShape ?? 'linear'})
+- Recovery mode: ${s.recoveryMode === 'value' ? 'Recover to original value' : `Target avg rate of ${s.targetAvgRate}% during recovery`}
+- Bucket strategy: ${analysisInputs?.enableBuckets ? `Active — safe bucket is currently ${s.affectsSafeBucket ? 'exposed' : 'shielded'}` : 'None'}
+
+YEAR SWEEP (crash tested from ${sweep[0]?.year ?? '?'} to ${sweep[sweep.length - 1]?.year ?? '?'}):
+- Baseline (no crash): ${fmtNum(baseline)}
+- BEST timing: Year ${best.year} → ${fmtNum(best.balance)} (${best.pctDiff >= 0 ? '+' : ''}${best.pctDiff.toFixed(1)}% vs baseline) [${best.isPreRetirement ? 'pre-retirement' : 'in-retirement'}]
+- WORST timing: Year ${worst.year} → ${fmtNum(worst.balance)} (${worst.pctDiff.toFixed(1)}% vs baseline) [${worst.isPreRetirement ? 'pre-retirement' : 'in-retirement'}]
+- Years above baseline: ${valid.filter(r => r.balance >= baseline).length} / ${valid.length}
+
+BUCKET STRATEGY COMPARISON:
+${bucketComparisonText}
+
+Return ONLY a strict JSON object in this exact shape:
+{
+  "summary": "string",
+  "timingAnalysis": "string",
+  "bucketImpact": "string",
+  "worstCase": { "year": number, "assessment": "string", "mitigation": "string" },
+  "bestCase": { "year": number, "assessment": "string" },
+  "recommendation": "string"
+}
+
+Language: ${isHebrew ? 'Hebrew (Modern, professional)' : 'English'}.`;
+};
+
+/**
+ * Fetches AI crash analysis using the selected provider.
+ */
+export async function getCrashAIInsights(analysisInputs, sweepResults, provider, model, apiKeyOverride = null, language = 'he', { signal } = {}) {
+    const prompt = generateCrashInsightPrompt(analysisInputs, sweepResults, language);
+    if (!prompt) throw new Error('No sweep data available');
+
+    const envKey = getProviderEnvKey(provider);
+    const apiKey = apiKeyOverride?.trim() || (envKey ? import.meta.env[envKey]?.trim() : null);
+    if (!apiKey) throw new Error('Missing API Key');
+
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+    const onRetry = null;
+    let responseText = '';
+
+    if (provider === 'gemini') {
+        const { GoogleGenerativeAI } = await import('@google/generative-ai');
+        const genAI = new GoogleGenerativeAI(apiKey);
+        responseText = await withRetry(async () => {
+            const genModel = genAI.getGenerativeModel({ model, generationConfig: { responseMimeType: 'application/json' } });
+            const result = await genModel.generateContent(prompt);
+            return (await result.response).text();
+        }, { onRetry });
+    } else if (provider === 'openai') {
+        const { default: OpenAI } = await import('openai');
+        const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+        const completion = await withRetry(() => openai.chat.completions.create({
+            messages: [{ role: 'user', content: prompt }],
+            model,
+            response_format: { type: 'json_object' }
+        }), { onRetry });
+        responseText = completion.choices[0].message.content;
+    } else if (provider === 'anthropic') {
+        const { default: Anthropic } = await import('@anthropic-ai/sdk');
+        const anthropic = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+        const message = await withRetry(() => anthropic.messages.create({
+            model, max_tokens: 4096,
+            messages: [{ role: 'user', content: prompt }]
+        }), { onRetry });
+        responseText = message.content[0].text;
+    }
+
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(cleanJson);
+}
+
+/**
  * Fetches AI insights using the selected provider.
- * @param {Object} inputs 
- * @param {Object} results 
- * @param {string} provider 
- * @param {string} model 
- * @param {string} apiKeyOverride 
- * @param {string} language 
+ * @param {Object} inputs
+ * @param {Object} results
+ * @param {string} provider
+ * @param {string} model
+ * @param {string} apiKeyOverride
+ * @param {string} language
  * @returns {Promise<Object>} The JSON response from the AI
  */
 export async function getAIInsights(inputs, results, provider, model, apiKeyOverride = null, language = 'he', { signal } = {}) {

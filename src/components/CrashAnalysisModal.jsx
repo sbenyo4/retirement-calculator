@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useDraggable } from '../hooks/useDraggable';
-import { X, BarChart2, TrendingDown, TrendingUp, Plus, Trash2, Info } from 'lucide-react';
+import { X, BarChart2, TrendingDown, TrendingUp, Plus, Trash2, Info, Sparkles, Loader2 } from 'lucide-react';
 import { Bar } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -10,6 +10,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { calculateRetirementProjection } from '../utils/calculator';
 import { generateScenarioRates } from '../utils/scenarioUtils';
+import { getCrashAIInsights } from '../utils/ai-insights';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend);
 
@@ -27,7 +28,7 @@ const uid = () => _nextId++;
  *   analysisInputs — full inputs merged with current scenario form state
  *   language       — 'he' | 'en'
  */
-export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, language }) {
+export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, language, aiProvider, aiModel, apiKeyOverride }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
     const he = language === 'he';
@@ -46,6 +47,14 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
     const [isComparing, setIsComparing] = useState(false);
     const compareInitRef = useRef(false);
     const compareDebounceRef = useRef(null);
+
+    // ── AI analysis state ──────────────────────────────────────────────────
+    const [aiInsight, setAiInsight] = useState(null);
+    const [aiPanelVisible, setAiPanelVisible] = useState(false);
+    const [isLoadingAI, setIsLoadingAI] = useState(false);
+    const [aiError, setAiError] = useState(null);
+    const aiAbortRef = useRef(null);
+    const aiCacheKeyRef = useRef(null);
 
     const currentYear = new Date().getFullYear();
 
@@ -147,6 +156,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
 
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
     const { dragStyle: detailDragStyle, onDragMouseDown: onDetailDragMouseDown } = useDraggable(selectedYear !== null);
+    const { dragStyle: aiDragStyle, onDragMouseDown: onAIDragMouseDown } = useDraggable(aiInsight !== null);
 
     // Reset when closed
     useEffect(() => {
@@ -156,10 +166,51 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
             compareInitRef.current = false;
             setActiveTab('sweep');
             setSelectedYear(null);
+            setAiInsight(null);
+            setAiPanelVisible(false);
+            setAiError(null);
+            aiAbortRef.current?.abort();
+            aiCacheKeyRef.current = null;
             return;
         }
         runSweep();
     }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const runAIAnalysis = useCallback(async () => {
+        if (!sweepResults || !aiProvider || isLoadingAI) return;
+        const s = analysisInputs?.scenario || {};
+        const currentKey = JSON.stringify({
+            baseline: sweepResults.baseline,
+            worstYear: sweepResults.sweep?.reduce((a, b) => b.balance < a.balance ? b : a, sweepResults.sweep[0])?.year,
+            crashDepth: s.crashDepth, recoveryYears: s.recoveryYears,
+            recoveryShape: s.recoveryShape, recoveryMode: s.recoveryMode,
+            targetAvgRate: s.targetAvgRate, affectsSafeBucket: s.affectsSafeBucket,
+            enableBuckets: analysisInputs?.enableBuckets,
+        });
+        if (currentKey === aiCacheKeyRef.current && aiInsight) {
+            setAiPanelVisible(true);
+            return;
+        }
+        aiAbortRef.current?.abort();
+        const controller = new AbortController();
+        aiAbortRef.current = controller;
+        aiCacheKeyRef.current = currentKey;
+        setAiPanelVisible(true);
+        setIsLoadingAI(true);
+        setAiError(null);
+        setAiInsight(null);
+        try {
+            const result = await getCrashAIInsights(
+                analysisInputs, sweepResults, aiProvider, aiModel, apiKeyOverride, language,
+                { signal: controller.signal }
+            );
+            setAiInsight(result);
+        } catch (err) {
+            if (err.name !== 'AbortError') setAiError(err.message || 'Error');
+        } finally {
+            setIsLoadingAI(false);
+        }
+    }, [sweepResults, aiProvider, aiModel, apiKeyOverride, analysisInputs, language, isLoadingAI, aiInsight]);
 
     // Init compare rows on first tab visit
     useEffect(() => {
@@ -428,6 +479,22 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                         <button className={tabCls('compare')} onClick={() => setActiveTab('compare')}>
                             {he ? 'השוואת תרחישים' : 'Compare'}
                         </button>
+                        {aiProvider && sweepResults && (
+                            <button
+                                onClick={runAIAnalysis}
+                                disabled={isLoadingAI || isSweeping}
+                                className={`flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                                    isLoadingAI
+                                        ? 'text-purple-400'
+                                        : (isLight ? 'text-purple-600 hover:bg-purple-100' : 'text-purple-300 hover:bg-white/10')
+                                }`}
+                            >
+                                {isLoadingAI
+                                    ? <><Loader2 size={12} className="animate-spin" />{he ? 'מנתח...' : 'Analyzing...'}</>
+                                    : <><Sparkles size={12} />{he ? 'ניתוח AI' : 'AI Analysis'}</>
+                                }
+                            </button>
+                        )}
                     </div>
 
                     {/* Scenario summary strip */}
@@ -489,6 +556,12 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                                             </span>
                                         </div>
                                     </div>
+                                </div>
+                            )}
+
+                            {aiError && (
+                                <div className={`mb-3 px-3 py-2 rounded-lg text-xs ${isLight ? 'bg-red-50 text-red-600' : 'bg-red-900/20 text-red-400'}`}>
+                                    {aiError}
                                 </div>
                             )}
                         </>
@@ -700,6 +773,88 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                             <span className="flex items-center gap-1">💰 {he ? 'צבירה' : 'Accum.'}</span>
                             <span className="flex items-center gap-1">🏖️ {he ? 'פרישה' : 'Retire'}</span>
                         </div>
+                    </div>
+                </div>
+            )}
+            {/* ═══════ AI Analysis — separate floating modal ═══════ */}
+            {aiPanelVisible && aiInsight && (
+                <div
+                    className={`absolute rounded-2xl shadow-2xl overflow-hidden w-[380px] ${
+                        isLight ? 'bg-white border border-purple-200 text-gray-900' : 'border border-purple-700/40 text-white'
+                    }`}
+                    dir={he ? 'rtl' : 'ltr'}
+                    style={{ top: '8%', right: 'calc(50% + 177px)', ...aiDragStyle }}
+                >
+                    {!isLight && (
+                        <>
+                            <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-purple-900" />
+                            <div className="absolute inset-0 bg-white/10" />
+                        </>
+                    )}
+                    <div className="relative z-10 flex flex-col max-h-[60vh]">
+                        {/* Header */}
+                        <div
+                            className={`flex-shrink-0 flex items-center justify-between px-4 py-3 cursor-grab active:cursor-grabbing ${isLight ? 'bg-purple-50 border-b border-purple-100' : 'bg-white/5 border-b border-white/10'}`}
+                            onMouseDown={onAIDragMouseDown}
+                        >
+                            <div className="flex items-center gap-2">
+                                <Sparkles size={14} className="text-purple-400" />
+                                <span className="text-sm font-bold">{he ? 'ניתוח AI — קריסות' : 'AI Crash Analysis'}</span>
+                            </div>
+                            <button onClick={() => setAiPanelVisible(false)} className={`transition-colors ${isLight ? 'text-gray-400 hover:text-gray-600' : 'text-gray-400 hover:text-gray-200'}`}>
+                                <X size={16} />
+                            </button>
+                        </div>
+                        <div className="overflow-y-auto" dir="ltr" style={{ scrollbarWidth: 'thin', scrollBehavior: 'smooth' }}>
+                        <div dir={he ? 'rtl' : 'ltr'}>
+
+                        {/* Summary */}
+                        <div className={`px-4 py-3 text-xs ${isLight ? 'bg-purple-50/50 text-purple-900' : 'text-purple-200'}`}>
+                            <p className="leading-relaxed">{aiInsight.summary}</p>
+                        </div>
+
+                        {/* Timing */}
+                        <div className={`px-4 py-3 text-xs border-t ${isLight ? 'border-purple-100 text-gray-700' : 'border-white/10 text-gray-300'}`}>
+                            <div className="font-semibold mb-1 text-orange-400">{he ? 'ניתוח עיתוי' : 'Timing Analysis'}</div>
+                            <p className="leading-relaxed">{aiInsight.timingAnalysis}</p>
+                        </div>
+
+                        {/* Best / Worst */}
+                        <div className={`grid grid-cols-2 border-t ${isLight ? 'border-purple-100' : 'border-white/10'}`}>
+                            <div className={`px-3 py-3 text-xs ${isLight ? 'bg-green-50 text-green-800' : 'bg-green-900/20 text-green-300'}`}>
+                                <div className="font-semibold mb-1 flex items-center gap-1">
+                                    <TrendingUp size={11} />
+                                    {he ? `מקרה טוב — ${aiInsight.bestCase?.year}` : `Best — ${aiInsight.bestCase?.year}`}
+                                </div>
+                                <p className="leading-relaxed">{aiInsight.bestCase?.assessment}</p>
+                            </div>
+                            <div className={`px-3 py-3 text-xs border-s ${isLight ? 'border-purple-100 bg-red-50 text-red-800' : 'border-white/10 bg-red-900/20 text-red-300'}`}>
+                                <div className="font-semibold mb-1 flex items-center gap-1">
+                                    <TrendingDown size={11} />
+                                    {he ? `מקרה גרוע — ${aiInsight.worstCase?.year}` : `Worst — ${aiInsight.worstCase?.year}`}
+                                </div>
+                                <p className="leading-relaxed">{aiInsight.worstCase?.assessment}</p>
+                            </div>
+                        </div>
+
+                        {/* Bucket Impact */}
+                        {analysisInputs?.enableBuckets && aiInsight.bucketImpact && !aiInsight.bucketImpact.startsWith('N/A') && (
+                            <div className={`px-4 py-3 text-xs border-t ${isLight ? 'border-purple-100 text-gray-700' : 'border-white/10 text-gray-300'}`}>
+                                <div className="font-semibold mb-1 text-blue-400">{he ? 'השפעת אסטרטגיית הדליים' : 'Bucket Strategy Impact'}</div>
+                                <p className="leading-relaxed">{aiInsight.bucketImpact}</p>
+                            </div>
+                        )}
+
+                        {/* Recommendation */}
+                        <div className={`px-4 py-3 text-xs border-t ${isLight ? 'border-purple-100 bg-amber-50 text-amber-900' : 'border-white/10 bg-amber-900/10 text-amber-200'}`}>
+                            <div className="font-semibold mb-1">{he ? 'המלצה' : 'Recommendation'}</div>
+                            <p className="leading-relaxed">{aiInsight.recommendation}</p>
+                            {aiInsight.worstCase?.mitigation && (
+                                <p className="leading-relaxed mt-1.5 opacity-80">{aiInsight.worstCase.mitigation}</p>
+                            )}
+                        </div>
+                        </div>{/* end content dir */}
+                        </div>{/* end scrollable */}
                     </div>
                 </div>
             )}

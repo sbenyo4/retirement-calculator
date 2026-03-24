@@ -885,6 +885,9 @@ export default function InputForm({
                 inputs={inputs}
                 language={language}
                 t={t}
+                aiProvider={aiProvider}
+                aiModel={aiModel}
+                apiKeyOverride={apiKeyOverride}
             />
 
             {/* Prompt Preview Overlay */}
