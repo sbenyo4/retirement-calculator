@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageCircle, X, Send, RotateCcw, Mic, MicOff } from 'lucide-react';
+import { MessageCircle, X, Send, RotateCcw, Mic } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useDraggable } from '../hooks/useDraggable';
 import { getChatResponse, buildChatSystemPrompt } from '../utils/ai-chat';
@@ -74,6 +74,8 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
         if (!SpeechRecognition || !hasSpeech) return;
 
         if (listening) {
+            // Cancel: stop without sending
+            voiceTranscriptRef.current = '';
             recognitionRef.current?.stop();
             return;
         }
@@ -94,9 +96,7 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
         };
         recognition.onend = () => {
             setListening(false);
-            const text = voiceTranscriptRef.current.trim();
-            if (text) sendMessageRef.current(text);
-            voiceTranscriptRef.current = '';
+            // Don't auto-send — sending is triggered only by the Send button
         };
         recognition.onerror = () => {
             setListening(false);
@@ -362,16 +362,25 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
                                 <button onClick={toggleVoice}
                                     className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
                                         listening
-                                            ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'
+                                            ? 'bg-red-500 text-white animate-pulse'
                                             : isLight ? 'bg-gray-200 text-gray-500 hover:bg-gray-300' : 'bg-black/20 text-gray-400 hover:bg-white/10'
                                     }`}
-                                    title={isHe ? 'קלט קולי' : 'Voice input'}>
-                                    {listening ? <MicOff size={13} /> : <Mic size={13} />}
+                                    title={isHe ? (listening ? 'בטל הקלטה' : 'קלט קולי') : (listening ? 'Cancel recording' : 'Voice input')}>
+                                    <Mic size={13} />
                                 </button>
                             )}
-                            <button onClick={() => sendMessage()} disabled={!input.trim() || loading}
+                            <button onClick={() => {
+                                if (listening) {
+                                    const text = voiceTranscriptRef.current.trim();
+                                    voiceTranscriptRef.current = '';
+                                    recognitionRef.current?.stop();
+                                    if (text) sendMessageRef.current(text);
+                                } else {
+                                    sendMessage();
+                                }
+                            }} disabled={!input.trim() && !listening || loading}
                                 className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
-                                    input.trim() && !loading
+                                    (input.trim() || listening) && !loading
                                         ? 'bg-blue-600 hover:bg-blue-700 text-white'
                                         : isLight ? 'bg-gray-200 text-gray-400' : 'bg-black/20 text-gray-500'
                                 }`}>
