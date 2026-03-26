@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { RefreshCw, Check, X, AlertCircle, Download, RotateCcw, Settings } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { RefreshCw, Check, X, AlertCircle, Download, RotateCcw } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { fetchAllAvailableModels, compareModels } from '../utils/ai-models-fetcher';
 import { AI_MODELS_CONFIG } from '../config/ai-models';
 import { getUserSettings, setUserSettings } from '../utils/db';
 
-export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, uid }) {
+export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, uid, idleTimeoutEnabled = true, onIdleTimeoutEnabledChange, idleTimeoutMinutes = 5, onIdleTimeoutChange }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
     const [loading, setLoading] = useState(false);
@@ -200,6 +200,37 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
                 {/* Scrollable Content - Scrollbar on Right */}
                 <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0" dir="ltr">
                     <div className="p-4 space-y-4" dir={language === 'he' ? 'rtl' : 'ltr'}>
+
+                        {/* General Settings */}
+                        <div className={`rounded-xl p-4 ${isLight ? 'bg-gray-50 border border-gray-200' : 'bg-white/5 border border-white/10'}`}>
+                            <h3 className={`text-sm font-semibold mb-3 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                                {language === 'he' ? 'הגדרות כלליות' : 'General Settings'}
+                            </h3>
+                            <div className="flex items-center gap-3">
+                                <span className={`text-sm flex-1 ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
+                                    {language === 'he' ? 'ניתוק אוטומטי לאחר חוסר פעילות' : 'Auto-logout after inactivity'}
+                                </span>
+                                <button
+                                    onClick={() => onIdleTimeoutEnabledChange?.(!idleTimeoutEnabled)}
+                                    className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${idleTimeoutEnabled ? 'bg-blue-600' : (isLight ? 'bg-gray-300' : 'bg-gray-600')}`}
+                                >
+                                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${idleTimeoutEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                </button>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={120}
+                                    value={idleTimeoutMinutes}
+                                    disabled={!idleTimeoutEnabled}
+                                    onChange={e => onIdleTimeoutChange?.(Math.max(1, Math.min(120, Number(e.target.value) || 5)))}
+                                    className={`w-14 h-8 text-center rounded-lg px-2 text-sm border transition-opacity ${!idleTimeoutEnabled ? 'opacity-40 cursor-not-allowed' : ''} ${isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-gray-800 border-gray-600 text-white'}`}
+                                />
+                                <span className={`text-sm w-6 transition-opacity ${!idleTimeoutEnabled ? 'opacity-40' : ''} ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                                    {language === 'he' ? 'דק׳' : 'min'}
+                                </span>
+                            </div>
+                        </div>
+
                         <div className="space-y-4">
                             <div className="flex items-center justify-between gap-2">
                                 <p className={`text-sm ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
@@ -296,7 +327,7 @@ function ProviderResults({ providerId, data, isLight, t, selectedModels, onToggl
         );
     }
 
-    const { new: newModels, removed, existing, updated } = data;
+    const { new: newModels, updated } = data;
     const allModels = updated || [];
     const selectedCount = Object.values(selectedModels).filter(Boolean).length;
 
@@ -345,7 +376,6 @@ function ProviderResults({ providerId, data, isLight, t, selectedModels, onToggl
                                     return bSelected - aSelected; // Selected (1) before unselected (0)
                                 })
                                 .map(model => {
-                                    const isExisting = existing.some(m => m.id === model.id);
                                     const isNew = newModels.some(m => m.id === model.id);
                                     const isSelected = selectedModels[model.id];
 

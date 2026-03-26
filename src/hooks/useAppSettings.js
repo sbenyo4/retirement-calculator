@@ -11,7 +11,9 @@ const SETTINGS_ACTIONS = {
     SET_SIMULATION_TYPE: 'SET_SIMULATION_TYPE',
     SET_FISCAL_DATA: 'SET_FISCAL_DATA',
     LOAD_FROM_DB: 'LOAD_FROM_DB',
-    SET_MODELS_OVERRIDE: 'SET_MODELS_OVERRIDE'
+    SET_MODELS_OVERRIDE: 'SET_MODELS_OVERRIDE',
+    SET_IDLE_TIMEOUT: 'SET_IDLE_TIMEOUT',
+    SET_IDLE_TIMEOUT_ENABLED: 'SET_IDLE_TIMEOUT_ENABLED'
 };
 
 function getDefaultSettings() {
@@ -24,7 +26,9 @@ function getDefaultSettings() {
         familyStatus: 'single',
         fiscalParameters: null,
         apiKeys: {}, // Per-provider API key overrides
-        aiModelsOverride: null // User-selected custom AI models
+        aiModelsOverride: null, // User-selected custom AI models
+        idleTimeoutMinutes: 5,
+        idleTimeoutEnabled: true
     };
 }
 
@@ -42,6 +46,8 @@ function settingsReducer(state, action) {
                 fiscalParameters: db.fiscalParameters || state.fiscalParameters,
                 apiKeys: db.apiKeys || state.apiKeys,
                 aiModelsOverride: db.aiModelsOverride || state.aiModelsOverride,
+                idleTimeoutMinutes: db.idleTimeoutMinutes ?? state.idleTimeoutMinutes,
+                idleTimeoutEnabled: db.idleTimeoutEnabled ?? state.idleTimeoutEnabled,
             };
         }
 
@@ -87,6 +93,12 @@ function settingsReducer(state, action) {
                 ...state,
                 aiModelsOverride: action.payload
             };
+
+        case SETTINGS_ACTIONS.SET_IDLE_TIMEOUT:
+            return { ...state, idleTimeoutMinutes: action.payload };
+
+        case SETTINGS_ACTIONS.SET_IDLE_TIMEOUT_ENABLED:
+            return { ...state, idleTimeoutEnabled: action.payload };
 
         default:
             return state;
@@ -143,6 +155,8 @@ export function useAppSettings() {
             simulationType: settings.simulationType,
             familyStatus: settings.familyStatus,
             apiKeys: settings.apiKeys,
+            idleTimeoutMinutes: settings.idleTimeoutMinutes,
+            idleTimeoutEnabled: settings.idleTimeoutEnabled,
         };
 
         if (settings.fiscalParameters) {
@@ -152,7 +166,7 @@ export function useAppSettings() {
         setUserSettings(uid, dataToSave).catch(err => {
             console.error('Error saving settings to Firestore:', err);
         });
-    }, [settings.aiProvider, settings.aiModel, settings.simulationType, settings.familyStatus, settings.fiscalParameters, apiKeysStr, uid]);
+    }, [settings.aiProvider, settings.aiModel, settings.simulationType, settings.familyStatus, settings.fiscalParameters, settings.idleTimeoutMinutes, settings.idleTimeoutEnabled, apiKeysStr, uid]);
 
     return { settings, dispatch, SETTINGS_ACTIONS };
 }

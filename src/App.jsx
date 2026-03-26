@@ -13,6 +13,8 @@ import { ThemeToggle } from './components/ThemeToggle';
 import { LoginPage } from './components/LoginPage';
 import { ZoomToggle } from './components/ZoomToggle';
 import ErrorBoundary from './components/common/ErrorBoundary';
+import { IdleWarningModal } from './components/IdleWarningModal';
+import { useIdleTimer } from './hooks/useIdleTimer';
 
 // Lazy-loaded components (loaded only when needed)
 const ResultsDashboard = React.lazy(() => import('./components/ResultsDashboard').then(m => ({ default: m.ResultsDashboard })));
@@ -50,7 +52,7 @@ function App() {
 }
 
 function MainApp() {
-  const { currentUser } = useAuth();
+  const { currentUser, logout } = useAuth();
   const { theme } = useTheme();
   const [language, setLanguage] = useState('he');
   // Wrap t in useCallback to prevent it from changing on every render
@@ -58,6 +60,13 @@ function MainApp() {
 
   // Use Custom Hooks for Logic
   const { settings, dispatch: dispatchSettings, SETTINGS_ACTIONS } = useAppSettings();
+
+  // Idle auto-logout
+  const { warningActive, secondsLeft, resetTimer } = useIdleTimer({
+    timeoutMinutes: settings.idleTimeoutMinutes ?? 5,
+    onLogout: logout,
+    enabled: !!currentUser && (settings.idleTimeoutEnabled ?? true),
+  });
   const { inputs, setInputs, saveGlobalPension } = useRetirementData();
 
   // Core calculation pipeline (projection, goal-seek, simulation)
@@ -472,6 +481,15 @@ function MainApp() {
         </div>
       </div>
 
+      {/* Idle Warning Modal */}
+      {warningActive && (
+        <IdleWarningModal
+          secondsLeft={secondsLeft}
+          onStayLoggedIn={resetTimer}
+          language={language}
+        />
+      )}
+
       {/* Models Manager Modal */}
       {showModelsManager && (
         <ErrorBoundary t={t}>
@@ -498,6 +516,10 @@ function MainApp() {
               t={t}
               language={language}
               uid={currentUser?.uid}
+              idleTimeoutEnabled={settings.idleTimeoutEnabled ?? true}
+              onIdleTimeoutEnabledChange={v => dispatchSettings({ type: SETTINGS_ACTIONS.SET_IDLE_TIMEOUT_ENABLED, payload: v })}
+              idleTimeoutMinutes={settings.idleTimeoutMinutes ?? 5}
+              onIdleTimeoutChange={v => dispatchSettings({ type: SETTINGS_ACTIONS.SET_IDLE_TIMEOUT, payload: v })}
             />
           </Suspense>
         </ErrorBoundary>
