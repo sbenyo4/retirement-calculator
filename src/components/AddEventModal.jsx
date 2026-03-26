@@ -34,6 +34,7 @@ export default function AddEventModal({
     currentAge,
     retirementAge,
     retirementEndAge,
+    birthDate,
     onDelete // Optional callback for delete
 }) {
     const { theme } = useTheme();
@@ -49,6 +50,18 @@ export default function AddEventModal({
         if (!currentAge || !year) return null;
         const birthYear = Math.floor(new Date().getFullYear() - currentAge);
         return parseInt(year) - birthYear;
+    };
+
+    // Returns { year, month } for a given target age, using birthDate if available
+    const getDateAtAge = (targetAge) => {
+        if (birthDate?.year && birthDate?.month) {
+            return { year: parseInt(birthDate.year) + Math.floor(targetAge), month: parseInt(birthDate.month) };
+        }
+        // Fallback: add months from today
+        const monthsFromNow = Math.round((parseFloat(targetAge) - parseFloat(currentAge)) * 12);
+        const d = new Date();
+        d.setMonth(d.getMonth() + monthsFromNow);
+        return { year: d.getFullYear(), month: d.getMonth() + 1 };
     };
 
     // Form state - using standard initializers
@@ -258,16 +271,10 @@ export default function AddEventModal({
                                                         setLinkedTo(null);
                                                     } else {
                                                         const rAge = parseFloat(retirementAge);
-                                                        const cAge = parseFloat(currentAge);
-                                                        if (isNaN(rAge) || isNaN(cAge)) return;
-
-                                                        const yearsRemaining = rAge - cAge;
-                                                        const monthsRemaining = Math.floor(yearsRemaining * 12);
-                                                        const targetDate = new Date();
-                                                        targetDate.setMonth(targetDate.getMonth() + monthsRemaining);
-
-                                                        setStartYear(targetDate.getFullYear());
-                                                        setStartMonth(targetDate.getMonth() + 1);
+                                                        if (isNaN(rAge)) return;
+                                                        const { year, month } = getDateAtAge(rAge);
+                                                        setStartYear(year);
+                                                        setStartMonth(month);
                                                         setLinkedTo('retirementStart');
                                                     }
                                                 }}
@@ -285,16 +292,10 @@ export default function AddEventModal({
                                                 type="button"
                                                 onClick={() => {
                                                     const rAge = parseFloat(retirementAge);
-                                                    const cAge = parseFloat(currentAge);
-                                                    if (isNaN(rAge) || isNaN(cAge)) return;
-
-                                                    const yearsRemaining = rAge - cAge;
-                                                    const monthsRemaining = Math.floor(yearsRemaining * 12);
-                                                    const targetDate = new Date();
-                                                    targetDate.setMonth(targetDate.getMonth() + monthsRemaining);
-
-                                                    setStartYear(targetDate.getFullYear());
-                                                    setStartMonth(targetDate.getMonth() + 1);
+                                                    if (isNaN(rAge)) return;
+                                                    const { year, month } = getDateAtAge(rAge);
+                                                    setStartYear(year);
+                                                    setStartMonth(month);
                                                     setLinkedTo('retirementStart');
                                                 }}
                                                 className="text-[10px] text-blue-400 hover:text-blue-500 underline cursor-pointer transition-colors"
@@ -429,27 +430,14 @@ export default function AddEventModal({
                                                         type="button"
                                                         onClick={() => {
                                                             const rAge = parseFloat(retirementAge);
-                                                            const cAge = parseFloat(currentAge);
-                                                            if (isNaN(rAge) || isNaN(cAge)) return;
-
-                                                            const yearsRemaining = rAge - cAge;
-                                                            const monthsRemaining = Math.floor(yearsRemaining * 12);
-
-                                                            const targetDate = new Date();
-                                                            targetDate.setMonth(targetDate.getMonth() + monthsRemaining);
-
-                                                            // Ensure target date is not before start date
-                                                            const targetYear = targetDate.getFullYear();
-                                                            const targetMonth = targetDate.getMonth() + 1;
+                                                            if (isNaN(rAge)) return;
+                                                            const { year, month } = getDateAtAge(rAge);
                                                             const startYearNum = parseInt(startYear);
                                                             const startMonthNum = parseInt(startMonth);
-
-                                                            if (targetYear < startYearNum || (targetYear === startYearNum && targetMonth < startMonthNum)) {
-                                                                setEndYear(startYearNum);
-                                                                setEndMonth(startMonthNum);
+                                                            if (year < startYearNum || (year === startYearNum && month < startMonthNum)) {
+                                                                setEndYear(startYearNum); setEndMonth(startMonthNum);
                                                             } else {
-                                                                setEndYear(targetYear);
-                                                                setEndMonth(targetMonth);
+                                                                setEndYear(year); setEndMonth(month);
                                                             }
                                                         }}
                                                         className="text-[10px] text-blue-400 hover:text-blue-300 underline"
@@ -460,27 +448,14 @@ export default function AddEventModal({
                                                         type="button"
                                                         onClick={() => {
                                                             const rEndAge = parseFloat(retirementEndAge);
-                                                            const cAge = parseFloat(currentAge);
-                                                            if (isNaN(rEndAge) || isNaN(cAge)) return;
-
-                                                            const yearsRemaining = rEndAge - cAge;
-                                                            const monthsRemaining = Math.floor(yearsRemaining * 12);
-
-                                                            const targetDate = new Date();
-                                                            targetDate.setMonth(targetDate.getMonth() + monthsRemaining);
-
-                                                            // Ensure target date is not before start date
-                                                            const targetYear = targetDate.getFullYear();
-                                                            const targetMonth = targetDate.getMonth() + 1;
+                                                            if (isNaN(rEndAge)) return;
+                                                            const { year, month } = getDateAtAge(rEndAge);
                                                             const startYearNum = parseInt(startYear);
                                                             const startMonthNum = parseInt(startMonth);
-
-                                                            if (targetYear < startYearNum || (targetYear === startYearNum && targetMonth < startMonthNum)) {
-                                                                setEndYear(startYearNum);
-                                                                setEndMonth(startMonthNum);
+                                                            if (year < startYearNum || (year === startYearNum && month < startMonthNum)) {
+                                                                setEndYear(startYearNum); setEndMonth(startMonthNum);
                                                             } else {
-                                                                setEndYear(targetYear);
-                                                                setEndMonth(targetMonth);
+                                                                setEndYear(year); setEndMonth(month);
                                                             }
                                                         }}
                                                         className="text-[10px] text-blue-400 hover:text-blue-300 underline"

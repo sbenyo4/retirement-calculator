@@ -1,0 +1,144 @@
+import { getProviderEnvKey } from '../config/ai-models';
+import { withRetry } from './ai-calculator';
+
+/**
+ * Builds a system prompt giving the AI full context about the user's retirement plan.
+ */
+export function buildChatSystemPrompt(inputs, results, language) {
+    const isHe = language === 'he';
+    const currency = isHe ? '₪' : '$';
+    const yearsToRetirement = Math.max(0, Math.round(parseFloat(inputs.retirementStartAge) - parseFloat(inputs.currentAge)));
+    const yearsInRetirement = Math.round(parseFloat(inputs.retirementEndAge) - parseFloat(inputs.retirementStartAge));
+
+    // Pension sources
+    const pensionText = (inputs.pensionIncomeSources || [])
+        .filter(s => s.enabled !== false)
+        .map(s => `${s.name || s.type}: ${currency}${s.amount}/mo from age ${s.startAge}${s.endAge ? ` to ${s.endAge}` : ''}${s.isTaxable === false ? ' (tax-exempt)' : ''}`)
+        .join('\n  ') || 'None';
+
+    // Bucket strategy
+    let bucketText = 'Single portfolio (no bucket strategy)';
+    if (inputs.enableBuckets) {
+        bucketText = `Bucket strategy — Safe: ${inputs.bucketSafeRate ?? 0}%, Surplus: ${inputs.bucketSurplusRate ?? 0}%`;
+        if (inputs.variableRatesEnabled) {
+            const safeRates = Object.values(inputs.safeVariableRates || {});
+            const surplusRates = Object.values(inputs.surplusVariableRates || {});
+            if (safeRates.length) bucketText += ` (safe variable avg: ${(safeRates.reduce((a,b)=>a+b,0)/safeRates.length).toFixed(1)}%)`;
+            if (surplusRates.length) bucketText += ` (surplus variable avg: ${(surplusRates.reduce((a,b)=>a+b,0)/surplusRates.length).toFixed(1)}%)`;
+        }
+    }
+
+    // Variable rates (single portfolio)
+    let returnRateText = `${inputs.annualReturnRate}%`;
+    if (!inputs.enableBuckets && inputs.variableRatesEnabled && inputs.variableRates) {
+        const rates = Object.values(inputs.variableRates);
+        if (rates.length) {
+            const avg = (rates.reduce((a,b)=>a+b,0)/rates.length).toFixed(1);
+            returnRateText = `Variable (avg ${avg}%, range ${Math.min(...rates)}%–${Math.max(...rates)}%)`;
+        }
+    }
+
+    // Life events
+    const activeEvents = (inputs.lifeEvents || []).filter(e => e.enabled !== false);
+    const eventsText = activeEvents.length
+        ? activeEvents.map(e => `  - ${e.title || e.name}: ${currency}${Math.abs(e.amount || e.monthlyChange || 0)}/mo ${(e.amount || e.monthlyChange || 0) < 0 ? '(expense)' : '(income)'}, from ${e.startDate?.year || '?'}${e.endDate?.year ? ` to ${e.endDate.year}` : ''} [${e.type}]`).join('\n')
+        : '  None';
+
+    // Crash scenario
+    let crashText = 'None (no crash scenario active)';
+    if (inputs.scenarioEnabled && inputs.scenario) {
+        const s = inputs.scenario;
+        crashText = `ACTIVE — ${Math.abs(s.crashDepth)}% drop starting ${s.startYear}, ${s.recoveryYears}-year ${s.recoveryShape} recovery at avg ${s.targetAvgRate}%${inputs.enableBuckets ? (s.affectsSafeBucket ? ', safe bucket EXPOSED' : ', safe bucket PROTECTED') : ''}`;
+    }
+
+    return `You are a knowledgeable retirement planning advisor.
+Answer questions about the user's personal retirement plan using their data below.
+Respond in ${isHe ? 'Hebrew' : 'English'}. Be concise and conversational (under 200 words unless more is needed).
+CRITICAL: Always cite specific numbers (${currency} amounts, ages, %) from the user's data. Never give generic advice without numbers.
+Do NOT use JSON. If asked about something unrelated to retirement planning, gently redirect.
+
+USER PROFILE:
+- Age: ${inputs.currentAge} | Retire at: ${inputs.retirementStartAge} (in ${yearsToRetirement} yrs) | End age: ${inputs.retirementEndAge} (${yearsInRetirement} yrs drawdown)
+- Current savings: ${currency}${Number(inputs.currentSavings).toLocaleString()} | Monthly contribution: ${currency}${inputs.monthlyContribution}
+- Desired monthly income in retirement: ${currency}${inputs.monthlyNetIncomeDesired}${inputs.targetEndBalance ? ` | Target end balance: ${currency}${Number(inputs.targetEndBalance).toLocaleString()}` : ''}
+- Annual return: ${returnRateText} | Inflation: ${inputs.inflationRate ?? 0}% | Tax on gains: ${inputs.taxRate ?? 25}%
+- Strategy: ${bucketText}
+
+PENSION / INCOME SOURCES:
+${pensionText}
+
+LIFE EVENTS (one-time or recurring changes):
+${eventsText}
+
+MARKET CRASH SCENARIO:
+${crashText}
+
+CALCULATED RESULTS:
+- Balance at retirement (age ${inputs.retirementStartAge}): ${currency}${Math.round(results?.balanceAtRetirement || 0).toLocaleString()}
+- Balance at end (age ${inputs.retirementEndAge}): ${currency}${Math.round(results?.balanceAtEnd || 0).toLocaleString()}
+- Required capital at retirement: ${currency}${Math.round(results?.requiredCapitalAtRetirement || 0).toLocaleString()}
+- Deficit needed today: ${currency}${Math.round(results?.pvOfDeficit || 0).toLocaleString()}
+- ${results?.ranOutAtAge ? `RUNS OUT at age ${results.ranOutAtAge}` : 'Fully funded — never runs out'}${inputs.targetEndBalance && results?.balanceAtEnd != null ? `\n- Gap to target: ${currency}${Math.round(results.balanceAtEnd - parseFloat(inputs.targetEndBalance)).toLocaleString()} (${results.balanceAtEnd >= parseFloat(inputs.targetEndBalance) ? 'TARGET MET' : 'SHORTFALL'})` : ''}`;
+}
+
+/**
+ * Formats a multi-turn conversation as a single text prompt (works across all providers).
+ */
+function formatConversation(systemPrompt, messages) {
+    let prompt = systemPrompt + '\n\n---\n';
+    for (const m of messages) {
+        prompt += m.role === 'user' ? '\nUser: ' : '\nAssistant: ';
+        prompt += m.content;
+    }
+    prompt += '\nAssistant:';
+    return prompt;
+}
+
+/**
+ * Sends a multi-turn chat conversation to the AI and returns the response text.
+ */
+export async function getChatResponse(messages, systemPrompt, provider, model, apiKeyOverride = null, { signal } = {}) {
+    const envKey = getProviderEnvKey(provider);
+    const apiKey = apiKeyOverride?.trim() || (envKey ? import.meta.env[envKey]?.trim() : null);
+
+    if (!apiKey) throw new Error('Missing API Key');
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+    const onRetry = null;
+    let responseText = '';
+
+    if (provider === 'gemini') {
+        const { GoogleGenerativeAI } = await import('@google/generative-ai');
+        const genAI = new GoogleGenerativeAI(apiKey);
+        responseText = await withRetry(async () => {
+            const genModel = genAI.getGenerativeModel({ model });
+            const prompt = formatConversation(systemPrompt, messages);
+            const result = await genModel.generateContent(prompt);
+            return (await result.response).text();
+        }, { onRetry });
+
+    } else if (provider === 'openai') {
+        const { default: OpenAI } = await import('openai');
+        const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+        const completion = await withRetry(() =>
+            openai.chat.completions.create({
+                model,
+                messages: [{ role: 'system', content: systemPrompt }, ...messages],
+            }), { onRetry });
+        responseText = completion.choices[0].message.content;
+
+    } else if (provider === 'anthropic') {
+        const { default: Anthropic } = await import('@anthropic-ai/sdk');
+        const anthropic = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+        const message = await withRetry(() =>
+            anthropic.messages.create({
+                model, max_tokens: 2048,
+                system: systemPrompt,
+                messages,
+            }), { onRetry });
+        responseText = message.content[0].text;
+    }
+
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    return responseText;
+}

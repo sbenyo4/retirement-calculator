@@ -14,6 +14,7 @@ import { LoginPage } from './components/LoginPage';
 import { ZoomToggle } from './components/ZoomToggle';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import { IdleWarningModal } from './components/IdleWarningModal';
+import { ChatWidget } from './components/ChatWidget';
 import { useIdleTimer } from './hooks/useIdleTimer';
 
 // Lazy-loaded components (loaded only when needed)
@@ -402,6 +403,7 @@ function MainApp() {
               setShowAgeSensitivity={setShowAgeSensitivity}
               profiles={profiles}
               updateProfile={updateProfile}
+              currentProfileId={lastLoadedProfileId}
             />
           </div>
 
@@ -480,6 +482,16 @@ function MainApp() {
           </div>
         </div>
       </div>
+
+      {/* Chat Widget */}
+      <ChatWidget
+        inputs={inputs}
+        results={results}
+        language={language}
+        aiProvider={settings.aiProvider}
+        aiModel={settings.aiModel}
+        apiKeyOverride={settings.apiKeyOverride}
+      />
 
       {/* Idle Warning Modal */}
       {warningActive && (

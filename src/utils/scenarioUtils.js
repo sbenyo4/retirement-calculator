@@ -37,14 +37,16 @@ export function generateScenarioRates(scenario, baseRate) {
             }
         }
     } else {
-        // Rate recovery: interpolate the rate from crashDepth back to baseRate
+        // Rate recovery: the crash already happened in startYear.
+        // Recovery years ramp from 0% (market stabilises) back to baseRate.
+        // V-shape = fast bounce (square-root), U-shape = slow grind (quadratic), linear = even steps.
         for (let i = 1; i <= recoveryYears; i++) {
             const t = i / recoveryYears;
             let progress;
             if (recoveryShape === 'v')      progress = Math.sqrt(t);
             else if (recoveryShape === 'u') progress = t * t;
             else                            progress = t; // linear
-            rates[startYear + i] = crashDepth + (baseRate - crashDepth) * progress;
+            rates[startYear + i] = baseRate * progress;
         }
     }
 

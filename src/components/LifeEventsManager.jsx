@@ -25,7 +25,8 @@ export default function LifeEventsManager({
     calculationMode,
     simulationType,
     profiles,
-    updateProfile
+    updateProfile,
+    currentProfileId
 }) {
     const classes = useThemeClasses();
     const [showAddModal, setShowAddModal] = useState(false);
@@ -303,7 +304,11 @@ export default function LifeEventsManager({
 
                             {/* ITEM LIST */}
                             <div className="flex-1 space-y-0.5 mt-0.5">
-                                {events.slice(viewOffset, viewOffset + itemsPerView).map(event => (
+                                {[...events].sort((a, b) => {
+                                    const ay = a.startDate?.year ?? 9999, am = a.startDate?.month ?? 1;
+                                    const by = b.startDate?.year ?? 9999, bm = b.startDate?.month ?? 1;
+                                    return ay !== by ? ay - by : am - bm;
+                                }).slice(viewOffset, viewOffset + itemsPerView).map(event => (
                                     <div
                                         key={event.id}
                                         className={`${classes.container} border ${event.enabled ? classes.border : 'border-gray-600'} rounded-lg px-2 py-1.5 ${!event.enabled ? 'opacity-50' : ''} select-none h-[48px] flex flex-col justify-center`}
@@ -421,6 +426,7 @@ export default function LifeEventsManager({
                         currentAge={currentAge}
                         retirementAge={retirementAge}
                         retirementEndAge={retirementEndAge}
+                        birthDate={birthDate}
                     />
                 )
             }
@@ -458,7 +464,7 @@ export default function LifeEventsManager({
                                     style={{ backgroundColor: classes.isLight ? '#ffffff' : '#1e293b' }}
                                 >
                                     <option value="" className={classes.secondaryText}>{t ? t('selectTargetProfilePlaceholder') : '-- Select Target Profile --'}</option>
-                                    {profiles && profiles.filter(p => !['tmp','guest','debug'].includes(p.id)).map(p => (
+                                    {profiles && profiles.filter(p => !['tmp','guest','debug'].includes(p.id) && p.id !== currentProfileId).map(p => (
                                         <option key={p.id} value={p.id}>{p.name}</option>
                                     ))}
                                 </select>

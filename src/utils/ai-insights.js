@@ -155,8 +155,11 @@ export const generateInsightPrompt = (inputs, results, language) => {
 
     const basePrompt = `
     Act as a senior financial advisor and retirement planner.
-    Analyze the following retirement scenario and provide qualitative insights, conclusions, and actionable recommendations.
-    
+    Analyze the following retirement scenario and provide precise, data-driven insights using the exact numbers provided.
+    CRITICAL RULE: Every sentence MUST include specific numbers (${currency} amounts, ages, percentages) from the data below.
+    NEVER write generic advice like "consider saving more" — instead write "saving ${currency}500 more/month improves your final balance by ${currency}X (from the sensitivity data below)".
+    NEVER write "your plan looks solid" — instead write "your projected balance of ${currency}X at retirement covers Y years of ${currency}Z/month withdrawals".
+
     User Profile:
     - Current Age: ${inputs.currentAge}
     - Retirement Start Age: ${inputs.retirementStartAge}
@@ -169,7 +172,7 @@ export const generateInsightPrompt = (inputs, results, language) => {
     - Desired Monthly Net Income: ${currency}${inputs.monthlyNetIncomeDesired}${inputs.targetEndBalance && results.initialNetWithdrawal ? `\n    - Achievable Monthly Income (with target balance goal): ${currency}${Math.round(results.initialNetWithdrawal)} (${results.initialNetWithdrawal >= parseFloat(inputs.monthlyNetIncomeDesired || 0) ? `+${currency}${Math.round(results.initialNetWithdrawal - parseFloat(inputs.monthlyNetIncomeDesired || 0))} ABOVE desired` : `-${currency}${Math.round(parseFloat(inputs.monthlyNetIncomeDesired || 0) - results.initialNetWithdrawal)} BELOW desired — income reduction needed to meet target`})` : ''}
     - Assumed Annual Return: ${returnRateText}${bucketRatesText}
     - Inflation Rate: ${inputs.inflationRate || 0}%
-    - Tax Rate on Capital Gains: ${inputs.taxRate || 25}%
+    - Tax Rate on Capital Gains: ${inputs.taxRate ?? 25}%
     - Target End Balance: ${inputs.targetEndBalance ? `${currency}${inputs.targetEndBalance}` : 'Not set (no legacy/inheritance goal)'}
     
     Pension Income Sources:
@@ -198,10 +201,10 @@ export const generateInsightPrompt = (inputs, results, language) => {
     2. **Format**: Return a strict JSON object with the following structure:
     {
         "readinessScore": number, // 0-100 score of how ready the user is
-        "executiveSummary": "string", // 2-3 sentences summarizing the situation
+        "executiveSummary": "string", // 2-3 sentences with specific numbers: current savings, projected balance at retirement, balance at end, monthly income vs required
         "retirementAgeRecommendation": {
             "recommendedAge": number, // The specific age recommended (e.g. 67)
-            "reasoning": "string" // Why this exact age? (e.g. "Closing the 200k deficit requires 2 more years of compounding")
+            "reasoning": "string" // Must include exact amounts: e.g. "Retiring at 65 leaves a ${currency}200,000 deficit; 2 more years close it via ${currency}X compounding + ${currency}Y extra contributions"
         },
         "analysis": {
             "strengths": ["string", "string"], // List of 2-3 strong points
@@ -213,7 +216,7 @@ export const generateInsightPrompt = (inputs, results, language) => {
             {
                 "title": "string", // Short title
                 "description": "string", // Actionable advice
-                "impact": "string" // Expected impact (e.g. "Increases success chance by 10%")
+                "impact": "string" // MUST be a concrete number from the sensitivity data, e.g. "+${currency}320,000 to final balance" or "closes ${currency}150,000 of the deficit"
             }
         ], // Provide 3-4 distinct recommendations
         "conclusion": "string" // Final encouraging or cautionary closing statement
@@ -221,9 +224,9 @@ export const generateInsightPrompt = (inputs, results, language) => {
     
     Guidance for Analysis:
     - If there are significant life events, specifically mention their impact.
-    - LOOK at the "Sensitivity Analysis" section. Use it to populate the 'sensitivityAnalysis' field. 
-      Identify the TOP 2 most impactful factors. Explain the #1 factor and correct mention the #2 factor for context.
-      (e.g., "Delaying retirement is your strongest lever (+2M), followed by increasing safe yields (+500k). Saving more has minor impact.")
+    - LOOK at the "Sensitivity Analysis" section. Use it to populate the 'sensitivityAnalysis' field.
+      Quote the EXACT numbers from the data. Identify the TOP 2 most impactful factors.
+      Example format: "Delaying retirement by 1 year is your strongest lever (+${currency}2,100,000 to final balance), followed by increasing returns by 1% (+${currency}480,000). Saving ${currency}500/month more adds only +${currency}95,000 by comparison."
     - Return Rate Risk Assessment: An annual return of ~4% is considered conservative/solid for a long-term diversified portfolio (not risky).
       5-6% is moderate. Only rates above 7-8% should be flagged as aggressive or market-dependent.
       When a bucket strategy is used, assess each bucket independently: a safe bucket at 3-4% is very conservative, a surplus bucket at 6-8% is reasonable for growth allocation.
@@ -283,6 +286,7 @@ export const generateCrashInsightPrompt = (analysisInputs, sweepResults, languag
 
     return `Act as a senior financial advisor specializing in sequence-of-returns risk.
 Analyze the following crash simulation results and provide specific, data-driven insights.
+CRITICAL RULE: Every field MUST cite exact ${currency} amounts and years from the data. No generic sentences allowed.
 
 CRASH PARAMETERS:
 - Depth: ${Math.abs(s.crashDepth ?? 20)}% drop

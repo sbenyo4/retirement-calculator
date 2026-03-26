@@ -37,6 +37,7 @@ export default function InputForm({
     goalSeekWithdrawal,
     profiles,
     updateProfile,
+    currentProfileId,
     aiModelsOverride
     // Note: sensitivity props (showInterestSensitivity, etc.) were previously passed but are not used in this component
 }) {
@@ -836,6 +837,7 @@ export default function InputForm({
                         simulationType={simulationType}
                         profiles={profiles}
                         updateProfile={updateProfile}
+                        currentProfileId={currentProfileId}
                     />
                 </div>
             )}

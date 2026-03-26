@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { X, TrendingDown, BarChart2 } from 'lucide-react';
+import { X, TrendingDown, BarChart2, Zap } from 'lucide-react';
 import { useDraggable } from '../hooks/useDraggable';
 import { useTheme } from '../contexts/ThemeContext';
 import { generateScenarioRates } from '../utils/scenarioUtils';
@@ -25,6 +25,7 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
     const [targetAvgRate, setTargetAvgRate] = useState(null);
     const [affectsSafeBucket, setAffectsSafeBucket] = useState(false);
     const [showAnalysis, setShowAnalysis] = useState(false);
+    const [selectedPresetId, setSelectedPresetId] = useState(null);
 
     const previewReadyRef = useRef(false);
 
@@ -39,6 +40,7 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
         setRecoveryMode(inputs.scenario?.recoveryMode || 'rate');
         setTargetAvgRate(inputs.scenario?.targetAvgRate ?? baseR);
         setAffectsSafeBucket(inputs.scenario?.affectsSafeBucket || false);
+        setSelectedPresetId(null);
         setTimeout(() => { previewReadyRef.current = true; }, 0);
     }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -101,6 +103,36 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
     const inputCls = `w-full px-2 py-1.5 text-sm rounded-lg border ${isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-black/30 border-white/30 text-white'}`;
     const labelCls = `block text-xs mb-1 ${isLight ? 'text-gray-600' : 'text-gray-400'}`;
 
+    const PRESETS = [
+        // COVID-19: S&P -19% in 2020 calendar year (crashed -34% peak-to-trough then recovered same year).
+        // Portfolio impact: ~1 bad year, then immediate V-shape bounce in 2021 (+27%).
+        { id: 'covid',      en: 'COVID 2020',          he: 'קורונה 2020',     depth: -19, recovery: 1,  shape: 'v',      mode: 'rate', yearOffset: 0 },
+        // 2008 Crisis: S&P -37% in 2008, then positive from 2009 onward (+26%, +15%, +2%, +16%).
+        // 4-year U-shape recovery (market was grinding upward slowly from 2009 trough).
+        { id: 'gfc',        en: '2008 Crisis',         he: 'משבר 2008',       depth: -37, recovery: 4,  shape: 'u',      mode: 'rate', yearOffset: 0 },
+        // Dot-com: 3 consecutive down years (-9%, -12%, -22% in 2000-2002). Modelled as single -35% crash
+        // with 5-year U-shape recovery (market returned to growth 2003-2007 slowly).
+        { id: 'dotcom',     en: 'Dot-com 2000',        he: 'דוטקום 2000',     depth: -35, recovery: 5,  shape: 'u',      mode: 'rate', yearOffset: 0 },
+        // Japan 1990: Nikkei -39% in 1990, followed by -3%, -26% in 1991-92. Never recovered to 1989 peak.
+        // Modelled as -40% crash with 10-year U-shape stagnation (rate recovery = permanent loss of principal).
+        { id: 'japan',      en: 'Japan 1990',          he: 'יפן 1990',        depth: -40, recovery: 10, shape: 'u',      mode: 'rate', yearOffset: 0 },
+        // Planning scenario: moderate crash right at retirement start — worst-case sequence-of-returns risk.
+        { id: 'retirement', en: 'Retirement Shock',    he: 'זעזוע פרישה',     depth: -35, recovery: 4,  shape: 'linear', mode: 'rate', yearOffset: 0 },
+        // Extreme stress test: no historical basis — tests portfolio survival under catastrophic conditions.
+        { id: 'swan',       en: 'Black Swan',          he: 'ברבור שחור',      depth: -60, recovery: 10, shape: 'u',      mode: 'rate', yearOffset: 0 },
+    ];
+
+    const applyPreset = (preset) => {
+        setCrashDepth(preset.depth);
+        setRecoveryYears(preset.recovery);
+        setRecoveryShape(preset.shape);
+        setRecoveryMode(preset.mode);
+        setStartYear(defaultStartYear + preset.yearOffset);
+        setTargetAvgRate(baseRate);
+        if (!enabled) setEnabled(true);
+        setSelectedPresetId(preset.id);
+    };
+
     const handleSave = () => {
         onSave({ scenarioEnabled: enabled, scenario: { type: 'crash', startYear, crashDepth, recoveryYears, recoveryShape, recoveryMode, targetAvgRate, affectsSafeBucket } });
         onClose();
@@ -157,6 +189,34 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
                     </button>
                 </div>
 
+                {/* Presets */}
+                <div className="mb-3">
+                    <div className={`flex items-center gap-1.5 mb-2`}>
+                        <Zap size={12} className="text-yellow-400" />
+                        <span className={`text-xs font-medium ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>{he ? 'תרחישים מוכנים' : 'Quick presets'}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {PRESETS.map(p => {
+                            const isSelected = selectedPresetId === p.id;
+                            return (
+                                <button
+                                    key={p.id}
+                                    onClick={() => applyPreset(p)}
+                                    className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
+                                        isSelected
+                                            ? 'bg-orange-500 border-orange-500 text-white'
+                                            : isLight
+                                                ? 'border-gray-300 text-gray-600 hover:bg-orange-50 hover:border-orange-300 hover:text-orange-700'
+                                                : 'border-white/20 text-gray-300 hover:bg-orange-500/20 hover:border-orange-400/50 hover:text-orange-300'
+                                    }`}
+                                >
+                                    {he ? p.he : p.en}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
                 {/* Parameters */}
                 <fieldset disabled={!enabled} className={`space-y-3 transition-opacity ${!enabled ? 'opacity-40 pointer-events-none' : ''}`}>
                     <div className="grid grid-cols-2 gap-3">
@@ -164,7 +224,7 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
                         <div>
                             <label className={labelCls}>{he ? 'שנת הקריסה' : 'Crash year'}</label>
                             <input type="number" value={startYear} className={inputCls}
-                                onChange={e => setStartYear(parseInt(e.target.value) || defaultStartYear)} />
+                                onChange={e => { setStartYear(parseInt(e.target.value) || defaultStartYear); setSelectedPresetId(null); }} />
                             <div className={`text-xs mt-0.5 ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
                                 {startYear > currentYear
                                     ? `+${startYear - currentYear} ${he ? 'שנים' : 'yrs'}`
@@ -175,7 +235,7 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
                         <div>
                             <label className={labelCls}>{he ? 'ירידה בשנת הקריסה %' : 'Drop in crash year %'}</label>
                             <input type="number" value={Math.abs(crashDepth)} min="0" className={inputCls}
-                                onChange={e => setCrashDepth(-Math.abs(parseFloat(e.target.value) || 40))} />
+                                onChange={e => { setCrashDepth(-Math.abs(parseFloat(e.target.value) || 40)); setSelectedPresetId(null); }} />
                         </div>
                     </div>
 
@@ -187,7 +247,7 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
                                 ['rate',  he ? 'שיעור חוזר' : 'Rate recovery'],
                                 ['value', he ? 'ערך חוזר' : 'Value recovery'],
                             ].map(([val, label]) => (
-                                <button key={val} onClick={() => setRecoveryMode(val)}
+                                <button key={val} onClick={() => { setRecoveryMode(val); setSelectedPresetId(null); }}
                                     className={`flex-1 py-1.5 text-xs rounded-lg border transition-colors ${
                                         recoveryMode === val
                                             ? 'bg-purple-500 border-purple-500 text-white'
@@ -204,7 +264,7 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
                         <div>
                             <label className={labelCls}>{he ? 'שנות התאוששות' : 'Recovery years'}</label>
                             <input type="number" min="1" max="20" value={recoveryYears} className={inputCls}
-                                onChange={e => setRecoveryYears(Math.max(1, parseInt(e.target.value) || 5))} />
+                                onChange={e => { setRecoveryYears(Math.max(1, parseInt(e.target.value) || 5)); setSelectedPresetId(null); }} />
                         </div>
                         {/* Right side: shape (rate mode) or target avg rate (value mode) */}
                         {recoveryMode === 'rate' ? (
@@ -216,7 +276,7 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
                                         ['v',      he ? 'מהיר' : 'Fast V'],
                                         ['u',      he ? 'איטי' : 'Slow U'],
                                     ].map(([val, label]) => (
-                                        <button key={val} onClick={() => setRecoveryShape(val)}
+                                        <button key={val} onClick={() => { setRecoveryShape(val); setSelectedPresetId(null); }}
                                             className={`flex-1 py-1.5 text-xs rounded-lg border transition-colors ${
                                                 recoveryShape === val
                                                     ? 'bg-blue-500 border-blue-500 text-white'
@@ -231,7 +291,7 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
                             <div>
                                 <label className={labelCls}>{he ? 'יעד ממוצע גיאומטרי %' : 'Target geom avg %'}</label>
                                 <input type="number" value={targetAvgRate ?? baseRate} className={inputCls}
-                                    onChange={e => setTargetAvgRate(parseFloat(e.target.value) || baseRate)} />
+                                    onChange={e => { setTargetAvgRate(parseFloat(e.target.value) || baseRate); setSelectedPresetId(null); }} />
                             </div>
                         )}
                     </div>
@@ -335,6 +395,7 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
             aiProvider={aiProvider}
             aiModel={aiModel}
             apiKeyOverride={apiKeyOverride}
+            presetLabel={selectedPresetId ? (PRESETS.find(p => p.id === selectedPresetId)?.[language] ?? null) : null}
         />
         </>
     );

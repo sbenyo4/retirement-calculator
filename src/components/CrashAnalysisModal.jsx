@@ -28,7 +28,7 @@ const uid = () => _nextId++;
  *   analysisInputs — full inputs merged with current scenario form state
  *   language       — 'he' | 'en'
  */
-export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, language, aiProvider, aiModel, apiKeyOverride }) {
+export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, language, aiProvider, aiModel, apiKeyOverride, presetLabel }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
     const he = language === 'he';
@@ -519,6 +519,11 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                         <div className="flex items-center gap-2">
                             <BarChart2 size={18} className="text-orange-400" />
                             <h2 className="text-base font-bold">{he ? 'ניתוח קריסות' : 'Crash Analysis'}</h2>
+                            {presetLabel && (
+                                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                                    {presetLabel}
+                                </span>
+                            )}
                         </div>
                         <button onClick={onClose} className={`transition-colors ${isLight ? 'text-gray-400 hover:text-gray-600' : 'text-gray-400 hover:text-gray-200'}`}>
                             <X size={18} />
@@ -552,7 +557,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                     </div>
 
                     {/* Scenario summary strip */}
-                    <div className={`flex flex-wrap gap-3 mb-3 text-xs px-3 py-2 rounded-lg ${isLight ? 'bg-gray-50 text-gray-600' : 'bg-black/20 text-gray-400'}`}>
+                    <div className={`flex flex-wrap gap-3 mb-3 text-xs px-3 py-2 rounded-lg ${isLight ? 'bg-gray-50 text-gray-600' : 'bg-black/20 text-gray-400'}`} title={he ? 'סימולציה לצרכי תכנון בלבד — אינה חיזוי מדויק' : 'For planning purposes only — not an accurate prediction'}>
                         <span>{he ? 'ירידה:' : 'Drop:'} <strong dir="ltr">{Math.abs(scenario.crashDepth ?? 40)}%</strong></span>
                         <span>{he ? 'התאוששות:' : 'Recovery:'} <strong>{scenario.recoveryYears ?? 5} {he ? 'שנים' : 'yrs'}</strong></span>
                         <span>{he ? 'מודל:' : 'Mode:'} <strong>{recoveryLabel}</strong></span>
@@ -569,7 +574,9 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                                 <strong className={localAffectsSafe ? 'text-orange-400' : ''}>{localAffectsSafe ? (he ? 'מושפע' : 'affected') : (he ? 'מוגן' : 'shielded')}</strong>
                             </span>
                         )}
+                        <span className={`ms-auto ${isLight ? 'text-amber-600' : 'text-amber-500'} opacity-70`}>⚠ {he ? 'לתכנון בלבד' : 'Planning only'}</span>
                     </div>
+
 
                     {/* ════════════ SWEEP TAB ════════════ */}
                     {activeTab === 'sweep' && (
