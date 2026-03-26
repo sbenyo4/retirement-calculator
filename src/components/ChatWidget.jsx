@@ -83,8 +83,8 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
         recognitionRef.current = recognition;
 
         recognition.onresult = (e) => {
-            const transcript = e.results[0][0].transcript;
-            setInput(prev => (prev ? prev + ' ' : '') + transcript);
+            const transcript = e.results[0][0].transcript.trim();
+            if (transcript) sendMessage(transcript);
         };
         recognition.onend = () => setListening(false);
         recognition.onerror = () => setListening(false);
