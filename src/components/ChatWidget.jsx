@@ -67,6 +67,8 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
         setHasSpeech(!!(window.SpeechRecognition || window.webkitSpeechRecognition));
     }, []);
 
+    const voiceTranscriptRef = useRef('');
+
     const toggleVoice = useCallback(() => {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition || !hasSpeech) return;
@@ -76,18 +78,30 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
             return;
         }
 
+        voiceTranscriptRef.current = '';
         const recognition = new SpeechRecognition();
         recognition.lang = isHe ? 'he-IL' : 'en-US';
         recognition.interimResults = false;
-        recognition.continuous = false;
+        recognition.continuous = true;
         recognitionRef.current = recognition;
 
         recognition.onresult = (e) => {
-            const transcript = e.results[0][0].transcript.trim();
-            if (transcript) sendMessageRef.current(transcript);
+            for (let i = e.resultIndex; i < e.results.length; i++) {
+                if (e.results[i].isFinal) {
+                    voiceTranscriptRef.current += (voiceTranscriptRef.current ? ' ' : '') + e.results[i][0].transcript.trim();
+                }
+            }
         };
-        recognition.onend = () => setListening(false);
-        recognition.onerror = () => setListening(false);
+        recognition.onend = () => {
+            setListening(false);
+            const text = voiceTranscriptRef.current.trim();
+            if (text) sendMessageRef.current(text);
+            voiceTranscriptRef.current = '';
+        };
+        recognition.onerror = () => {
+            setListening(false);
+            voiceTranscriptRef.current = '';
+        };
 
         recognition.start();
         setListening(true);
