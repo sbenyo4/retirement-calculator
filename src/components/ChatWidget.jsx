@@ -60,11 +60,16 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
     const { dragStyle: panelDragStyle, onDragMouseDown: onPanelDragMouseDown } = useDraggable(open);
 
     const [listening, setListening] = useState(false);
+    const [hasSpeech, setHasSpeech] = useState(false);
     const recognitionRef = useRef(null);
+
+    useEffect(() => {
+        setHasSpeech(!!(window.SpeechRecognition || window.webkitSpeechRecognition));
+    }, []);
 
     const toggleVoice = useCallback(() => {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) return;
+        if (!SpeechRecognition || !hasSpeech) return;
 
         if (listening) {
             recognitionRef.current?.stop();
@@ -86,7 +91,7 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
 
         recognition.start();
         setListening(true);
-    }, [listening, isHe]);
+    }, [listening, isHe, hasSpeech]);
 
     const abortRef = useRef(null);
     const bottomRef = useRef(null);
@@ -323,7 +328,7 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
                                 style={{ textAlign: isHe ? 'right' : 'left' }}
                                 onInput={e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px'; }}
                             />
-                            {(window.SpeechRecognition || window.webkitSpeechRecognition) && (
+                            {hasSpeech && (
                                 <button onClick={toggleVoice}
                                     className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
                                         listening
