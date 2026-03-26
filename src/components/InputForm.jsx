@@ -652,19 +652,6 @@ export default function InputForm({
                                             <Activity size={16} />
                                         </button>
                                         <div className={`w-px mx-0.5 ${isLight ? 'bg-gray-300' : 'bg-gray-700'}`}></div>
-
-
-                                        <div className={`w-px mx-0.5 ${isLight ? 'bg-gray-300' : 'bg-gray-700'}`}></div>
-                                        <button
-                                            onClick={() => { scenarioSnapshotRef.current = { scenarioEnabled: inputs.scenarioEnabled, scenario: inputs.scenario }; setShowScenario(true); }}
-                                            className={`p-1 transition-colors h-full flex items-center justify-center ${inputs.scenarioEnabled
-                                                ? 'text-orange-400'
-                                                : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200')}`}
-                                            title={language === 'he' ? 'תרחיש שוק' : 'Market Scenario'}
-                                        >
-                                            <TrendingDown size={16} />
-                                        </button>
-                                        <div className={`w-px mx-0.5 ${isLight ? 'bg-gray-300' : 'bg-gray-700'}`}></div>
                                         <button
                                             onClick={() => {
                                                 if (inputs.enableBuckets) {
@@ -694,6 +681,16 @@ export default function InputForm({
                                             title={t('bucketStrategy')}
                                         >
                                             <Layers size={16} />
+                                        </button>
+                                        <div className={`w-px mx-0.5 ${isLight ? 'bg-gray-300' : 'bg-gray-700'}`}></div>
+                                        <button
+                                            onClick={() => { scenarioSnapshotRef.current = { scenarioEnabled: inputs.scenarioEnabled, scenario: inputs.scenario }; setShowScenario(true); }}
+                                            className={`p-1 transition-colors h-full flex items-center justify-center ${inputs.scenarioEnabled
+                                                ? 'text-orange-400'
+                                                : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200')}`}
+                                            title={language === 'he' ? 'תרחיש שוק' : 'Market Scenario'}
+                                        >
+                                            <TrendingDown size={16} />
                                         </button>
                                     </div>
                                 }
