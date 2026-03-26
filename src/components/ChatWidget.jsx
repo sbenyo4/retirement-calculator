@@ -84,7 +84,7 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
 
         recognition.onresult = (e) => {
             const transcript = e.results[0][0].transcript.trim();
-            if (transcript) sendMessage(transcript);
+            if (transcript) sendMessageRef.current(transcript);
         };
         recognition.onend = () => setListening(false);
         recognition.onerror = () => setListening(false);
@@ -96,6 +96,7 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
     const abortRef = useRef(null);
     const bottomRef = useRef(null);
     const inputRef = useRef(null);
+    const sendMessageRef = useRef(null);
 
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -151,8 +152,10 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
         if (!trimmed || loading) return;
         setInput('');
         setError(null);
-        const newMessages = [...messages, { role: 'user', content: trimmed }];
-        setMessages(newMessages);
+        // Keep last 10 messages to avoid token limit errors
+        const history = messages.slice(-10);
+        const newMessages = [...history, { role: 'user', content: trimmed }];
+        setMessages(prev => [...prev.slice(-10), { role: 'user', content: trimmed }]);
         setLoading(true);
         abortRef.current?.abort();
         const controller = new AbortController();
@@ -163,12 +166,20 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
             setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
         } catch (err) {
             if (err.name !== 'AbortError') {
-                setError(isHe ? 'שגיאה בשליחת ההודעה. נסה שוב.' : 'Failed to send. Please try again.');
+                console.error('[Chat error]', err);
+                const msg = err?.message || '';
+                const detail = msg.includes('quota') || msg.includes('429') ? (isHe ? 'חריגה ממכסת ה-API' : 'API quota exceeded')
+                    : msg.includes('401') || msg.includes('API key') ? (isHe ? 'מפתח API שגוי' : 'Invalid API key')
+                    : msg.includes('context') || msg.includes('token') || msg.includes('400') ? (isHe ? 'ההודעה ארוכה מדי' : 'Message too long')
+                    : msg || (isHe ? 'שגיאה לא ידועה' : 'Unknown error');
+                setError((isHe ? 'שגיאה: ' : 'Error: ') + detail);
             }
         } finally {
             setLoading(false);
         }
     }, [input, messages, loading, inputs, results, language, aiProvider, aiModel, apiKeyOverride, isHe]);
+
+    sendMessageRef.current = sendMessage;
 
     const handleKeyDown = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
@@ -245,6 +256,11 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
                             </span>
                         </div>
                         <div className="flex items-center gap-1">
+                            {aiModel && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded ${isLight ? 'text-gray-500 bg-gray-100' : 'text-gray-300 bg-white/10'}`}>
+                                    {aiModel}
+                                </span>
+                            )}
                             {messages.length > 0 && (
                                 <button onClick={clearChat} title={isHe ? 'נקה שיחה' : 'Clear chat'}
                                     className={`p-1.5 rounded-lg transition-colors ${isLight ? 'text-gray-400 hover:text-gray-600 hover:bg-gray-100' : 'text-gray-400 hover:text-gray-200 hover:bg-white/10'}`}>
@@ -348,7 +364,7 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
                                 <Send size={13} />
                             </button>
                         </div>
-                        <p className={`text-[10px] text-center mt-1 ${isLight ? 'text-gray-400' : 'text-gray-600'}`}>
+                        <p className={`text-[10px] text-center mt-1 ${isLight ? 'text-gray-400' : 'text-gray-400'}`}>
                             {isHe ? 'Enter לשליחה · Shift+Enter לשורה חדשה' : 'Enter to send · Shift+Enter for new line'}
                         </p>
                     </div>

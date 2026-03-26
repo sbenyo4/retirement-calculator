@@ -2,6 +2,7 @@
 import { getProviderEnvKey } from '../config/ai-models';
 import { calculateRetirementProjection } from './calculator';
 import { withRetry, RETRY_CONFIG } from './ai-calculator';
+import { DEFAULT_TAX_BRACKETS } from './fiscalDefaults';
 
 /**
  * Generates a specialized prompt for AI qualitative analysis of retirement data.
@@ -185,6 +186,18 @@ export const generateInsightPrompt = (inputs, results, language) => {
 
     Market Crash Scenario:
     ${crashScenarioText}
+
+    Israeli Tax Rules (used by the calculator):
+    - Income tax brackets (monthly): ${(() => {
+        const brackets = inputs.fiscalParameters?.taxBrackets || DEFAULT_TAX_BRACKETS;
+        return brackets.map((b, i) => {
+            const prev = i === 0 ? 0 : brackets[i - 1].limit;
+            const range = b.limit ? `${currency}${prev.toLocaleString()}–${currency}${b.limit.toLocaleString()}` : `above ${currency}${prev.toLocaleString()}`;
+            return `${range}: ${Math.round(b.rate * 100)}%`;
+        }).join(' | ');
+    })()}
+    - Pension income exemption (פטור מקצבה מזכה): ${Math.round((inputs.fiscalParameters?.pensionExemption?.rate ?? 0.575) * 100)}% of qualifying pension exempt, up to ${currency}${inputs.fiscalParameters?.pensionExemption?.maxMonthly ?? 5422}/mo (qualifying income cap: ${currency}${inputs.fiscalParameters?.pensionExemption?.maxQualifiedIncome ?? 9430}/mo)
+    - Capital gains tax on savings withdrawals: ${inputs.taxRate ?? 25}% flat
 
     Simulation Results (Base Case):
     - Projected Balance at Retirement: ${currency}${results.balanceAtRetirement}

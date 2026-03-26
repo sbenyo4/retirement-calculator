@@ -1,5 +1,6 @@
 import { getProviderEnvKey } from '../config/ai-models';
 import { withRetry } from './ai-calculator';
+import { DEFAULT_TAX_BRACKETS } from './fiscalDefaults';
 
 /**
  * Builds a system prompt giving the AI full context about the user's retirement plan.
@@ -51,6 +52,22 @@ export function buildChatSystemPrompt(inputs, results, language) {
         crashText = `ACTIVE — ${Math.abs(s.crashDepth)}% drop starting ${s.startYear}, ${s.recoveryYears}-year ${s.recoveryShape} recovery at avg ${s.targetAvgRate}%${inputs.enableBuckets ? (s.affectsSafeBucket ? ', safe bucket EXPOSED' : ', safe bucket PROTECTED') : ''}`;
     }
 
+    // Tax brackets compact summary
+    const brackets = inputs.fiscalParameters?.taxBrackets || DEFAULT_TAX_BRACKETS;
+    const minRate = Math.round(brackets[0].rate * 100);
+    const maxRate = Math.round(brackets[brackets.length - 1].rate * 100);
+    const bracketsText = brackets
+        .map((b, i) => {
+            const prev = i === 0 ? 0 : (brackets[i - 1].limit ?? 0);
+            return b.limit
+                ? `${Math.round(b.rate*100)}% up to ${currency}${b.limit.toLocaleString()}`
+                : `${Math.round(b.rate*100)}% above ${currency}${prev.toLocaleString()}`;
+        })
+        .join(', ');
+
+    // Pension exemption (פטור מקצבה מזכה) - 2026
+    const pensionExemption = inputs.fiscalParameters?.pensionExemption || { rate: 0.575, maxMonthly: 5422, maxQualifiedIncome: 9430 };
+
     return `You are a knowledgeable retirement planning advisor.
 Answer questions about the user's personal retirement plan using their data below.
 Respond in ${isHe ? 'Hebrew' : 'English'}. Be concise and conversational (under 200 words unless more is needed).
@@ -72,6 +89,12 @@ ${eventsText}
 
 MARKET CRASH SCENARIO:
 ${crashText}
+
+ISRAELI TAX RULES (used by the calculator):
+- Income tax brackets (monthly): ${bracketsText}
+- Pension income exemption (פטור מקצבה מזכה): ${Math.round(pensionExemption.rate * 100)}% of qualifying pension is exempt, up to ${currency}${pensionExemption.maxMonthly}/mo (qualifying income cap: ${currency}${pensionExemption.maxQualifiedIncome}/mo)
+- Capital gains tax on savings withdrawals: ${inputs.taxRate ?? 25}% (flat, applied in calculator)
+- NI (Bituach Leumi): paid from age 67, income test applies ages 67–70 (work income only)
 
 CALCULATED RESULTS:
 - Balance at retirement (age ${inputs.retirementStartAge}): ${currency}${Math.round(results?.balanceAtRetirement || 0).toLocaleString()}
@@ -111,10 +134,18 @@ export async function getChatResponse(messages, systemPrompt, provider, model, a
         const { GoogleGenerativeAI } = await import('@google/generative-ai');
         const genAI = new GoogleGenerativeAI(apiKey);
         responseText = await withRetry(async () => {
-            const genModel = genAI.getGenerativeModel({ model });
-            const prompt = formatConversation(systemPrompt, messages);
-            const result = await genModel.generateContent(prompt);
-            return (await result.response).text();
+            const genModel = genAI.getGenerativeModel({
+                model,
+                systemInstruction: systemPrompt,
+            });
+            const history = messages.slice(0, -1).map(m => ({
+                role: m.role === 'user' ? 'user' : 'model',
+                parts: [{ text: m.content }],
+            }));
+            const lastMsg = messages[messages.length - 1].content;
+            const chat = genModel.startChat({ history });
+            const result = await chat.sendMessage(lastMsg);
+            return result.response.text();
         }, { onRetry });
 
     } else if (provider === 'openai') {
