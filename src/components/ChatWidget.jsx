@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageCircle, X, Send, RotateCcw } from 'lucide-react';
+import { MessageCircle, X, Send, RotateCcw, Mic, MicOff } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useDraggable } from '../hooks/useDraggable';
 import { getChatResponse, buildChatSystemPrompt } from '../utils/ai-chat';
@@ -58,6 +58,35 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
 
     // Panel drag
     const { dragStyle: panelDragStyle, onDragMouseDown: onPanelDragMouseDown } = useDraggable(open);
+
+    const [listening, setListening] = useState(false);
+    const recognitionRef = useRef(null);
+
+    const toggleVoice = useCallback(() => {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) return;
+
+        if (listening) {
+            recognitionRef.current?.stop();
+            return;
+        }
+
+        const recognition = new SpeechRecognition();
+        recognition.lang = isHe ? 'he-IL' : 'en-US';
+        recognition.interimResults = false;
+        recognition.continuous = false;
+        recognitionRef.current = recognition;
+
+        recognition.onresult = (e) => {
+            const transcript = e.results[0][0].transcript;
+            setInput(prev => (prev ? prev + ' ' : '') + transcript);
+        };
+        recognition.onend = () => setListening(false);
+        recognition.onerror = () => setListening(false);
+
+        recognition.start();
+        setListening(true);
+    }, [listening, isHe]);
 
     const abortRef = useRef(null);
     const bottomRef = useRef(null);
@@ -294,6 +323,17 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
                                 style={{ textAlign: isHe ? 'right' : 'left' }}
                                 onInput={e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px'; }}
                             />
+                            {(window.SpeechRecognition || window.webkitSpeechRecognition) && (
+                                <button onClick={toggleVoice}
+                                    className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                                        listening
+                                            ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'
+                                            : isLight ? 'bg-gray-200 text-gray-500 hover:bg-gray-300' : 'bg-black/20 text-gray-400 hover:bg-white/10'
+                                    }`}
+                                    title={isHe ? 'קלט קולי' : 'Voice input'}>
+                                    {listening ? <MicOff size={13} /> : <Mic size={13} />}
+                                </button>
+                            )}
                             <button onClick={() => sendMessage()} disabled={!input.trim() || loading}
                                 className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
                                     input.trim() && !loading
