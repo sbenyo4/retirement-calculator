@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useDraggable } from '../hooks/useDraggable';
 import { useTheme } from '../contexts/ThemeContext';
 import { formatCurrency as formatCurrencyUtil } from '../utils/formatters';
@@ -20,8 +20,11 @@ import {
     Landmark,
     Settings,
     Table,
-    AlertTriangle
+    AlertTriangle,
+    Sparkles,
+    Loader2
 } from 'lucide-react';
+import { getPensionAIInsights } from '../utils/ai-insights';
 import {
     calculateNationalInsurance,
     calculatePensionTax,
@@ -291,6 +294,12 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const { dragStyle, onDragMouseDown } = useDraggable(true);
     const [showFiscalModal, setShowFiscalModal] = useState(false);
     const [showBracketTable, setShowBracketTable] = useState(false);
+    const [aiInsight, setAiInsight] = useState(null);
+    const [aiPanelVisible, setAiPanelVisible] = useState(false);
+    const [isLoadingAI, setIsLoadingAI] = useState(false);
+    const [aiError, setAiError] = useState(null);
+    const aiAbortRef = useRef(null);
+    const aiCacheKeyRef = useRef(null);
 
     // Helper to calculate NI with income test and 67 vs 70 logic
     const calculateEffectiveNI = useCallback((sources, currentRetirementStartAge) => {
@@ -588,6 +597,36 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         return JSON.stringify(clean(incomeSources)) !== JSON.stringify(clean(initialIncomeSources));
     }, [incomeSources, initialIncomeSources]);
 
+    const runAIAnalysis = useCallback(async () => {
+        if (!aiProvider || isLoadingAI) return;
+        const pensionInputs = { ...inputs, capitalAtRetirement, monthlyNetIncomeDesired: monthlyExpenses, fiscalParameters };
+        const cacheKey = JSON.stringify({ incomeSources, summary: summary?.milestones, pensionInputs, aiProvider, aiModel });
+        if (cacheKey === aiCacheKeyRef.current && aiInsight) {
+            setAiPanelVisible(true);
+            return;
+        }
+        aiAbortRef.current?.abort();
+        const controller = new AbortController();
+        aiAbortRef.current = controller;
+        setAiPanelVisible(true);
+        setIsLoadingAI(true);
+        setAiError(null);
+        setAiInsight(null);
+        try {
+            const result = await getPensionAIInsights(
+                incomeSources, summary, pensionInputs,
+                aiProvider, aiModel, apiKeyOverride, language,
+                { signal: controller.signal }
+            );
+            aiCacheKeyRef.current = cacheKey;
+            setAiInsight(result);
+        } catch (err) {
+            if (err.name !== 'AbortError') setAiError(err.message || 'Error');
+        } finally {
+            setIsLoadingAI(false);
+        }
+    }, [aiProvider, aiModel, apiKeyOverride, incomeSources, summary, inputs, capitalAtRetirement, monthlyExpenses, fiscalParameters, language, isLoadingAI, aiInsight]);
+
     return (
         <>
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -627,6 +666,17 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                     >
                                         <Table size={14} />
                                     </button>
+                                    {aiProvider && (
+                                        <button
+                                            onClick={runAIAnalysis}
+                                            disabled={isLoadingAI}
+                                            className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium transition-colors ${isLoadingAI ? 'opacity-60 cursor-wait' : ''} ${isLight ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' : 'bg-purple-500/20 text-purple-300 hover:bg-purple-500/30'}`}
+                                            title={language === 'he' ? 'ניתוח AI' : 'AI Analysis'}
+                                        >
+                                            {isLoadingAI ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                                            <span>{language === 'he' ? 'ניתוח AI' : 'AI'}</span>
+                                        </button>
+                                    )}
                                     {/* Interest Rate Input */}
                                     <div className={`flex items-center gap-1 px-2 py-1 rounded-full ${isLight ? 'bg-amber-50 border border-amber-200' : 'bg-amber-500/10 border border-amber-500/20'}`}
                                         title={t('pensionInterestRate') || 'ריבית'}
@@ -681,6 +731,87 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                 <div className={`text-lg font-bold ${isLight ? 'text-orange-700' : 'text-orange-300'}`}>{formatCurrency(monthlyExpenses)}</div>
                             </div>
                         </div>
+
+                        {/* AI Analysis Panel */}
+                        {aiPanelVisible && (aiInsight || isLoadingAI || aiError) && (
+                            <div className={`rounded-xl border p-3 space-y-2 ${isLight ? 'bg-purple-50 border-purple-200' : 'bg-purple-900/20 border-purple-500/30'}`}>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5">
+                                        <Sparkles size={13} className={isLight ? 'text-purple-600' : 'text-purple-400'} />
+                                        <span className={`text-xs font-bold ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>
+                                            {language === 'he' ? 'ניתוח AI' : 'AI Analysis'}
+                                        </span>
+                                    </div>
+                                    <button onClick={() => setAiPanelVisible(false)} className={`p-0.5 rounded transition-colors ${isLight ? 'text-slate-400 hover:text-slate-600' : 'text-gray-500 hover:text-gray-300'}`}>
+                                        <X size={13} />
+                                    </button>
+                                </div>
+                                {isLoadingAI && (
+                                    <div className="flex items-center gap-2 py-2">
+                                        <Loader2 size={14} className="animate-spin text-purple-400" />
+                                        <span className={`text-xs ${isLight ? 'text-purple-600' : 'text-purple-300'}`}>{language === 'he' ? 'מנתח נתוני פנסיה...' : 'Analyzing pension data...'}</span>
+                                    </div>
+                                )}
+                                {aiError && <p className="text-xs text-red-400">{aiError}</p>}
+                                {aiInsight && (
+                                    <div className="space-y-2 text-xs overflow-y-auto custom-scrollbar scrollbar-right max-h-64" dir={language === 'he' ? 'rtl' : 'ltr'}>
+                                        {/* Period Scores */}
+                                        {aiInsight.periodScores?.length > 0 && (
+                                            <div className="space-y-1">
+                                                <p className={`font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{language === 'he' ? 'ציון לפי תקופה:' : 'Score by Period:'}</p>
+                                                <div className="flex flex-wrap gap-1.5">
+                                                    {aiInsight.periodScores.map((p, i) => {
+                                                        const score = Math.min(100, Math.max(0, Math.round(p.score)));
+                                                        const color = score >= 80 ? 'emerald' : score >= 60 ? 'amber' : 'red';
+                                                        return (
+                                                            <div key={i} className={`flex flex-col items-center px-2 py-1.5 rounded-lg border ${isLight ? `bg-${color}-50 border-${color}-200` : `bg-${color}-900/20 border-${color}-500/30`}`} title={p.note}>
+                                                                <span className={`text-[10px] font-medium ${isLight ? `text-${color}-700` : `text-${color}-300`}`}>{language === 'he' ? `גיל ${p.fromAge}–${p.toAge}` : `Age ${p.fromAge}–${p.toAge}`}</span>
+                                                                <span className={`text-base font-bold ${isLight ? `text-${color}-700` : `text-${color}-400`}`}>{p.score}</span>
+                                                                {p.label && <span className={`text-[9px] text-center ${isLight ? `text-${color}-600` : `text-${color}-400`}`}>{p.label}</span>}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {aiInsight.summary && <p className={isLight ? 'text-slate-700' : 'text-gray-200'}>{aiInsight.summary}</p>}
+                                        {aiInsight.incomeAnalysis && (
+                                            <div>
+                                                <p className={`font-semibold mb-0.5 ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{language === 'he' ? 'ניתוח הכנסות:' : 'Income Analysis:'}</p>
+                                                <p className={isLight ? 'text-slate-600' : 'text-gray-300'}>{aiInsight.incomeAnalysis}</p>
+                                            </div>
+                                        )}
+                                        {aiInsight.taxOptimization && (
+                                            <div>
+                                                <p className={`font-semibold mb-0.5 ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{language === 'he' ? 'אופטימיזציית מס:' : 'Tax Optimization:'}</p>
+                                                <p className={isLight ? 'text-slate-600' : 'text-gray-300'}>{aiInsight.taxOptimization}</p>
+                                            </div>
+                                        )}
+                                        {aiInsight.gaps && (
+                                            <div>
+                                                <p className={`font-semibold mb-0.5 ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{language === 'he' ? 'פערים:' : 'Gaps:'}</p>
+                                                <p className={isLight ? 'text-slate-600' : 'text-gray-300'}>{aiInsight.gaps}</p>
+                                            </div>
+                                        )}
+                                        {aiInsight.recommendations?.length > 0 && (
+                                            <div>
+                                                <p className={`font-semibold mb-0.5 ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{language === 'he' ? 'המלצות:' : 'Recommendations:'}</p>
+                                                <ul className="space-y-1.5">
+                                                    {aiInsight.recommendations.map((r, i) => (
+                                                        <li key={i} className={`p-1.5 rounded ${isLight ? 'bg-white border border-purple-100' : 'bg-white/5 border border-purple-500/20'}`}>
+                                                            <span className={`font-medium ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>{r.title}</span>
+                                                            {r.description && <p className={`mt-0.5 ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>{r.description}</p>}
+                                                            {r.impact && <p className={`mt-0.5 font-medium ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>{r.impact}</p>}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                        {aiInsight.conclusion && <p className={`italic ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{aiInsight.conclusion}</p>}
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* Income Sources */}
                         <div className={`rounded-xl border transition-all duration-300 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'}`}>

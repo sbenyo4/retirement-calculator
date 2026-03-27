@@ -460,3 +460,146 @@ export async function getAIInsights(inputs, results, provider, model, apiKeyOver
         throw error;
     }
 }
+
+/**
+ * Generates a prompt for AI analysis of pension income data.
+ */
+export const generatePensionInsightPrompt = (incomeSources, summary, inputs, language) => {
+    const isHebrew = language === 'he';
+    const currency = isHebrew ? '₪' : '$';
+
+    const activeSources = (incomeSources || []).filter(s => s.enabled !== false);
+
+    // Pension start = earliest active income source age
+    const earlyRetirementAge = parseFloat(inputs.retirementStartAge) || 67;
+    const pensionStartAge = activeSources.length > 0
+        ? Math.min(...activeSources.map(s => parseFloat(s.startAge) || 67))
+        : earlyRetirementAge;
+    const monthlyExpenses = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
+
+    // Income sources list — clear separation from capital
+    const sourcesText = activeSources.map(s => {
+        const taxNote = s.isTaxable === false ? 'tax-exempt' : 'taxable';
+        const end = s.endAge ? `, ends age ${s.endAge}` : ', lifetime';
+        return `  • ${s.name || s.type} [PENSION INCOME / קצבה]: ${currency}${Math.round(s.amount)}/month gross, starts age ${s.startAge}${end}, ${taxNote}`;
+    }).join('\n');
+
+    // Milestones — read from correct nested structure, clearly label capital vs income
+    const milestonesText = (summary?.milestones || []).map(m => {
+        const gross = Math.round(m.income?.totalGross ?? 0);
+        const net = Math.round(m.income?.totalNet ?? 0);
+        const capital = Math.round(m.accumulatedCapital ?? 0);
+        const taxRate = m.income?.effectiveTaxRate ?? 0;
+        const gap = net - monthlyExpenses;
+        const sourceBreakdown = (m.income?.sources || [])
+            .map(s => `${s.name || s.type}: ${currency}${Math.round(s.amount)}/mo`)
+            .join(', ');
+        return `  Age ${m.age}:\n    - PENSION INCOME (קצבה): gross ${currency}${gross} → net ${currency}${net} after ${taxRate.toFixed(1)}% tax${sourceBreakdown ? ` [${sourceBreakdown}]` : ''}\n    - CAPITAL (הון — savings pool, NOT income): ${currency}${capital.toLocaleString()}\n    - Gap vs desired: ${gap >= 0 ? `surplus +${currency}${gap}` : `shortfall -${currency}${Math.abs(gap)}`}`;
+    }).join('\n');
+
+    const firstMilestone = summary?.milestones?.find(m => m.age >= pensionStartAge) || summary?.milestones?.[0];
+    const netAtPensionStart = Math.round(firstMilestone?.income?.totalNet ?? 0);
+    const coveragePct = monthlyExpenses > 0 ? Math.round((netAtPensionStart / monthlyExpenses) * 100) : 0;
+
+    const taxBrackets = (inputs.fiscalParameters?.taxBrackets || []).map((b, i, arr) => {
+        const prev = i === 0 ? 0 : arr[i - 1].limit;
+        const range = b.limit ? `${currency}${prev.toLocaleString()}–${currency}${b.limit.toLocaleString()}` : `${currency}${prev.toLocaleString()}+`;
+        return `${range}: ${Math.round(b.rate * 100)}%`;
+    }).join(' | ');
+
+    const pensionExemptionRate = Math.round((inputs.fiscalParameters?.pensionExemption?.rate ?? 0.575) * 100);
+    const pensionExemptionMax = inputs.fiscalParameters?.pensionExemption?.maxMonthly ?? 5422;
+
+    return `Act as a senior Israeli retirement financial advisor specializing in pension income.
+Analyze ONLY the pension income phase from age ${pensionStartAge} onwards. Do NOT mention or analyze any earlier period.
+CRITICAL: Every sentence MUST include specific numbers. No generic advice.
+
+PENSION PHASE (age ${pensionStartAge} to ${inputs.retirementEndAge || 90}, ${(inputs.retirementEndAge || 90) - pensionStartAge} years):
+- Desired monthly net income: ${currency}${monthlyExpenses}
+- Net pension income at age ${pensionStartAge}: ${currency}${netAtPensionStart} — covers ${coveragePct}% of desired
+
+INCOME SOURCES (${activeSources.length} active):
+${sourcesText || 'None'}
+
+INCOME BY AGE MILESTONE:
+${milestonesText || 'No milestones'}
+
+ISRAELI TAX RULES:
+- Income tax brackets (monthly): ${taxBrackets}
+- Pension exemption (פטור קצבה מזכה): ${pensionExemptionRate}% of qualifying pension exempt, up to ${currency}${pensionExemptionMax}/month
+- National Insurance (ביטוח לאומי): starts age 67 (income test for work income only applies until age 70)
+
+IMPORTANT: The analysis must start from age ${pensionStartAge}. Do not reference any period before this age.
+
+The pension phases are the periods BETWEEN consecutive milestone ages. For example if milestones are ages 65, 67, 70, 90 then the phases are: 65–67, 67–70, 70–90.
+
+Return ONLY a strict JSON object:
+{
+  "periodScores": [
+    {
+      "fromAge": number,
+      "toAge": number,
+      "score": number,  // MUST be between 0 and 100. 100 = income fully covers expenses. 0 = no income at all. Never exceed 100.
+      "label": "string — one short phrase describing this period (e.g. 'קצבה חלקית' / 'Partial pension')",
+      "note": "string — one sentence with exact amounts explaining the score"
+    }
+  ],
+  "summary": "string — 2-3 sentences with exact amounts: net income per period vs desired, key changes",
+  "incomeAnalysis": "string — analyze each source: amount, tax treatment, timing. Note which are most valuable.",
+  "taxOptimization": "string — concrete tax insights: effective rate per period, exempt amount used, potential savings",
+  "gaps": "string — specific shortfalls: which periods, by how much, what could fill them",
+  "recommendations": [
+    { "title": "string", "description": "string with exact numbers", "impact": "string — concrete amount/percentage" }
+  ],
+  "conclusion": "string"
+}
+
+Language: ${isHebrew ? 'Hebrew (Modern, professional)' : 'English'}.`;
+};
+
+/**
+ * Fetches AI pension analysis using the selected provider.
+ */
+export async function getPensionAIInsights(incomeSources, summary, inputs, provider, model, apiKeyOverride = null, language = 'he', { signal } = {}) {
+    const prompt = generatePensionInsightPrompt(incomeSources, summary, inputs, language);
+
+    const envKey = getProviderEnvKey(provider);
+    const apiKey = apiKeyOverride?.trim() || (envKey ? import.meta.env[envKey]?.trim() : null);
+    if (!apiKey) throw new Error('Missing API Key');
+
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+    const onRetry = null;
+    let responseText = '';
+
+    if (provider === 'gemini') {
+        const { GoogleGenerativeAI } = await import('@google/generative-ai');
+        const genAI = new GoogleGenerativeAI(apiKey);
+        responseText = await withRetry(async () => {
+            const genModel = genAI.getGenerativeModel({ model, generationConfig: { responseMimeType: 'application/json' } });
+            const result = await genModel.generateContent(prompt);
+            return (await result.response).text();
+        }, { onRetry });
+    } else if (provider === 'openai') {
+        const { default: OpenAI } = await import('openai');
+        const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+        const completion = await withRetry(() => openai.chat.completions.create({
+            messages: [{ role: 'user', content: prompt }],
+            model,
+            response_format: { type: 'json_object' }
+        }), { onRetry });
+        responseText = completion.choices[0].message.content;
+    } else if (provider === 'anthropic') {
+        const { default: Anthropic } = await import('@anthropic-ai/sdk');
+        const anthropic = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+        const message = await withRetry(() => anthropic.messages.create({
+            model, max_tokens: 4096,
+            messages: [{ role: 'user', content: prompt }]
+        }), { onRetry });
+        responseText = message.content[0].text;
+    }
+
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(cleanJson);
+}
