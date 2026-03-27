@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useDraggable } from '../hooks/useDraggable';
 import { useDebouncedValue } from '../hooks/useDebounce';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useTheme } from '../contexts/ThemeContext';
 import { useThemeClasses } from '../hooks/useThemeClasses';
 import { X, Dices, ArrowDown, Calculator, RotateCcw, TrendingUp, TrendingDown, Shuffle, StepForward } from 'lucide-react';
@@ -26,6 +27,7 @@ export default function VariableRatesModal({
 }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
+    useBodyScrollLock(isOpen);
     const classes = useThemeClasses();
 
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen);

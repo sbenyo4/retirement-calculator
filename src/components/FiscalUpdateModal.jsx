@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useDraggable } from '../hooks/useDraggable';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { calculateRetirementWithAI } from '../utils/ai-calculator';
 import { NATIONAL_INSURANCE_RATES, PENSION_TAX_BRACKETS } from '../utils/pensionCalculator';
 import { Sparkles, Save, RotateCcw, Check, AlertTriangle, Code, Copy, Table } from 'lucide-react';
@@ -26,6 +27,7 @@ export function FiscalUpdateModal({
 }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
+    useBodyScrollLock(isOpen);
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);

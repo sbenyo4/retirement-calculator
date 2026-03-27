@@ -1,5 +1,6 @@
 import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { useDraggable } from '../hooks/useDraggable';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import ReactDOM from 'react-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useThemeClasses } from '../hooks/useThemeClasses';
@@ -36,6 +37,7 @@ export default function LifeEventsTimelineModal({
 }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
+    useBodyScrollLock(isOpen);
     const classes = useThemeClasses();
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
     const currencySymbol = language === 'he' ? '₪' : '$';

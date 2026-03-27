@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { MessageCircle, X, Send, RotateCcw, Mic } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useDraggable } from '../hooks/useDraggable';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { getChatResponse, buildChatSystemPrompt } from '../utils/ai-chat';
 
 const STORAGE_KEY = 'chatButtonPos';
@@ -44,6 +45,7 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
     const isHe = language === 'he';
 
     const [open, setOpen] = useState(false);
+    useBodyScrollLock(open);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
@@ -180,11 +182,17 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
             setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
         } catch (err) {
             if (err.name !== 'AbortError') {
-                console.error('[Chat error]', err);
+                console.error('[Chat error]', err, err?.status, err?.error);
                 const msg = err?.message || '';
-                const detail = msg.includes('quota') || msg.includes('429') ? (isHe ? 'חריגה ממכסת ה-API' : 'API quota exceeded')
-                    : msg.includes('401') || msg.includes('API key') ? (isHe ? 'מפתח API שגוי' : 'Invalid API key')
-                    : msg.includes('context') || msg.includes('token') || msg.includes('400') ? (isHe ? 'ההודעה ארוכה מדי' : 'Message too long')
+                const status = err?.status;
+                const isQuota = msg.includes('quota') || msg.includes('rate') || status === 429 || msg.includes('429');
+                const isAuth = msg.includes('401') || msg.includes('API key') || msg.includes('authentication') || status === 401;
+                const isContextLen = msg.includes('too long') || msg.includes('context_length') || msg.includes('prompt is too long') || status === 413;
+                const isBalance = msg.toLowerCase().includes('balance') || msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('billing');
+                const detail = isBalance ? (isHe ? 'אין מספיק קרדיט בחשבון ה-API' : 'Insufficient API credits — please top up your account')
+                    : isQuota ? (isHe ? 'חריגה ממכסת ה-API' : 'API quota exceeded')
+                    : isAuth ? (isHe ? 'מפתח API שגוי' : 'Invalid API key')
+                    : isContextLen ? (isHe ? 'ההודעה ארוכה מדי' : 'Message too long')
                     : msg || (isHe ? 'שגיאה לא ידועה' : 'Unknown error');
                 setError((isHe ? 'שגיאה: ' : 'Error: ') + detail);
             }

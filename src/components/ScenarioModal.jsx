@@ -2,12 +2,14 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, TrendingDown, BarChart2, Zap } from 'lucide-react';
 import { useDraggable } from '../hooks/useDraggable';
 import { useTheme } from '../contexts/ThemeContext';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { generateScenarioRates } from '../utils/scenarioUtils';
 import CrashAnalysisModal from './CrashAnalysisModal';
 
 export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCancel, inputs, language, t, aiProvider, aiModel, apiKeyOverride }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
+    useBodyScrollLock(isOpen);
 
     const currentYear = new Date().getFullYear();
     const defaultStartYear = useMemo(() => {

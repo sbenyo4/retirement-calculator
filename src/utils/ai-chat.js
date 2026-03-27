@@ -120,12 +120,19 @@ function formatConversation(systemPrompt, messages) {
 /**
  * Sends a multi-turn chat conversation to the AI and returns the response text.
  */
+const MAX_HISTORY_MESSAGES = 10; // keep last 10 messages (~5 turns) to avoid token limits
+
 export async function getChatResponse(messages, systemPrompt, provider, model, apiKeyOverride = null, { signal } = {}) {
     const envKey = getProviderEnvKey(provider);
     const apiKey = apiKeyOverride?.trim() || (envKey ? import.meta.env[envKey]?.trim() : null);
 
     if (!apiKey) throw new Error('Missing API Key');
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+    // Trim history to avoid exceeding token limits, always keep the last user message
+    const trimmed = messages.length > MAX_HISTORY_MESSAGES
+        ? messages.slice(-MAX_HISTORY_MESSAGES)
+        : messages;
 
     const onRetry = null;
     let responseText = '';
@@ -138,11 +145,11 @@ export async function getChatResponse(messages, systemPrompt, provider, model, a
                 model,
                 systemInstruction: systemPrompt,
             });
-            const history = messages.slice(0, -1).map(m => ({
+            const history = trimmed.slice(0, -1).map(m => ({
                 role: m.role === 'user' ? 'user' : 'model',
                 parts: [{ text: m.content }],
             }));
-            const lastMsg = messages[messages.length - 1].content;
+            const lastMsg = trimmed[trimmed.length - 1].content;
             const chat = genModel.startChat({ history });
             const result = await chat.sendMessage(lastMsg);
             return result.response.text();
@@ -154,7 +161,7 @@ export async function getChatResponse(messages, systemPrompt, provider, model, a
         const completion = await withRetry(() =>
             openai.chat.completions.create({
                 model,
-                messages: [{ role: 'system', content: systemPrompt }, ...messages],
+                messages: [{ role: 'system', content: systemPrompt }, ...trimmed],
             }), { onRetry });
         responseText = completion.choices[0].message.content;
 
@@ -165,7 +172,7 @@ export async function getChatResponse(messages, systemPrompt, provider, model, a
             anthropic.messages.create({
                 model, max_tokens: 2048,
                 system: systemPrompt,
-                messages,
+                messages: trimmed,
             }), { onRetry });
         responseText = message.content[0].text;
     }

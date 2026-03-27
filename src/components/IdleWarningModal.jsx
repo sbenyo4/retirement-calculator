@@ -1,8 +1,10 @@
 import { useTheme } from '../contexts/ThemeContext';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 
 export function IdleWarningModal({ secondsLeft, onStayLoggedIn, language }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
+    useBodyScrollLock(true);
     const isHe = language === 'he';
 
     const title = isHe ? 'אזהרת ניתוק אוטומטי' : 'Auto-Logout Warning';

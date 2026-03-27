@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useDraggable } from '../hooks/useDraggable';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { X, BarChart2, TrendingDown, TrendingUp, Plus, Trash2, Info, Sparkles, Loader2 } from 'lucide-react';
 import { Bar } from 'react-chartjs-2';
 import {
@@ -31,6 +32,7 @@ const uid = () => _nextId++;
 export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, language, aiProvider, aiModel, apiKeyOverride, presetLabel }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
+    useBodyScrollLock(isOpen);
     const he = language === 'he';
 
     const [activeTab, setActiveTab] = useState('sweep');
