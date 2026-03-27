@@ -301,6 +301,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const [showBracketTable, setShowBracketTable] = useState(false);
     const [aiInsight, setAiInsight] = useState(null);
     const [aiPanelVisible, setAiPanelVisible] = useState(false);
+    const [aiPanelCollapsed, setAiPanelCollapsed] = useState(false);
     const [isLoadingAI, setIsLoadingAI] = useState(false);
     const [aiError, setAiError] = useState(null);
     const aiAbortRef = useRef(null);
@@ -739,47 +740,56 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
 
                         {/* AI Analysis Panel */}
                         {aiPanelVisible && (aiInsight || isLoadingAI || aiError) && (
-                            <div className={`rounded-xl border p-3 space-y-2 ${isLight ? 'bg-purple-50 border-purple-200' : 'bg-purple-900/20 border-purple-500/30'}`}>
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-1.5">
+                            <div className={`rounded-xl border ${isLight ? 'bg-purple-50 border-purple-200' : 'bg-purple-900/20 border-purple-500/30'}`}>
+                                <div className="flex items-center justify-between px-3 py-2">
+                                    <button
+                                        onClick={() => setAiPanelCollapsed(c => !c)}
+                                        className="flex items-center gap-1.5 flex-1 text-left"
+                                    >
                                         <Sparkles size={13} className={isLight ? 'text-purple-600' : 'text-purple-400'} />
                                         <span className={`text-xs font-bold ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>
                                             {language === 'he' ? 'ניתוח AI' : 'AI Analysis'}
                                         </span>
-                                    </div>
+                                        {aiPanelCollapsed
+                                            ? <ChevronDown size={14} className={isLight ? 'text-purple-500' : 'text-purple-400'} />
+                                            : <ChevronUp size={14} className={isLight ? 'text-purple-500' : 'text-purple-400'} />
+                                        }
+                                    </button>
                                     <button onClick={() => setAiPanelVisible(false)} className={`p-0.5 rounded transition-colors ${isLight ? 'text-slate-400 hover:text-slate-600' : 'text-gray-500 hover:text-gray-300'}`}>
                                         <X size={13} />
                                     </button>
                                 </div>
-                                {isLoadingAI && (
-                                    <div className="flex items-center gap-2 py-2">
-                                        <Loader2 size={14} className="animate-spin text-purple-400" />
-                                        <span className={`text-xs ${isLight ? 'text-purple-600' : 'text-purple-300'}`}>{language === 'he' ? 'מנתח נתוני פנסיה...' : 'Analyzing pension data...'}</span>
-                                    </div>
-                                )}
-                                {aiError && (() => {
-                                    const isHe = language === 'he';
-                                    const cfg = {
-                                        balance: { Icon: CreditCard,  color: 'amber',  title: isHe ? 'אין קרדיט API'     : 'Insufficient API Credits', body: isHe ? 'יש להוסיף קרדיט לחשבון ספק ה-AI'            : 'Add credits to your AI provider account' },
-                                        quota:   { Icon: WifiOff,     color: 'orange', title: isHe ? 'חריגה ממכסת API'   : 'API Quota Exceeded',       body: isHe ? 'הגעת למגבלת הבקשות — נסה שוב בעוד כמה דקות' : 'Rate limit reached — try again in a few minutes' },
-                                        auth:    { Icon: KeyRound,    color: 'red',    title: isHe ? 'מפתח API שגוי'     : 'Invalid API Key',          body: isHe ? 'בדוק את מפתח ה-API בהגדרות'                  : 'Check your API key in Settings' },
-                                        context: { Icon: FileX,       color: 'purple', title: isHe ? 'הבקשה ארוכה מדי'   : 'Request Too Long',         body: isHe ? 'נסה להסיר מקורות הכנסה'                      : 'Try removing some income sources' },
-                                        network: { Icon: WifiOff,     color: 'red',    title: isHe ? 'שגיאת תקשורת'      : 'Network Error',            body: isHe ? 'בדוק את החיבור לאינטרנט'                     : 'Check your internet connection' },
-                                        unknown: { Icon: AlertCircle, color: 'red',    title: isHe ? 'שגיאה'             : 'Error',                    body: aiError.raw },
-                                    }[aiError.type] || { Icon: AlertCircle, color: 'red', title: 'Error', body: aiError.raw };
-                                    return (
-                                        <div className={`rounded-lg border px-3 py-2 flex items-start gap-2 bg-${cfg.color}-500/10 border-${cfg.color}-500/30`}>
-                                            <cfg.Icon size={14} className={`mt-0.5 shrink-0 text-${cfg.color}-400`} />
-                                            <div className="min-w-0 flex-1">
-                                                <p className={`text-xs font-semibold text-${cfg.color}-300`}>{cfg.title}</p>
-                                                <p className={`text-[11px] text-${cfg.color}-400 mt-0.5 break-words`}>{cfg.body}</p>
+                                {!aiPanelCollapsed && (
+                                    <div className="px-3 pb-3 space-y-2">
+                                        {isLoadingAI && (
+                                            <div className="flex items-center gap-2 py-1">
+                                                <Loader2 size={14} className="animate-spin text-purple-400" />
+                                                <span className={`text-xs ${isLight ? 'text-purple-600' : 'text-purple-300'}`}>{language === 'he' ? 'מנתח נתוני פנסיה...' : 'Analyzing pension data...'}</span>
                                             </div>
-                                            <button onClick={() => setAiError(null)} className={`shrink-0 text-${cfg.color}-500 hover:text-${cfg.color}-300`}><X size={12} /></button>
-                                        </div>
-                                    );
-                                })()}
-                                {aiInsight && (
-                                    <div className="space-y-2 text-xs overflow-y-auto custom-scrollbar scrollbar-right max-h-64" dir={language === 'he' ? 'rtl' : 'ltr'}>
+                                        )}
+                                        {aiError && (() => {
+                                            const isHe = language === 'he';
+                                            const cfg = {
+                                                balance: { Icon: CreditCard,  color: 'amber',  title: isHe ? 'אין קרדיט API'     : 'Insufficient API Credits', body: isHe ? 'יש להוסיף קרדיט לחשבון ספק ה-AI'            : 'Add credits to your AI provider account' },
+                                                quota:   { Icon: WifiOff,     color: 'orange', title: isHe ? 'חריגה ממכסת API'   : 'API Quota Exceeded',       body: isHe ? 'הגעת למגבלת הבקשות — נסה שוב בעוד כמה דקות' : 'Rate limit reached — try again in a few minutes' },
+                                                auth:    { Icon: KeyRound,    color: 'red',    title: isHe ? 'מפתח API שגוי'     : 'Invalid API Key',          body: isHe ? 'בדוק את מפתח ה-API בהגדרות'                  : 'Check your API key in Settings' },
+                                                context: { Icon: FileX,       color: 'purple', title: isHe ? 'הבקשה ארוכה מדי'   : 'Request Too Long',         body: isHe ? 'נסה להסיר מקורות הכנסה'                      : 'Try removing some income sources' },
+                                                network: { Icon: WifiOff,     color: 'red',    title: isHe ? 'שגיאת תקשורת'      : 'Network Error',            body: isHe ? 'בדוק את החיבור לאינטרנט'                     : 'Check your internet connection' },
+                                                unknown: { Icon: AlertCircle, color: 'red',    title: isHe ? 'שגיאה'             : 'Error',                    body: aiError.raw },
+                                            }[aiError.type] || { Icon: AlertCircle, color: 'red', title: 'Error', body: aiError.raw };
+                                            return (
+                                                <div className={`rounded-lg border px-3 py-2 flex items-start gap-2 bg-${cfg.color}-500/10 border-${cfg.color}-500/30`}>
+                                                    <cfg.Icon size={14} className={`mt-0.5 shrink-0 text-${cfg.color}-400`} />
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className={`text-xs font-semibold text-${cfg.color}-300`}>{cfg.title}</p>
+                                                        <p className={`text-[11px] text-${cfg.color}-400 mt-0.5 break-words`}>{cfg.body}</p>
+                                                    </div>
+                                                    <button onClick={() => setAiError(null)} className={`shrink-0 text-${cfg.color}-500 hover:text-${cfg.color}-300`}><X size={12} /></button>
+                                                </div>
+                                            );
+                                        })()}
+                                        {aiInsight && (
+                                            <div className="space-y-2 text-xs overflow-y-auto custom-scrollbar scrollbar-right max-h-64" dir={language === 'he' ? 'rtl' : 'ltr'}>
                                         {/* Period Scores */}
                                         {aiInsight.periodScores?.length > 0 && (
                                             <div className="space-y-1">
@@ -790,7 +800,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                                         const color = score >= 80 ? 'emerald' : score >= 60 ? 'amber' : 'red';
                                                         return (
                                                             <div key={i} className={`flex flex-col items-center px-2 py-1.5 rounded-lg border ${isLight ? `bg-${color}-50 border-${color}-200` : `bg-${color}-900/20 border-${color}-500/30`}`} title={p.note}>
-                                                                <span className={`text-[10px] font-medium ${isLight ? `text-${color}-700` : `text-${color}-300`}`}>{language === 'he' ? `גיל ${p.fromAge}–${p.toAge}` : `Age ${p.fromAge}–${p.toAge}`}</span>
+                                                                <span className={`text-[10px] font-medium ${isLight ? `text-${color}-700` : `text-${color}-300`}`}>{language === 'he' ? `גיל ${p.fromAge}–${p.toAge ?? '∞'}` : `Age ${p.fromAge}–${p.toAge ?? '∞'}`}</span>
                                                                 <span className={`text-base font-bold ${isLight ? `text-${color}-700` : `text-${color}-400`}`}>{p.score}</span>
                                                                 {p.label && <span className={`text-[9px] text-center ${isLight ? `text-${color}-600` : `text-${color}-400`}`}>{p.label}</span>}
                                                             </div>
@@ -833,6 +843,8 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                             </div>
                                         )}
                                         {aiInsight.conclusion && <p className={`italic ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{aiInsight.conclusion}</p>}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
