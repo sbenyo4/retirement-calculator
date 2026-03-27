@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageCircle, X, Send, RotateCcw, Mic } from 'lucide-react';
+import { MessageCircle, X, Send, RotateCcw, Mic, AlertCircle, WifiOff, KeyRound, CreditCard, FileX } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useDraggable } from '../hooks/useDraggable';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
@@ -64,50 +64,81 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
     const [listening, setListening] = useState(false);
     const [hasSpeech, setHasSpeech] = useState(false);
     const recognitionRef = useRef(null);
+    const listeningRef = useRef(false); // stable ref for callbacks
+    const voiceTranscriptRef = useRef('');
+    const interimRef = useRef('');
 
     useEffect(() => {
         setHasSpeech(!!(window.SpeechRecognition || window.webkitSpeechRecognition));
     }, []);
 
-    const voiceTranscriptRef = useRef('');
+    const startRecognition = useCallback(() => {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) return;
+
+        const recognition = new SpeechRecognition();
+        recognition.lang = isHe ? 'he-IL' : 'en-US';
+        recognition.interimResults = true;
+        recognition.continuous = false; // restart manually — more reliable cross-browser
+        recognition.maxAlternatives = 1;
+        recognitionRef.current = recognition;
+
+        recognition.onresult = (e) => {
+            let interim = '';
+            for (let i = e.resultIndex; i < e.results.length; i++) {
+                const t = e.results[i][0].transcript;
+                if (e.results[i].isFinal) {
+                    voiceTranscriptRef.current += (voiceTranscriptRef.current ? ' ' : '') + t.trim();
+                    interim = '';
+                } else {
+                    interim += t;
+                }
+            }
+            interimRef.current = interim;
+            // Show combined final + interim in textarea
+            setInput(voiceTranscriptRef.current + (interim ? ' ' + interim : ''));
+        };
+
+        recognition.onend = () => {
+            interimRef.current = '';
+            // Auto-restart if still in listening mode (browser stopped due to silence)
+            if (listeningRef.current) {
+                try { recognition.start(); } catch { /* already started */ }
+            }
+        };
+
+        recognition.onerror = (e) => {
+            // no-speech and audio-capture are recoverable — just restart
+            if (e.error === 'no-speech' || e.error === 'audio-capture') return;
+            // network / not-allowed / aborted — stop
+            listeningRef.current = false;
+            setListening(false);
+        };
+
+        try { recognition.start(); } catch { /* already running */ }
+    }, [isHe, setInput]);
 
     const toggleVoice = useCallback(() => {
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition || !hasSpeech) return;
+        if (!hasSpeech) return;
 
         if (listening) {
-            // Cancel: stop without sending
-            voiceTranscriptRef.current = '';
+            // Stop: keep whatever was transcribed so far
+            listeningRef.current = false;
             recognitionRef.current?.stop();
+            recognitionRef.current = null;
+            setListening(false);
+            interimRef.current = '';
+            // Show only the final transcript (remove interim)
+            setInput(voiceTranscriptRef.current);
             return;
         }
 
         voiceTranscriptRef.current = '';
-        const recognition = new SpeechRecognition();
-        recognition.lang = isHe ? 'he-IL' : 'en-US';
-        recognition.interimResults = false;
-        recognition.continuous = true;
-        recognitionRef.current = recognition;
-
-        recognition.onresult = (e) => {
-            for (let i = e.resultIndex; i < e.results.length; i++) {
-                if (e.results[i].isFinal) {
-                    voiceTranscriptRef.current += (voiceTranscriptRef.current ? ' ' : '') + e.results[i][0].transcript.trim();
-                }
-            }
-        };
-        recognition.onend = () => {
-            setListening(false);
-            // Don't auto-send — sending is triggered only by the Send button
-        };
-        recognition.onerror = () => {
-            setListening(false);
-            voiceTranscriptRef.current = '';
-        };
-
-        recognition.start();
+        interimRef.current = '';
+        listeningRef.current = true;
         setListening(true);
-    }, [listening, isHe, hasSpeech]);
+        startRecognition();
+    }, [listening, hasSpeech, startRecognition, setInput]);
 
     const abortRef = useRef(null);
     const bottomRef = useRef(null);
@@ -183,18 +214,15 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
         } catch (err) {
             if (err.name !== 'AbortError') {
                 console.error('[Chat error]', err, err?.status, err?.error);
-                const msg = err?.message || '';
+                const msg = (err?.message || '').toLowerCase();
                 const status = err?.status;
-                const isQuota = msg.includes('quota') || msg.includes('rate') || status === 429 || msg.includes('429');
-                const isAuth = msg.includes('401') || msg.includes('API key') || msg.includes('authentication') || status === 401;
-                const isContextLen = msg.includes('too long') || msg.includes('context_length') || msg.includes('prompt is too long') || status === 413;
-                const isBalance = msg.toLowerCase().includes('balance') || msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('billing');
-                const detail = isBalance ? (isHe ? 'אין מספיק קרדיט בחשבון ה-API' : 'Insufficient API credits — please top up your account')
-                    : isQuota ? (isHe ? 'חריגה ממכסת ה-API' : 'API quota exceeded')
-                    : isAuth ? (isHe ? 'מפתח API שגוי' : 'Invalid API key')
-                    : isContextLen ? (isHe ? 'ההודעה ארוכה מדי' : 'Message too long')
-                    : msg || (isHe ? 'שגיאה לא ידועה' : 'Unknown error');
-                setError((isHe ? 'שגיאה: ' : 'Error: ') + detail);
+                const isBalance  = msg.includes('balance') || msg.includes('credit') || msg.includes('billing');
+                const isQuota    = !isBalance && (msg.includes('quota') || msg.includes('rate limit') || status === 429 || msg.includes('429'));
+                const isAuth     = msg.includes('401') || msg.includes('api key') || msg.includes('authentication') || status === 401;
+                const isContext  = msg.includes('too long') || msg.includes('context_length') || msg.includes('prompt is too long') || status === 413;
+                const isNetwork  = msg.includes('network') || msg.includes('fetch') || msg.includes('failed to fetch');
+                const errType = isBalance ? 'balance' : isQuota ? 'quota' : isAuth ? 'auth' : isContext ? 'context' : isNetwork ? 'network' : 'unknown';
+                setError({ type: errType, raw: err?.message || '' });
             }
         } finally {
             setLoading(false);
@@ -345,7 +373,27 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
                                 </div>
                             )}
 
-                            {error && <p className="text-xs text-red-400 text-center py-1">{error}</p>}
+                            {error && (() => {
+                                const cfg = {
+                                    balance: { Icon: CreditCard,   color: 'amber',  title: isHe ? 'אין קרדיט API'       : 'Insufficient API Credits',  body: isHe ? 'יש להוסיף קרדיט לחשבון ספק ה-AI'            : 'Add credits to your AI provider account' },
+                                    quota:   { Icon: WifiOff,      color: 'orange', title: isHe ? 'חריגה ממכסת API'     : 'API Quota Exceeded',         body: isHe ? 'הגעת למגבלת הבקשות — נסה שוב בעוד כמה דקות' : 'Rate limit reached — try again in a few minutes' },
+                                    auth:    { Icon: KeyRound,     color: 'red',    title: isHe ? 'מפתח API שגוי'       : 'Invalid API Key',            body: isHe ? 'בדוק את מפתח ה-API בהגדרות'                  : 'Check your API key in Settings' },
+                                    context: { Icon: FileX,        color: 'purple', title: isHe ? 'ההודעה ארוכה מדי'    : 'Message Too Long',           body: isHe ? 'נסה לנקות את הצ\'אט ולשאול מחדש'             : "Try clearing the chat and asking again" },
+                                    network: { Icon: WifiOff,      color: 'red',    title: isHe ? 'שגיאת תקשורת'        : 'Network Error',              body: isHe ? 'בדוק את החיבור לאינטרנט'                     : 'Check your internet connection' },
+                                    unknown: { Icon: AlertCircle,  color: 'red',    title: isHe ? 'שגיאה'               : 'Error',                      body: error.raw },
+                                }[error.type] || { Icon: AlertCircle, color: 'red', title: 'Error', body: error.raw };
+                                const c = cfg.color;
+                                return (
+                                    <div className={`mx-1 mb-1 rounded-lg border px-3 py-2 flex items-start gap-2 bg-${c}-500/10 border-${c}-500/30`}>
+                                        <cfg.Icon size={14} className={`mt-0.5 shrink-0 text-${c}-400`} />
+                                        <div className="min-w-0">
+                                            <p className={`text-xs font-semibold text-${c}-300`}>{cfg.title}</p>
+                                            <p className={`text-[11px] text-${c}-400 mt-0.5 break-words`}>{cfg.body}</p>
+                                        </div>
+                                        <button onClick={() => setError(null)} className={`shrink-0 text-${c}-500 hover:text-${c}-300 mt-0.5`}><X size={12} /></button>
+                                    </div>
+                                );
+                            })()}
 
                             <div ref={bottomRef} />
                         </div>
@@ -379,10 +427,16 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
                             )}
                             <button onClick={() => {
                                 if (listening) {
+                                    // Stop recording then send
+                                    listeningRef.current = false;
+                                    recognitionRef.current?.stop();
+                                    recognitionRef.current = null;
+                                    setListening(false);
                                     const text = voiceTranscriptRef.current.trim();
                                     voiceTranscriptRef.current = '';
-                                    recognitionRef.current?.stop();
+                                    interimRef.current = '';
                                     if (text) sendMessageRef.current(text);
+                                    else sendMessage();
                                 } else {
                                     sendMessage();
                                 }

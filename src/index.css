@@ -80,6 +80,15 @@ input[type="number"] {
   direction: rtl;
 }
 
+/* Hide scrollbar visually but keep scroll functionality */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* Fix Date Picker Icon Color for Dark Backgrounds */
 input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(1);

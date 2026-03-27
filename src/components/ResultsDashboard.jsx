@@ -879,6 +879,9 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                         inputs={sensitivityInputs}
                         t={t}
                         language={language}
+                        aiProvider={aiProvider}
+                        aiModel={aiModel}
+                        apiKeyOverride={apiKeyOverride}
                     />
 
                     <SensitivityHeatmapModal

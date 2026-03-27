@@ -1,5 +1,36 @@
 
 import { getProviderEnvKey } from '../config/ai-models';
+
+/**
+ * Classify an AI API error into a structured { type, raw } object.
+ * type: 'balance' | 'quota' | 'auth' | 'context' | 'network' | 'unknown'
+ * Handles both human-readable messages (from callAIProvider) and raw SDK errors
+ * (from getRangeAIInsights etc.) which may use underscore formats like "rate_limit_error".
+ */
+export function classifyAiError(err) {
+    const msg = (err?.message || '').toLowerCase();
+    const status = Number(err?.status || err?.statusCode || 0);
+    // Anthropic SDK stores the parsed error body in err.error; OpenAI uses err.error.type too
+    const sdkType = ((err?.error?.type || err?.type || err?.code || '')).toLowerCase();
+
+    const isBalance = msg.includes('balance') || msg.includes('credit') || msg.includes('billing')
+        || sdkType.includes('billing') || status === 402;
+    const isQuota   = !isBalance && (
+        msg.includes('quota') || msg.includes('rate limit') || msg.includes('rate_limit')
+        || sdkType.includes('rate_limit') || sdkType.includes('overloaded')
+        || status === 429 || msg.includes('429') || msg.includes('overloaded') || msg.includes('too many')
+    );
+    const isAuth    = msg.includes('401') || msg.includes('api key') || msg.includes('api_key')
+        || msg.includes('authentication') || msg.includes('unauthorized')
+        || sdkType.includes('authentication') || status === 401;
+    const isContext = msg.includes('too long') || msg.includes('context_length') || msg.includes('prompt is too long')
+        || sdkType.includes('context') || status === 413;
+    const isNetwork = msg.includes('network') || msg.includes('fetch') || msg.includes('econnrefused')
+        || msg.includes('timeout') || msg.includes('enotfound');
+
+    const type = isBalance ? 'balance' : isQuota ? 'quota' : isAuth ? 'auth' : isContext ? 'context' : isNetwork ? 'network' : 'unknown';
+    return { type, raw: err?.message || '' };
+}
 import { calculateRetirementProjection } from './calculator';
 import { withRetry, RETRY_CONFIG } from './ai-calculator';
 import { DEFAULT_TAX_BRACKETS } from './fiscalDefaults';
@@ -375,6 +406,185 @@ export async function getCrashAIInsights(analysisInputs, sweepResults, provider,
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleanJson);
+}
+
+/**
+ * Generates a prompt for AI analysis of a sensitivity range scan.
+ */
+export const generateRangeInsightPrompt = (rangeResults, parameterLabel, currentValue, language) => {
+    const isHebrew = language === 'he';
+    const currency = isHebrew ? '₪' : '$';
+
+    const current = rangeResults.find(r => r.isCurrent);
+    const positive = rangeResults.filter(r => r.balanceAtEnd >= 0);
+
+    let breakEven = null;
+    for (let i = 1; i < rangeResults.length; i++) {
+        if (rangeResults[i - 1].balanceAtEnd < 0 && rangeResults[i].balanceAtEnd >= 0) {
+            breakEven = rangeResults[i];
+            break;
+        }
+    }
+
+    const best = rangeResults.reduce((a, b) => b.balanceAtEnd > a.balanceAtEnd ? b : a, rangeResults[0]);
+    const worst = rangeResults.reduce((a, b) => b.balanceAtEnd < a.balanceAtEnd ? b : a, rangeResults[0]);
+
+    const rangeText = rangeResults.map(r =>
+        `  ${r.label}${r.isCurrent ? ' [CURRENT]' : ''}: ${currency}${Math.round(r.balanceAtEnd).toLocaleString()}`
+    ).join('\n');
+
+    return `Act as a senior retirement financial advisor. Analyze this sensitivity scan and give sharp, data-driven conclusions.
+CRITICAL: Every sentence must include exact ${currency} amounts or values from the data. No generic advice.
+
+PARAMETER SCANNED: ${parameterLabel}
+CURRENT VALUE: ${currentValue}
+SCAN RESULTS:
+${rangeText}
+
+KEY FACTS:
+- Current balance at end: ${currency}${Math.round(current?.balanceAtEnd ?? 0).toLocaleString()} (${(current?.balanceAtEnd ?? 0) >= 0 ? 'SURPLUS' : 'DEFICIT'})
+- Break-even value: ${breakEven ? breakEven.label : 'Not reached in this range'}
+- Safe values (positive balance): ${positive.length} / ${rangeResults.length}
+- Best outcome: ${best.label} → ${currency}${Math.round(best.balanceAtEnd).toLocaleString()}
+- Worst outcome: ${worst.label} → ${currency}${Math.round(worst.balanceAtEnd).toLocaleString()}
+
+Return ONLY strict JSON:
+{
+  "headline": "string — one sharp sentence with the most important finding and exact numbers",
+  "currentPosition": "string — where the user stands: exact value, balance, safe or at risk",
+  "breakEven": "string — minimum value needed for non-negative outcome, with exact amount",
+  "safeZone": "string — which values produce safe outcomes and by how much surplus",
+  "riskZone": "string — which values produce deficits and by how much",
+  "sensitivity": "string — average change per step, is this parameter highly sensitive or stable",
+  "recommendation": "string — one concrete action with exact numbers"
+}
+Language: ${isHebrew ? 'Hebrew (Modern, professional)' : 'English'}.`;
+};
+
+/**
+ * Fetches AI range sensitivity analysis.
+ */
+export async function getRangeAIInsights(rangeResults, parameterLabel, currentValue, provider, model, apiKeyOverride = null, language = 'he', { signal } = {}) {
+    const prompt = generateRangeInsightPrompt(rangeResults, parameterLabel, currentValue, language);
+
+    const envKey = getProviderEnvKey(provider);
+    const apiKey = apiKeyOverride?.trim() || (envKey ? import.meta.env[envKey]?.trim() : null);
+    if (!apiKey) throw new Error('Missing API Key');
+
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+    const onRetry = null;
+    let responseText = '';
+
+    if (provider === 'gemini') {
+        const { GoogleGenerativeAI } = await import('@google/generative-ai');
+        const genAI = new GoogleGenerativeAI(apiKey);
+        responseText = await withRetry(async () => {
+            const genModel = genAI.getGenerativeModel({ model, generationConfig: { responseMimeType: 'application/json' } });
+            const result = await genModel.generateContent(prompt);
+            return (await result.response).text();
+        }, { onRetry });
+    } else if (provider === 'openai') {
+        const { default: OpenAI } = await import('openai');
+        const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+        const completion = await withRetry(() => openai.chat.completions.create({
+            messages: [{ role: 'user', content: prompt }],
+            model, response_format: { type: 'json_object' }
+        }), { onRetry });
+        responseText = completion.choices[0].message.content;
+    } else if (provider === 'anthropic') {
+        const { default: Anthropic } = await import('@anthropic-ai/sdk');
+        const anthropic = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+        const message = await withRetry(() => anthropic.messages.create({
+            model, max_tokens: 2048,
+            messages: [{ role: 'user', content: prompt }]
+        }), { onRetry });
+        responseText = message.content[0].text;
+    }
+
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    const cleanJson2 = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(cleanJson2);
+}
+
+/**
+ * Generates a prompt for global analysis across all sensitivity parameters.
+ */
+export const generateGlobalRangeInsightPrompt = (allParamResults, language) => {
+    const isHebrew = language === 'he';
+    const currency = isHebrew ? '₪' : '$';
+
+    const paramsText = allParamResults.map(({ label, currentValue, currentBalance, breakEven, safeCount, totalCount, bestBalance, worstBalance }) => {
+        return `• ${label} (current: ${currentValue}):
+    - Balance at current value: ${currency}${Math.round(currentBalance).toLocaleString()} (${currentBalance >= 0 ? 'SURPLUS' : 'DEFICIT'})
+    - Break-even: ${breakEven || 'Not reached in range'}
+    - Safe outcomes: ${safeCount}/${totalCount}
+    - Best: ${currency}${Math.round(bestBalance).toLocaleString()} | Worst: ${currency}${Math.round(worstBalance).toLocaleString()}`;
+    }).join('\n');
+
+    return `Act as a senior retirement financial advisor. Analyze ALL sensitivity parameters together and give a comprehensive cross-parameter assessment.
+CRITICAL: Every sentence must include exact numbers. No generic advice.
+
+ALL PARAMETER SCANS:
+${paramsText}
+
+Return ONLY strict JSON:
+{
+  "overallRisk": "low" | "medium" | "high",
+  "overallRiskExplanation": "string — why this risk level, with exact numbers",
+  "mostCriticalParameter": "string — which parameter has the most impact and why, with exact amounts",
+  "safestParameter": "string — which parameter the plan is least sensitive to, with numbers",
+  "currentSituation": "string — overall assessment of where the user stands across all parameters",
+  "keyInsights": ["string", "string", "string"],
+  "topRecommendation": "string — the single most impactful action the user can take, with exact numbers"
+}
+Language: ${isHebrew ? 'Hebrew (Modern, professional)' : 'English'}.`;
+};
+
+/**
+ * Fetches global AI analysis across all sensitivity parameters.
+ */
+export async function getGlobalRangeAIInsights(allParamResults, provider, model, apiKeyOverride = null, language = 'he', { signal } = {}) {
+    const prompt = generateGlobalRangeInsightPrompt(allParamResults, language);
+
+    const envKey = getProviderEnvKey(provider);
+    const apiKey = apiKeyOverride?.trim() || (envKey ? import.meta.env[envKey]?.trim() : null);
+    if (!apiKey) throw new Error('Missing API Key');
+
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+    const onRetry = null;
+    let responseText = '';
+
+    if (provider === 'gemini') {
+        const { GoogleGenerativeAI } = await import('@google/generative-ai');
+        const genAI = new GoogleGenerativeAI(apiKey);
+        responseText = await withRetry(async () => {
+            const genModel = genAI.getGenerativeModel({ model, generationConfig: { responseMimeType: 'application/json' } });
+            const result = await genModel.generateContent(prompt);
+            return (await result.response).text();
+        }, { onRetry });
+    } else if (provider === 'openai') {
+        const { default: OpenAI } = await import('openai');
+        const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+        const completion = await withRetry(() => openai.chat.completions.create({
+            messages: [{ role: 'user', content: prompt }],
+            model, response_format: { type: 'json_object' }
+        }), { onRetry });
+        responseText = completion.choices[0].message.content;
+    } else if (provider === 'anthropic') {
+        const { default: Anthropic } = await import('@anthropic-ai/sdk');
+        const anthropic = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+        const message = await withRetry(() => anthropic.messages.create({
+            model, max_tokens: 2048,
+            messages: [{ role: 'user', content: prompt }]
+        }), { onRetry });
+        responseText = message.content[0].text;
+    }
+
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    const cleanJson3 = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(cleanJson3);
 }
 
 /**

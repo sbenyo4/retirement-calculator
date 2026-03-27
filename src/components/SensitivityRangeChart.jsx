@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { Bar } from 'react-chartjs-2';
 import {
@@ -12,8 +12,9 @@ import {
 } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 import { calculateRetirementProjection } from '../utils/calculator';
-import { X } from 'lucide-react';
+import { X, Sparkles, Loader2, ChevronDown, ChevronUp, AlertCircle, WifiOff, KeyRound, CreditCard, FileX } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
+import { getRangeAIInsights, getGlobalRangeAIInsights, classifyAiError } from '../utils/ai-insights';
 
 ChartJS.register(
     CategoryScale,
@@ -143,8 +144,22 @@ export function SensitivityRangeButton({ onClick, t }) {
 }
 
 // Modal component
-export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) {
+export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language, aiProvider, aiModel, apiKeyOverride }) {
     const { theme } = useTheme();
+    const isLight = theme === 'light';
+    const [aiInsights, setAiInsights] = useState({}); // keyed by parameterType
+    const [isLoadingAI, setIsLoadingAI] = useState(false);
+    const [aiError, setAiError] = useState(null);
+    const [globalInsight, setGlobalInsight] = useState(null);
+    const [isLoadingGlobal, setIsLoadingGlobal] = useState(false);
+    const [globalError, setGlobalError] = useState(null);
+    const [globalPanelVisible, setGlobalPanelVisible] = useState(false);
+    const [aiPanelCollapsed, setAiPanelCollapsed] = useState(false);
+    const [globalPanelCollapsed, setGlobalPanelCollapsed] = useState(false);
+    const aiAbortRef = useRef(null);
+    const globalAbortRef = useRef(null);
+    const aiCacheRef = useRef({}); // keyed by parameterType
+    const globalCacheRef = useRef(null);
     const [parameterType, setParameterType] = useState(() => {
         // Default to Interest (or Accumulation if buckets enabled)
         return inputs.enableBuckets ? PARAMETER_TYPES.ACCUMULATION_RATE : PARAMETER_TYPES.INTEREST;
@@ -608,6 +623,99 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
         { value: PARAMETER_TYPES.TARGET_END_BALANCE, label: t('targetEndBalance') || 'Target End Balance' }
     ];
 
+    const currentParamLabel = [...(inputs.enableBuckets ? [
+        { value: PARAMETER_TYPES.ACCUMULATION_RATE, label: t('accumulationRate') || 'Accumulation Rate' },
+        { value: PARAMETER_TYPES.SAFE_RATE, label: t('safeRate') || 'Safe Rate' },
+        { value: PARAMETER_TYPES.SURPLUS_RATE, label: t('surplusRate') || 'Surplus Rate' },
+    ] : [
+        { value: PARAMETER_TYPES.INTEREST, label: t('interestRate') || 'Interest Rate' },
+    ]), ...[
+        { value: PARAMETER_TYPES.INCOME, label: t('monthlyIncome') || 'Monthly Income' },
+        { value: PARAMETER_TYPES.RETIREMENT_AGE, label: t('retirementAge') || 'Retirement Age' },
+        { value: PARAMETER_TYPES.INFLATION, label: t('inflationRate') || 'Inflation Rate' },
+        { value: PARAMETER_TYPES.TARGET_END_BALANCE, label: t('targetEndBalance') || 'Target End Balance' },
+    ]].find(o => o.value === parameterType)?.label || parameterType;
+
+    // Current param's cached insight
+    const currentInsight = aiInsights[parameterType] ?? null;
+
+    // Auto-show/hide per-param panel when switching parameters
+    React.useEffect(() => {
+        setAiError(null);
+    }, [parameterType]);
+
+    const runAIAnalysis = useCallback(async () => {
+        if (!aiProvider || isLoadingAI || rangeResults.length === 0) return;
+        const cacheKey = JSON.stringify({ rangeResults, parameterType, aiProvider, aiModel });
+        if (cacheKey === aiCacheRef.current[parameterType] && aiInsights[parameterType]) return;
+        aiAbortRef.current?.abort();
+        const controller = new AbortController();
+        aiAbortRef.current = controller;
+        setIsLoadingAI(true);
+        setAiError(null);
+        try {
+            const result = await getRangeAIInsights(
+                rangeResults, currentParamLabel, config.format(currentValue, language),
+                aiProvider, aiModel, apiKeyOverride, language, { signal: controller.signal }
+            );
+            aiCacheRef.current[parameterType] = cacheKey;
+            setAiInsights(prev => ({ ...prev, [parameterType]: result }));
+        } catch (err) {
+            if (err.name !== 'AbortError') setAiError(classifyAiError(err));
+        } finally {
+            setIsLoadingAI(false);
+        }
+    }, [aiProvider, aiModel, apiKeyOverride, rangeResults, parameterType, currentParamLabel, currentValue, config, language, isLoadingAI, aiInsights]);
+
+    const runGlobalAnalysis = useCallback(async () => {
+        if (!aiProvider || isLoadingGlobal) return;
+        // Build summary data for each parameter type
+        const allParamTypes = inputs.enableBuckets
+            ? [PARAMETER_TYPES.ACCUMULATION_RATE, PARAMETER_TYPES.SAFE_RATE, PARAMETER_TYPES.SURPLUS_RATE, PARAMETER_TYPES.INCOME, PARAMETER_TYPES.RETIREMENT_AGE, PARAMETER_TYPES.INFLATION]
+            : [PARAMETER_TYPES.INTEREST, PARAMETER_TYPES.INCOME, PARAMETER_TYPES.RETIREMENT_AGE, PARAMETER_TYPES.INFLATION];
+        const allParamData = allParamTypes.map(pt => {
+            const cfg = PARAMETER_CONFIG[pt];
+            const curVal = parseFloat(inputs[cfg.inputKey]) || cfg.defaultRange[0];
+            const results = [];
+            const effectiveMin = cfg.defaultRange[0], effectiveMax = cfg.defaultRange[1];
+            for (let v = effectiveMin; v <= effectiveMax; v += cfg.step) {
+                try {
+                    const r = calculateRetirementProjection({ ...inputs, [cfg.inputKey]: v });
+                    results.push({ value: v, label: cfg.format(v, language), balanceAtEnd: r.balanceAtEnd, isCurrent: Math.abs(v - curVal) < cfg.step / 2 });
+                } catch { /* skip */ }
+            }
+            if (!results.length) return null;
+            const positive = results.filter(r => r.balanceAtEnd >= 0);
+            let breakEven = null;
+            for (let i = 1; i < results.length; i++) {
+                if (results[i - 1].balanceAtEnd < 0 && results[i].balanceAtEnd >= 0) { breakEven = results[i].label; break; }
+            }
+            const cur = results.find(r => r.isCurrent);
+            const best = results.reduce((a, b) => b.balanceAtEnd > a.balanceAtEnd ? b : a, results[0]);
+            const worst = results.reduce((a, b) => b.balanceAtEnd < a.balanceAtEnd ? b : a, results[0]);
+            const paramLabels = { [PARAMETER_TYPES.INTEREST]: t('interestRate') || 'Interest Rate', [PARAMETER_TYPES.ACCUMULATION_RATE]: t('accumulationRate') || 'Accum. Rate', [PARAMETER_TYPES.SAFE_RATE]: t('safeRate') || 'Safe Rate', [PARAMETER_TYPES.SURPLUS_RATE]: t('surplusRate') || 'Surplus Rate', [PARAMETER_TYPES.INCOME]: t('monthlyIncome') || 'Monthly Income', [PARAMETER_TYPES.RETIREMENT_AGE]: t('retirementAge') || 'Retirement Age', [PARAMETER_TYPES.INFLATION]: t('inflationRate') || 'Inflation Rate' };
+            return { label: paramLabels[pt] || pt, currentValue: cfg.format(curVal, language), currentBalance: cur?.balanceAtEnd ?? 0, breakEven, safeCount: positive.length, totalCount: results.length, bestBalance: best.balanceAtEnd, worstBalance: worst.balanceAtEnd };
+        }).filter(Boolean);
+        const cacheKey = JSON.stringify({ allParamData, aiProvider, aiModel });
+        if (cacheKey === globalCacheRef.current && globalInsight) { setGlobalPanelVisible(true); return; }
+        globalAbortRef.current?.abort();
+        const controller = new AbortController();
+        globalAbortRef.current = controller;
+        setGlobalPanelVisible(true);
+        setIsLoadingGlobal(true);
+        setGlobalError(null);
+        setGlobalInsight(null);
+        try {
+            const result = await getGlobalRangeAIInsights(allParamData, aiProvider, aiModel, apiKeyOverride, language, { signal: controller.signal });
+            globalCacheRef.current = cacheKey;
+            setGlobalInsight(result);
+        } catch (err) {
+            if (err.name !== 'AbortError') setGlobalError(classifyAiError(err));
+        } finally {
+            setIsLoadingGlobal(false);
+        }
+    }, [aiProvider, aiModel, apiKeyOverride, inputs, language, t, isLoadingGlobal, globalInsight]);
+
     if (!isOpen) return null;
 
     // Theme-aware classes
@@ -638,14 +746,44 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
                     </>
                 )}
                 {/* Header */}
-                <div className={`flex items-center justify-between p-4 border-b ${headerBorder} relative z-10 shrink-0`}>
-                    <div className="flex flex-col gap-1">
+                <div className={`flex flex-col p-4 border-b ${headerBorder} relative z-10 shrink-0`}>
+                    {/* Title row with buttons */}
+                    <div className="flex items-center justify-between">
                         <h2 className={`text-lg font-semibold ${titleColor} flex items-center gap-2`}>
                             <span>📊</span>
                             <span>{t('sensitivityRangeChart') || 'Sensitivity Range Chart'}</span>
                         </h2>
-                        {/* Insights Badges */}
-                        <div className="flex gap-2">
+                        <div className="flex items-center gap-2">
+                            {aiProvider && (
+                                <>
+                                    <button
+                                        onClick={runAIAnalysis}
+                                        disabled={isLoadingAI || rangeResults.length === 0}
+                                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors ${isLoadingAI ? 'opacity-60 cursor-wait' : ''} ${isLight ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' : 'bg-purple-500/20 text-purple-300 hover:bg-purple-500/30'}`}
+                                        title={language === 'he' ? 'ניתוח AI לגרף הנוכחי' : 'AI analysis for current chart'}
+                                    >
+                                        {isLoadingAI ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                                        <span>{language === 'he' ? 'ניתוח' : 'Analyze'}</span>
+                                    </button>
+                                    <button
+                                        onClick={runGlobalAnalysis}
+                                        disabled={isLoadingGlobal}
+                                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors ${isLoadingGlobal ? 'opacity-60 cursor-wait' : ''} ${isLight ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30'}`}
+                                        title={language === 'he' ? 'ניתוח גלובלי של כל הפרמטרים' : 'Global analysis of all parameters'}
+                                    >
+                                        {isLoadingGlobal ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                                        <span>{language === 'he' ? 'גלובלי' : 'Global'}</span>
+                                    </button>
+                                </>
+                            )}
+                            <button onClick={onClose} className="p-1.5 hover:bg-black/10 rounded-lg transition-colors">
+                                <X size={20} className={theme === 'light' ? 'text-gray-600' : 'text-gray-400'} />
+                            </button>
+                        </div>
+                    </div>
+                    {/* Insights Badges */}
+                    {(impactfulGlobalFactor || (impactfulRate && inputs.enableBuckets)) && (
+                        <div className="flex gap-2 mt-1">
                             {impactfulGlobalFactor && (
                                 <span className={`text-[10px] md:text-xs px-2 py-0.5 rounded-full border ${theme === 'light' ? 'bg-blue-100 border-blue-300 text-blue-900' : 'bg-blue-500/20 border-blue-400/50 text-blue-100'}`}>
                                     {t('mostImpactfulFactor') || 'Top Factor'}: <strong>{impactfulGlobalFactor.label} ({impactfulGlobalFactor.step} - {formatCompactNumber(impactfulGlobalFactor.diff)})</strong>
@@ -657,17 +795,11 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
                                 </span>
                             )}
                         </div>
-                    </div>
-                    <button
-                        onClick={onClose}
-                        className="p-1.5 hover:bg-black/10 rounded-lg transition-colors"
-                    >
-                        <X size={20} className={theme === 'light' ? 'text-gray-600' : 'text-gray-400'} />
-                    </button>
+                    )}
                 </div>
 
                 {/* Content */}
-                <div className="p-4 space-y-4 overflow-y-auto flex-1 relative z-10">
+                <div className="p-4 space-y-4 overflow-y-auto scrollbar-hide flex-1 relative z-10">
                     {/* Controls Row */}
                     <div className="flex flex-wrap gap-4 items-end">
                         {/* Parameter Selector */}
@@ -771,6 +903,165 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language }) 
                     <div className="h-72">
                         <Bar data={chartData} options={options} plugins={[ChartDataLabels]} />
                     </div>
+
+                    {/* Per-param AI Panel */}
+                    {(currentInsight || isLoadingAI || aiError) && (
+                        <div className={`rounded-xl border ${isLight ? 'bg-purple-50 border-purple-200' : 'bg-purple-900/20 border-purple-500/30'}`}>
+                            <button
+                                onClick={() => setAiPanelCollapsed(c => !c)}
+                                className="flex items-center justify-between w-full px-3 py-2 text-left"
+                            >
+                                <div className="flex items-center gap-1.5">
+                                    <Sparkles size={12} className={isLight ? 'text-purple-600' : 'text-purple-400'} />
+                                    <span className={`text-xs font-bold ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>
+                                        {language === 'he' ? `ניתוח AI — ${currentParamLabel}` : `AI Analysis — ${currentParamLabel}`}
+                                    </span>
+                                </div>
+                                {aiPanelCollapsed
+                                    ? <ChevronDown size={14} className={isLight ? 'text-purple-500' : 'text-purple-400'} />
+                                    : <ChevronUp size={14} className={isLight ? 'text-purple-500' : 'text-purple-400'} />
+                                }
+                            </button>
+                            {!aiPanelCollapsed && (
+                                <div className="px-3 pb-3 space-y-2 max-h-52 overflow-y-auto custom-scrollbar scrollbar-right">
+                                    {isLoadingAI && (
+                                        <div className="flex items-center gap-2 py-1">
+                                            <Loader2 size={13} className="animate-spin text-purple-400" />
+                                            <span className={`text-xs ${isLight ? 'text-purple-600' : 'text-purple-300'}`}>{language === 'he' ? 'סורק טווח...' : 'Scanning range...'}</span>
+                                        </div>
+                                    )}
+                                    {aiError && (() => {
+                                        const isHe = language === 'he';
+                                        const cfg = {
+                                            balance: { Icon: CreditCard,  color: 'amber',  title: isHe ? 'אין קרדיט API'     : 'Insufficient API Credits', body: isHe ? 'יש להוסיף קרדיט לחשבון ספק ה-AI'            : 'Add credits to your AI provider account' },
+                                            quota:   { Icon: WifiOff,     color: 'orange', title: isHe ? 'חריגה ממכסת API'   : 'API Quota Exceeded',       body: isHe ? 'הגעת למגבלת הבקשות — נסה שוב בעוד כמה דקות' : 'Rate limit reached — try again in a few minutes' },
+                                            auth:    { Icon: KeyRound,    color: 'red',    title: isHe ? 'מפתח API שגוי'     : 'Invalid API Key',          body: isHe ? 'בדוק את מפתח ה-API בהגדרות'                  : 'Check your API key in Settings' },
+                                            context: { Icon: FileX,       color: 'purple', title: isHe ? 'הבקשה ארוכה מדי'   : 'Request Too Long',         body: isHe ? 'נסה עם טווח קטן יותר'                        : 'Try a smaller range' },
+                                            network: { Icon: WifiOff,     color: 'red',    title: isHe ? 'שגיאת תקשורת'      : 'Network Error',            body: isHe ? 'בדוק את החיבור לאינטרנט'                     : 'Check your internet connection' },
+                                            unknown: { Icon: AlertCircle, color: 'red',    title: isHe ? 'שגיאה'             : 'Error',                    body: aiError.raw },
+                                        }[aiError.type] || { Icon: AlertCircle, color: 'red', title: 'Error', body: aiError.raw };
+                                        return (
+                                            <div className={`rounded-lg border px-3 py-2 flex items-start gap-2 bg-${cfg.color}-500/10 border-${cfg.color}-500/30`}>
+                                                <cfg.Icon size={14} className={`mt-0.5 shrink-0 text-${cfg.color}-400`} />
+                                                <div className="min-w-0 flex-1">
+                                                    <p className={`text-xs font-semibold text-${cfg.color}-300`}>{cfg.title}</p>
+                                                    <p className={`text-[11px] text-${cfg.color}-400 mt-0.5 break-words`}>{cfg.body}</p>
+                                                </div>
+                                                <button onClick={() => setAiError(null)} className={`shrink-0 text-${cfg.color}-500 hover:text-${cfg.color}-300`}><X size={12} /></button>
+                                            </div>
+                                        );
+                                    })()}
+                                    {currentInsight && (
+                                        <div className="space-y-1.5 text-xs" dir={language === 'he' ? 'rtl' : 'ltr'}>
+                                            {currentInsight.headline && <p className={`font-semibold ${isLight ? 'text-slate-800' : 'text-white'}`}>{currentInsight.headline}</p>}
+                                            {[
+                                                { key: 'currentPosition', label: language === 'he' ? 'מצב נוכחי' : 'Current Position' },
+                                                { key: 'breakEven',       label: language === 'he' ? 'נקודת איזון' : 'Break-Even' },
+                                                { key: 'safeZone',        label: language === 'he' ? 'אזור בטוח' : 'Safe Zone' },
+                                                { key: 'riskZone',        label: language === 'he' ? 'אזור סיכון' : 'Risk Zone' },
+                                                { key: 'sensitivity',     label: language === 'he' ? 'רגישות' : 'Sensitivity' },
+                                                { key: 'recommendation',  label: language === 'he' ? 'המלצה' : 'Recommendation' },
+                                            ].filter(f => currentInsight[f.key]).map(f => (
+                                                <div key={f.key}>
+                                                    <span className={`font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{f.label}: </span>
+                                                    <span className={isLight ? 'text-slate-600' : 'text-gray-300'}>{currentInsight[f.key]}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Global AI Panel */}
+                    {globalPanelVisible && (globalInsight || isLoadingGlobal || globalError) && (
+                        <div className={`rounded-xl border ${isLight ? 'bg-indigo-50 border-indigo-200' : 'bg-indigo-900/20 border-indigo-500/30'}`}>
+                            <div className="flex items-center justify-between px-3 py-2">
+                                <button
+                                    onClick={() => setGlobalPanelCollapsed(c => !c)}
+                                    className="flex items-center gap-1.5 flex-1 text-left"
+                                >
+                                    <Sparkles size={12} className={isLight ? 'text-indigo-600' : 'text-indigo-400'} />
+                                    <span className={`text-xs font-bold ${isLight ? 'text-indigo-700' : 'text-indigo-300'}`}>
+                                        {language === 'he' ? 'ניתוח גלובלי' : 'Global Analysis'}
+                                    </span>
+                                    {globalPanelCollapsed
+                                        ? <ChevronDown size={14} className={isLight ? 'text-indigo-500' : 'text-indigo-400'} />
+                                        : <ChevronUp size={14} className={isLight ? 'text-indigo-500' : 'text-indigo-400'} />
+                                    }
+                                </button>
+                                <button onClick={() => setGlobalPanelVisible(false)} className={`p-0.5 rounded ${isLight ? 'text-slate-400 hover:text-slate-600' : 'text-gray-500 hover:text-gray-300'}`}>
+                                    <X size={12} />
+                                </button>
+                            </div>
+                            {!globalPanelCollapsed && (
+                                <div className="px-3 pb-3 space-y-2 max-h-52 overflow-y-auto custom-scrollbar scrollbar-right">
+                                    {isLoadingGlobal && (
+                                        <div className="flex items-center gap-2 py-1">
+                                            <Loader2 size={13} className="animate-spin text-indigo-400" />
+                                            <span className={`text-xs ${isLight ? 'text-indigo-600' : 'text-indigo-300'}`}>{language === 'he' ? 'מנתח את כל הפרמטרים...' : 'Analyzing all parameters...'}</span>
+                                        </div>
+                                    )}
+                                    {globalError && (() => {
+                                        const isHe = language === 'he';
+                                        const cfg = {
+                                            balance: { Icon: CreditCard,  color: 'amber',  title: isHe ? 'אין קרדיט API'     : 'Insufficient API Credits', body: isHe ? 'יש להוסיף קרדיט לחשבון ספק ה-AI'            : 'Add credits to your AI provider account' },
+                                            quota:   { Icon: WifiOff,     color: 'orange', title: isHe ? 'חריגה ממכסת API'   : 'API Quota Exceeded',       body: isHe ? 'הגעת למגבלת הבקשות — נסה שוב בעוד כמה דקות' : 'Rate limit reached — try again in a few minutes' },
+                                            auth:    { Icon: KeyRound,    color: 'red',    title: isHe ? 'מפתח API שגוי'     : 'Invalid API Key',          body: isHe ? 'בדוק את מפתח ה-API בהגדרות'                  : 'Check your API key in Settings' },
+                                            context: { Icon: FileX,       color: 'purple', title: isHe ? 'הבקשה ארוכה מדי'   : 'Request Too Long',         body: isHe ? 'נסה עם פחות פרמטרים'                         : 'Try with fewer parameters' },
+                                            network: { Icon: WifiOff,     color: 'red',    title: isHe ? 'שגיאת תקשורת'      : 'Network Error',            body: isHe ? 'בדוק את החיבור לאינטרנט'                     : 'Check your internet connection' },
+                                            unknown: { Icon: AlertCircle, color: 'red',    title: isHe ? 'שגיאה'             : 'Error',                    body: globalError.raw },
+                                        }[globalError.type] || { Icon: AlertCircle, color: 'red', title: 'Error', body: globalError.raw };
+                                        return (
+                                            <div className={`rounded-lg border px-3 py-2 flex items-start gap-2 bg-${cfg.color}-500/10 border-${cfg.color}-500/30`}>
+                                                <cfg.Icon size={14} className={`mt-0.5 shrink-0 text-${cfg.color}-400`} />
+                                                <div className="min-w-0 flex-1">
+                                                    <p className={`text-xs font-semibold text-${cfg.color}-300`}>{cfg.title}</p>
+                                                    <p className={`text-[11px] text-${cfg.color}-400 mt-0.5 break-words`}>{cfg.body}</p>
+                                                </div>
+                                                <button onClick={() => setGlobalError(null)} className={`shrink-0 text-${cfg.color}-500 hover:text-${cfg.color}-300`}><X size={12} /></button>
+                                            </div>
+                                        );
+                                    })()}
+                                    {globalInsight && (
+                                        <div className="space-y-1.5 text-xs" dir={language === 'he' ? 'rtl' : 'ltr'}>
+                                            {globalInsight.overallRisk && (
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{language === 'he' ? 'רמת סיכון כללית:' : 'Overall Risk:'}</span>
+                                                    <span className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${globalInsight.overallRisk === 'low' ? 'bg-emerald-500/20 text-emerald-400' : globalInsight.overallRisk === 'medium' ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400'}`}>
+                                                        {globalInsight.overallRisk === 'low' ? (language === 'he' ? 'נמוך' : 'Low') : globalInsight.overallRisk === 'medium' ? (language === 'he' ? 'בינוני' : 'Medium') : (language === 'he' ? 'גבוה' : 'High')}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            {[
+                                                { key: 'overallRiskExplanation', label: language === 'he' ? 'הסבר' : 'Explanation' },
+                                                { key: 'mostCriticalParameter',  label: language === 'he' ? 'פרמטר קריטי' : 'Most Critical' },
+                                                { key: 'safestParameter',        label: language === 'he' ? 'פרמטר יציב' : 'Most Stable' },
+                                                { key: 'currentSituation',       label: language === 'he' ? 'מצב נוכחי' : 'Current Situation' },
+                                                { key: 'topRecommendation',      label: language === 'he' ? 'המלצה עיקרית' : 'Top Recommendation' },
+                                            ].filter(f => globalInsight[f.key]).map(f => (
+                                                <div key={f.key}>
+                                                    <span className={`font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{f.label}: </span>
+                                                    <span className={isLight ? 'text-slate-600' : 'text-gray-300'}>{globalInsight[f.key]}</span>
+                                                </div>
+                                            ))}
+                                            {globalInsight.keyInsights?.length > 0 && (
+                                                <div>
+                                                    <span className={`font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{language === 'he' ? 'תובנות מפתח:' : 'Key Insights:'}</span>
+                                                    <ul className="mt-0.5 space-y-0.5">
+                                                        {globalInsight.keyInsights.map((ins, i) => (
+                                                            <li key={i} className={isLight ? 'text-slate-600' : 'text-gray-300'}>• {ins}</li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
