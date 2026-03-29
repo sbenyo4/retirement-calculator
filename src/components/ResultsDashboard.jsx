@@ -335,6 +335,65 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
         return inputs;
     }, [isCompareMode, inputs, orderedColumns]);
 
+    const variableRatesBounds = useMemo(() => {
+        if (!inputs?.variableRatesEnabled) return null;
+
+        const buildSortedMap = (vrMap, fromYear, toYear, fallbackRate, descending) => {
+            if (!vrMap || Object.keys(vrMap).length === 0) return null;
+            const years = [];
+            const values = [];
+            for (let y = fromYear; y <= toYear; y++) {
+                const v = parseFloat(vrMap[y]);
+                years.push(y);
+                values.push(!isNaN(v) ? v : (parseFloat(fallbackRate) || 0));
+            }
+            if (years.length === 0) return null;
+            const sorted = [...values].sort((a, b) => descending ? b - a : a - b);
+            const result = {};
+            years.forEach((y, i) => { result[y] = sorted[i]; });
+            return result;
+        };
+
+        try {
+            const retirementYear = getProjectedYear(inputs.retirementStartAge, inputs.currentAge, inputs.birthdate);
+            const finalYear = getProjectedYear(inputs.retirementEndAge, inputs.currentAge, inputs.birthdate);
+            const currentYear = new Date().getFullYear();
+
+            const buildScenario = (descending) => {
+                const overrides = {};
+                if (inputs.enableBuckets) {
+                    // Accumulation phase (before retirement)
+                    if (inputs.variableRates && Object.keys(inputs.variableRates).length > 0) {
+                        const m = buildSortedMap(inputs.variableRates, currentYear, retirementYear, inputs.annualReturnRate, descending);
+                        if (m) overrides.variableRates = m;
+                    }
+                    // Safe bucket
+                    if (inputs.safeVariableRates && Object.keys(inputs.safeVariableRates).length > 0) {
+                        const m = buildSortedMap(inputs.safeVariableRates, retirementYear, finalYear + 1, inputs.bucketSafeRate, descending);
+                        if (m) overrides.safeVariableRates = m;
+                    }
+                    // Surplus bucket
+                    if (inputs.surplusVariableRates && Object.keys(inputs.surplusVariableRates).length > 0) {
+                        const m = buildSortedMap(inputs.surplusVariableRates, retirementYear, finalYear + 1, inputs.bucketSurplusRate, descending);
+                        if (m) overrides.surplusVariableRates = m;
+                    }
+                    if (Object.keys(overrides).length === 0) return null;
+                } else {
+                    if (!inputs.variableRates || Object.keys(inputs.variableRates).length === 0) return null;
+                    const m = buildSortedMap(inputs.variableRates, currentYear, finalYear + 1, inputs.annualReturnRate, descending);
+                    if (!m) return null;
+                    overrides.variableRates = m;
+                }
+                return calculateRetirementProjection({ ...inputs, ...overrides }).balanceAtEnd || 0;
+            };
+
+            const maxBal = buildScenario(true);
+            const minBal = buildScenario(false);
+            if (maxBal === null || minBal === null) return null;
+            return { minBal, maxBal };
+        } catch { return null; }
+    }, [inputs]);
+
     const sensitivitySourceName = useMemo(() => {
         if (!isCompareMode) return t('currentInputs') || 'Current Inputs';
 
@@ -497,12 +556,20 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                                             {formatCurrency(balanceAtEnd)}
                                         </span>
                                     </div>
-                                    <div className={`text-[10px] text-gray-400 mt-0.5 ${!simulationRange ? 'invisible' : ''}`}>
-                                        {simulationRange
-                                            ? `${t('range')}: ${formatCurrency(simulationRange.p25Balance)} - ${formatCurrency(simulationRange.p75Balance)}`
-                                            : '\u00A0'
-                                        }
-                                    </div>
+                                    {variableRatesBounds ? (
+                                        <div className="text-[10px] font-mono mt-0.5 flex items-center gap-1" dir="ltr">
+                                            <bdi className="text-red-400">{formatCurrency(variableRatesBounds.minBal)}</bdi>
+                                            <span className="opacity-40">–</span>
+                                            <bdi className="text-green-400">{formatCurrency(variableRatesBounds.maxBal)}</bdi>
+                                        </div>
+                                    ) : (
+                                        <div className={`text-[10px] text-gray-400 mt-0.5 ${!simulationRange ? 'invisible' : ''}`}>
+                                            {simulationRange
+                                                ? `${t('range')}: ${formatCurrency(simulationRange.p25Balance)} - ${formatCurrency(simulationRange.p75Balance)}`
+                                                : '\u00A0'
+                                            }
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>

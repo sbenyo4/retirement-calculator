@@ -833,7 +833,8 @@ export default function InputForm({
                             {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE && t('withdrawalPercentageDesc')}
                             {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC && t('withdrawalDynamicDesc')}
                             {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY && t('withdrawalInterestOnlyDesc')}
-                            {(!inputs.withdrawalStrategy || inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FIXED) && t('withdrawalFixedDesc')}
+                            {inputs.variableRatesEnabled && t('variableRatesDesc')}
+                            {!inputs.variableRatesEnabled && (!inputs.withdrawalStrategy || inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FIXED) && t('withdrawalFixedDesc')}
                         </p>
 
 

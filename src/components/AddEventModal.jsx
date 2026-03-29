@@ -3,7 +3,7 @@ import { useDraggable } from '../hooks/useDraggable';
 import { useTheme } from '../contexts/ThemeContext';
 import { useThemeClasses } from '../hooks/useThemeClasses';
 import { EVENT_TYPES } from '../constants';
-import { X, DollarSign, Calendar, TrendingUp, TrendingDown, ChevronUp, ChevronDown, Trash2, Lock, LockOpen } from 'lucide-react';
+import { X, DollarSign, Calendar, TrendingUp, TrendingDown, ChevronUp, ChevronDown, Trash2, Lock, LockOpen, Copy } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 
 const MONTHS = [
@@ -28,6 +28,7 @@ export default function AddEventModal({
     event = null, // If editing, pass existing event
     events = [],  // Array of all current events for duplicate validation
     onSave,
+    onSaveAll, // Optional: save and apply to all profiles
     onCancel,
     t,
     language,
@@ -135,28 +136,20 @@ export default function AddEventModal({
         }
     }, [startYear, startMonth, endYear, endMonth, hasEndDate]);
 
+    const buildEvent = () => ({
+        ...(event || {}),
+        type: eventType,
+        startDate: { year: parseInt(startYear), month: parseInt(startMonth) },
+        endDate: isRecurring && hasEndDate ? { year: parseInt(endYear), month: parseInt(endMonth) } : null,
+        amount: isOneTime ? parseFloat(amount) : null,
+        monthlyChange: isRecurring ? parseFloat(monthlyChange) : null,
+        description,
+        linkedTo
+    });
+
     const handleSave = () => {
         if (!isValid) return;
-
-        // Create event object
-        const newEvent = {
-            ...(event || {}), // Preserve ID and other fields if editing
-            type: eventType,
-            startDate: {
-                year: parseInt(startYear),
-                month: parseInt(startMonth)
-            },
-            endDate: isRecurring && hasEndDate ? {
-                year: parseInt(endYear),
-                month: parseInt(endMonth)
-            } : null,
-            amount: isOneTime ? parseFloat(amount) : null,
-            monthlyChange: isRecurring ? parseFloat(monthlyChange) : null,
-            description,
-            linkedTo
-        };
-
-        onSave(newEvent);
+        onSave(buildEvent());
     };
 
     return (
@@ -611,6 +604,16 @@ export default function AddEventModal({
                             >
                                 {t ? t('cancel') : 'Cancel'}
                             </button>
+                            {event && onSaveAll && (
+                                <button
+                                    onClick={() => { if (isValid) { const e = buildEvent(); onSaveAll(e); } }}
+                                    disabled={!isValid}
+                                    className={`px-4 py-2 rounded text-sm transition-opacity flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white ${!isValid ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                >
+                                    <Copy className="w-3.5 h-3.5" />
+                                    {language === 'he' ? 'שמור לכולם' : 'Save to All'}
+                                </button>
+                            )}
                             <button
                                 onClick={handleSave}
                                 disabled={!isValid}

@@ -210,7 +210,7 @@ export default function VariableRatesModal({
     }, [rates, startYear, endYear, retirementStartYear, inputs]);
 
     // Step 4: Live Calculation Logic
-    const { projectedBalance, averageBalance, gap, minBalance, maxBalance, minGap, maxGap, spread } = useMemo(() => {
+    const { averageBalance, gap, minBalance, maxBalance, minGap, maxGap, spread } = useMemo(() => {
         const zeroResult = { projectedBalance: 0, averageBalance: 0, gap: 0, minBalance: 0, maxBalance: 0, minGap: 0, maxGap: 0, spread: 0 };
         if (!inputs) return zeroResult;
 
@@ -461,7 +461,7 @@ export default function VariableRatesModal({
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999] p-4" onClick={onCancel ?? onClose}>
             <div
-                className={`rounded-2xl w-full max-w-sm h-[700px] shadow-xl flex flex-col relative overflow-hidden ${isLight ? 'bg-white border border-gray-200' : 'border border-white/30'}`}
+                className={`rounded-2xl w-full max-w-sm h-[640px] shadow-xl flex flex-col relative overflow-hidden ${isLight ? 'bg-white border border-gray-200' : 'border border-white/30'}`}
                 onClick={e => e.stopPropagation()}
                 dir={language === 'he' ? 'rtl' : 'ltr'}
                 style={dragStyle}
@@ -777,23 +777,20 @@ export default function VariableRatesModal({
                         </div>
                     </div>
 
-                    {/* Live Sequence Analysis Summary (Step 3) */}
-                    <div className={`rounded-xl p-2 flex justify-between items-center ${isLight ? 'bg-indigo-50 border border-indigo-100' : 'bg-black/20 border border-white/10'}`}>
-                        <div className="flex flex-col">
-                            <span className="text-[10px] opacity-70 uppercase tracking-wider font-semibold">
-                                {language === 'he' ? 'צפי סיום (רצף נבחר)' : 'Projected End Balance'}
-                            </span>
-                            <span className={`text-lg font-bold font-mono ${gap > 0 ? 'text-green-500' : (gap < 0 ? 'text-red-400' : (isLight ? 'text-gray-900' : 'text-white'))}`}>
-                                {formatCurrency(projectedBalance)}
-                            </span>
-                        </div>
-                        <div className="flex flex-col items-end">
-                            <span className="text-[10px] opacity-70 uppercase tracking-wider font-semibold">
-                                {language === 'he' ? 'פער מהממוצע' : 'Gap from Avg'}
-                            </span>
-                            <span className={`text-sm font-bold font-mono ${gap > 0 ? 'text-green-500' : (gap < 0 ? 'text-red-400' : (isLight ? 'text-gray-500' : 'text-gray-400'))}`} dir="ltr">
+                    {/* Gap from average - compact row */}
+                    <div className={`rounded-xl px-3 py-1.5 flex justify-between items-center ${isLight ? 'bg-indigo-50 border border-indigo-100' : 'bg-black/20 border border-white/10'}`}>
+                        <span className="text-[10px] opacity-70 uppercase tracking-wider font-semibold">
+                            {language === 'he' ? 'פער מהממוצע' : 'Gap from Avg'}
+                        </span>
+                        <div className="flex items-center gap-2" dir="ltr">
+                            <span className={`text-sm font-bold font-mono ${gap > 0 ? 'text-green-500' : (gap < 0 ? 'text-red-400' : (isLight ? 'text-gray-500' : 'text-gray-400'))}`}>
                                 {gap > 0 ? '+' : ''}{formatCurrency(gap)}
                             </span>
+                            {averageBalance !== 0 && (
+                                <span className={`text-[10px] font-mono ${gap > 0 ? 'text-green-500/70' : (gap < 0 ? 'text-red-400/70' : 'opacity-50')}`}>
+                                    ({gap > 0 ? '+' : ''}{((gap / averageBalance) * 100).toFixed(1)}%)
+                                </span>
+                            )}
                         </div>
                     </div>
 

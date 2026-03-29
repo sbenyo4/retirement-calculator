@@ -34,10 +34,11 @@ export default function LifeEventsManager({
     const [editingEvent, setEditingEvent] = useState(null);
     const [copyingEvent, setCopyingEvent] = useState(null);
     const [copyError, setCopyError] = useState(null);
+    const [copySelectedIds, setCopySelectedIds] = useState([]);
+    const [copyAction, setCopyAction] = useState('copy'); // 'copy' | 'delete'
     const [viewOffset, setViewOffset] = useState(0);
     const [itemsPerView, setItemsPerView] = useState(6);
     const listContainerRef = useRef(null);
-    const copyTargetRef = useRef(null);
 
     // Reset offset when events change length
     useEffect(() => {
@@ -96,36 +97,26 @@ export default function LifeEventsManager({
     const handleScrollUp = () => setViewOffset(p => Math.max(0, p - 1));
     const handleScrollDown = () => setViewOffset(p => Math.min(Math.max(0, events.length - itemsPerView), p + 1));
 
-    const submitCopyEvent = async (targetProfileId) => {
-        if (!targetProfileId) return;
+    const submitCopyEvent = async () => {
+        if (copySelectedIds.length === 0) return;
         try {
-            const targetProfile = profiles.find(p => p.id === targetProfileId);
-            if (!targetProfile) return;
-            const newEvent = { ...copyingEvent, id: Date.now().toString() };
-            const targetInputs = targetProfile.data || {};
-            const targetEvents = targetInputs.lifeEvents || [];
-            
-            // Check if an event with the exact same description and type already exists
-            const existingIndex = targetEvents.findIndex(
-                e => e.description === copyingEvent.description && e.type === copyingEvent.type
-            );
-            
-            let updatedEvents;
-            if (existingIndex >= 0) {
-                // Overwrite the existing event but keep its original ID
-                updatedEvents = [...targetEvents];
-                updatedEvents[existingIndex] = { ...newEvent, id: targetEvents[existingIndex].id };
-            } else {
-                // Append as new
-                updatedEvents = [...targetEvents, newEvent];
+            for (const targetProfileId of copySelectedIds) {
+                const targetProfile = profiles.find(p => p.id === targetProfileId);
+                if (!targetProfile) continue;
+                const targetInputs = targetProfile.data || {};
+                const targetEvents = targetInputs.lifeEvents || [];
+                let updatedEvents;
+                if (copyAction === 'delete') {
+                    updatedEvents = targetEvents.filter(e => !(e.description === copyingEvent.description && e.type === copyingEvent.type));
+                } else {
+                    const newEvent = { ...copyingEvent, id: Date.now().toString() + targetProfileId };
+                    updatedEvents = [...targetEvents, newEvent];
+                }
+                await updateProfile(targetProfileId, { ...targetInputs, lifeEvents: updatedEvents });
             }
-            
-            const updatedDataToSave = { ...targetInputs, lifeEvents: updatedEvents };
-            
-            if (updateProfile) {
-                await updateProfile(targetProfileId, updatedDataToSave);
-                setCopyingEvent(null);
-            }
+            setCopyingEvent(null);
+            setCopySelectedIds([]);
+            setCopyAction('copy');
         } catch(e) {
             console.error(e);
             setCopyError(t ? t('copyEventError') : 'Error copying event');
@@ -147,8 +138,24 @@ export default function LifeEventsManager({
 
     const handleEditEvent = (eventData) => {
         onChange(events.map(evt => evt.id === editingEvent.id ? { ...eventData, id: evt.id, enabled: evt.enabled } : evt));
-        setEditingEvent(null); // Ensure modal closes and state clears
-        setShowAddModal(false); // Explicitly close modal just in case
+        setEditingEvent(null);
+        setShowAddModal(false);
+    };
+
+    const handleEditEventAll = async (eventData) => {
+        // Save to current profile first
+        handleEditEvent(eventData);
+        // Then propagate to all other profiles that have an event with the same description+type
+        if (!profiles || !updateProfile) return;
+        const otherProfiles = profiles.filter(p => !['tmp','guest','debug'].includes(p.id) && p.id !== currentProfileId);
+        for (const profile of otherProfiles) {
+            const targetEvents = profile.data?.lifeEvents || [];
+            const idx = targetEvents.findIndex(e => e.description === editingEvent.description && e.type === editingEvent.type);
+            if (idx < 0) continue;
+            const updated = [...targetEvents];
+            updated[idx] = { ...eventData, id: updated[idx].id, enabled: updated[idx].enabled };
+            await updateProfile(profile.id, { ...profile.data, lifeEvents: updated });
+        }
     };
 
     const handleDeleteEvent = (eventId) => {
@@ -417,6 +424,7 @@ export default function LifeEventsManager({
                         event={editingEvent}
                         events={events}
                         onSave={editingEvent?.id ? handleEditEvent : handleAddEvent}
+                        onSaveAll={editingEvent?.id ? handleEditEventAll : undefined}
                         onCancel={() => {
                             setShowAddModal(false);
                             setEditingEvent(null);
@@ -431,68 +439,93 @@ export default function LifeEventsManager({
                 )
             }
 
-            {/* Copy Event Modal */}
-            {copyingEvent && (
-                <div className="fixed inset-0 bg-black/60 z-[10000] flex items-center justify-center backdrop-blur-sm" onClick={() => setCopyingEvent(null)}>
-                    <div className={`relative overflow-hidden w-full max-w-sm rounded-xl shadow-2xl border ${classes.isLight ? 'bg-white border-gray-200' : 'border-white/20'}`} onClick={e => e.stopPropagation()} dir={language === 'he' ? 'rtl' : 'ltr'} style={{ cursor: 'default' }}>
-                        {!classes.isLight && (
-                            <>
-                                <div className="absolute inset-0 bg-gradient-to-br from-slate-900 to-indigo-950" />
-                                <div className="absolute inset-0 bg-white/5" />
-                            </>
-                        )}
-                        <div className="relative z-10 w-full h-full flex flex-col p-5">
-                            <h3 className={`font-bold flex items-center gap-2 mb-4 ${classes.headerLabel}`}>
-                                <Copy className="w-5 h-5 text-blue-500" />
-                                {t ? t('copyEventToProfile') : 'Copy Event to Profile'}
-                            </h3>
-                            <div className="mb-4">
-                                <div className={`p-4 rounded-xl mb-5 ${classes.isLight ? 'bg-gray-50 border border-gray-100' : 'bg-black/20 border border-white/10'}`}>
-                                    <p className={`text-sm font-bold ${classes.headerLabel}`}>
-                                        {copyingEvent.description || getEventTypeLabel(copyingEvent.type)}
-                                    </p>
-                                    <p className={`text-sm mt-1.5 ${classes.isLight ? 'text-blue-600' : 'text-blue-400'} font-bold`}>
-                                        {formatAmount(copyingEvent)}
-                                    </p>
-                                </div>
-                                <label className={`text-xs font-bold block mb-2 ${classes.label}`}>
-                                    {t ? t('selectTargetProfile') : 'Select Target Profile:'}
-                                </label>
-                                <select
-                                    ref={copyTargetRef}
-                                    className={`w-full p-3 rounded-lg text-sm border shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none ${classes.input}`}
-                                    style={{ backgroundColor: classes.isLight ? '#ffffff' : '#1e293b' }}
-                                >
-                                    <option value="" className={classes.secondaryText}>{t ? t('selectTargetProfilePlaceholder') : '-- Select Target Profile --'}</option>
-                                    {profiles && profiles.filter(p => !['tmp','guest','debug'].includes(p.id) && p.id !== currentProfileId).map(p => (
-                                        <option key={p.id} value={p.id}>{p.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            {copyError && (
-                                <div className={`rounded-lg p-3 flex items-center gap-2 text-sm ${classes.isLight ? 'bg-red-50 border border-red-200' : 'bg-red-500/20 border border-red-500'}`}>
-                                    <span className={classes.isLight ? 'text-red-700' : 'text-red-200'}>{copyError}</span>
-                                </div>
+            {/* Copy/Delete Event Modal */}
+            {copyingEvent && (() => {
+                const allProfiles = (profiles || []).filter(p => !['tmp','guest','debug'].includes(p.id) && p.id !== currentProfileId);
+                const eligibleProfiles = copyAction === 'copy'
+                    ? allProfiles.filter(p => !(p.data?.lifeEvents || []).some(e => e.description === copyingEvent.description && e.type === copyingEvent.type))
+                    : allProfiles.filter(p => (p.data?.lifeEvents || []).some(e => e.description === copyingEvent.description && e.type === copyingEvent.type));
+                const allSelected = eligibleProfiles.length > 0 && eligibleProfiles.every(p => copySelectedIds.includes(p.id));
+                const toggleAll = () => setCopySelectedIds(allSelected ? [] : eligibleProfiles.map(p => p.id));
+                const toggleOne = (id) => setCopySelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+                const isDelete = copyAction === 'delete';
+                return (
+                    <div className="fixed inset-0 bg-black/60 z-[10000] flex items-center justify-center backdrop-blur-sm" onClick={() => { setCopyingEvent(null); setCopySelectedIds([]); setCopyAction('copy'); }}>
+                        <div className={`relative overflow-hidden w-full max-w-sm rounded-xl shadow-2xl border ${classes.isLight ? 'bg-white border-gray-200' : 'border-white/20'}`} onClick={e => e.stopPropagation()} dir={language === 'he' ? 'rtl' : 'ltr'}>
+                            {!classes.isLight && (
+                                <>
+                                    <div className="absolute inset-0 bg-gradient-to-br from-slate-900 to-indigo-950" />
+                                    <div className="absolute inset-0 bg-white/5" />
+                                </>
                             )}
-                            <div className={`flex justify-end gap-3 text-sm mt-6 pt-5 border-t ${classes.border}`}>
-                                <button 
-                                    onClick={() => setCopyingEvent(null)}
-                                    className={`px-4 py-2.5 rounded-lg font-bold transition-colors ${classes.buttonSecondary}`}
-                                >
-                                    {t ? t('cancel') : 'Cancel'}
-                                </button>
-                                <button 
-                                    onClick={() => submitCopyEvent(copyTargetRef.current?.value)}
-                                    className="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white shadow-md font-bold transition-colors flex items-center gap-2"
-                                >
-                                    <Copy className="w-4 h-4" />
-                                    {t ? t('performCopy') : 'Copy'}
-                                </button>
+                            <div className="relative z-10 flex flex-col p-5">
+                                {/* Event summary */}
+                                <div className={`p-3 rounded-xl mb-4 ${classes.isLight ? 'bg-gray-50 border border-gray-100' : 'bg-black/20 border border-white/10'}`}>
+                                    <p className={`text-sm font-bold ${classes.headerLabel}`}>{copyingEvent.description || getEventTypeLabel(copyingEvent.type)}</p>
+                                    <p className={`text-sm mt-1 ${classes.isLight ? 'text-blue-600' : 'text-blue-400'} font-bold`}>{formatAmount(copyingEvent)}</p>
+                                </div>
+
+                                {/* Action toggle */}
+                                <div className={`flex rounded-lg overflow-hidden border mb-4 ${classes.isLight ? 'border-gray-200' : 'border-white/10'}`}>
+                                    <button
+                                        onClick={() => { setCopyAction('copy'); setCopySelectedIds([]); }}
+                                        className={`flex-1 py-2 text-sm font-bold transition-colors flex items-center justify-center gap-2 ${!isDelete ? 'bg-blue-600 text-white' : (classes.isLight ? 'text-slate-500 hover:bg-slate-100' : 'text-gray-400 hover:bg-white/5')}`}
+                                    >
+                                        <Copy className="w-3.5 h-3.5" />
+                                        {language === 'he' ? 'העתק' : 'Copy'}
+                                    </button>
+                                    <button
+                                        onClick={() => { setCopyAction('delete'); setCopySelectedIds([]); }}
+                                        className={`flex-1 py-2 text-sm font-bold transition-colors flex items-center justify-center gap-2 ${isDelete ? 'bg-red-600 text-white' : (classes.isLight ? 'text-slate-500 hover:bg-slate-100' : 'text-gray-400 hover:bg-white/5')}`}
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                        {language === 'he' ? 'מחק' : 'Delete'}
+                                    </button>
+                                </div>
+
+                                {/* Profile list */}
+                                <label className={`text-xs font-bold block mb-2 ${classes.label}`}>
+                                    {language === 'he' ? 'בחר פרופילים:' : 'Select profiles:'}
+                                </label>
+                                {eligibleProfiles.length === 0 ? (
+                                    <p className={`text-sm py-2 ${classes.label}`}>
+                                        {isDelete
+                                            ? (language === 'he' ? 'האירוע לא קיים באף פרופיל אחר' : 'Event not found in any other profile')
+                                            : (language === 'he' ? 'האירוע כבר קיים בכל הפרופילים' : 'Event already exists in all profiles')}
+                                    </p>
+                                ) : (
+                                    <div className={`rounded-lg border divide-y ${classes.isLight ? 'border-gray-200 divide-gray-100' : 'border-white/10 divide-white/5'}`}>
+                                        <label className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-white/5">
+                                            <input type="checkbox" checked={allSelected} onChange={toggleAll} className="w-4 h-4 accent-blue-500" />
+                                            <span className={`text-sm font-bold ${classes.headerLabel}`}>{language === 'he' ? 'כל הפרופילים' : 'All profiles'}</span>
+                                        </label>
+                                        {eligibleProfiles.map(p => (
+                                            <label key={p.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-white/5">
+                                                <input type="checkbox" checked={copySelectedIds.includes(p.id)} onChange={() => toggleOne(p.id)} className="w-4 h-4 accent-blue-500" />
+                                                <span className={`text-sm ${classes.label}`}>{p.name}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                )}
+                                {copyError && (
+                                    <div className={`mt-3 rounded-lg p-3 text-sm ${classes.isLight ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-red-500/20 border border-red-500 text-red-200'}`}>{copyError}</div>
+                                )}
+                                <div className={`flex justify-end gap-3 text-sm mt-5 pt-4 border-t ${classes.border}`}>
+                                    <button onClick={() => { setCopyingEvent(null); setCopySelectedIds([]); setCopyAction('copy'); }} className={`px-4 py-2 rounded-lg font-bold transition-colors ${classes.buttonSecondary}`}>
+                                        {t ? t('cancel') : 'Cancel'}
+                                    </button>
+                                    <button onClick={submitCopyEvent} disabled={copySelectedIds.length === 0} className={`px-5 py-2 rounded-lg disabled:opacity-40 text-white font-bold transition-colors flex items-center gap-2 ${isDelete ? 'bg-red-600 hover:bg-red-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
+                                        {isDelete ? <Trash2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                                        {isDelete
+                                            ? (language === 'he' ? `מחק (${copySelectedIds.length})` : `Delete (${copySelectedIds.length})`)
+                                            : (language === 'he' ? `העתק (${copySelectedIds.length})` : `Copy (${copySelectedIds.length})`)}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
         </div >
     );
 }
