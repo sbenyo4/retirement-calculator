@@ -57,6 +57,17 @@ export default function LifeEventsTimelineModal({
         return map;
     }, [events]);
 
+    // Hover-elevate state: after 1s hover, show event above all others
+    const [elevatedEventId, setElevatedEventId] = useState(null);
+    const hoverTimerRef = useRef(null);
+    const handleEventMouseEnter = (id) => {
+        hoverTimerRef.current = setTimeout(() => setElevatedEventId(id), 1000);
+    };
+    const handleEventMouseLeave = () => {
+        clearTimeout(hoverTimerRef.current);
+        setElevatedEventId(null);
+    };
+
     // State for color filters (which event types to show)
     const [visibleColors, setVisibleColors] = useState({
         green: true,
@@ -815,6 +826,8 @@ export default function LifeEventsTimelineModal({
                                                                 onToggleWrapper(event.id);
                                                             }
                                                         }}
+                                                        onMouseEnter={() => handleEventMouseEnter(event.id)}
+                                                        onMouseLeave={handleEventMouseLeave}
                                                     >
                                                         {event.isRecurring ? (
                                                             <div className="relative w-full h-full">
@@ -839,7 +852,7 @@ export default function LifeEventsTimelineModal({
 
                                                     <div
                                                         className={`absolute cursor-pointer transition-all pointer-events-auto ${!event.enabled ? 'opacity-40 grayscale' : 'hover:scale-105'}`}
-                                                        style={{ ...positionStyle, zIndex: 50 }}
+                                                        style={{ ...positionStyle, zIndex: elevatedEventId === event.id ? 500 : 50 }}
                                                         onClick={e => { e.stopPropagation(); onToggleWrapper(event.id); }}
                                                         onDoubleClick={e => {
                                                             e.stopPropagation();
