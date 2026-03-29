@@ -292,12 +292,33 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language, ai
             return results;
         }
 
+        // Mapping from rate param type to the variable rates key it controls
+        const RATE_TO_VR_KEY = {
+            [PARAMETER_TYPES.INTEREST]: 'variableRates',
+            [PARAMETER_TYPES.ACCUMULATION_RATE]: 'variableRates',
+            [PARAMETER_TYPES.SAFE_RATE]: 'safeVariableRates',
+            [PARAMETER_TYPES.SURPLUS_RATE]: 'surplusVariableRates',
+        };
+        const vrKey = RATE_TO_VR_KEY[parameterType];
+
         // Standard parameter handling
         for (let value = effectiveMin; value <= effectiveMax; value += stepSize) {
             const modifiedInputs = {
                 ...inputs,
                 [config.inputKey]: value
             };
+
+            // When variable rates are enabled and we're sweeping a rate param, replace the
+            // corresponding variable rates with flat rates at the swept value so the chart
+            // reflects the actual impact of each rate level.
+            if (inputs.variableRatesEnabled && vrKey) {
+                const existingVR = inputs[vrKey];
+                if (existingVR && Object.keys(existingVR).length > 0) {
+                    const flatRates = {};
+                    Object.keys(existingVR).forEach(y => { flatRates[y] = value; });
+                    modifiedInputs[vrKey] = flatRates;
+                }
+            }
 
             // For retirement age, ensure it's valid
             if (parameterType === PARAMETER_TYPES.RETIREMENT_AGE) {

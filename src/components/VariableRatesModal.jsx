@@ -7,6 +7,7 @@ import { useThemeClasses } from '../hooks/useThemeClasses';
 import { X, Dices, ArrowDown, Calculator, RotateCcw, TrendingUp, TrendingDown, Shuffle, StepForward } from 'lucide-react';
 import { calculateRetirementProjection } from '../utils/calculator';
 import { formatCurrency as formatCurrencyUtil } from '../utils/formatters';
+import { generateRandomRates as generateRandomRatesUtil, applyBalancedSort } from '../utils/variableRatesUtils';
 
 export default function VariableRatesModal({
     isOpen,
@@ -40,6 +41,7 @@ export default function VariableRatesModal({
     const [stepYears, setStepYears] = useState(5);
     const [stepTargetRate, setStepTargetRate] = useState(currentRate);
     const [activeScope, setActiveScope] = useState('all'); // 'all' | 'a' | 'b'
+    const [activeSort, setActiveSort] = useState(null); // 'optimistic' | 'balanced' | 'pessimistic' | 'shuffle' | 'random' | 'reset' | 'fill'
 
     // Guard: don't fire onPreview during initial population of rates
     const previewReadyRef = useRef(false);
@@ -48,15 +50,42 @@ export default function VariableRatesModal({
     // cause a re-init loop when onPreview updates inputs (and thus variableRates prop)
     useEffect(() => {
         if (!isOpen) { previewReadyRef.current = false; return; }
-        const initialRates = { ...variableRates };
-        for (let y = startYear; y <= endYear; y++) {
-            if (initialRates[y] === undefined) initialRates[y] = currentRate;
+        const newCurrentRate = parseFloat(currentRate) || 0;
+        const years = [];
+        for (let y = startYear; y <= endYear; y++) years.push(y);
+
+        const existingRates = { ...variableRates };
+        years.forEach(y => { if (existingRates[y] === undefined) existingRates[y] = newCurrentRate; });
+
+        // If existing rates have a significantly different weighted average than the new
+        // currentRate, regenerate them centered on the new target using balanced ordering.
+        // (getMonthsForYear and generateRandomRates are defined below but accessible at runtime)
+        const hasExisting = Object.keys(variableRates).length > 0;
+        let finalRates = existingRates;
+        if (hasExisting) {
+            let tw = 0, tm = 0;
+            years.forEach(y => {
+                const parsed = parseFloat(existingRates[y]);
+                if (isNaN(parsed)) return;
+                const m = getMonthsForYear(y);
+                tw += parsed * m;
+                tm += m;
+            });
+            const existingAvg = tm > 0 ? tw / tm : 0;
+
+            if (Math.abs(existingAvg - newCurrentRate) > 0.25) {
+                const weights = years.map(y => getMonthsForYear(y));
+                const generated = generateRandomRatesUtil(years, newCurrentRate, weights);
+                finalRates = applyBalancedSort(years, generated);
+            }
         }
-        setRates(initialRates);
-        setAverageRate(parseFloat(currentRate) || 0);
-        setStepTargetRate(parseFloat(currentRate) || 0);
+
+        setRates(finalRates);
+        setAverageRate(newCurrentRate);
+        setStepTargetRate(newCurrentRate);
         setShowStepForm(false);
         setActiveScope('all');
+        setActiveSort(null);
         // Allow preview after React flushes the state updates above
         setTimeout(() => { previewReadyRef.current = true; }, 0);
     }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -170,10 +199,10 @@ export default function VariableRatesModal({
 
         // Only iterate over years within the current startYear-endYear range
         for (let y = startYear; y <= endYear; y++) {
-            const rate = parseFloat(rates[y]) || 0;
+            const parsed = parseFloat(rates[y]);
+            if (isNaN(parsed)) continue;
             const months = getMonthsForYear(y);
-
-            totalWeightedRate += rate * months;
+            totalWeightedRate += parsed * months;
             totalMonths += months;
         }
 
@@ -255,11 +284,11 @@ export default function VariableRatesModal({
         // Allow empty string, minus sign, or valid number
         if (value === '' || value === '-' || !isNaN(parseFloat(value))) {
             setRates(prev => ({ ...prev, [year]: value }));
+            setActiveSort(null);
         }
     };
 
-    // Helper to generate random volatile rates (Time-Weighted)
-    // Accepts optional scope: specific years and base rate to center around
+    // Thin wrapper around the shared utility, preserving scope/base-rate API
     const generateRandomRates = (scopeYears = null, baseRate = null) => {
         const years = scopeYears || (() => {
             const y = [];
@@ -267,77 +296,8 @@ export default function VariableRatesModal({
             return y;
         })();
         const targetAvg = baseRate !== null ? baseRate : averageRate;
-
-        const weights = [];
-        let totalMonths = 0;
-        years.forEach(y => {
-            const m = getMonthsForYear(y);
-            weights.push(m);
-            totalMonths += m;
-        });
-
-        const count = years.length;
-        if (count === 0 || totalMonths === 0) return {};
-
-        const minRate = -10;
-        const maxRate = 10;
-
-        // 1. Generate random volatility within clamped range centered on target
-        const minAllowed = Math.max(minRate, targetAvg - 10);
-        const maxAllowed = Math.min(maxRate, targetAvg + 10);
-
-        let rawRates = years.map(() => {
-            const range = maxAllowed - minAllowed;
-            return minAllowed + (Math.random() * range);
-        });
-
-        // 2. Adjust mean to match exactly the target (Weighted)
-        let currentWeightedSum = 0;
-        rawRates.forEach((r, i) => {
-            currentWeightedSum += r * weights[i];
-        });
-
-        const currentWeightedAvg = currentWeightedSum / totalMonths;
-        const correction = targetAvg - currentWeightedAvg;
-
-        rawRates = rawRates.map(r => r + correction);
-
-        // 3. Clamp to bounds FIRST, then quantize
-        rawRates = rawRates.map(r => Math.max(minRate, Math.min(maxRate, r)));
-
-        // 4. Quantize to 0.5
-        let quantizedRates = rawRates.map(r => Math.round(r * 2) / 2);
-
-        // 5. Final Adjustment to maintain weighted average after rounding AND clamping
-        let finalWeightedSum = 0;
-        quantizedRates.forEach((r, i) => {
-            finalWeightedSum += r * weights[i];
-        });
-
-        const targetWeightedSum = targetAvg * totalMonths;
-        let weightedDrift = targetWeightedSum - finalWeightedSum;
-
-        let attempts = 0;
-        while (Math.abs(weightedDrift) > 0.5 && attempts < 300) {
-            const idx = Math.floor(Math.random() * count);
-            const weight = weights[idx];
-            const cr = quantizedRates[idx];
-
-            if (weightedDrift > 0 && cr < maxRate) {
-                quantizedRates[idx] += 0.5;
-                weightedDrift -= 0.5 * weight;
-            } else if (weightedDrift < 0 && cr > minRate) {
-                quantizedRates[idx] -= 0.5;
-                weightedDrift += 0.5 * weight;
-            }
-            attempts++;
-        }
-
-        const newRates = {};
-        years.forEach((year, i) => {
-            newRates[year] = quantizedRates[i];
-        });
-        return newRates;
+        const weights = years.map(y => getMonthsForYear(y));
+        return generateRandomRatesUtil(years, targetAvg, weights);
     };
 
     // All handlers are scope-aware: when split mode is active and a scope
@@ -348,6 +308,7 @@ export default function VariableRatesModal({
         const randomRates = generateRandomRates(scopeYears, baseRate);
         if (Object.keys(randomRates).length > 0) {
             setRates(prev => ({ ...prev, ...randomRates }));
+            setActiveSort('random');
         }
     };
 
@@ -359,6 +320,7 @@ export default function VariableRatesModal({
             scopeYears.forEach(y => { newRates[y] = baseRate; });
             return newRates;
         });
+        setActiveSort('reset');
     };
 
     const handleFillDown = () => {
@@ -370,6 +332,7 @@ export default function VariableRatesModal({
             scopeYears.forEach(y => { newRates[y] = firstVal; });
             return newRates;
         });
+        setActiveSort('fill');
     };
 
     const handleSortOptimistic = () => {
@@ -392,6 +355,7 @@ export default function VariableRatesModal({
             scopeYears.forEach((y, i) => { newRates[y] = sortedValues[i]; });
             return newRates;
         });
+        setActiveSort('optimistic');
     };
 
     const handleSortPessimistic = () => {
@@ -414,6 +378,7 @@ export default function VariableRatesModal({
             scopeYears.forEach((y, i) => { newRates[y] = sortedValues[i]; });
             return newRates;
         });
+        setActiveSort('pessimistic');
     };
 
     const handleShuffle = () => {
@@ -437,6 +402,7 @@ export default function VariableRatesModal({
             scopeYears.forEach((y, i) => { newRates[y] = values[i]; });
             return newRates;
         });
+        setActiveSort('shuffle');
     };
 
     const handleSortBalanced = () => {
@@ -470,6 +436,7 @@ export default function VariableRatesModal({
             scopeYears.forEach((y, i) => { newRates[y] = balancedValues[i]; });
             return newRates;
         });
+        setActiveSort('balanced');
     };
 
     const handleApplyStepRate = () => {
@@ -531,7 +498,7 @@ export default function VariableRatesModal({
                 <div className="relative z-10 flex-none p-2 border-b border-gray-200 dark:border-white/10 flex gap-2 justify-center bg-white/5">
                     <button
                         onClick={handleRandomize}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isLight ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' : 'bg-purple-500/20 text-purple-300 hover:bg-purple-500/30'}`}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${activeSort === 'random' ? (isLight ? 'bg-purple-300 text-purple-900' : 'bg-purple-500/50 text-purple-100') : (isLight ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' : 'bg-purple-500/20 text-purple-300 hover:bg-purple-500/30')}`}
                         title={language === 'he' ? 'צור אקראיות' : 'Randomize'}
                     >
                         <Dices size={14} />
@@ -539,7 +506,7 @@ export default function VariableRatesModal({
                     </button>
                     <button
                         onClick={handleReset}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isLight ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${activeSort === 'reset' ? (isLight ? 'bg-gray-300 text-gray-900' : 'bg-white/30 text-white') : (isLight ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-white/10 text-gray-300 hover:bg-white/20')}`}
                         title={language === 'he' ? 'אפס לממוצע קבוע' : 'Reset to Constant Average'}
                     >
                         <RotateCcw size={14} />
@@ -547,7 +514,7 @@ export default function VariableRatesModal({
                     </button>
                     <button
                         onClick={handleFillDown}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isLight ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'bg-blue-500/20 text-blue-300 hover:bg-blue-500/30'}`}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${activeSort === 'fill' ? (isLight ? 'bg-blue-300 text-blue-900' : 'bg-blue-500/50 text-blue-100') : (isLight ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'bg-blue-500/20 text-blue-300 hover:bg-blue-500/30')}`}
                         title={language === 'he' ? 'החל על כולם' : 'Fill Down'}
                     >
                         <ArrowDown size={14} />
@@ -559,7 +526,7 @@ export default function VariableRatesModal({
                 <div className="relative z-10 flex-none p-2 border-b border-gray-200 dark:border-white/10 flex gap-1.5 justify-center bg-white/5">
                     <button
                         onClick={handleSortOptimistic}
-                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${isLight ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-green-500/20 text-green-300 hover:bg-green-500/30'}`}
+                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${activeSort === 'optimistic' ? (isLight ? 'bg-green-300 text-green-900' : 'bg-green-500/50 text-green-100') : (isLight ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-green-500/20 text-green-300 hover:bg-green-500/30')}`}
                         title={language === 'he' ? 'מיין: מהטוב לגרוע' : 'Sort: Best First'}
                     >
                         <TrendingUp size={12} />
@@ -567,7 +534,7 @@ export default function VariableRatesModal({
                     </button>
                     <button
                         onClick={handleSortBalanced}
-                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${isLight ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30'}`}
+                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${activeSort === 'balanced' ? (isLight ? 'bg-indigo-300 text-indigo-900' : 'bg-indigo-500/50 text-indigo-100') : (isLight ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30')}`}
                         title={language === 'he' ? 'פזר: טוב, גרוע, טוב, גרוע...' : 'Balanced: Pair best with worst'}
                     >
                         <Calculator size={12} />
@@ -575,7 +542,7 @@ export default function VariableRatesModal({
                     </button>
                     <button
                         onClick={handleSortPessimistic}
-                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-500/20 text-red-300 hover:bg-red-500/30'}`}
+                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${activeSort === 'pessimistic' ? (isLight ? 'bg-red-300 text-red-900' : 'bg-red-500/50 text-red-100') : (isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-500/20 text-red-300 hover:bg-red-500/30')}`}
                         title={language === 'he' ? 'מיין: מהגרוע לטוב' : 'Sort: Worst First'}
                     >
                         <TrendingDown size={12} />
@@ -583,7 +550,7 @@ export default function VariableRatesModal({
                     </button>
                     <button
                         onClick={handleShuffle}
-                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${isLight ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'}`}
+                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${activeSort === 'shuffle' ? (isLight ? 'bg-amber-300 text-amber-900' : 'bg-amber-500/50 text-amber-100') : (isLight ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30')}`}
                         title={language === 'he' ? 'ערבב סדר קיים' : 'Shuffle Order'}
                     >
                         <Shuffle size={12} />

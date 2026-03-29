@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { getAvailableProviders, getAvailableModels, generatePrompt } from '../utils/ai-calculator';
 import { calculateAgeFromDate, getProjectedYear as getProjectedYearUtil } from '../utils/dateUtils';
+import { generateBalancedVariableRates, computeAverageRate } from '../utils/variableRatesUtils';
 import { SIMULATION_TYPES } from '../utils/simulation-calculator';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
 import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, TrendingDown, Coins, BarChart3, Landmark, PiggyBank, Wallet, Activity, Layers, ShieldCheck, Gem, Target } from 'lucide-react';
@@ -49,11 +50,6 @@ export default function InputForm({
     const containerClass = isLight ? "bg-white border border-gray-200 shadow-sm" : "bg-white/5 border border-white/10";
     const labelClass = isLight ? "text-gray-600" : "text-gray-400"; // For secondary labels
     const headerLabelClass = isLight ? "text-gray-900" : "text-white";
-    // SIMPLIFIED SELECT CLASS: Removed ring/border color classes here as they are handled by global CSS '!important'
-    const selectClass = isLight
-        ? "bg-slate-50 border border-gray-300 text-gray-900"
-        : "bg-black/20 border border-white/30 text-white";
-    const optionClass = isLight ? "bg-white text-gray-900" : "bg-gray-800 text-white";
     const iconClass = isLight ? "text-gray-500" : "text-gray-400";
     const inputClass = isLight
         ? "bg-slate-50 border border-gray-300 text-gray-900 placeholder-gray-400 focus:ring-blue-500 shadow-sm"
@@ -66,19 +62,12 @@ export default function InputForm({
     const [promptText, setPromptText] = useState(null);
     // View Toggle State: 'parameters' | 'events'
     const [activeView, setActiveView] = useState('parameters');
-    const previousVariableRatesState = useRef(false); // Store VR state before buckets toggle
     const [showVariableRates, setShowVariableRates] = useState(false);
     const [activeVRType, setActiveVRType] = useState('accumulation'); // 'accumulation' | 'safe' | 'surplus'
     const [showScenario, setShowScenario] = useState(false);
     const scenarioSnapshotRef = useRef(null);
     const variableRatesSnapshotRef = useRef(null);
 
-    // Helper to check if variable rates are active (different from default)
-    const hasActiveVariableRates = useMemo(() => {
-        if (!inputs.variableRates || Object.keys(inputs.variableRates).length === 0) return false;
-        // Check if any rate differs from base annualReturnRate
-        return Object.values(inputs.variableRates).some(r => r !== parseFloat(inputs.annualReturnRate));
-    }, [inputs.variableRates, inputs.annualReturnRate]);
 
     // Update button visibility based on values (once shown, never hidden)
     useEffect(() => {
@@ -183,6 +172,59 @@ export default function InputForm({
     const currentYear = new Date().getFullYear();
     const startYear = getProjectedYearUtil(inputs.retirementStartAge, inputs.currentAge, inputs.birthdate, isAgeManual);
     const endYear = getProjectedYearUtil(inputs.retirementEndAge, inputs.currentAge, inputs.birthdate, isAgeManual);
+
+    // Auto-regenerate variable rates (balanced) when the target rate changes
+    const prevRatesRef = useRef({});
+    useEffect(() => {
+        const prev = prevRatesRef.current;
+        const annualChanged = prev.annual !== undefined && parseFloat(inputs.annualReturnRate) !== parseFloat(prev.annual);
+        const safeChanged = prev.safe !== undefined && parseFloat(inputs.bucketSafeRate) !== parseFloat(prev.safe);
+        const surplusChanged = prev.surplus !== undefined && parseFloat(inputs.bucketSurplusRate) !== parseFloat(prev.surplus);
+
+        prevRatesRef.current = {
+            annual: inputs.annualReturnRate,
+            safe: inputs.bucketSafeRate,
+            surplus: inputs.bucketSurplusRate,
+        };
+
+        if (!inputs.variableRatesEnabled) return;
+
+        const updates = {};
+
+        const accYears = [];
+        const accEnd = inputs.enableBuckets ? startYear : endYear + 1;
+        for (let y = currentYear; y <= accEnd; y++) accYears.push(y);
+
+        if (annualChanged && inputs.variableRates && Object.keys(inputs.variableRates).length > 0) {
+            const newRate = parseFloat(inputs.annualReturnRate) || 0;
+            if (Math.abs(computeAverageRate(accYears, inputs.variableRates) - newRate) > 0.25) {
+                updates.variableRates = generateBalancedVariableRates(accYears, newRate);
+            }
+        }
+
+        if (inputs.enableBuckets) {
+            const bucketYears = [];
+            for (let y = startYear; y <= endYear + 1; y++) bucketYears.push(y);
+
+            if (safeChanged && inputs.safeVariableRates && Object.keys(inputs.safeVariableRates).length > 0) {
+                const newRate = parseFloat(inputs.bucketSafeRate) || 0;
+                if (Math.abs(computeAverageRate(bucketYears, inputs.safeVariableRates) - newRate) > 0.25) {
+                    updates.safeVariableRates = generateBalancedVariableRates(bucketYears, newRate);
+                }
+            }
+
+            if (surplusChanged && inputs.surplusVariableRates && Object.keys(inputs.surplusVariableRates).length > 0) {
+                const newRate = parseFloat(inputs.bucketSurplusRate) || 0;
+                if (Math.abs(computeAverageRate(bucketYears, inputs.surplusVariableRates) - newRate) > 0.25) {
+                    updates.surplusVariableRates = generateBalancedVariableRates(bucketYears, newRate);
+                }
+            }
+        }
+
+        if (Object.keys(updates).length > 0) {
+            setInputs(prev => ({ ...prev, ...updates }));
+        }
+    }, [inputs.annualReturnRate, inputs.bucketSafeRate, inputs.bucketSurplusRate, inputs.variableRatesEnabled, inputs.enableBuckets]); // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
         <div className="flex flex-col flex-1 min-h-0">
@@ -655,20 +697,11 @@ export default function InputForm({
                                         <button
                                             onClick={() => {
                                                 if (inputs.enableBuckets) {
-                                                    // Turning Buckets OFF -> Restore VR state
-                                                    setInputs(prev => ({
-                                                        ...prev,
-                                                        enableBuckets: false,
-                                                        variableRatesEnabled: previousVariableRatesState.current
-                                                    }));
+                                                    setInputs(prev => ({ ...prev, enableBuckets: false }));
                                                 } else {
-                                                    // Turning Buckets ON -> Save VR state and force OFF
-                                                    previousVariableRatesState.current = inputs.variableRatesEnabled;
                                                     setInputs(prev => ({
                                                         ...prev,
                                                         enableBuckets: true,
-                                                        variableRatesEnabled: false,
-                                                        // Initialize bucket rates if missing
                                                         bucketSafeRate: prev.bucketSafeRate !== undefined ? prev.bucketSafeRate : '2',
                                                         bucketSurplusRate: prev.bucketSurplusRate !== undefined ? prev.bucketSurplusRate : '7'
                                                     }));
@@ -786,7 +819,7 @@ export default function InputForm({
                             ))}
                             {/* Variable Rates Trigger (In Grid) */}
                             <button
-                                onClick={() => setInputs(prev => ({ ...prev, variableRatesEnabled: !prev.variableRatesEnabled }))}
+                                onClick={() => setInputs(prev => ({ ...prev, variableRatesEnabled: true, withdrawalStrategy: null }))}
                                 className={`px-2 py-1.5 rounded-lg text-[10px] md:text-xs font-medium transition-all ${inputs.variableRatesEnabled
                                     ? 'bg-blue-600 text-white shadow-md'
                                     : (isLight ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-white/5 text-gray-400 hover:bg-white/10')
@@ -804,8 +837,8 @@ export default function InputForm({
                         </p>
 
 
-                        {/* Percentage Rate Input (only for percentage strategy) */}
-                        {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE && (
+                        {/* Percentage Rate Input (only for percentage strategy, hidden when variable rates active) */}
+                        {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE && !inputs.variableRatesEnabled && (
                             <InputGroup language={language}
                                 label={t('withdrawalPercentageRate')}
                                 name="withdrawalPercentage"

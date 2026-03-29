@@ -231,6 +231,13 @@ function SensitivityHeatmapGrid({ inputs, originalInputs, activeRateType = 'annu
             return baseIncome + (offset * yStepSize);
         });
 
+        const RATE_TO_VR_KEY = {
+            annualReturnRate: 'variableRates',
+            bucketSafeRate: 'safeVariableRates',
+            bucketSurplusRate: 'surplusVariableRates',
+        };
+        const vrKey = RATE_TO_VR_KEY[activeRateType];
+
         // Compute results for each cell
         const grid = yValues.map(yVal => {
             return xValues.map(xVal => {
@@ -239,6 +246,16 @@ function SensitivityHeatmapGrid({ inputs, originalInputs, activeRateType = 'annu
                     [activeRateType]: xVal,
                     monthlyNetIncomeDesired: yVal
                 };
+                // When variable rates are enabled, replace the relevant rates with flat
+                // rates at the swept value so the heatmap reflects each rate level correctly.
+                if (inputs.variableRatesEnabled && vrKey) {
+                    const existingVR = inputs[vrKey];
+                    if (existingVR && Object.keys(existingVR).length > 0) {
+                        const flatRates = {};
+                        Object.keys(existingVR).forEach(y => { flatRates[y] = xVal; });
+                        simInputs[vrKey] = flatRates;
+                    }
+                }
                 const result = calculateRetirementProjection(simInputs, t);
                 return { x: xVal, y: yVal, result };
             });
