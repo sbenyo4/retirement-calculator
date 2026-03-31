@@ -576,7 +576,7 @@ export default function AddEventModal({
                                     />
                                     {isDuplicate && (
                                         <p className="text-red-500 text-xs mt-1.5 font-medium">
-                                            {language === 'he' ? 'שגיאה: אירוע עם שם וסוג זהים כבר קיים בפרופיל זה' : 'Error: An event with this exact name and type already exists'}
+                                            {t ? t('duplicateEventError') : 'Error: An event with this exact name and type already exists'}
                                         </p>
                                     )}
                                 </div>

@@ -36,9 +36,8 @@ export function useZoom() {
         }
     }, [zoomLevel, uid]);
 
-    const toggleZoom = () => {
-        setZoomLevel(prev => prev === 100 ? 90 : 100);
-    };
+    const zoomIn = () => setZoomLevel(prev => Math.min(150, prev + 10));
+    const zoomOut = () => setZoomLevel(prev => Math.max(50, prev - 10));
 
-    return { zoomLevel, toggleZoom, setZoomLevel };
+    return { zoomLevel, zoomIn, zoomOut, setZoomLevel };
 }

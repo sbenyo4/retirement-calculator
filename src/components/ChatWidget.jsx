@@ -31,11 +31,21 @@ const SUGGESTIONS = {
 };
 
 const DEFAULT_BTN_POS = { bottom: 24, right: 24 };
+const BTN_SIZE = 56;
+
+function clampPos(pos) {
+    const maxRight = Math.max(8, window.innerWidth - BTN_SIZE - 8);
+    const maxBottom = Math.max(8, window.innerHeight - BTN_SIZE - 8);
+    return {
+        right: Math.max(8, Math.min(maxRight, pos.right ?? 24)),
+        bottom: Math.max(8, Math.min(maxBottom, pos.bottom ?? 24)),
+    };
+}
 
 function loadBtnPos() {
     try {
         const saved = localStorage.getItem(STORAGE_KEY);
-        return saved ? JSON.parse(saved) : null;
+        return saved ? clampPos(JSON.parse(saved)) : null;
     } catch { return null; }
 }
 
@@ -55,6 +65,14 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
     const [btnPos, setBtnPos] = useState(() => loadBtnPos() || DEFAULT_BTN_POS);
     const btnDragging = useRef(false);
     const btnOrigin = useRef({ x: 0, y: 0 });
+
+    // Re-clamp button position on mount and on resize
+    useEffect(() => {
+        setBtnPos(prev => clampPos(prev));
+        const onResize = () => setBtnPos(prev => clampPos(prev));
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
     const btnMoved = useRef(false);
     const btnRef = useRef(null);
 

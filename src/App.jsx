@@ -79,7 +79,7 @@ function MainApp() {
     dismissSimulationError,
     goalSeekWithdrawal,
     memoizedDebouncedInputs
-  } = useCalculation(inputs, settings);
+  } = useCalculation(React.useMemo(() => ({ ...inputs, language }), [inputs, language]), settings);
 
   // Separate worker instance for profile comparison projections (keeps the main
   // calculation worker free and moves profile work off the main thread).

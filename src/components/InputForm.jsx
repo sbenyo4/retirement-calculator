@@ -94,14 +94,10 @@ export default function InputForm({
         const retirementEnd = parseFloat(inputs.retirementEndAge);
 
         if (!isNaN(currentAge) && !isNaN(retirementStart) && retirementStart <= currentAge) {
-            errors.retirementStartAge = language === 'he'
-                ? 'צריך להיות גדול מהגיל הנוכחי'
-                : 'Must be greater than current age';
+            errors.retirementStartAge = t ? t('validationRetirementStartGreater') : 'Must be greater than current age';
         }
         if (!isNaN(retirementStart) && !isNaN(retirementEnd) && retirementEnd <= retirementStart) {
-            errors.retirementEndAge = language === 'he'
-                ? 'צריך להיות גדול מגיל הפרישה'
-                : 'Must be greater than start age';
+            errors.retirementEndAge = t ? t('validationRetirementEndGreater') : 'Must be greater than start age';
         }
         if (!isNaN(currentAge) && (currentAge < 0 || currentAge > 120)) {
             errors.currentAge = t ? t('invalidAge') : 'Invalid age';
@@ -855,7 +851,13 @@ export default function InputForm({
                     {/* Life Events Timeline */}
                     <LifeEventsManager
                         events={inputs.lifeEvents || []}
-                        onChange={(newEvents) => setInputs(prev => ({ ...prev, lifeEvents: newEvents }))}
+                        onChange={(newEvents) => {
+                            setInputs(prev => ({ ...prev, lifeEvents: newEvents }));
+                            if (currentProfileId && updateProfile) {
+                                const { pensionIncomeSources, ...dataToSave } = inputs;
+                                updateProfile(currentProfileId, { ...dataToSave, lifeEvents: newEvents });
+                            }
+                        }}
                         t={t}
                         language={language}
                         currentAge={parseFloat(inputs.currentAge) || 0}
@@ -869,6 +871,7 @@ export default function InputForm({
                         profiles={profiles}
                         updateProfile={updateProfile}
                         currentProfileId={currentProfileId}
+                        currentInputs={inputs}
                     />
                 </div>
             )}

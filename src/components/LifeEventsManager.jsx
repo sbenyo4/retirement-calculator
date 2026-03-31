@@ -26,7 +26,8 @@ export default function LifeEventsManager({
     simulationType,
     profiles,
     updateProfile,
-    currentProfileId
+    currentProfileId,
+    currentInputs
 }) {
     const classes = useThemeClasses();
     const [showAddModal, setShowAddModal] = useState(false);
@@ -97,6 +98,7 @@ export default function LifeEventsManager({
     const handleScrollUp = () => setViewOffset(p => Math.max(0, p - 1));
     const handleScrollDown = () => setViewOffset(p => Math.min(Math.max(0, events.length - itemsPerView), p + 1));
 
+
     const submitCopyEvent = async () => {
         if (copySelectedIds.length === 0) return;
         try {
@@ -131,13 +133,15 @@ export default function LifeEventsManager({
             id: Date.now().toString(),
             enabled: true
         };
-        onChange([...events, newEvent]);
+        const newEvents = [...events, newEvent];
+        onChange(newEvents);
         setShowAddModal(false);
         setEditingEvent(null);
     };
 
     const handleEditEvent = (eventData) => {
-        onChange(events.map(evt => evt.id === editingEvent.id ? { ...eventData, id: evt.id, enabled: evt.enabled } : evt));
+        const newEvents = events.map(evt => evt.id === editingEvent.id ? { ...eventData, id: evt.id, enabled: evt.enabled } : evt);
+        onChange(newEvents);
         setEditingEvent(null);
         setShowAddModal(false);
     };
@@ -159,8 +163,7 @@ export default function LifeEventsManager({
     };
 
     const handleDeleteEvent = (eventId) => {
-        const newEvents = events.filter(evt => evt.id !== eventId);
-        onChange(newEvents);
+        onChange(events.filter(evt => evt.id !== eventId));
     };
 
     const handleToggleEvent = (eventId) => {

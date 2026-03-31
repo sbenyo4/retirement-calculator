@@ -354,6 +354,11 @@ export const translations = {
         manual: 'Manual',
         variableRates: 'Variable Rates',
         invalidAge: 'Invalid age',
+        duplicateEventError: 'Error: An event with this exact name and type already exists',
+        updateError: 'Update Error',
+        unusualValuesWarning: 'Warning: Unusual Values',
+        unusualValuesDesc: 'AI returned values significantly different from defaults. Verify before saving.',
+        invalidAiResponse: 'Invalid AI response structure',
     },
     he: {
         appTitle: "מתכנן פרישה",
@@ -711,5 +716,10 @@ export const translations = {
         manual: 'ידני',
         variableRates: 'ריביות משתנות',
         invalidAge: 'גיל לא תקין',
+        duplicateEventError: 'שגיאה: אירוע עם שם וסוג זהים כבר קיים בפרופיל זה',
+        updateError: 'שגיאה בעדכון',
+        unusualValuesWarning: 'התראה: ערכים חריגים',
+        unusualValuesDesc: 'הערכים שה-AI החזיר שונים משמעותית מברירת המחדל. וודא שהם נכונים לפני שמירה.',
+        invalidAiResponse: 'תגובת AI לא תקינה',
     }
 };

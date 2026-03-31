@@ -1,3 +1,4 @@
+import { translations } from '../translations.js';
 
 /**
  * Validates retirement calculation inputs
@@ -18,8 +19,11 @@ export function validateInputs(inputs, t = null) {
     const annualReturnRate = parseFloat(inputs.annualReturnRate);
     const taxRate = parseFloat(inputs.taxRate);
 
-    // Helper to get translation or fallback to English
-    const getText = (key, fallback) => (t ? t(key) : fallback);
+    // Helper to get translation: prefer t() from React context, fall back to
+    // direct translation lookup (used inside Web Workers where t is unavailable)
+    const lang = inputs.language || 'en';
+    const dict = translations[lang] || translations['en'];
+    const getText = (key, fallback) => t ? t(key) : (dict[key] || fallback);
 
     // Age validations
     if (isNaN(currentAge) || currentAge < 0 || currentAge > 120) {

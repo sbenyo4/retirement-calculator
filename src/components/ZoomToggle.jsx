@@ -1,30 +1,29 @@
 import React from 'react';
 import { useZoom } from '../hooks/useZoom';
-import { Monitor, ZoomIn, ZoomOut } from 'lucide-react';
+import { ZoomIn, ZoomOut } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 
 export function ZoomToggle() {
-    const { zoomLevel, toggleZoom } = useZoom();
+    const { zoomLevel, zoomIn, zoomOut } = useZoom();
     const { theme } = useTheme();
     const isLight = theme === 'light';
 
+    const btnClass = `p-1.5 rounded transition-all ${isLight
+        ? 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 shadow-sm disabled:opacity-30'
+        : 'bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 hover:text-white disabled:opacity-30'
+    }`;
+
     return (
-        <button
-            onClick={toggleZoom}
-            className={`p-2 rounded-lg transition-all flex items-center justify-center gap-1.5 ${isLight
-                    ? 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 shadow-sm'
-                    : 'bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 hover:text-white'
-                }`}
-            title={zoomLevel === 100 ? 'Switch to Compact View (90%)' : 'Switch to Normal View (100%)'}
-        >
-            {zoomLevel === 100 ? (
-                <ZoomOut size={18} />
-            ) : (
-                <ZoomIn size={18} />
-            )}
-            <span className="text-xs font-semibold tabular-nums w-8">
+        <div className={`flex items-center rounded-lg overflow-hidden border gap-0 ${isLight ? 'border-gray-200 bg-white shadow-sm' : 'border-white/10 bg-white/5'}`}>
+            <button onClick={zoomOut} disabled={zoomLevel <= 50} className={btnClass} title="Zoom Out">
+                <ZoomOut size={15} />
+            </button>
+            <span className="text-xs font-semibold tabular-nums px-2 select-none" style={{ minWidth: '3rem', textAlign: 'center' }}>
                 {zoomLevel}%
             </span>
-        </button>
+            <button onClick={zoomIn} disabled={zoomLevel >= 150} className={btnClass} title="Zoom In">
+                <ZoomIn size={15} />
+            </button>
+        </div>
     );
 }

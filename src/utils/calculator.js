@@ -6,6 +6,7 @@ import { calculateDecumulation } from './calculators/decumulation.js';
 import { calculateStatistics } from './calculators/statistics.js';
 import { calculateIncomeAtAge, calculateNationalInsurance } from './pensionCalculator.js';
 import { mergeScenarioIntoRates } from './scenarioUtils.js';
+import { translations } from './translations.js';
 
 /**
  * Calculates the future value and required capital for retirement.
@@ -20,7 +21,9 @@ export function calculateRetirementProjection(inputs, t = null) {
     // 1. Validation
     const validationErrors = validateInputs(inputs, t);
     if (validationErrors.length > 0) {
-        const invalidInputsLabel = t ? t('validationInvalidInputs') : 'Invalid inputs:';
+        const lang = inputs.language || 'en';
+    const dict = translations[lang] || translations['en'];
+    const invalidInputsLabel = t ? t('validationInvalidInputs') : (dict['validationInvalidInputs'] || 'Invalid inputs:');
         const errorMessage = invalidInputsLabel + '\n' + validationErrors.map(e => `  • ${e}`).join('\n');
         // Don't log here - callers handle errors via try-catch and display to user as appropriate
         throw new Error(errorMessage);

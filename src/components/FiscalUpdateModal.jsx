@@ -314,7 +314,7 @@ Reference values for ${currentYear} (use if search fails):
 
             } else {
                 console.warn('AI Fiscal Update - Invalid response structure:', result);
-                throw new Error(language === 'he' ? "תגובת AI לא תקינה" : "Invalid AI response structure");
+                throw new Error(t ? t('invalidAiResponse') : 'Invalid AI response structure');
             }
 
         } catch (err) {
@@ -571,7 +571,7 @@ Reference values for ${currentYear} (use if search fails):
                         <div className="mt-4 p-4 border rounded-xl bg-rose-500/10 border-rose-500/20 text-rose-500 text-sm animate-in fade-in duration-300">
                             <div className="flex items-center gap-2 font-bold mb-1">
                                 <AlertTriangle size={16} />
-                                {language === 'he' ? 'שגיאה בעדכון' : 'Update Error'}
+                                {t ? t('updateError') : 'Update Error'}
                             </div>
                             <p className="opacity-70 text-xs">{error}</p>
                         </div>
@@ -581,7 +581,7 @@ Reference values for ${currentYear} (use if search fails):
                         <div className="mt-4 p-4 border rounded-xl bg-amber-500/10 border-amber-500/20 text-amber-500 text-sm animate-in fade-in duration-300">
                             <div className="flex items-center gap-2 font-bold mb-2">
                                 <AlertTriangle size={16} />
-                                {language === 'he' ? 'התראה: ערכים חריגים' : 'Warning: Unusual Values'}
+                                {t ? t('unusualValuesWarning') : 'Warning: Unusual Values'}
                             </div>
                             <ul className="space-y-1 text-xs opacity-90">
                                 {sanityWarning.map((warning, idx) => (
@@ -589,9 +589,7 @@ Reference values for ${currentYear} (use if search fails):
                                 ))}
                             </ul>
                             <p className="mt-2 text-xs opacity-70">
-                                {language === 'he'
-                                    ? 'הערכים שה-AI החזיר שונים משמעותית מברירת המחדל. וודא שהם נכונים לפני שמירה.'
-                                    : 'AI returned values significantly different from defaults. Verify before saving.'}
+                                {t ? t('unusualValuesDesc') : 'AI returned values significantly different from defaults. Verify before saving.'}
                             </p>
                         </div>
                     )}
