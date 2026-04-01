@@ -20,6 +20,7 @@ import { useIdleTimer } from './hooks/useIdleTimer';
 // Lazy-loaded components (loaded only when needed)
 const ResultsDashboard = React.lazy(() => import('./components/ResultsDashboard').then(m => ({ default: m.ResultsDashboard })));
 const ModelsManager = React.lazy(() => import('./components/ModelsManager').then(m => ({ default: m.ModelsManager })));
+const RetirementChecklist = React.lazy(() => import('./components/RetirementChecklist'));
 
 // Preload ResultsDashboard chunk on first user interaction
 let _preloaded = false;
@@ -407,7 +408,7 @@ function MainApp() {
             />
           </div>
 
-          <div className="lg:col-span-8">
+          <div className="lg:col-span-8 flex flex-col" style={{ height: 'calc(100vh - 8rem)' }}>
             <ErrorBoundary t={t}>
               {validationError && (
                 <div className="bg-red-900/50 border border-red-500 rounded-xl p-4 mb-4 text-white">
@@ -434,7 +435,22 @@ function MainApp() {
                   </div>
                 </div>
               )}
-              {results && (
+              {results && settings.calculationMode === 'planning' && (
+                <div className="flex-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-xl overflow-hidden">
+                  <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"></div></div>}>
+                    <RetirementChecklist
+                      inputs={memoizedDebouncedInputs}
+                      results={results}
+                      t={t}
+                      language={language}
+                      aiProvider={settings.aiProvider}
+                      aiModel={settings.aiModel}
+                      apiKeyOverride={settings.apiKeyOverride}
+                    />
+                  </Suspense>
+                </div>
+              )}
+              {results && settings.calculationMode !== 'planning' && (
                 <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"></div></div>}>
                   <ResultsDashboard
                     results={results}

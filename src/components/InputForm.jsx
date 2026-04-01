@@ -5,7 +5,7 @@ import { calculateAgeFromDate, getProjectedYear as getProjectedYearUtil } from '
 import { generateBalancedVariableRates, computeAverageRate } from '../utils/variableRatesUtils';
 import { SIMULATION_TYPES } from '../utils/simulation-calculator';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
-import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, TrendingDown, Coins, BarChart3, Landmark, PiggyBank, Wallet, Activity, Layers, ShieldCheck, Gem, Target } from 'lucide-react';
+import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, TrendingDown, Coins, BarChart3, Landmark, PiggyBank, Wallet, Activity, Layers, ShieldCheck, Gem, Target, ClipboardList } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 import LifeEventsManager from './LifeEventsManager';
 import VariableRatesModal from './VariableRatesModal';
@@ -231,12 +231,13 @@ export default function InputForm({
                     <h2 className={`text-sm font-semibold ${headerLabelClass}`}>{t('calculationMode')}</h2>
                 </div>
 
-                <div className={`grid grid-cols-4 gap-2 p-1 rounded-lg ${isLight ? 'bg-slate-200' : 'bg-black/20'}`}>
+                <div className={`grid grid-cols-5 gap-2 p-1 rounded-lg ${isLight ? 'bg-slate-200' : 'bg-black/20'}`}>
                     {[
                         { id: 'mathematical', icon: Calculator, label: t('mathematical') },
                         { id: 'ai', icon: Sparkles, label: t('aiMode') },
                         { id: 'simulations', icon: Dices, label: t('simulations') },
-                        { id: 'compare', icon: Split, label: t('compare') }
+                        { id: 'compare', icon: Split, label: t('compare') },
+                        { id: 'planning', icon: ClipboardList, label: t('planningMode') }
                     ].map(mode => (
                         <button
                             key={mode.id}

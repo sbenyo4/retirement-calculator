@@ -353,8 +353,7 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
                     generationConfig: { temperature: 0 }
                 });
                 const result = await genModel.generateContent(prompt);
-                const response = await result.response;
-                return response.text();
+                return result.response.text();
             };
 
             try {
@@ -475,4 +474,143 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
         // Generic error with original message
         throw new Error(formatError('errorGeneric', { error: error.message || 'Unknown error' }));
     }
+}
+
+/**
+ * Generates dynamic retirement planning checklist insights using AI.
+ * Returns { categories: [{ id, title, emoji, items: [{ priority, title, description, details }] }] }
+ */
+export async function generateRetirementChecklistInsights(inputs, results, provider, model, apiKeyOverride, language) {
+    const isHe = language === 'he';
+    const fmt = (n) => n ? Math.round(n).toLocaleString() : '0';
+
+    const OFFICIAL_RETIREMENT_AGE = 67; // Israel statutory retirement age for men (women: 65)
+    const earlyRetirementAge = parseFloat(inputs.retirementStartAge);
+    const isEarlyRetirement = earlyRetirementAge < OFFICIAL_RETIREMENT_AGE;
+    const gapYears = isEarlyRetirement ? Math.round((OFFICIAL_RETIREMENT_AGE - earlyRetirementAge) * 10) / 10 : 0;
+
+    const context = [
+        `Current age: ${inputs.currentAge}`,
+        `EARLY retirement age (stops working): ${earlyRetirementAge} — this is NOT the official Israeli retirement age`,
+        isEarlyRetirement
+            ? `Gap until official NI retirement age (67): ${gapYears} years — during this entire gap the person is NOT employed and NOT contributing to National Insurance through work`
+            : null,
+        `Plan end age: ${inputs.retirementEndAge}`,
+        `Current savings: ${fmt(inputs.currentSavings)} ILS`,
+        `Monthly contribution until retirement: ${fmt(inputs.monthlyContribution)} ILS`,
+        `Monthly net income desired in retirement: ${fmt(inputs.monthlyNetIncomeDesired)} ILS`,
+        `Tax rate: ${inputs.taxRate}%`,
+        `Annual return: ${inputs.annualReturnRate}%, Inflation: ${inputs.inflationRate || 0}%`,
+        results ? `Projected balance at early retirement: ${fmt(results.balanceAtRetirement)} ILS` : null,
+        results?.ranOutAtAge ? `WARNING: funds run out at age ${results.ranOutAtAge}` : null,
+        results?.surplus > 0 ? `Surplus at end of plan: ${fmt(results.surplus)} ILS` : null,
+        results?.surplus < 0 ? `DEFICIT: ${fmt(Math.abs(results.surplus))} ILS shortfall` : null,
+        isEarlyRetirement
+            ? `CRITICAL CONTEXT — GAP YEARS (age ${earlyRetirementAge}–67): No employment income. Must actively manage: (1) voluntary NI payments (תשלומים מרצון לביטוח לאומי) to preserve old-age pension entitlement and health insurance; (2) health insurance collected via NI even for non-workers; (3) zero employer/employee pension contributions — pension fund grows only from existing balance; (4) no work-related tax credits`
+            : null,
+        isEarlyRetirement
+            ? `PENSION IMPACT: The occupational pension (קרן פנסיה/ביטוח מנהלים) stops receiving contributions at age ${earlyRetirementAge}. For the ${gapYears}-year gap until age 67 it accumulates returns only on existing balance. The monthly pension income starting at 67 will be significantly lower than if contributions had continued until 67. The client should: (1) calculate the expected pension at 67 under this scenario; (2) consider voluntary additional contributions (הפקדות עצמאיות) to the pension fund during early retirement if cash-flow allows; (3) understand the actuarial reduction for early pension withdrawal if they try to draw pension before 67; (4) verify vesting (זכאות) status and pension-type rules (defined benefit vs. defined contribution)`
+            : null,
+        inputs.pensionIncomeSources?.length
+            ? `Pension income sources defined: ${inputs.pensionIncomeSources.length} source(s) starting at various ages`
+            : `No pension income sources defined — pension income during retirement is not factored in`,
+    ].filter(Boolean).join('\n');
+
+    const jsonSchema = `{
+  "categories": [
+    {
+      "id": "string (unique slug)",
+      "title": "${isHe ? 'כותרת בעברית' : 'Category title'}",
+      "emoji": "single emoji",
+      "items": [
+        {
+          "priority": "critical | high | medium | low",
+          "title": "${isHe ? 'כותרת פריט' : 'Item title'}",
+          "description": "${isHe ? 'תיאור קצר' : 'Short description'}",
+          "details": "${isHe ? 'פרטים מורחבים (אופציונלי)' : 'Extended details (optional)'}"
+        }
+      ]
+    }
+  ]
+}`;
+
+    const prompt = isHe
+        ? `אתה יועץ פרישה ישראלי מומחה. בהתבסס על הנתונים הבאים, צור רשימת תכנון מפורטת ומותאמת אישית לתקופת הפרישה המוקדמת בישראל.
+
+נתוני הלקוח:
+${context}
+
+החזר JSON בפורמט הבא בלבד (ללא טקסט נוסף):
+${jsonSchema}
+
+הנחיות:
+- זוהי פרישה מוקדמת — הלקוח אינו עובד אבל עדיין לא הגיע לגיל הפרישה הרשמי (67)
+${isEarlyRetirement ? `- יש פער של ${gapYears} שנים עד גיל 67 שבו אין הכנסה מעבודה ואין תשלומי ביטוח לאומי אוטומטיים
+- קטגוריית ביטוח לאומי חייבת להתמקד בתקופת הפער: תשלומים מרצון, שמירת זכויות, ביטוח בריאות` : ''}
+- כלול קטגוריות: ביטוח לאומי (פער עד גיל 67), פנסיה והשפעות הפרישה המוקדמת, ביטוח, מיסוי, ניהול פיננסי, בריאות, משפטי/עיזבון, אורח חיים
+- בקטגוריית ביטוח לאומי: אל תשתמש באמוג'י דגל. כלול תשלומים מרצון, עלות משוערת, השלכות על קצבת זקנה, ביטוח בריאות דרך ביטוח לאומי בתקופת הפער
+- בקטגוריית פנסיה: הסבר את ההשפעה של הפסקת הפקדות על גובה הקצבה בגיל 67, שיקול הפקדות עצמאיות בתקופת הפרישה המוקדמת, מועד משיכה ראשון אפשרי, הפחתה אקטוארית
+- התאם את הפריטים לנתונים האישיים
+- סמן כ-critical דברים שאם לא מטפלים בהם מאבדים זכויות
+- כלול 3-6 פריטים לקטגוריה
+- הגב בעברית בלבד`
+        : `You are an expert Israeli retirement advisor. Based on the following client data, generate a detailed personalized checklist for EARLY retirement in Israel.
+
+Client data:
+${context}
+
+Return ONLY JSON in this exact format (no extra text):
+${jsonSchema}
+
+Guidelines:
+- This is EARLY retirement — the client stops working before the official Israeli retirement age (67)
+${isEarlyRetirement ? `- There is a ${gapYears}-year gap until age 67 with no employment income and no automatic NI contributions
+- The National Insurance category must focus on this gap: voluntary payments, preserving entitlements, health insurance` : ''}
+- Include categories: National Insurance (gap until 67), Pension & Early Retirement Impact, Insurance, Taxation, Financial Management, Healthcare, Legal/Estate, Lifestyle
+- For National Insurance: do NOT use a flag emoji. Include voluntary payment obligation, estimated cost, impact on old-age pension entitlement, health insurance via NI during the gap years
+- For Pension: impact of stopping contributions on the monthly pension at 67, whether voluntary contributions during early retirement are worth it, earliest possible withdrawal age, actuarial reduction for early draw, vesting status
+- Personalize items based on the client data
+- Mark as critical anything where inaction results in loss of rights or coverage
+- Include 3-6 items per category
+- Respond in English only`;
+
+    const envKey = getProviderEnvKey(provider);
+    const apiKey = apiKeyOverride?.trim() || (envKey ? import.meta.env[envKey]?.trim() : null);
+    if (!apiKey) throw new Error(`Missing API key for provider: ${provider}`);
+
+    let responseText = '';
+
+    if (provider === 'gemini') {
+        const { GoogleGenerativeAI } = await import('@google/generative-ai');
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const genModel = genAI.getGenerativeModel({ model, generationConfig: { temperature: 0.3 } });
+        const result = await genModel.generateContent(prompt);
+        responseText = result.response.text();
+    } else if (provider === 'openai') {
+        const { default: OpenAI } = await import('openai');
+        const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+        const completion = await openai.chat.completions.create({
+            messages: [{ role: 'user', content: prompt }],
+            model,
+            temperature: 0.3,
+            response_format: { type: 'json_object' },
+        });
+        responseText = completion.choices[0].message.content;
+    } else if (provider === 'anthropic') {
+        const { default: Anthropic } = await import('@anthropic-ai/sdk');
+        const anthropic = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+        const message = await anthropic.messages.create({
+            model,
+            max_tokens: 4096,
+            temperature: 0.3,
+            messages: [{ role: 'user', content: prompt }],
+        });
+        responseText = message.content[0].text;
+    }
+
+    const cleaned = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    const jsonStr = firstBrace !== -1 ? cleaned.substring(firstBrace, lastBrace + 1) : cleaned;
+    return JSON.parse(jsonStr);
 }
