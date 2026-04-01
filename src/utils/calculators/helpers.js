@@ -8,6 +8,7 @@
  */
 export const getMonthFromDate = (date) => {
     if (!date) return null;
+    if (isNaN(date.year) || isNaN(date.month) || date.year === undefined || date.month === undefined) return null;
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth() + 1;

@@ -60,13 +60,33 @@ export function calculateAccumulation({
     lifeEvents.forEach((event, idx) => {
         if (!event.enabled) return;
         const { startMonth, endMonth } = eventMonthRanges[idx];
-        if (startMonth !== null && startMonth <= 0 && (endMonth === null || endMonth >= 0)) {
-            const amount = getMonthlyAmount(event);
-            if (event.type === EVENT_TYPES.INCOME_CHANGE) {
-                activeMonthlyContribution += amount;
-            } else if (event.type === EVENT_TYPES.EXPENSE_CHANGE) {
-                activeMonthlyContribution -= amount;
+        // Skip if no valid start, NaN (corrupted date), or future event
+        if (startMonth === null || isNaN(startMonth) || startMonth > 0) return;
+
+        const amount = getMonthlyAmount(event);
+        switch (event.type) {
+            case EVENT_TYPES.INCOME_CHANGE:
+                // Only include if the recurring change extends into month 1+
+                // (endMonth > 0 = extends past current month; null = no end date)
+                if (endMonth === null || endMonth > 0) activeMonthlyContribution += amount;
+                break;
+            case EVENT_TYPES.EXPENSE_CHANGE:
+                if (endMonth === null || endMonth > 0) activeMonthlyContribution -= amount;
+                break;
+            case EVENT_TYPES.ONE_TIME_INCOME:
+                balance += event.amount;
+                totalPrincipal += event.amount;
+                break;
+            case EVENT_TYPES.ONE_TIME_EXPENSE: {
+                const expenseAmount = Math.min(event.amount, balance);
+                if (balance > 0) {
+                    const expenseFraction = expenseAmount / balance;
+                    totalPrincipal = Math.max(0, totalPrincipal - totalPrincipal * expenseFraction);
+                }
+                balance = Math.max(0, balance - event.amount);
+                break;
             }
+            default: break;
         }
     });
 

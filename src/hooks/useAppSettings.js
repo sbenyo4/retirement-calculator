@@ -13,7 +13,8 @@ const SETTINGS_ACTIONS = {
     LOAD_FROM_DB: 'LOAD_FROM_DB',
     SET_MODELS_OVERRIDE: 'SET_MODELS_OVERRIDE',
     SET_IDLE_TIMEOUT: 'SET_IDLE_TIMEOUT',
-    SET_IDLE_TIMEOUT_ENABLED: 'SET_IDLE_TIMEOUT_ENABLED'
+    SET_IDLE_TIMEOUT_ENABLED: 'SET_IDLE_TIMEOUT_ENABLED',
+    SET_FOUR_PERCENT_MODE: 'SET_FOUR_PERCENT_MODE'
 };
 
 function getDefaultSettings() {
@@ -28,7 +29,8 @@ function getDefaultSettings() {
         apiKeys: {}, // Per-provider API key overrides
         aiModelsOverride: null, // User-selected custom AI models
         idleTimeoutMinutes: 5,
-        idleTimeoutEnabled: true
+        idleTimeoutEnabled: true,
+        fourPercentMode: 'net'
     };
 }
 
@@ -48,6 +50,7 @@ function settingsReducer(state, action) {
                 aiModelsOverride: db.aiModelsOverride || state.aiModelsOverride,
                 idleTimeoutMinutes: db.idleTimeoutMinutes ?? state.idleTimeoutMinutes,
                 idleTimeoutEnabled: db.idleTimeoutEnabled ?? state.idleTimeoutEnabled,
+                fourPercentMode: db.fourPercentMode ?? state.fourPercentMode,
             };
         }
 
@@ -99,6 +102,9 @@ function settingsReducer(state, action) {
 
         case SETTINGS_ACTIONS.SET_IDLE_TIMEOUT_ENABLED:
             return { ...state, idleTimeoutEnabled: action.payload };
+
+        case SETTINGS_ACTIONS.SET_FOUR_PERCENT_MODE:
+            return { ...state, fourPercentMode: action.payload };
 
         default:
             return state;
@@ -157,6 +163,7 @@ export function useAppSettings() {
             apiKeys: settings.apiKeys,
             idleTimeoutMinutes: settings.idleTimeoutMinutes,
             idleTimeoutEnabled: settings.idleTimeoutEnabled,
+            fourPercentMode: settings.fourPercentMode,
         };
 
         if (settings.fiscalParameters) {
@@ -166,7 +173,7 @@ export function useAppSettings() {
         setUserSettings(uid, dataToSave).catch(err => {
             console.error('Error saving settings to Firestore:', err);
         });
-    }, [settings.aiProvider, settings.aiModel, settings.simulationType, settings.familyStatus, settings.fiscalParameters, settings.idleTimeoutMinutes, settings.idleTimeoutEnabled, apiKeysStr, uid]);
+    }, [settings.aiProvider, settings.aiModel, settings.simulationType, settings.familyStatus, settings.fiscalParameters, settings.idleTimeoutMinutes, settings.idleTimeoutEnabled, settings.fourPercentMode, apiKeysStr, uid]);
 
     return { settings, dispatch, SETTINGS_ACTIONS };
 }

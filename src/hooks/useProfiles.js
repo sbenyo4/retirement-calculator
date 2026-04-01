@@ -72,12 +72,17 @@ export function useProfiles() {
     const updateProfile = useCallback((id, data) => {
         if (!uid) return;
 
-        // Optimistic update
-        setProfiles(prev => prev.map(p => p.id === id ? { ...p, data } : p));
+        // Optimistic update — capture previous state for revert
+        let prevProfiles;
+        setProfiles(prev => {
+            prevProfiles = prev;
+            return prev.map(p => p.id === id ? { ...p, data } : p);
+        });
 
         dbUpdateProfile(uid, id, { data }).catch(err => {
             console.error('Error updating profile:', err);
             setSaveError('Failed to update profile.');
+            if (prevProfiles) setProfiles(prevProfiles);
         });
 
         setSaveError(null);
@@ -86,12 +91,17 @@ export function useProfiles() {
     const renameProfile = useCallback((id, newName) => {
         if (!uid) return;
 
-        // Optimistic update
-        setProfiles(prev => prev.map(p => p.id === id ? { ...p, name: newName } : p));
+        // Optimistic update — capture previous state for revert
+        let prevProfiles;
+        setProfiles(prev => {
+            prevProfiles = prev;
+            return prev.map(p => p.id === id ? { ...p, name: newName } : p);
+        });
 
         dbUpdateProfile(uid, id, { name: newName }).catch(err => {
             console.error('Error renaming profile:', err);
             setSaveError('Failed to rename profile.');
+            if (prevProfiles) setProfiles(prevProfiles);
         });
 
         setSaveError(null);

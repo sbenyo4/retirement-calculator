@@ -147,14 +147,13 @@ export default function LifeEventsManager({
     };
 
     const handleEditEventAll = async (eventData) => {
-        // Save to current profile first
+        const sourceEvent = editingEvent; // capture before handleEditEvent clears it
         handleEditEvent(eventData);
-        // Then propagate to all other profiles that have an event with the same description+type
-        if (!profiles || !updateProfile) return;
+        if (!profiles || !updateProfile || !sourceEvent) return;
         const otherProfiles = profiles.filter(p => !['tmp','guest','debug'].includes(p.id) && p.id !== currentProfileId);
         for (const profile of otherProfiles) {
             const targetEvents = profile.data?.lifeEvents || [];
-            const idx = targetEvents.findIndex(e => e.description === editingEvent.description && e.type === editingEvent.type);
+            const idx = targetEvents.findIndex(e => e.description === sourceEvent.description && e.type === sourceEvent.type);
             if (idx < 0) continue;
             const updated = [...targetEvents];
             updated[idx] = { ...eventData, id: updated[idx].id, enabled: updated[idx].enabled };
@@ -343,8 +342,8 @@ export default function LifeEventsManager({
                                                 <button
                                                     onClick={() => handleToggleEvent(event.id)}
                                                     className={`p-1 rounded hover:bg-white/10 ${classes.icon}`}
-                                                    title={event.enabled ? (t ? t('disable') : 'Disable') : (t ? t('enable') : 'Enable')}
-                                                    aria-label={event.enabled ? (t ? t('disable') : 'Disable') : (t ? t('enable') : 'Enable')}
+                                                    title={event.enabled ? (t ? t('disableEvent') : 'Disable') : (t ? t('enableEvent') : 'Enable')}
+                                                    aria-label={event.enabled ? (t ? t('disableEvent') : 'Disable') : (t ? t('enableEvent') : 'Enable')}
                                                 >
                                                     {event.enabled ? <ToggleRight className="w-4 h-4 text-green-500" /> : <ToggleLeft className="w-4 h-4" />}
                                                 </button>
@@ -427,7 +426,7 @@ export default function LifeEventsManager({
                         event={editingEvent}
                         events={events}
                         onSave={editingEvent?.id ? handleEditEvent : handleAddEvent}
-                        onSaveAll={editingEvent?.id ? handleEditEventAll : undefined}
+                        onSaveAll={editingEvent?.id && profiles?.filter(p => !['tmp','guest','debug'].includes(p.id) && p.id !== currentProfileId).length > 0 ? handleEditEventAll : undefined}
                         onCancel={() => {
                             setShowAddModal(false);
                             setEditingEvent(null);

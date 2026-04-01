@@ -79,7 +79,7 @@ function MainApp() {
     dismissSimulationError,
     goalSeekWithdrawal,
     memoizedDebouncedInputs
-  } = useCalculation(React.useMemo(() => ({ ...inputs, language }), [inputs, language]), settings);
+  } = useCalculation(React.useMemo(() => ({ ...inputs, language, fourPercentMode: settings.fourPercentMode }), [inputs, language, settings.fourPercentMode]), settings);
 
   // Separate worker instance for profile comparison projections (keeps the main
   // calculation worker free and moves profile work off the main thread).
@@ -532,6 +532,8 @@ function MainApp() {
               onIdleTimeoutEnabledChange={v => dispatchSettings({ type: SETTINGS_ACTIONS.SET_IDLE_TIMEOUT_ENABLED, payload: v })}
               idleTimeoutMinutes={settings.idleTimeoutMinutes ?? 5}
               onIdleTimeoutChange={v => dispatchSettings({ type: SETTINGS_ACTIONS.SET_IDLE_TIMEOUT, payload: v })}
+              fourPercentMode={settings.fourPercentMode ?? 'net'}
+              onFourPercentModeChange={v => dispatchSettings({ type: SETTINGS_ACTIONS.SET_FOUR_PERCENT_MODE, payload: v })}
             />
           </Suspense>
         </ErrorBoundary>

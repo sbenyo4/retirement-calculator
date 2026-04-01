@@ -45,6 +45,7 @@ export default function LifeEventsTimelineModal({
     const scrollContainerRef = useRef(null);
     const timelineTrackRef = React.useRef(null);
     const lastClickRef = useRef({ time: 0, id: null });
+    const editFlushTimerRef = useRef(null);
 
     // Create a 100% reliable Map for finding original source objects by ID
     const originalEventsMap = useMemo(() => {
@@ -61,12 +62,25 @@ export default function LifeEventsTimelineModal({
     const [elevatedEventId, setElevatedEventId] = useState(null);
     const hoverTimerRef = useRef(null);
     const handleEventMouseEnter = (id) => {
+        clearTimeout(hoverTimerRef.current);
         hoverTimerRef.current = setTimeout(() => setElevatedEventId(id), 1000);
     };
     const handleEventMouseLeave = () => {
         clearTimeout(hoverTimerRef.current);
         setElevatedEventId(null);
     };
+
+    // Clear hover timer when modal closes or component unmounts
+    useEffect(() => {
+        if (!isOpen) {
+            clearTimeout(hoverTimerRef.current);
+            setElevatedEventId(null);
+        }
+        return () => {
+            clearTimeout(hoverTimerRef.current);
+            clearTimeout(editFlushTimerRef.current);
+        };
+    }, [isOpen]);
 
     // State for color filters (which event types to show)
     const [visibleColors, setVisibleColors] = useState({
@@ -144,7 +158,8 @@ export default function LifeEventsTimelineModal({
         handleEditEvent(data);
         setShowAddModal(false);
         setEditingEvent(null);
-        setTimeout(() => setEditingEvent(null), 0);
+        clearTimeout(editFlushTimerRef.current);
+        editFlushTimerRef.current = setTimeout(() => setEditingEvent(null), 0);
     };
 
     const onDeleteWrapper = (id) => {

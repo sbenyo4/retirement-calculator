@@ -22,6 +22,7 @@ export function calculateDecumulation({
         monthlyNetIncomeDesired,
         withdrawalStrategy = WITHDRAWAL_STRATEGIES.FIXED,
         withdrawalPercentage = 4,
+        fourPercentMode = 'net',
         lifeEvents = [],
         variableRatesEnabled,
         variableRates,
@@ -229,9 +230,23 @@ export function calculateDecumulation({
         const currentBalance = retirementBalance + effectiveInterest;
 
         switch (withdrawalStrategy) {
-            case WITHDRAWAL_STRATEGIES.FOUR_PERCENT:
-                netWithdrawal = fourPercentMonthly;
+            case WITHDRAWAL_STRATEGIES.FOUR_PERCENT: {
+                if (fourPercentMode === 'gross') {
+                    // Academic 4% rule: portfolio depletes at exactly 4%/year gross.
+                    // Pre-compute the profit ratio so we can derive net = gross × (1 - taxOnProfit).
+                    // The standard tax gross-up below will then invert this back to fourPercentMonthly.
+                    const _preBalance = retirementBalance + effectiveInterest;
+                    const _principal = enableBuckets ? (safePrincipal + surplusPrincipal) : currentPrincipal;
+                    const _profitRatio = _preBalance > 0
+                        ? Math.max(0, Math.min(1, (_preBalance - _principal) / _preBalance))
+                        : 0;
+                    netWithdrawal = fourPercentMonthly * (1 - _profitRatio * taxRateDecimal);
+                } else {
+                    // 'net' mode (default): user receives 4%/year net after tax
+                    netWithdrawal = fourPercentMonthly;
+                }
                 break;
+            }
             case WITHDRAWAL_STRATEGIES.PERCENTAGE:
                 netWithdrawal = (currentBalance * (withdrawalPercentage / 100)) / 12;
                 break;

@@ -111,6 +111,7 @@ export function useCalculation(inputs, settings) {
             setIsCalculating(false);
             setValidationError(null); // Don't show error for incomplete inputs
             setResults(null);
+            setSimulationResults(null);
         }
     }, [debouncedInputs, memoizedDebouncedInputs, settings.calculationMode, settings.simulationType, runProjection, runSimulation]);
 

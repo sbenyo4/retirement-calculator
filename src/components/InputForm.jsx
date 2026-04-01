@@ -698,8 +698,8 @@ export default function InputForm({
                                                     setInputs(prev => ({
                                                         ...prev,
                                                         enableBuckets: true,
-                                                        bucketSafeRate: prev.bucketSafeRate !== undefined ? prev.bucketSafeRate : '2',
-                                                        bucketSurplusRate: prev.bucketSurplusRate !== undefined ? prev.bucketSurplusRate : '7'
+                                                        bucketSafeRate: prev.bucketSafeRate !== undefined ? prev.bucketSafeRate : 2,
+                                                        bucketSurplusRate: prev.bucketSurplusRate !== undefined ? prev.bucketSurplusRate : 7
                                                     }));
                                                 }
                                             }}
@@ -815,7 +815,7 @@ export default function InputForm({
                             ))}
                             {/* Variable Rates Trigger (In Grid) */}
                             <button
-                                onClick={() => setInputs(prev => ({ ...prev, variableRatesEnabled: true, withdrawalStrategy: null }))}
+                                onClick={() => setInputs(prev => ({ ...prev, variableRatesEnabled: true, withdrawalStrategy: WITHDRAWAL_STRATEGIES.FIXED }))}
                                 className={`px-2 py-1.5 rounded-lg text-[10px] md:text-xs font-medium transition-all ${inputs.variableRatesEnabled
                                     ? 'bg-blue-600 text-white shadow-md'
                                     : (isLight ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-white/5 text-gray-400 hover:bg-white/10')
