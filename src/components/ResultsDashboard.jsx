@@ -8,8 +8,9 @@ import { SensitivityHeatmapButton, SensitivityHeatmapModal } from './Sensitivity
 import { InflationButton, InflationModal } from './InflationRealityCheck';
 import { PensionIncomeButton, PensionIncomeModal } from './PensionIncomeModal';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
-import { LayoutDashboard, BrainCircuit } from 'lucide-react';
+import { LayoutDashboard, BrainCircuit, Wallet } from 'lucide-react';
 import AIInsightsView from './AIInsightsView';
+import BudgetPlanner from './BudgetPlanner';
 import { Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -45,7 +46,7 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
     const [showAmortizationModal, setShowAmortizationModal] = useState(false);
     const [showInflationModal, setShowInflationModal] = useState(false);
     const [showPensionModal, setShowPensionModal] = useState(false);
-    const [activeTab, setActiveTab] = useState('numerical'); // 'numerical' | 'insights'
+    const [activeTab, setActiveTab] = useState('numerical'); // 'numerical' | 'insights' | 'budget'
     // Note: showInterestSensitivity and showIncomeSensitivity are now received as props
 
     // Determine which results to display
@@ -514,6 +515,16 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                     <BrainCircuit size={16} />
                     {t('aiInsights') || 'AI Insights'}
                 </button>
+                <button
+                    onClick={() => setActiveTab('budget')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'budget'
+                        ? 'bg-emerald-600 text-white shadow-md'
+                        : (isLight ? 'text-slate-500 hover:bg-slate-100' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200')
+                        }`}
+                >
+                    <Wallet size={16} />
+                    {t('budget') || 'Budget'}
+                </button>
             </div>
 
             {activeTab === 'insights' ? (
@@ -531,6 +542,19 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                         t={t}
                         insightsData={aiInsightsData}
                         onInsightsChange={setAiInsightsData}
+                    />
+                </div>
+            ) : activeTab === 'budget' ? (
+                <div className="overflow-y-auto custom-scrollbar scrollbar-right max-h-[calc(100vh-16rem)] pr-1">
+                    <BudgetPlanner
+                        inputs={inputs}
+                        setInputs={setInputs}
+                        t={t}
+                        language={language}
+                        isLight={isLight}
+                        aiProvider={aiProvider}
+                        aiModel={aiModel}
+                        apiKeyOverride={apiKeyOverride}
                     />
                 </div>
             ) : (

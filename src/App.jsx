@@ -207,7 +207,8 @@ function MainApp() {
       }
       return prev;
     });
-  }, [inputs.retirementStartAge, inputs.retirementEndAge, inputs.currentAge, inputs.birthdate, setInputs]);
+  // Use debounced values so this fires once after the user stops typing, not on every keystroke.
+  }, [memoizedDebouncedInputs.retirementStartAge, memoizedDebouncedInputs.retirementEndAge, memoizedDebouncedInputs.currentAge, memoizedDebouncedInputs.birthdate, setInputs]);
 
   // Sync selected selectedProfileIds with available profiles (cleanup deleted profiles)
   useEffect(() => {
@@ -230,7 +231,9 @@ function MainApp() {
     }).filter(Boolean)
   );
 
-  // Profile projections run off the main thread via the worker, sequentially.
+  // Profile projections run off the main thread via the worker, sequentially
+  // (the worker processes one message at a time). Results are committed to state
+  // per-profile so each card appears as soon as its calculation finishes.
   // Only re-runs when profile data actually changes (not on rename).
   const [profileCalcResults, setProfileCalcResults] = useState({});
   useEffect(() => {
@@ -238,17 +241,17 @@ function MainApp() {
       setProfileCalcResults({});
       return;
     }
-    const collected = {};
+    setProfileCalcResults({}); // reset so stale results don't linger on profile change
     let i = 0;
     function runNext() {
-      if (i >= selectedProfilesData.length) {
-        setProfileCalcResults(collected);
-        return;
-      }
+      if (i >= selectedProfilesData.length) return;
       const { id, data } = selectedProfilesData[i++];
       runProfileProjection(
         data,
-        ({ projection }) => { collected[id] = projection; runNext(); },
+        ({ projection }) => {
+          setProfileCalcResults(prev => ({ ...prev, [id]: projection }));
+          runNext();
+        },
         () => { runNext(); } // skip profiles with invalid data
       );
     }

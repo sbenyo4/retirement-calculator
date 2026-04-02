@@ -36,6 +36,10 @@ function rateLimitRef(uid) {
     return userDoc(uid, 'data', 'rateLimit');
 }
 
+function budgetItemsRef(uid) {
+    return userDoc(uid, 'data', 'budgetItems');
+}
+
 function profilesCollection(uid) {
     return collection(db, 'users', uid, 'profiles');
 }
@@ -103,6 +107,17 @@ export function onProfilesSnapshot(uid, callback) {
         const profiles = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         callback(profiles);
     });
+}
+
+// ─── Budget Items ──────────────────────────────────────────────────
+
+export async function getBudgetItems(uid) {
+    const snap = await getDoc(budgetItemsRef(uid));
+    return snap.exists() ? snap.data().items : null;
+}
+
+export async function setBudgetItems(uid, items) {
+    await setDoc(budgetItemsRef(uid), { items, updatedAt: Date.now() }, { merge: true });
 }
 
 // ─── Rate Limit ────────────────────────────────────────────────────

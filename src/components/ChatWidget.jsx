@@ -6,6 +6,7 @@ import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { getChatResponse, buildChatSystemPrompt } from '../utils/ai-chat';
 
 const STORAGE_KEY = 'chatButtonPos';
+const MAX_DISPLAY_MESSAGES = 20; // keep last N messages in state (DOM + context bound)
 
 const SUGGESTIONS = {
     he: [
@@ -218,10 +219,9 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
         if (!trimmed || loading) return;
         setInput('');
         setError(null);
-        // Keep last 10 messages to avoid token limit errors
-        const history = messages.slice(-10);
+        const history = messages.slice(-MAX_DISPLAY_MESSAGES);
         const newMessages = [...history, { role: 'user', content: trimmed }];
-        setMessages(prev => [...prev.slice(-10), { role: 'user', content: trimmed }]);
+        setMessages(prev => [...prev.slice(-MAX_DISPLAY_MESSAGES), { role: 'user', content: trimmed }]);
         setLoading(true);
         abortRef.current?.abort();
         const controller = new AbortController();
@@ -229,7 +229,7 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
         try {
             const systemPrompt = buildChatSystemPrompt(inputs, results, language);
             const reply = await getChatResponse(newMessages, systemPrompt, aiProvider, aiModel, apiKeyOverride, { signal: controller.signal });
-            setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+            setMessages(prev => [...prev.slice(-MAX_DISPLAY_MESSAGES), { role: 'assistant', content: reply }]);
         } catch (err) {
             if (err.name !== 'AbortError') {
                 console.error('[Chat error]', err, err?.status, err?.error);

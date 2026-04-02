@@ -188,6 +188,9 @@ export function calculateDecumulation({
 
         // Buckets Interest
         let pvSafeAnnualRate = bucketSafeRate; // used below for requiredCapitalPV discount
+        let pvSurplusAnnualRate = bucketSurplusRate; // used below for blended PV discount
+        let safeInterest = 0;   // exposed for INTEREST_ONLY bucket gross-up
+        let surplusInterest = 0;
         if (enableBuckets) {
             // Use the same shifted-year system as getMonthlyRateForMonth:
             // year = startYear + floor(currentMonth / 12), where currentMonth = startMonthIndex + i.
@@ -208,12 +211,13 @@ export function calculateDecumulation({
                 ? parseFloat(surplusVariableRates[monthYear])
                 : NaN;
             const surplusAnnualRate = !isNaN(parsedSurplusRate) ? parsedSurplusRate : bucketSurplusRate;
+            pvSurplusAnnualRate = surplusAnnualRate;
 
             const safeMonthlyRate = Math.pow(1 + safeAnnualRate / 100, 1 / 12) - 1;
             const surplusMonthlyRate = Math.pow(1 + surplusAnnualRate / 100, 1 / 12) - 1;
 
-            const safeInterest = safeBalance * safeMonthlyRate;
-            const surplusInterest = surplusBalance * surplusMonthlyRate;
+            safeInterest = safeBalance * safeMonthlyRate;
+            surplusInterest = surplusBalance * surplusMonthlyRate;
 
             // Growth compounds tax-free (no annual tax deduction)
             safeBalance += safeInterest;
@@ -221,6 +225,15 @@ export function calculateDecumulation({
 
             effectiveInterest = safeInterest + surplusInterest;
         }
+
+        // Per-bucket effective tax rates — computed after interest is credited so balances are current.
+        // Needed early for INTEREST_ONLY bucket case; also used in the gross-up section below.
+        const safeEffTaxRate = (enableBuckets && safeBalance > 0)
+            ? Math.max(0, Math.min(1, (safeBalance - safePrincipal) / safeBalance)) * taxRateDecimal
+            : 0;
+        const surplusEffTaxRate = (enableBuckets && surplusBalance > 0)
+            ? Math.max(0, Math.min(1, (surplusBalance - surplusPrincipal) / surplusBalance)) * taxRateDecimal
+            : 0;
 
         // Calculate withdrawal
         let netWithdrawal;
@@ -328,18 +341,18 @@ export function calculateDecumulation({
         // buckets diverge (safe grows slowly → higher principal ratio than surplus).
         const preWithdrawalBalance = retirementBalance + effectiveInterest;
 
-        // Per-bucket effective tax rates (safeBalance/surplusBalance already include this month's interest)
-        const safeEffTaxRate = (enableBuckets && safeBalance > 0)
-            ? Math.max(0, Math.min(1, (safeBalance - safePrincipal) / safeBalance)) * taxRateDecimal
-            : 0;
-        const surplusEffTaxRate = (enableBuckets && surplusBalance > 0)
-            ? Math.max(0, Math.min(1, (surplusBalance - surplusPrincipal) / surplusBalance)) * taxRateDecimal
-            : 0;
-
         let grossWithdrawal;
         let tax;
 
-        if (enableBuckets) {
+        if (withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY && enableBuckets) {
+            // Interest-only in bucket mode: draw exactly the interest earned in each bucket.
+            // The safe-first gross-up would mis-attribute surplus interest through the safe rate,
+            // producing grossWithdrawal ≠ effectiveInterest when the two buckets have different
+            // profit ratios. Instead we set gross = effectiveInterest directly and tax each bucket
+            // at its own per-bucket rate.
+            grossWithdrawal = effectiveInterest;
+            tax = safeInterest * safeEffTaxRate + surplusInterest * surplusEffTaxRate;
+        } else if (enableBuckets) {
             // Gross-up drawing from safe first, then surplus
             const maxNetFromSafe = safeBalance * (1 - safeEffTaxRate);
             if (netWithdrawal <= maxNetFromSafe) {
@@ -440,9 +453,16 @@ export function calculateDecumulation({
 
         // Advance the cumulative discount factor by the actual rate for this month.
         // Non-bucket: uses the variable-rate-aware monthlyRate so step-mode rates are reflected.
-        // Bucket: uses the fixed safe-bucket rate (liability side governed by safe rate).
+        // Bucket: uses a balance-weighted blended rate so both buckets' returns are reflected.
+        // Previously only the safe rate was used, which over-discounts when the surplus bucket
+        // has a meaningfully higher return (e.g. safe 3% / surplus 7% with equal balances → 5%).
         const pvMonthlyRate = enableBuckets
-            ? (Math.pow(1 + pvSafeAnnualRate / 100, 1 / 12) - 1) * (1 - taxRateDecimal)
+            ? (() => {
+                const totalBal = safeBalance + surplusBalance;
+                const safeWeight = totalBal > 0 ? safeBalance / totalBal : 0.5;
+                const blendedAnnual = safeWeight * pvSafeAnnualRate + (1 - safeWeight) * pvSurplusAnnualRate;
+                return (Math.pow(1 + blendedAnnual / 100, 1 / 12) - 1) * (1 - taxRateDecimal);
+            })()
             : monthlyRate * (1 - taxRateDecimal);
         requiredCapitalCumulativeFactor *= (1 + pvMonthlyRate);
 
