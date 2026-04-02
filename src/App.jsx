@@ -410,7 +410,7 @@ function MainApp() {
             </div>{/* end scrollable InputForm */}
           </div>
 
-          <div className="lg:col-span-8 flex flex-col" style={{ height: 'calc(100vh - 8rem)' }}>
+          <div className="lg:col-span-8 flex flex-col">
             <ErrorBoundary t={t}>
               {validationError && (
                 <div className="bg-red-900/50 border border-red-500 rounded-xl p-4 mb-4 text-white">

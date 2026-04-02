@@ -491,7 +491,7 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
     const endYear = getProjectedYear(inputs.retirementEndAge, inputs.currentAge, inputs.birthdate);
 
     return (
-        <div className="space-y-3 h-full flex flex-col min-h-0">
+        <div className="space-y-3 flex flex-col">
             {/* View Toggle */}
             <div className={`flex p-1 rounded-lg shrink-0 ${isLight ? 'bg-white border border-slate-200' : 'bg-white/5'}`}>
                 <button
@@ -517,7 +517,7 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
             </div>
 
             {activeTab === 'insights' ? (
-                <div className="flex-1 min-h-0 overflow-hidden">
+                <div>
                     <AIInsightsView
                         inputs={inputs}
                         results={results}
@@ -534,7 +534,7 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                     />
                 </div>
             ) : (
-                <div className="space-y-3 overflow-y-auto flex-1 min-h-0 pr-1">
+                <div className="space-y-3">
                     {/* Status Message - Hero Card - Fixed height for consistent UI */}
                     {!isCompareMode && (
                         <div className={`mx-1 md:mx-0 px-3 md:px-4 py-3 rounded-xl border shadow-lg min-h-[72px] flex items-center ${ranOutAtAge ? 'bg-red-500/20 border-red-500/50' : 'bg-green-500/20 border-green-500/50'}`}>
