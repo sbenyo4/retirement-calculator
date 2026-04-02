@@ -83,6 +83,18 @@ export function buildChatSystemPrompt(inputs, results, language) {
         }
     } catch {}
 
+    // Budget planner awareness — read from sessionStorage (written by BudgetPlanner on every change)
+    let budgetSection = '';
+    try {
+        const budget = JSON.parse(sessionStorage.getItem('rc-budget-summary') || 'null');
+        if (budget && budget.totalMonthly > 0) {
+            const catLines = (budget.categories || [])
+                .map(c => `  ${isHe ? c.labelHe : c.labelEn}: ${currency}${c.total}/mo`)
+                .join('\n');
+            budgetSection = `\nBUDGET PLANNER (monthly expense plan):\n- Total monthly: ${currency}${budget.totalMonthly} | Annual: ${currency}${budget.totalAnnual}\n- Gap vs income target: ${currency}${budget.gap} (${budget.gap >= 0 ? 'surplus' : 'shortfall'})\n- By category:\n${catLines}\n`;
+        }
+    } catch {}
+
     // Pension exemption (פטור מקצבה מזכה) - 2026
     const pensionExemption = inputs.fiscalParameters?.pensionExemption || { rate: 0.575, maxMonthly: 5422, maxQualifiedIncome: 9430 };
 
@@ -120,7 +132,7 @@ CALCULATED RESULTS:
 - Required capital at retirement: ${currency}${Math.round(results?.requiredCapitalAtRetirement || 0).toLocaleString()}
 - Deficit needed today: ${currency}${Math.round(results?.pvOfDeficit || 0).toLocaleString()}
 - ${results?.ranOutAtAge ? `RUNS OUT at age ${results.ranOutAtAge}` : 'Fully funded — never runs out'}${inputs.targetEndBalance && results?.balanceAtEnd != null ? `\n- Gap to target: ${currency}${Math.round(results.balanceAtEnd - parseFloat(inputs.targetEndBalance)).toLocaleString()} (${results.balanceAtEnd >= parseFloat(inputs.targetEndBalance) ? 'TARGET MET' : 'SHORTFALL'})` : ''}
-${checklistSection}`;
+${budgetSection}${checklistSection}`;
 }
 
 /**

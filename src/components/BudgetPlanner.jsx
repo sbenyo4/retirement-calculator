@@ -248,6 +248,29 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
         return () => clearTimeout(saveTimerRef.current);
     }, [uid, items, loaded]);
 
+    // Keep sessionStorage in sync so AI chat and AI insights can read the budget
+    useEffect(() => {
+        if (!loaded) return;
+        try {
+            const monthly = items.filter(i => i.enabled).reduce((s, i) => s + toMonthly(i), 0);
+            const categories = CATEGORIES.map(cat => {
+                const catItems = items.filter(i => i.categoryId === cat.id && i.enabled && i.amount > 0);
+                if (!catItems.length) return null;
+                return {
+                    labelHe: cat.labelHe,
+                    labelEn: cat.labelEn,
+                    total: Math.round(catItems.reduce((s, i) => s + toMonthly(i), 0)),
+                };
+            }).filter(Boolean);
+            sessionStorage.setItem('rc-budget-summary', JSON.stringify({
+                totalMonthly: Math.round(monthly),
+                totalAnnual: Math.round(monthly * 12),
+                gap: Math.round((parseFloat(inputs.monthlyNetIncomeDesired) || 0) - monthly),
+                categories,
+            }));
+        } catch {}
+    }, [items, loaded, inputs.monthlyNetIncomeDesired]);
+
     // totalMonthly must be declared before any callbacks that reference it
     const totalMonthly = items.filter(i => i.enabled).reduce((s, i) => s + toMonthly(i), 0);
 
@@ -370,6 +393,9 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
                         </div>
                         <div className={`text-lg font-semibold ${statusColor}`}>
                             {currency}{Math.round(totalMonthly).toLocaleString()}
+                        </div>
+                        <div className={`text-xs mt-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                            {currency}{Math.round(totalMonthly * 12).toLocaleString()} {isHe ? '/ שנה' : '/ yr'}
                         </div>
                     </div>
                     <div className="text-end">
