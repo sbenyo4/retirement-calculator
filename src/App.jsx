@@ -341,8 +341,8 @@ function MainApp() {
           </div>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          <div className="lg:col-span-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 shadow-xl flex flex-col relative z-20 h-full" onFocus={preloadResultsDashboard} onPointerEnter={preloadResultsDashboard}>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+          <div className="lg:col-span-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 shadow-xl flex flex-col relative z-20 overflow-hidden" onFocus={preloadResultsDashboard} onPointerEnter={preloadResultsDashboard}>
             <ProfileManager
               currentInputs={inputs}
               onLoad={setInputs}
@@ -357,7 +357,8 @@ function MainApp() {
               lastLoadedProfileId={lastLoadedProfileId}
               onSaveGlobalPension={saveGlobalPension}
             />
-            <div className="my-2 border-t border-white/10"></div>
+            <div className="my-2 border-t border-white/10 flex-shrink-0"></div>
+            <div className="overflow-y-auto custom-scrollbar max-h-[calc(100vh-14rem)]">
             <InputForm
               inputs={inputs}
               setInputs={setInputs}
@@ -406,6 +407,7 @@ function MainApp() {
               updateProfile={updateProfile}
               currentProfileId={lastLoadedProfileId}
             />
+            </div>{/* end scrollable InputForm */}
           </div>
 
           <div className="lg:col-span-8 flex flex-col" style={{ height: 'calc(100vh - 8rem)' }}>
@@ -436,7 +438,7 @@ function MainApp() {
                 </div>
               )}
               {results && settings.calculationMode === 'planning' && (
-                <div className="flex-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-xl overflow-hidden">
+                <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-xl overflow-hidden max-h-[calc(100vh-10rem)]">
                   <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"></div></div>}>
                     <RetirementChecklist
                       inputs={memoizedDebouncedInputs}

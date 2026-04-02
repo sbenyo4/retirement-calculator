@@ -524,6 +524,7 @@ export async function generateRetirementChecklistInsights(inputs, results, provi
       "emoji": "single emoji",
       "items": [
         {
+          "id": "stable-kebab-case-id (e.g. ni-voluntary-payment, insurance-ltc) — must remain identical across regenerations for the same concept",
           "priority": "critical | high | medium | low",
           "title": "${isHe ? 'כותרת פריט' : 'Item title'}",
           "description": "${isHe ? 'תיאור קצר' : 'Short description'}",

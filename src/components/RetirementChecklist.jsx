@@ -596,33 +596,47 @@ function PriorityBadge({ priority, isLight, language }) {
     );
 }
 
-function ChecklistItem({ item, isLight, language, isExpanded, onToggle }) {
+function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck }) {
     const p = PRIORITIES[item.priority] || PRIORITIES.medium;
 
     return (
-        <div className={`rounded-lg border transition-all ${isLight ? `border-gray-200 ${item.priority === 'critical' ? 'bg-red-50' : item.priority === 'high' ? 'bg-orange-50/50' : 'bg-white'}` : `border-white/10 ${item.priority === 'critical' ? 'bg-red-500/5' : item.priority === 'high' ? 'bg-orange-500/5' : 'bg-white/3'}`}`}>
-            <button
-                onClick={onToggle}
-                className="w-full text-start p-3 flex items-start gap-3"
-            >
-                <span className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${p.color}`} />
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-start gap-2 flex-wrap">
-                        <span className={`text-sm font-medium leading-snug ${isLight ? 'text-gray-900' : 'text-white'}`}>
-                            {item.title}
-                        </span>
-                        <PriorityBadge priority={item.priority} isLight={isLight} language={language} />
+        <div className={`rounded-lg border transition-all ${checked
+            ? (isLight ? 'border-gray-200 bg-gray-50 opacity-60' : 'border-white/5 bg-white/2 opacity-50')
+            : isLight
+                ? `border-gray-200 ${item.priority === 'critical' ? 'bg-red-50' : item.priority === 'high' ? 'bg-orange-50/50' : 'bg-white'}`
+                : `border-white/10 ${item.priority === 'critical' ? 'bg-red-500/5' : item.priority === 'high' ? 'bg-orange-500/5' : 'bg-white/3'}`
+        }`}>
+            <div className="flex items-start">
+                {/* Checkbox */}
+                <button
+                    onClick={(e) => { e.stopPropagation(); onCheck(); }}
+                    className={`shrink-0 m-3 mt-3.5 w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${checked
+                        ? 'bg-green-500 border-green-500'
+                        : isLight ? 'border-gray-300 hover:border-green-400' : 'border-gray-600 hover:border-green-500'}`}
+                >
+                    {checked && <CheckCircle size={10} className="text-white" />}
+                </button>
+                {/* Expand button */}
+                <button onClick={onToggle} className="flex-1 text-start p-3 ps-0 flex items-start gap-3">
+                    <span className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${p.color}`} />
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-start gap-2 flex-wrap">
+                            <span className={`text-sm font-medium leading-snug ${checked ? 'line-through' : ''} ${isLight ? 'text-gray-900' : 'text-white'}`}>
+                                {item.title}
+                            </span>
+                            {!checked && <PriorityBadge priority={item.priority} isLight={isLight} language={language} />}
+                        </div>
+                        <p className={`text-xs mt-1 leading-relaxed ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
+                            {item.desc}
+                        </p>
                     </div>
-                    <p className={`text-xs mt-1 leading-relaxed ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
-                        {item.desc}
-                    </p>
-                </div>
-                <span className={`shrink-0 mt-0.5 ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
-                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                </span>
-            </button>
+                    <span className={`shrink-0 mt-0.5 ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </span>
+                </button>
+            </div>
             {isExpanded && item.details && (
-                <div className={`px-3 pb-3 pt-0 ms-5 text-xs leading-relaxed border-t ${isLight ? 'border-gray-100 text-gray-700 bg-white/60' : 'border-white/5 text-gray-300'}`}>
+                <div className={`px-3 pb-3 pt-0 ms-10 text-xs leading-relaxed border-t ${isLight ? 'border-gray-100 text-gray-700 bg-white/60' : 'border-white/5 text-gray-300'}`}>
                     <div className="pt-2">{item.details}</div>
                 </div>
             )}
@@ -637,18 +651,32 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
 
     const [expandedCategories, setExpandedCategories] = useState(new Set());
     const [expandedItems, setExpandedItems] = useState(new Set());
-    const [aiData, setAiData] = useState(null);
+    const [aiData, setAiData] = useState(() => {
+        try { return JSON.parse(sessionStorage.getItem('rc-ai-data') || 'null'); }
+        catch { return null; }
+    });
     const [aiLoading, setAiLoading] = useState(false); // true = manual refresh (blocks button)
     const [aiSilentLoading, setAiSilentLoading] = useState(false); // true = background auto-refresh
     const [aiError, setAiError] = useState(null);
     const [filterMode, setFilterMode] = useState(null); // null | 'critical' | 'high'
+    const [checkedItems, setCheckedItems] = useState(() => {
+        try { return new Set(JSON.parse(localStorage.getItem('retirement-checklist-done') || '[]')); }
+        catch { return new Set(); }
+    });
 
     // Stable refs so doRefresh never becomes stale
     const latestRef = useRef({});
     latestRef.current = { inputs, results, aiProvider, aiModel, apiKeyOverride, language };
     const refreshIdRef = useRef(0);
     const autoTimerRef = useRef(null);
-    const hasDataRef = useRef(false);
+    const hasDataRef = useRef(!!sessionStorage.getItem('rc-ai-data'));
+
+    const getSnapshot = (inp, res) => JSON.stringify({
+        a: inp?.currentAge, b: inp?.retirementStartAge, c: inp?.retirementEndAge,
+        d: inp?.currentSavings, e: inp?.monthlyContribution, f: inp?.monthlyNetIncomeDesired,
+        g: inp?.annualReturnRate, h: inp?.inflationRate,
+        i: res?.balanceAtRetirement, j: res?.ranOutAtAge, k: res?.surplus,
+    });
 
     const doRefresh = useCallback(async (silent = false) => {
         const { inputs, results, aiProvider, aiModel, apiKeyOverride, language } = latestRef.current;
@@ -664,10 +692,12 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             );
             if (id !== refreshIdRef.current) return; // a newer request superseded this one
             succeeded = true;
-            setAiData(prev => {
-                hasDataRef.current = true;
-                return data;
-            });
+            try {
+                sessionStorage.setItem('rc-ai-data', JSON.stringify(data));
+                sessionStorage.setItem('rc-ai-snapshot', getSnapshot(inputs, results));
+            } catch {}
+            hasDataRef.current = true;
+            setAiData(data);
             setExpandedCategories(new Set());
             setAiError(null);
         } catch (err) {
@@ -683,13 +713,21 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         }
     }, []); // no deps — reads from ref
 
-    const handleRefresh = useCallback(() => doRefresh(false), [doRefresh]);
+    const handleRefresh = useCallback(() => {
+        try { sessionStorage.removeItem('rc-ai-snapshot'); } catch {}
+        doRefresh(false);
+    }, [doRefresh]);
 
-    // Auto-refresh on mount + debounced on meaningful input changes
+    // Auto-refresh: skip if cached data matches current inputs (same session)
     useEffect(() => {
         if (!aiProvider || !aiModel) return;
         clearTimeout(autoTimerRef.current);
-        const delay = hasDataRef.current ? 2500 : 0; // immediate on first load
+        try {
+            const currentSnapshot = getSnapshot(latestRef.current.inputs, latestRef.current.results);
+            const storedSnapshot = sessionStorage.getItem('rc-ai-snapshot');
+            if (hasDataRef.current && currentSnapshot === storedSnapshot) return; // nothing changed
+        } catch {}
+        const delay = hasDataRef.current ? 2500 : 0;
         autoTimerRef.current = setTimeout(() => doRefresh(true), delay);
         return () => clearTimeout(autoTimerRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -723,17 +761,14 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         if (!filterMode) return null;
         const cats = activeCategories
             ? activeCategories.map(c => ({
-                title: c.title,
-                emoji: c.emoji,
+                id: c.id, title: c.title, emoji: c.emoji,
                 items: c.items.filter(i => i.priority === filterMode)
             }))
             : staticCategories.map(c => ({
-                title: c.title,
-                emoji: null,
-                icon: c.icon,
+                id: c.category, title: c.title, emoji: null, icon: c.icon,
                 items: c.items.filter(i => i.relevant && i.priority === filterMode)
             }));
-        return cats.flatMap(c => c.items.map(item => ({ categoryTitle: c.title, categoryEmoji: c.emoji, categoryIcon: c.icon, item })));
+        return cats.flatMap(c => c.items.map(item => ({ categoryTitle: c.title, categoryEmoji: c.emoji, categoryIcon: c.icon, catId: c.id || c.category, item })));
     }, [filterMode, activeCategories, staticCategories]);
 
     const toggleCategory = (id) => {
@@ -766,6 +801,34 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
 
     const sortByPriority = (items) =>
         [...items].sort((a, b) => (PRIORITIES[a.priority]?.order ?? 9) - (PRIORITIES[b.priority]?.order ?? 9));
+
+    // Stable key: prefer AI-provided id, fallback to normalized category+title hash
+    const itemKey = (catId, item) => {
+        if (item.id && typeof item.id === 'string' && item.id.trim()) return item.id.trim();
+        return `${catId}-${(item.title || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9א-ת-]/g, '')}`;
+    };
+
+    const toggleChecked = (key) => {
+        setCheckedItems(prev => {
+            const next = new Set(prev);
+            next.has(key) ? next.delete(key) : next.add(key);
+            try { localStorage.setItem('retirement-checklist-done', JSON.stringify([...next])); } catch {}
+            return next;
+        });
+    };
+
+    // Total / done counts for progress bar
+    const { totalItems, doneItems } = useMemo(() => {
+        const cats = activeCategories
+            ? activeCategories.map(c => ({ id: c.id, items: c.items }))
+            : staticCategories.map(c => ({ id: c.category, items: c.items.filter(i => i.relevant) }));
+        let total = 0, done = 0;
+        cats.forEach(c => c.items.forEach(item => {
+            total++;
+            if (checkedItems.has(itemKey(c.id, item))) done++;
+        }));
+        return { totalItems: total, doneItems: done };
+    }, [activeCategories, staticCategories, checkedItems]);
 
     const friendlyError = (raw) => {
         const m = (raw || '').toLowerCase();
@@ -833,6 +896,23 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                 </div>
             </div>
 
+            {/* Progress bar */}
+            {totalItems > 0 && (
+                <div className={`flex-shrink-0 px-4 py-2 border-b ${isLight ? 'bg-white border-gray-100' : 'bg-gray-900/60 border-white/5'}`}>
+                    <div className="flex items-center gap-3">
+                        <div className={`flex-1 h-1.5 rounded-full overflow-hidden ${isLight ? 'bg-gray-200' : 'bg-white/10'}`}>
+                            <div
+                                className="h-full rounded-full bg-green-500 transition-all duration-500"
+                                style={{ width: `${totalItems ? (doneItems / totalItems) * 100 : 0}%` }}
+                            />
+                        </div>
+                        <span className={`text-[11px] font-medium shrink-0 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                            {doneItems}/{totalItems} {txt('done', 'טופל')}
+                        </span>
+                    </div>
+                </div>
+            )}
+
             {/* Scrollable content - dir=ltr forces scrollbar to right side even in RTL mode */}
             <div className="flex-1 overflow-y-auto custom-scrollbar" dir="ltr">
             <div dir={isRtl ? 'rtl' : 'ltr'}>
@@ -884,28 +964,38 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                         {filterMode === 'critical' ? <AlertTriangle size={13} /> : <BadgeAlert size={13} />}
                         {filterMode === 'critical' ? txt(`${filteredItems.length} Critical Items`, `${filteredItems.length} פריטים קריטיים`) : txt(`${filteredItems.length} High Priority Items`, `${filteredItems.length} פריטים בעדיפות גבוהה`)}
                     </div>
-                    {filteredItems.map(({ categoryTitle, categoryEmoji, categoryIcon: CatIcon, item }, idx) => {
+                    {filteredItems.map(({ categoryTitle, categoryEmoji, categoryIcon: CatIcon, catId, item }, idx) => {
                         const itemId = `filter-${idx}`;
+                        const key = itemKey(catId || categoryTitle, item);
                         const p = PRIORITIES[item.priority] || PRIORITIES.low;
                         const isExpanded = expandedItems.has(itemId);
+                        const isChecked = checkedItems.has(key);
                         return (
-                            <div key={itemId} className={`rounded-xl ring-1 overflow-hidden ${p.border} ${isLight ? 'bg-white' : 'bg-white/5'}`}>
-                                <button
-                                    onClick={() => toggleItem(itemId)}
-                                    className={`w-full flex items-start gap-3 p-3 text-start transition-colors ${isLight ? 'hover:bg-gray-50' : 'hover:bg-white/5'}`}
-                                >
-                                    <div className={`mt-0.5 shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold text-white ${p.color}`}>
-                                        {filterMode === 'critical' ? txt('CRITICAL', 'קריטי') : txt('HIGH', 'גבוה')}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className={`text-xs font-semibold ${isLight ? 'text-gray-900' : 'text-white'}`}>{item.title}</div>
-                                        <div className={`text-[11px] mt-0.5 flex items-center gap-1 ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
-                                            {categoryEmoji ? <span>{categoryEmoji}</span> : CatIcon ? <CatIcon size={10} /> : null}
-                                            {categoryTitle}
+                            <div key={itemId} className={`rounded-xl ring-1 overflow-hidden ${p.border} ${isChecked ? 'opacity-50' : ''} ${isLight ? 'bg-white' : 'bg-white/5'}`}>
+                                <div className="flex items-start">
+                                    <button
+                                        onClick={() => toggleChecked(key)}
+                                        className={`shrink-0 m-3 mt-3.5 w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${isChecked ? 'bg-green-500 border-green-500' : isLight ? 'border-gray-300 hover:border-green-400' : 'border-gray-600 hover:border-green-500'}`}
+                                    >
+                                        {isChecked && <CheckCircle size={10} className="text-white" />}
+                                    </button>
+                                    <button
+                                        onClick={() => toggleItem(itemId)}
+                                        className={`flex-1 flex items-start gap-3 p-3 ps-0 text-start transition-colors ${isLight ? 'hover:bg-gray-50' : 'hover:bg-white/5'}`}
+                                    >
+                                        <div className={`mt-0.5 shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold text-white ${p.color}`}>
+                                            {filterMode === 'critical' ? txt('CRITICAL', 'קריטי') : txt('HIGH', 'גבוה')}
                                         </div>
-                                    </div>
-                                    {isExpanded ? <ChevronDown size={13} className="shrink-0 mt-0.5 text-gray-400" /> : <ChevronRight size={13} className="shrink-0 mt-0.5 text-gray-400" />}
-                                </button>
+                                        <div className="flex-1 min-w-0">
+                                            <div className={`text-xs font-semibold ${isChecked ? 'line-through' : ''} ${isLight ? 'text-gray-900' : 'text-white'}`}>{item.title}</div>
+                                            <div className={`text-[11px] mt-0.5 flex items-center gap-1 ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                {categoryEmoji ? <span>{categoryEmoji}</span> : CatIcon ? <CatIcon size={10} /> : null}
+                                                {categoryTitle}
+                                            </div>
+                                        </div>
+                                        {isExpanded ? <ChevronDown size={13} className="shrink-0 mt-0.5 text-gray-400" /> : <ChevronRight size={13} className="shrink-0 mt-0.5 text-gray-400" />}
+                                    </button>
+                                </div>
                                 {isExpanded && (
                                     <div className={`px-3 pb-3 space-y-1 border-t ${isLight ? 'border-gray-100' : 'border-white/5'}`}>
                                         <p className={`pt-2 text-xs ${isLight ? 'text-gray-600' : 'text-gray-300'}`}>{item.desc || item.description}</p>
@@ -945,16 +1035,22 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                 {isOpen && (
                                     <div className={`px-3 pb-3 space-y-2 border-t ${isLight ? 'border-gray-100' : 'border-white/5'}`}>
                                         <div className="pt-2 space-y-2">
-                                            {sortByPriority(cat.items).map((item, idx) => (
-                                                <ChecklistItem
-                                                    key={idx}
-                                                    item={{ ...item, id: `${cat.id}-${idx}`, desc: item.description, relevant: true }}
-                                                    isLight={isLight}
-                                                    language={language}
-                                                    isExpanded={expandedItems.has(`${cat.id}-${idx}`)}
-                                                    onToggle={() => toggleItem(`${cat.id}-${idx}`)}
-                                                />
-                                            ))}
+                                            {sortByPriority(cat.items).map((item, idx) => {
+                                                const normalizedItem = { ...item, id: item.id || `${cat.id}-${idx}`, desc: item.description, relevant: true };
+                                                const key = itemKey(cat.id, normalizedItem);
+                                                return (
+                                                    <ChecklistItem
+                                                        key={idx}
+                                                        item={normalizedItem}
+                                                        isLight={isLight}
+                                                        language={language}
+                                                        isExpanded={expandedItems.has(`${cat.id}-${idx}`)}
+                                                        onToggle={() => toggleItem(`${cat.id}-${idx}`)}
+                                                        checked={checkedItems.has(key)}
+                                                        onCheck={() => toggleChecked(key)}
+                                                    />
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 )}
@@ -996,16 +1092,21 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                     <div className="pt-2 space-y-2">
                                         {relevantItems
                                             .sort((a, b) => PRIORITIES[a.priority].order - PRIORITIES[b.priority].order)
-                                            .map(item => (
-                                                <ChecklistItem
-                                                    key={item.id}
-                                                    item={item}
-                                                    isLight={isLight}
-                                                    language={language}
-                                                    isExpanded={expandedItems.has(item.id)}
-                                                    onToggle={() => toggleItem(item.id)}
-                                                />
-                                            ))}
+                                            .map(item => {
+                                                const key = itemKey(cat.category, item);
+                                                return (
+                                                    <ChecklistItem
+                                                        key={item.id}
+                                                        item={item}
+                                                        isLight={isLight}
+                                                        language={language}
+                                                        isExpanded={expandedItems.has(item.id)}
+                                                        onToggle={() => toggleItem(item.id)}
+                                                        checked={checkedItems.has(key)}
+                                                        onCheck={() => toggleChecked(key)}
+                                                    />
+                                                );
+                                            })}
                                     </div>
                                 </div>
                             )}

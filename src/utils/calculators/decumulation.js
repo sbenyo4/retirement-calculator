@@ -250,22 +250,41 @@ export function calculateDecumulation({
             case WITHDRAWAL_STRATEGIES.PERCENTAGE:
                 netWithdrawal = (currentBalance * (withdrawalPercentage / 100)) / 12;
                 break;
-            case WITHDRAWAL_STRATEGIES.DYNAMIC:
-                // Accumulate actual monthly growth throughout the year
-                dynamicAnnualGrowth *= (1 + monthlyRate);
+            case WITHDRAWAL_STRATEGIES.DYNAMIC: {
+                // Fix 1: Use actual realized return (bucket-aware).
+                // When buckets are active, the blended return from both buckets
+                // may differ from the portfolio-level monthlyRate.
+                const dynamicActualReturn = enableBuckets && (retirementBalance + effectiveInterest) > 0
+                    ? effectiveInterest / (retirementBalance + effectiveInterest)
+                    : monthlyRate;
+                dynamicAnnualGrowth *= (1 + dynamicActualReturn);
+
                 if (i % 12 === 0) {
-                    // End of a full year: compare actual compounded return against expected
                     const yearlyReturnRate = dynamicAnnualGrowth - 1;
                     const expectedReturn = annualReturnRate / 100;
-                    if (yearlyReturnRate > expectedReturn) {
-                        dynamicBaseWithdrawal = Math.min(dynamicBaseWithdrawal * 1.1, monthlyNetIncomeDesired * 1.2);
-                    } else if (yearlyReturnRate < expectedReturn - 0.05) {
-                        dynamicBaseWithdrawal = Math.max(dynamicBaseWithdrawal * 0.9, monthlyNetIncomeDesired * 0.8);
+
+                    // Fix 2: Symmetric ±2% band — same threshold to trigger increase or decrease.
+                    // Previously: any outperformance triggered increase, but >5% underperformance
+                    // was required to trigger decrease (asymmetric and forgiving of bad markets).
+                    const threshold = 0.02;
+
+                    // Fix 3: Portfolio-scaled ceiling — max withdrawal grows with the portfolio
+                    // so strong multi-year returns actually result in higher sustainable withdrawals.
+                    // Floor stays as a living-expense guarantee (70% of initial desired).
+                    const portfolioScaledMax = (currentBalance * 0.05) / 12;
+                    const maxWithdrawal = Math.max(monthlyNetIncomeDesired * 1.5, portfolioScaledMax);
+                    const minWithdrawal = monthlyNetIncomeDesired * 0.7;
+
+                    if (yearlyReturnRate > expectedReturn + threshold) {
+                        dynamicBaseWithdrawal = Math.min(dynamicBaseWithdrawal * 1.1, maxWithdrawal);
+                    } else if (yearlyReturnRate < expectedReturn - threshold) {
+                        dynamicBaseWithdrawal = Math.max(dynamicBaseWithdrawal * 0.9, minWithdrawal);
                     }
                     dynamicAnnualGrowth = 1; // reset for next year
                 }
                 netWithdrawal = dynamicBaseWithdrawal;
                 break;
+            }
             case WITHDRAWAL_STRATEGIES.INTEREST_ONLY: {
                 // Withdraw exactly the interest earned so the portfolio stays flat.
                 // grossWithdrawal = effectiveInterest; the user receives interest minus tax on profit.
