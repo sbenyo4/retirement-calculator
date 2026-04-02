@@ -869,6 +869,16 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                                 color="text-yellow-400"
                                 extraContent={
                                     <div className="mt-1 pt-1 border-t border-white/10">
+                                        {balanceAtRetirement > 0 && (
+                                            <div className="flex items-baseline gap-1 flex-wrap">
+                                                <span className="text-xs text-amber-300 font-medium">
+                                                    {t('withdrawalRateFromPortfolio')}:
+                                                </span>
+                                                <span className="text-sm font-bold text-amber-300">
+                                                    {(((averageGrossWithdrawal || initialGrossWithdrawal) * 12 / balanceAtRetirement) * 100).toFixed(1)}%
+                                                </span>
+                                            </div>
+                                        )}
                                         <div className="flex items-baseline gap-1 flex-wrap">
                                             <span className="text-xs text-green-300 font-medium">
                                                 {t('netWithdrawal')} {language === 'he' ? '(ממוצע)' : '(Avg)'}:

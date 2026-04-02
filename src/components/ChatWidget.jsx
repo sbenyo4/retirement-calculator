@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageCircle, X, Send, RotateCcw, Mic, AlertCircle, WifiOff, KeyRound, CreditCard, FileX } from 'lucide-react';
+import { MessageCircle, X, Send, RotateCcw, Mic, AlertCircle, WifiOff, KeyRound, CreditCard, FileX, Copy, Check, RefreshCw } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useDraggable } from '../hooks/useDraggable';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
@@ -60,6 +60,7 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [copiedIdx, setCopiedIdx] = useState(null);
 
     // Button drag state
     const [btnPos, setBtnPos] = useState(() => loadBtnPos() || DEFAULT_BTN_POS);
@@ -367,13 +368,52 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
                             )}
 
                             {messages.map((msg, i) => (
-                                <div key={i} className={`flex mb-2 ${msg.role === 'user' ? (isHe ? 'justify-start' : 'justify-end') : (isHe ? 'justify-end' : 'justify-start')}`}>
-                                    <div className={`max-w-[85%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed ${
-                                        msg.role === 'user'
-                                            ? 'bg-blue-600 text-white'
-                                            : isLight ? 'bg-gray-100 text-gray-800' : 'bg-black/30 text-gray-100'
-                                    }`}>
-                                        {msg.content}
+                                <div key={i} className={`group/msg flex mb-2 ${msg.role === 'user' ? (isHe ? 'justify-start' : 'justify-end') : (isHe ? 'justify-end' : 'justify-start')}`}>
+                                    <div className="relative max-w-[85%]">
+                                        <div className={`px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed ${
+                                            msg.role === 'user'
+                                                ? 'bg-blue-600 text-white'
+                                                : isLight ? 'bg-gray-100 text-gray-800' : 'bg-black/30 text-gray-100'
+                                        }`}>
+                                            {msg.content}
+                                        </div>
+                                        {/* Copy & Retry actions */}
+                                        <div className={`absolute -bottom-4 flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity z-20 ${
+                                            msg.role === 'user' ? (isHe ? 'left-1' : 'right-1') : (isHe ? 'right-1' : 'left-1')
+                                        }`}>
+                                            <button
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(msg.content);
+                                                    setCopiedIdx(i);
+                                                    setTimeout(() => setCopiedIdx(prev => prev === i ? null : prev), 1500);
+                                                }}
+                                                className={`p-1 rounded transition-colors ${isLight ? 'text-gray-400 hover:text-gray-600 hover:bg-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-white/10'}`}
+                                                title={isHe ? 'העתק' : 'Copy'}
+                                            >
+                                                {copiedIdx === i ? <Check size={11} className="text-green-400" /> : <Copy size={11} />}
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    if (msg.role === 'user') {
+                                                        // Retry: remove this message and all after it, then re-send
+                                                        setMessages(prev => prev.slice(0, i));
+                                                        setTimeout(() => sendMessageRef.current(msg.content), 50);
+                                                    } else {
+                                                        // Retry assistant: find the preceding user message and re-send
+                                                        const userMsg = messages.slice(0, i).reverse().find(m => m.role === 'user');
+                                                        if (userMsg) {
+                                                            setMessages(prev => prev.slice(0, i));
+                                                            setTimeout(() => sendMessageRef.current(userMsg.content), 50);
+                                                        }
+                                                    }
+                                                }}
+                                                disabled={loading}
+                                                className={`p-1 rounded transition-colors ${isLight ? 'text-gray-400 hover:text-gray-600 hover:bg-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-white/10'} ${loading ? 'opacity-30 cursor-not-allowed' : ''}`}
+                                                title={isHe ? 'נסה שוב' : 'Retry'}
+                                            >
+                                                <RefreshCw size={11} />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             ))}

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { useDraggable } from '../hooks/useDraggable';
 import { useTheme } from '../contexts/ThemeContext';
 import { formatCurrency as formatCurrencyUtil } from '../utils/formatters';
@@ -375,7 +376,9 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const [incomeSources, setIncomeSources] = useState(getSafeSources);
     const [showIncomeSources, setShowIncomeSources] = useState(true);
     const [expandedMilestone, setExpandedMilestone] = useState(null);
-    const [pensionInterestRate, setPensionInterestRate] = useState(4);
+    const [pensionInterestRate, setPensionInterestRate] = useState(() => parseFloat(inputs.annualReturnRate) || 4);
+    const [showRateTooltip, setShowRateTooltip] = useState(false);
+    const rateTooltipRef = useRef(null);
 
     // Lock body scroll when modal is open
     useEffect(() => {
@@ -401,7 +404,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         return results?.balanceAtRetirement || 0;
     }, [results]);
 
-    const capitalReturnRate = parseFloat(inputs.annualReturnRate) || 4;
+    const capitalReturnRate = pensionInterestRate;
 
     // Update National Insurance when age changes or income sources change
     const nonNISourcesKey = JSON.stringify(incomeSources.filter(s => s.type !== 'nationalInsurance').map(s => ({ id: s.id, amount: s.amount, startAge: s.startAge, endAge: s.endAge, enabled: s.enabled })));
@@ -640,7 +643,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                 <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
                 {/* Modal */}
-                <div className={`relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden ${isLight ? 'bg-white' : ''} border ${isLight ? 'border-gray-200' : 'border-white/30'}`} style={dragStyle}>
+                <div className={`relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl shadow-2xl ${isLight ? 'bg-white' : ''} border ${isLight ? 'border-gray-200' : 'border-white/30'}`} style={{ ...dragStyle, overflow: 'clip', overflowClipMargin: '30px' }}>
                     {!isLight && (
                         <>
                             <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" />
@@ -684,21 +687,62 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                         </button>
                                     )}
                                     {/* Interest Rate Input */}
-                                    <div className={`flex items-center gap-1 px-2 py-1 rounded-full ${isLight ? 'bg-amber-50 border border-amber-200' : 'bg-amber-500/10 border border-amber-500/20'}`}
-                                        title={t('pensionInterestRate') || 'ריבית'}
+                                    <div className={`relative flex items-center gap-1.5 px-2 py-1 rounded-full ${isLight ? 'bg-amber-50 border border-amber-200' : 'bg-amber-500/10 border border-amber-500/20'}`}
+                                        ref={rateTooltipRef}
+                                        onMouseEnter={() => setShowRateTooltip(true)}
+                                        onMouseLeave={() => setShowRateTooltip(false)}
                                     >
                                         <span className={`text-[10px] ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>{t('pensionInterestRate') || 'ריבית'}</span>
+                                        <input
+                                            type="range"
+                                            value={pensionInterestRate}
+                                            onChange={(e) => setPensionInterestRate(parseFloat(e.target.value) || 0)}
+                                            className="w-14 h-3 accent-amber-500 cursor-pointer"
+                                            min="0"
+                                            max="12"
+                                            step="0.5"
+                                        />
                                         <input
                                             type="number"
                                             value={pensionInterestRate}
                                             onChange={(e) => setPensionInterestRate(parseFloat(e.target.value) || 0)}
-                                            className={`w-10 px-1 py-0 rounded text-xs text-center no-spinner bg-transparent ${isLight ? 'text-amber-800' : 'text-amber-300'} font-bold`}
+                                            className={`w-12 px-1 py-0 rounded text-xs text-center no-spinner bg-transparent ${isLight ? 'text-amber-800' : 'text-amber-300'} font-bold border ${isLight ? 'border-amber-200' : 'border-amber-500/30'}`}
                                             min="0"
                                             max="100"
                                             step="0.5"
                                         />
                                         <span className={`text-[10px] ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>%</span>
                                     </div>
+                                    {/* Tooltip via Portal - rendered at body level */}
+                                    {showRateTooltip && rateTooltipRef.current && ReactDOM.createPortal(
+                                        <div
+                                            style={{
+                                                position: 'fixed',
+                                                zIndex: 99999,
+                                                top: rateTooltipRef.current.getBoundingClientRect().bottom + 6,
+                                                [language === 'he' ? 'right' : 'left']: language === 'he'
+                                                    ? window.innerWidth - rateTooltipRef.current.getBoundingClientRect().right
+                                                    : rateTooltipRef.current.getBoundingClientRect().left,
+                                                width: 224,
+                                                padding: '10px 12px',
+                                                borderRadius: 8,
+                                                fontSize: 11,
+                                                lineHeight: 1.5,
+                                                pointerEvents: 'none',
+                                                backgroundColor: isLight ? '#ffffff' : '#111827',
+                                                border: `1px solid ${isLight ? '#e2e8f0' : '#374151'}`,
+                                                color: isLight ? '#475569' : '#d1d5db',
+                                                boxShadow: isLight ? '0 4px 12px rgba(0,0,0,0.15)' : '0 4px 12px rgba(0,0,0,0.5)',
+                                                direction: language === 'he' ? 'rtl' : 'ltr',
+                                            }}
+                                        >
+                                            {language === 'he'
+                                                ? 'שיעור התשואה השנתית על ההון הצבור בפרישה. משפיע על צמיחת ההון, גיל דלדול ההון, ועל שדה "קצבה מריבית בלבד" בפירוט לפי גיל.'
+                                                : 'Annual return rate on accumulated capital in retirement. Affects capital growth, depletion age, and the "Interest-Only Income" field in age milestones.'
+                                            }
+                                        </div>,
+                                        document.body
+                                    )}
                                 </div>
                                 <p className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                                     {t('pensionIncomeDesc') || 'סיכום הכנסות בפרישה לפי גיל'}
