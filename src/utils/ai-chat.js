@@ -65,6 +65,24 @@ export function buildChatSystemPrompt(inputs, results, language) {
         })
         .join(', ');
 
+    // Checklist awareness — read AI-generated checklist from sessionStorage, checked items from localStorage
+    let checklistSection = '';
+    try {
+        const checklistData = JSON.parse(sessionStorage.getItem('rc-ai-data') || 'null');
+        const checkedSet = new Set(JSON.parse(localStorage.getItem('retirement-checklist-done') || '[]'));
+        if (checklistData?.categories?.length > 0) {
+            const lines = checklistData.categories.map(cat => {
+                const itemLines = (cat.items || []).map(item => {
+                    const done = checkedSet.has(item.id) ? '✓' : '○';
+                    const prio = item.priority === 'critical' ? '[CRITICAL]' : item.priority === 'high' ? '[HIGH]' : item.priority === 'medium' ? '[MED]' : '[LOW]';
+                    return `    ${done} ${prio} ${item.title}`;
+                }).join('\n');
+                return `  ${cat.title}:\n${itemLines}`;
+            }).join('\n');
+            checklistSection = `\nPERSONALIZED PLANNING CHECKLIST (✓=done, ○=pending):\n${lines}\n`;
+        }
+    } catch {}
+
     // Pension exemption (פטור מקצבה מזכה) - 2026
     const pensionExemption = inputs.fiscalParameters?.pensionExemption || { rate: 0.575, maxMonthly: 5422, maxQualifiedIncome: 9430 };
 
@@ -101,7 +119,8 @@ CALCULATED RESULTS:
 - Balance at end (age ${inputs.retirementEndAge}): ${currency}${Math.round(results?.balanceAtEnd || 0).toLocaleString()}
 - Required capital at retirement: ${currency}${Math.round(results?.requiredCapitalAtRetirement || 0).toLocaleString()}
 - Deficit needed today: ${currency}${Math.round(results?.pvOfDeficit || 0).toLocaleString()}
-- ${results?.ranOutAtAge ? `RUNS OUT at age ${results.ranOutAtAge}` : 'Fully funded — never runs out'}${inputs.targetEndBalance && results?.balanceAtEnd != null ? `\n- Gap to target: ${currency}${Math.round(results.balanceAtEnd - parseFloat(inputs.targetEndBalance)).toLocaleString()} (${results.balanceAtEnd >= parseFloat(inputs.targetEndBalance) ? 'TARGET MET' : 'SHORTFALL'})` : ''}`;
+- ${results?.ranOutAtAge ? `RUNS OUT at age ${results.ranOutAtAge}` : 'Fully funded — never runs out'}${inputs.targetEndBalance && results?.balanceAtEnd != null ? `\n- Gap to target: ${currency}${Math.round(results.balanceAtEnd - parseFloat(inputs.targetEndBalance)).toLocaleString()} (${results.balanceAtEnd >= parseFloat(inputs.targetEndBalance) ? 'TARGET MET' : 'SHORTFALL'})` : ''}
+${checklistSection}`;
 }
 
 /**

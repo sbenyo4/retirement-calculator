@@ -489,6 +489,15 @@ export async function generateRetirementChecklistInsights(inputs, results, provi
     const isEarlyRetirement = earlyRetirementAge < OFFICIAL_RETIREMENT_AGE;
     const gapYears = isEarlyRetirement ? Math.round((OFFICIAL_RETIREMENT_AGE - earlyRetirementAge) * 10) / 10 : 0;
 
+    const pensionSources = inputs.pensionIncomeSources || [];
+    const pensionDetail = pensionSources.length > 0
+        ? pensionSources.map(s => `"${s.name || 'Pension'}": ${fmt(s.monthlyAmount || 0)} ILS/month starting age ${s.startAge}`).join('; ')
+        : null;
+
+    const annualWithdrawal = (parseFloat(inputs.monthlyNetIncomeDesired) || 0) * 12;
+    const balance = results?.balanceAtRetirement || 0;
+    const withdrawalRate = balance > 0 ? ((annualWithdrawal / balance) * 100).toFixed(1) : null;
+
     const context = [
         `Current age: ${inputs.currentAge}`,
         `EARLY retirement age (stops working): ${earlyRetirementAge} — this is NOT the official Israeli retirement age`,
@@ -499,21 +508,24 @@ export async function generateRetirementChecklistInsights(inputs, results, provi
         `Current savings: ${fmt(inputs.currentSavings)} ILS`,
         `Monthly contribution until retirement: ${fmt(inputs.monthlyContribution)} ILS`,
         `Monthly net income desired in retirement: ${fmt(inputs.monthlyNetIncomeDesired)} ILS`,
-        `Tax rate: ${inputs.taxRate}%`,
+        `Tax rate on withdrawals: ${inputs.taxRate}%`,
         `Annual return: ${inputs.annualReturnRate}%, Inflation: ${inputs.inflationRate || 0}%`,
+        `Withdrawal strategy: ${inputs.withdrawalStrategy || 'fixed'} (fixed=constant, dynamic=adjusts to market, percent=% of portfolio)`,
+        inputs.enableBuckets ? `Bucket strategy ENABLED — portfolio split into safe/moderate/growth buckets with different return rates` : `Bucket strategy not used — single portfolio`,
+        withdrawalRate ? `Computed withdrawal rate: ${withdrawalRate}% per year${parseFloat(withdrawalRate) > 5 ? ' — ABOVE the 4% safe withdrawal rule' : ' — within sustainable range'}` : null,
         results ? `Projected balance at early retirement: ${fmt(results.balanceAtRetirement)} ILS` : null,
         results?.ranOutAtAge ? `WARNING: funds run out at age ${results.ranOutAtAge}` : null,
         results?.surplus > 0 ? `Surplus at end of plan: ${fmt(results.surplus)} ILS` : null,
         results?.surplus < 0 ? `DEFICIT: ${fmt(Math.abs(results.surplus))} ILS shortfall` : null,
+        pensionDetail
+            ? `Pension income sources defined (${pensionSources.length}): ${pensionDetail}`
+            : `No pension income sources defined — retirement funded entirely from savings withdrawals`,
         isEarlyRetirement
             ? `CRITICAL CONTEXT — GAP YEARS (age ${earlyRetirementAge}–67): No employment income. Must actively manage: (1) voluntary NI payments (תשלומים מרצון לביטוח לאומי) to preserve old-age pension entitlement and health insurance; (2) health insurance collected via NI even for non-workers; (3) zero employer/employee pension contributions — pension fund grows only from existing balance; (4) no work-related tax credits`
             : null,
         isEarlyRetirement
             ? `PENSION IMPACT: The occupational pension (קרן פנסיה/ביטוח מנהלים) stops receiving contributions at age ${earlyRetirementAge}. For the ${gapYears}-year gap until age 67 it accumulates returns only on existing balance. The monthly pension income starting at 67 will be significantly lower than if contributions had continued until 67. The client should: (1) calculate the expected pension at 67 under this scenario; (2) consider voluntary additional contributions (הפקדות עצמאיות) to the pension fund during early retirement if cash-flow allows; (3) understand the actuarial reduction for early pension withdrawal if they try to draw pension before 67; (4) verify vesting (זכאות) status and pension-type rules (defined benefit vs. defined contribution)`
             : null,
-        inputs.pensionIncomeSources?.length
-            ? `Pension income sources defined: ${inputs.pensionIncomeSources.length} source(s) starting at various ages`
-            : `No pension income sources defined — pension income during retirement is not factored in`,
     ].filter(Boolean).join('\n');
 
     const jsonSchema = `{
@@ -548,9 +560,11 @@ ${jsonSchema}
 - זוהי פרישה מוקדמת — הלקוח אינו עובד אבל עדיין לא הגיע לגיל הפרישה הרשמי (67)
 ${isEarlyRetirement ? `- יש פער של ${gapYears} שנים עד גיל 67 שבו אין הכנסה מעבודה ואין תשלומי ביטוח לאומי אוטומטיים
 - קטגוריית ביטוח לאומי חייבת להתמקד בתקופת הפער: תשלומים מרצון, שמירת זכויות, ביטוח בריאות` : ''}
+- השתמש ב-IDs קבועים לקטגוריות הבאות (בדיוק כך): national-insurance, pension, insurance, tax, financial, healthcare, legal, lifestyle (הוסף housing או digital אם רלוונטי)
+- שדה emoji חייב להיות מחרוזת ריקה "" — ה-UI מציג אייקונים קבועים לפי ה-ID, אל תשלח emoji
 - כלול קטגוריות: ביטוח לאומי (פער עד גיל 67), פנסיה והשפעות הפרישה המוקדמת, ביטוח, מיסוי, ניהול פיננסי, בריאות, משפטי/עיזבון, אורח חיים
-- בקטגוריית ביטוח לאומי: אל תשתמש באמוג'י דגל. כלול תשלומים מרצון, עלות משוערת, השלכות על קצבת זקנה, ביטוח בריאות דרך ביטוח לאומי בתקופת הפער
-- בקטגוריית פנסיה: הסבר את ההשפעה של הפסקת הפקדות על גובה הקצבה בגיל 67, שיקול הפקדות עצמאיות בתקופת הפרישה המוקדמת, מועד משיכה ראשון אפשרי, הפחתה אקטוארית
+- בקטגוריית national-insurance: כלול תשלומים מרצון, עלות משוערת, השלכות על קצבת זקנה, ביטוח בריאות דרך ביטוח לאומי בתקופת הפער
+- בקטגוריית pension: הסבר את ההשפעה של הפסקת הפקדות על גובה הקצבה בגיל 67, שיקול הפקדות עצמאיות בתקופת הפרישה המוקדמת, מועד משיכה ראשון אפשרי, הפחתה אקטוארית
 - התאם את הפריטים לנתונים האישיים
 - סמן כ-critical דברים שאם לא מטפלים בהם מאבדים זכויות
 - כלול 3-6 פריטים לקטגוריה
@@ -567,9 +581,11 @@ Guidelines:
 - This is EARLY retirement — the client stops working before the official Israeli retirement age (67)
 ${isEarlyRetirement ? `- There is a ${gapYears}-year gap until age 67 with no employment income and no automatic NI contributions
 - The National Insurance category must focus on this gap: voluntary payments, preserving entitlements, health insurance` : ''}
+- Use these EXACT category IDs: national-insurance, pension, insurance, tax, financial, healthcare, legal, lifestyle (add housing or digital if relevant)
+- The emoji field MUST be an empty string "" — the UI renders fixed icons based on the category ID, do NOT provide emoji
 - Include categories: National Insurance (gap until 67), Pension & Early Retirement Impact, Insurance, Taxation, Financial Management, Healthcare, Legal/Estate, Lifestyle
-- For National Insurance: do NOT use a flag emoji. Include voluntary payment obligation, estimated cost, impact on old-age pension entitlement, health insurance via NI during the gap years
-- For Pension: impact of stopping contributions on the monthly pension at 67, whether voluntary contributions during early retirement are worth it, earliest possible withdrawal age, actuarial reduction for early draw, vesting status
+- For national-insurance: include voluntary payment obligation, estimated cost, impact on old-age pension entitlement, health insurance via NI during the gap years
+- For pension: impact of stopping contributions on the monthly pension at 67, whether voluntary contributions during early retirement are worth it, earliest possible withdrawal age, actuarial reduction for early draw, vesting status
 - Personalize items based on the client data
 - Mark as critical anything where inaction results in loss of rights or coverage
 - Include 3-6 items per category
@@ -585,27 +601,26 @@ ${isEarlyRetirement ? `- There is a ${gapYears}-year gap until age 67 with no em
         const { GoogleGenerativeAI } = await import('@google/generative-ai');
         const genAI = new GoogleGenerativeAI(apiKey);
         const genModel = genAI.getGenerativeModel({ model, generationConfig: { temperature: 0.3 } });
-        const result = await genModel.generateContent(prompt);
-        responseText = result.response.text();
+        responseText = await withRetry(() => genModel.generateContent(prompt).then(r => r.response.text()));
     } else if (provider === 'openai') {
         const { default: OpenAI } = await import('openai');
         const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
-        const completion = await openai.chat.completions.create({
+        const completion = await withRetry(() => openai.chat.completions.create({
             messages: [{ role: 'user', content: prompt }],
             model,
             temperature: 0.3,
             response_format: { type: 'json_object' },
-        });
+        }));
         responseText = completion.choices[0].message.content;
     } else if (provider === 'anthropic') {
         const { default: Anthropic } = await import('@anthropic-ai/sdk');
         const anthropic = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
-        const message = await anthropic.messages.create({
+        const message = await withRetry(() => anthropic.messages.create({
             model,
             max_tokens: 4096,
             temperature: 0.3,
             messages: [{ role: 'user', content: prompt }],
-        });
+        }));
         responseText = message.content[0].text;
     }
 
@@ -613,5 +628,40 @@ ${isEarlyRetirement ? `- There is a ${gapYears}-year gap until age 67 with no em
     const firstBrace = cleaned.indexOf('{');
     const lastBrace = cleaned.lastIndexOf('}');
     const jsonStr = firstBrace !== -1 ? cleaned.substring(firstBrace, lastBrace + 1) : cleaned;
-    return JSON.parse(jsonStr);
+
+    let parsed;
+    try {
+        parsed = JSON.parse(jsonStr);
+    } catch {
+        throw new Error('AI returned malformed JSON — could not parse response');
+    }
+
+    // Normalize and validate structure so partial/bad AI output doesn't crash the UI
+    if (!parsed || !Array.isArray(parsed.categories)) {
+        throw new Error('AI response missing required "categories" array');
+    }
+    const VALID_PRIORITIES = new Set(['critical', 'high', 'medium', 'low']);
+    parsed.categories = parsed.categories
+        .filter(c => c && Array.isArray(c.items) && c.items.length > 0)
+        .map(c => ({
+            id: String(c.id || c.title || 'cat').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9א-ת-]/g, ''),
+            title: String(c.title || ''),
+            emoji: String(c.emoji || ''),
+            items: c.items
+                .filter(i => i && (i.title || i.description))
+                .map(i => ({
+                    id: String(i.id || '').trim(),
+                    priority: VALID_PRIORITIES.has(i.priority) ? i.priority : 'medium',
+                    title: String(i.title || ''),
+                    description: String(i.description || ''),
+                    details: String(i.details || ''),
+                })),
+        }))
+        .filter(c => c.items.length > 0);
+
+    if (parsed.categories.length === 0) {
+        throw new Error('AI returned no valid categories after normalization');
+    }
+
+    return parsed;
 }

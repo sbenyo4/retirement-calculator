@@ -659,6 +659,10 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     const [aiSilentLoading, setAiSilentLoading] = useState(false); // true = background auto-refresh
     const [aiError, setAiError] = useState(null);
     const [filterMode, setFilterMode] = useState(null); // null | 'critical' | 'high'
+    const [aiTimestamp, setAiTimestamp] = useState(() => {
+        try { return parseInt(sessionStorage.getItem('rc-ai-ts') || '0', 10) || null; }
+        catch { return null; }
+    });
     const [checkedItems, setCheckedItems] = useState(() => {
         try { return new Set(JSON.parse(localStorage.getItem('retirement-checklist-done') || '[]')); }
         catch { return new Set(); }
@@ -676,6 +680,8 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         d: inp?.currentSavings, e: inp?.monthlyContribution, f: inp?.monthlyNetIncomeDesired,
         g: inp?.annualReturnRate, h: inp?.inflationRate,
         i: res?.balanceAtRetirement, j: res?.ranOutAtAge, k: res?.surplus,
+        l: inp?.taxRate, m: inp?.withdrawalStrategy, n: inp?.enableBuckets,
+        o: inp?.pensionIncomeSources?.length,
     });
 
     const doRefresh = useCallback(async (silent = false) => {
@@ -692,12 +698,15 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             );
             if (id !== refreshIdRef.current) return; // a newer request superseded this one
             succeeded = true;
+            const ts = Date.now();
             try {
                 sessionStorage.setItem('rc-ai-data', JSON.stringify(data));
                 sessionStorage.setItem('rc-ai-snapshot', getSnapshot(inputs, results));
+                sessionStorage.setItem('rc-ai-ts', String(ts));
             } catch {}
             hasDataRef.current = true;
             setAiData(data);
+            setAiTimestamp(ts);
             setExpandedCategories(new Set());
             setAiError(null);
         } catch (err) {
@@ -735,6 +744,8 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         inputs?.currentAge, inputs?.retirementStartAge, inputs?.retirementEndAge,
         inputs?.currentSavings, inputs?.monthlyContribution, inputs?.monthlyNetIncomeDesired,
         inputs?.annualReturnRate, inputs?.inflationRate,
+        inputs?.taxRate, inputs?.withdrawalStrategy, inputs?.enableBuckets,
+        inputs?.pensionIncomeSources?.length,
         results?.balanceAtRetirement, results?.ranOutAtAge, results?.surplus,
         language, aiProvider, aiModel, doRefresh,
     ]);
@@ -784,18 +795,31 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     };
 
     const categoryIcon = (cat) => {
-        // Filter out flag emojis (regional indicator pairs like 🇮🇱) — don't render on Windows
-        const isFlagEmoji = cat.emoji && /\p{RI}\p{RI}/u.test(cat.emoji);
-        if (cat.emoji && !isFlagEmoji) return <span className="text-base leading-none">{cat.emoji}</span>;
-        const t = (cat.title || cat.id || '').toLowerCase();
-        if (t.includes('ביטוח לאומי') || t.includes('national insurance') || t.includes('bituach')) return <Landmark size={16} className={isLight ? 'text-teal-700' : 'text-teal-400'} />;
-        if (t.includes('pension') || t.includes('פנסיה')) return <TrendingUp size={16} className={isLight ? 'text-green-700' : 'text-green-400'} />;
-        if (t.includes('insurance') || t.includes('ביטוח')) return <Shield size={16} className={isLight ? 'text-blue-700' : 'text-blue-400'} />;
-        if (t.includes('tax') || t.includes('מס')) return <Receipt size={16} className={isLight ? 'text-amber-700' : 'text-amber-400'} />;
-        if (t.includes('health') || t.includes('בריאות')) return <Heart size={16} className={isLight ? 'text-rose-700' : 'text-rose-400'} />;
-        if (t.includes('legal') || t.includes('משפטי') || t.includes('עיזבון')) return <Scale size={16} className={isLight ? 'text-purple-700' : 'text-purple-400'} />;
-        if (t.includes('housing') || t.includes('דיור')) return <Home size={16} className={isLight ? 'text-orange-700' : 'text-orange-400'} />;
-        if (t.includes('lifestyle') || t.includes('אורח')) return <Activity size={16} className={isLight ? 'text-pink-700' : 'text-pink-400'} />;
+        // Match on stable category ID first (most reliable — AI is instructed to use fixed IDs)
+        const id = (cat.id || '').toLowerCase();
+        const title = (cat.title || '').toLowerCase();
+        const key = id || title;
+
+        if (key.includes('national-insurance') || key.includes('ni-') || key.includes('bituach') || key.includes('ביטוח לאומי'))
+            return <Landmark size={16} className={isLight ? 'text-teal-700' : 'text-teal-400'} />;
+        if (key.includes('pension') || key.includes('פנסיה'))
+            return <Building2 size={16} className={isLight ? 'text-green-700' : 'text-green-400'} />;
+        if (key.includes('insurance') || key.includes('ביטוח'))
+            return <Shield size={16} className={isLight ? 'text-blue-700' : 'text-blue-400'} />;
+        if (key.includes('tax') || key.includes('taxation') || key.includes('מיסוי') || key.includes('מס'))
+            return <Receipt size={16} className={isLight ? 'text-amber-700' : 'text-amber-400'} />;
+        if (key.includes('financial') || key.includes('finance') || key.includes('פיננסי'))
+            return <TrendingUp size={16} className={isLight ? 'text-emerald-700' : 'text-emerald-400'} />;
+        if (key.includes('health') || key.includes('healthcare') || key.includes('בריאות'))
+            return <Stethoscope size={16} className={isLight ? 'text-rose-700' : 'text-rose-400'} />;
+        if (key.includes('legal') || key.includes('estate') || key.includes('משפטי') || key.includes('עיזבון'))
+            return <Scale size={16} className={isLight ? 'text-purple-700' : 'text-purple-400'} />;
+        if (key.includes('housing') || key.includes('property') || key.includes('דיור') || key.includes('נדלן') || key.includes('נדל'))
+            return <Home size={16} className={isLight ? 'text-orange-700' : 'text-orange-400'} />;
+        if (key.includes('lifestyle') || key.includes('life-style') || key.includes('אורח'))
+            return <Activity size={16} className={isLight ? 'text-pink-700' : 'text-pink-400'} />;
+        if (key.includes('digital') || key.includes('online') || key.includes('דיגיטל'))
+            return <Laptop size={16} className={isLight ? 'text-slate-700' : 'text-slate-400'} />;
         return <FileText size={16} className={isLight ? 'text-slate-700' : 'text-slate-400'} />;
     };
 
@@ -849,6 +873,15 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
 
     const txt = (en, he) => isRtl ? he : en;
 
+    const tsLabel = (() => {
+        if (!aiTimestamp || aiLoading || aiSilentLoading) return null;
+        const mins = Math.round((Date.now() - aiTimestamp) / 60000);
+        if (mins < 1) return txt('Updated just now', 'עודכן זה עתה');
+        if (mins < 60) return txt(`Updated ${mins}m ago`, `עודכן לפני ${mins} דק'`);
+        const hrs = Math.floor(mins / 60);
+        return txt(`Updated ${hrs}h ago`, `עודכן לפני ${hrs} שע'`);
+    })();
+
     return (
         <div
             className={`flex flex-col h-full overflow-hidden ${isLight ? 'bg-gray-50' : 'bg-transparent'}`}
@@ -862,6 +895,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                         {txt('Retirement Planning Checklist', 'רשימת תכנון לפרישה')}
                     </span>
                     {aiData && <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-500/20 text-purple-300'}`}>AI</span>}
+                    {tsLabel && <span className={`text-[10px] ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>{tsLabel}</span>}
                     {aiSilentLoading && <RefreshCw size={11} className="animate-spin text-purple-400" />}
                 </div>
                 {aiProvider && aiModel && (
