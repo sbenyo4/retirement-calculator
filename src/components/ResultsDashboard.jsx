@@ -545,18 +545,16 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                     />
                 </div>
             ) : activeTab === 'budget' ? (
-                <div className="overflow-y-auto custom-scrollbar scrollbar-right max-h-[calc(100vh-16rem)] pr-1">
-                    <BudgetPlanner
-                        inputs={inputs}
-                        setInputs={setInputs}
-                        t={t}
-                        language={language}
-                        isLight={isLight}
-                        aiProvider={aiProvider}
-                        aiModel={aiModel}
-                        apiKeyOverride={apiKeyOverride}
-                    />
-                </div>
+                <BudgetPlanner
+                    inputs={inputs}
+                    setInputs={setInputs}
+                    t={t}
+                    language={language}
+                    isLight={isLight}
+                    aiProvider={aiProvider}
+                    aiModel={aiModel}
+                    apiKeyOverride={apiKeyOverride}
+                />
             ) : (
                 <div className="space-y-3">
                     {/* Status Message - Hero Card - Fixed height for consistent UI */}

@@ -91,7 +91,13 @@ export function buildChatSystemPrompt(inputs, results, language) {
             const catLines = (budget.categories || [])
                 .map(c => `  ${isHe ? c.labelHe : c.labelEn}: ${currency}${c.total}/mo`)
                 .join('\n');
-            budgetSection = `\nBUDGET PLANNER (monthly expense plan):\n- Total monthly: ${currency}${budget.totalMonthly} | Annual: ${currency}${budget.totalAnnual}\n- Gap vs income target: ${currency}${budget.gap} (${budget.gap >= 0 ? 'surplus' : 'shortfall'})\n- By category:\n${catLines}\n`;
+            const loanLines = (budget.loanTracks || [])
+                .map(lt => lt.active
+                    ? `  - "${lt.track}" (${lt.loan}): ${currency}${lt.amount}/mo — ends in ${lt.monthsLeft}mo (${lt.endDate})`
+                    : `  - "${lt.track}" (${lt.loan}): ${currency}${lt.amount}/mo — already expired (${lt.endDate})`)
+                .join('\n');
+            const loanSection = loanLines ? `\n- Loan tracks (scheduled expense reductions):\n${loanLines}` : '';
+            budgetSection = `\nBUDGET PLANNER (monthly expense plan):\n- Total monthly: ${currency}${budget.totalMonthly} | Annual: ${currency}${budget.totalAnnual}\n- Gap vs income target: ${currency}${budget.gap} (${budget.gap >= 0 ? 'surplus' : 'shortfall'})\n- By category:\n${catLines}${loanSection}\n`;
         }
     } catch {}
 
