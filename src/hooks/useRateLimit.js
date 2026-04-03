@@ -111,17 +111,13 @@ export function useRateLimit(userId) {
      * Record a new AI call
      */
     const recordCall = useCallback((provider, model) => {
-        setUsageData(prev => ({
-            ...prev,
-            calls: [
-                ...prev.calls,
-                {
-                    timestamp: Date.now(),
-                    provider,
-                    model
-                }
-            ]
-        }));
+        setUsageData(prev => {
+            const base = prev ?? { calls: [] };
+            return {
+                ...base,
+                calls: [...base.calls, { timestamp: Date.now(), provider, model }],
+            };
+        });
     }, []);
 
     /**

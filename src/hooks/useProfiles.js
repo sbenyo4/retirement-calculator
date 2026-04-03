@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import {
-    getProfiles,
     saveProfile as dbSaveProfile,
     updateProfile as dbUpdateProfile,
     deleteProfileDoc,
@@ -110,12 +109,17 @@ export function useProfiles() {
     const deleteProfile = useCallback((id) => {
         if (!uid) return;
 
-        // Optimistic update
-        setProfiles(prev => prev.filter(p => p.id !== id));
+        // Optimistic update — capture previous state for revert
+        let prevProfiles;
+        setProfiles(prev => {
+            prevProfiles = prev;
+            return prev.filter(p => p.id !== id);
+        });
 
         deleteProfileDoc(uid, id).catch(err => {
             console.error('Error deleting profile:', err);
             setSaveError('Failed to delete profile.');
+            if (prevProfiles) setProfiles(prevProfiles);
         });
 
         // Clear last loaded if it was this profile
