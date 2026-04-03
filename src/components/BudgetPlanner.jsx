@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getBudgetItems, setBudgetItems } from '../utils/db';
@@ -112,12 +112,12 @@ const DEFAULT_ITEMS = [
 ];
 
 
-const NOW_YM = (() => { const d = new Date(); return d.getFullYear() * 12 + d.getMonth(); })();
+const getNowYM = () => { const d = new Date(); return d.getFullYear() * 12 + d.getMonth(); };
 
 const trackActive = (track) => {
     if (!track.endDate) return true;
     const [y, m] = track.endDate.split('-').map(Number);
-    return y * 12 + (m - 1) >= NOW_YM;
+    return y * 12 + (m - 1) >= getNowYM();
 };
 
 const toMonthly = (item) => {
@@ -260,7 +260,7 @@ function LoanItemRow({ item, isHe, isLight, currency, t, onChange, onDelete }) {
     const monthsLeft = (endDate) => {
         if (!endDate) return null;
         const [y, m] = endDate.split('-').map(Number);
-        return y * 12 + (m - 1) - NOW_YM;
+        return y * 12 + (m - 1) - getNowYM();
     };
 
     const activeMonthly = (item.tracks || []).filter(trackActive).reduce((s, tr) => s + (tr.amount || 0), 0);
@@ -517,7 +517,7 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
             const loanTracks = items.filter(i => i.type === 'loan' && i.enabled)
                 .flatMap(i => (i.tracks || []).filter(tr => tr.endDate && tr.amount > 0).map(tr => {
                     const [y, m] = tr.endDate.split('-').map(Number);
-                    const ml = y * 12 + (m - 1) - NOW_YM;
+                    const ml = y * 12 + (m - 1) - getNowYM();
                     return { loan: i.label, track: tr.label, amount: tr.amount, endDate: tr.endDate, monthsLeft: ml, active: ml >= 0 };
                 }));
             sessionStorage.setItem('rc-budget-summary', JSON.stringify({
@@ -531,10 +531,13 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
     }, [items, loaded, inputs.monthlyNetIncomeDesired]);
 
     // totalMonthly must be declared before any callbacks that reference it
-    const totalMonthly = items.filter(i => i.enabled).reduce((s, i) => s + toMonthly(i), 0);
+    const totalMonthly = useMemo(
+        () => items.filter(i => i.enabled).reduce((s, i) => s + toMonthly(i), 0),
+        [items]
+    );
 
     // Future milestones: points in time where loan tracks expire and expenses drop
-    const futureMilestones = (() => {
+    const futureMilestones = useMemo(() => {
         const expiring = items
             .filter(i => i.type === 'loan' && i.enabled)
             .flatMap(i => (i.tracks || [])
@@ -543,12 +546,12 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
             )
             .sort((a, b) => a.endDate.localeCompare(b.endDate));
         if (!expiring.length) return [];
-        // Group by endDate
         const byDate = expiring.reduce((acc, tr) => {
             if (!acc[tr.endDate]) acc[tr.endDate] = [];
             acc[tr.endDate].push(tr);
             return acc;
         }, {});
+        const nowYM = getNowYM();
         let cumSaving = 0;
         return Object.entries(byDate)
             .sort(([a], [b]) => a.localeCompare(b))
@@ -556,10 +559,10 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
                 const saving = tracks.reduce((s, tr) => s + tr.amount, 0);
                 cumSaving += saving;
                 const [y, m] = date.split('-').map(Number);
-                const ml = y * 12 + (m - 1) - NOW_YM;
+                const ml = y * 12 + (m - 1) - nowYM;
                 return { date, tracks, saving, cumSaving, newTotal: totalMonthly - cumSaving, monthsLeft: ml };
             });
-    })();
+    }, [items, totalMonthly]);
 
     const allCategoryIds = CATEGORIES.map(c => c.id);
     const customCategoryIds = [...new Set(
@@ -613,7 +616,7 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
             aiInsightRef.current = null;
             aiSnapshotRef.current = null;
         }
-    }, [updateItems, isHe]);
+    }, [updateItems, t]);
 
     const handleAiInsight = useCallback(async () => {
         if (!aiProvider || !aiModel) return;
@@ -651,7 +654,7 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
                         const allTracks = (i.tracks || []);
                         const trackLines = allTracks.map(tr => {
                             const active = trackActive(tr);
-                            const ml = tr.endDate ? (() => { const [y, m] = tr.endDate.split('-').map(Number); return y * 12 + (m - 1) - NOW_YM; })() : null;
+                            const ml = tr.endDate ? (() => { const [y, m] = tr.endDate.split('-').map(Number); return y * 12 + (m - 1) - getNowYM(); })() : null;
                             const status = !tr.endDate ? (isHe ? 'ללא תאריך סיום' : 'no end date')
                                 : active ? (isHe ? `נגמר בעוד ${ml} חודשים (${tr.endDate})` : `ends in ${ml}mo (${tr.endDate})`)
                                 : (isHe ? `הסתיים (${tr.endDate})` : `expired (${tr.endDate})`);
@@ -669,7 +672,7 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
                 .flatMap(i => (i.tracks || []).filter(tr => tr.endDate && trackActive(tr) && tr.amount > 0)
                     .map(tr => {
                         const [y, m] = tr.endDate.split('-').map(Number);
-                        const ml = y * 12 + (m - 1) - NOW_YM;
+                        const ml = y * 12 + (m - 1) - getNowYM();
                         return isHe
                             ? `- "${tr.label}" של "${i.label}": ${cur}${tr.amount}/חודש יסתיים בעוד ${ml} חודשים (${tr.endDate})`
                             : `- "${tr.label}" of "${i.label}": ${cur}${tr.amount}/mo ends in ${ml} months (${tr.endDate})`;
