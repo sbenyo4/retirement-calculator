@@ -568,10 +568,18 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
     const customCategoryIds = [...new Set(
         items.filter(i => !allCategoryIds.includes(i.categoryId)).map(i => i.categoryId)
     )];
-    const visibleCategories = [
-        ...CATEGORIES,
-        ...customCategoryIds.map(id => ({ id, icon: '📋', labelHe: id, labelEn: id })),
-    ];
+    const visibleCategories = useMemo(() => {
+        const all = [
+            ...CATEGORIES,
+            ...customCategoryIds.map(id => ({ id, icon: '📋', labelHe: id, labelEn: id })),
+        ];
+        // Sort categories by total enabled monthly cost — highest first
+        return all.sort((a, b) => {
+            const totalA = items.filter(i => i.categoryId === a.id && i.enabled).reduce((s, i) => s + toMonthly(i), 0);
+            const totalB = items.filter(i => i.categoryId === b.id && i.enabled).reduce((s, i) => s + toMonthly(i), 0);
+            return totalB - totalA;
+        });
+    }, [items, customCategoryIds]);
 
     const updateItems = useCallback((updater) => {
         setItems(prev => typeof updater === 'function' ? updater(prev) : updater);
