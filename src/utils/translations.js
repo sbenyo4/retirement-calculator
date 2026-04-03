@@ -56,6 +56,10 @@ export const translations = {
         accumulatedWithdrawals: "Accumulated Withdrawals",
         signInWithGoogle: "Sign in with Google",
         logout: "Logout",
+        loginErrorNetwork: "No internet connection. Please check your network and try again.",
+        loginErrorTooMany: "Too many login attempts. Please wait a moment and try again.",
+        loginErrorPopupBlocked: "The login popup was blocked. Please allow popups for this site.",
+        loginErrorGeneral: "Login failed. Please try again.",
 
         // AI & Simulations
         calculationMode: 'Calculation Mode',
@@ -447,6 +451,10 @@ export const translations = {
         accumulatedWithdrawals: "משיכות מצטברות",
         signInWithGoogle: "התחבר עם גוגל",
         logout: "התנתק",
+        loginErrorNetwork: "אין חיבור לאינטרנט. בדוק את הרשת ונסה שוב.",
+        loginErrorTooMany: "יותר מדי ניסיונות כניסה. המתן רגע ונסה שוב.",
+        loginErrorPopupBlocked: "החלון הקופץ נחסם. אפשר חלונות קופצים לאתר זה.",
+        loginErrorGeneral: "הכניסה נכשלה. נסה שוב.",
 
         // AI & Simulations
         calculationMode: 'מצב חישוב',

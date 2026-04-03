@@ -12,7 +12,15 @@ export function LoginPage({ t }) {
             setLoading(true);
             await login();
         } catch (err) {
-            setError('Failed to log in: ' + err.message);
+            // User intentionally closed the popup — not an error
+            if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+                return;
+            }
+            const msg = err.code === 'auth/network-request-failed' ? t('loginErrorNetwork')
+                : err.code === 'auth/too-many-requests'          ? t('loginErrorTooMany')
+                : err.code === 'auth/popup-blocked'              ? t('loginErrorPopupBlocked')
+                : t('loginErrorGeneral');
+            setError(msg);
             console.error(err);
         } finally {
             setLoading(false);
