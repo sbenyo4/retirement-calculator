@@ -220,6 +220,8 @@ export const translations = {
         displayError: 'Display Error',
         unknownError: 'Unknown error',
         tryAgain: 'Try Again',
+        chunkLoadError: 'A new version of the app is available — please reload the page',
+        reloadPage: 'Reload Page',
 
         // Bucket Strategy
         bucketStrategy: 'Bucket Strategy',
@@ -608,6 +610,8 @@ export const translations = {
         displayError: 'שגיאה בתצוגה',
         unknownError: 'שגיאה לא ידועה',
         tryAgain: 'נסה שוב',
+        chunkLoadError: 'גרסה חדשה של האפליקציה זמינה — יש לרענן את הדף',
+        reloadPage: 'רענן דף',
 
         // Bucket Strategy
         bucketStrategy: 'אסטרטגיית דליים',
