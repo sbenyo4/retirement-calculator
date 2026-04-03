@@ -40,6 +40,10 @@ function budgetItemsRef(uid) {
     return userDoc(uid, 'data', 'budgetItems');
 }
 
+function checklistStateRef(uid) {
+    return userDoc(uid, 'data', 'checklistState');
+}
+
 function profilesCollection(uid) {
     return collection(db, 'users', uid, 'profiles');
 }
@@ -118,6 +122,17 @@ export async function getBudgetItems(uid) {
 
 export async function setBudgetItems(uid, items) {
     await setDoc(budgetItemsRef(uid), { items, updatedAt: Date.now() }, { merge: true });
+}
+
+// ─── Checklist State ───────────────────────────────────────────────
+
+export async function getChecklistState(uid) {
+    const snap = await getDoc(checklistStateRef(uid));
+    return snap.exists() ? snap.data() : null;
+}
+
+export async function setChecklistState(uid, state) {
+    await setDoc(checklistStateRef(uid), { ...state, updatedAt: Date.now() }, { merge: true });
 }
 
 // ─── Rate Limit ────────────────────────────────────────────────────

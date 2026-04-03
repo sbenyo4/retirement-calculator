@@ -441,7 +441,7 @@ function MainApp() {
                 </div>
               )}
               {results && settings.calculationMode === 'planning' && (
-                <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-xl overflow-hidden max-h-[calc(100vh-10rem)]">
+                <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-xl overflow-hidden h-[calc(100vh-10rem)]">
                   <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"></div></div>}>
                     <RetirementChecklist
                       inputs={memoizedDebouncedInputs}

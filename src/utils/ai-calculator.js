@@ -480,7 +480,94 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
  * Generates dynamic retirement planning checklist insights using AI.
  * Returns { categories: [{ id, title, emoji, items: [{ priority, title, description, details }] }] }
  */
-export async function generateRetirementChecklistInsights(inputs, results, provider, model, apiKeyOverride, language) {
+/**
+ * Apply a diff (add/remove/update) from the AI onto the existing flat item map.
+ * existingMap: { [itemId]: { categoryId, priority, title, description, details } }
+ * diff: { add: [...], remove: [...itemIds], update: [...] }
+ * Returns new merged categories array.
+ */
+// Hebrew prefix prepositions that change the first letters without changing meaning
+const HE_PREFIX_RE = /^[בלמהוכשד]+/u;
+
+// Extract stems: strip Hebrew prefixes, lowercase, take first 5 chars of each word ≥3 chars
+function stemSet(title) {
+    return new Set(
+        (title || '')
+            .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+            .split(/\s+/)
+            .filter(w => w.length >= 3)
+            .map(w => {
+                const lower = w.toLowerCase();
+                const stripped = lower.replace(HE_PREFIX_RE, '');
+                return (stripped.length >= 2 ? stripped : lower).slice(0, 5);
+            })
+    );
+}
+
+// Returns true if newTitle covers the same topic as any existing item
+function isSemanticallyDuplicate(newTitle, newCatId, existingEntries) {
+    const newStems = stemSet(newTitle);
+    if (newStems.size === 0) return false;
+    for (const { catId, item } of existingEntries) {
+        const existStems = stemSet(item.title);
+        let overlap = 0;
+        for (const s of newStems) { if (existStems.has(s)) overlap++; }
+        const minSize = Math.min(newStems.size, existStems.size);
+        if (minSize < 1) continue;
+        // Same category: 2+ overlapping stems = duplicate
+        if (catId === newCatId && overlap >= 2) return true;
+        // Any category: ≥60% of the shorter title's stems overlap = duplicate
+        if (overlap >= 2 && overlap / minSize >= 0.6) return true;
+    }
+    return false;
+}
+
+function applyChecklistDiff(existingCategories, diff) {
+    // Build mutable map: itemId → { catId, item }
+    const itemMap = {};
+    const catMeta = {}; // catId → { id, title, emoji }
+    for (const cat of (existingCategories || [])) {
+        catMeta[cat.id] = { id: cat.id, title: cat.title, emoji: cat.emoji || '' };
+        for (const item of (cat.items || [])) {
+            itemMap[item.id] = { catId: cat.id, item: { ...item } };
+        }
+    }
+
+    // 1. Flag items suggested for removal — do NOT delete, let the user decide
+    for (const id of (diff.remove || [])) {
+        if (itemMap[id]) {
+            itemMap[id].item = { ...itemMap[id].item, aiSuggestedRemoval: true };
+        }
+    }
+
+    // 2. Add new items — semantic dedup before inserting
+    const existingEntries = Object.values(itemMap); // snapshot before we start adding
+
+    for (const newItem of (diff.add || [])) {
+        if (!newItem.id || !newItem.categoryId) continue;
+        if (itemMap[newItem.id]) continue; // exact ID already exists
+        if (isSemanticallyDuplicate(newItem.title, newItem.categoryId, existingEntries)) continue;
+        // Ensure category meta exists
+        if (!catMeta[newItem.categoryId]) {
+            catMeta[newItem.categoryId] = { id: newItem.categoryId, title: newItem.categoryTitle || newItem.categoryId, emoji: '' };
+        }
+        const entry = { catId: newItem.categoryId, item: { id: newItem.id, priority: newItem.priority || 'medium', title: newItem.title || '', description: newItem.description || '', details: newItem.details || '' } };
+        itemMap[newItem.id] = entry;
+        existingEntries.push(entry); // block further dupes within the same diff batch
+    }
+
+    // Rebuild categories preserving original order + appending new cats
+    const catOrder = [...new Set([...(existingCategories || []).map(c => c.id), ...Object.values(itemMap).map(e => e.catId)])];
+    return catOrder
+        .map(catId => ({
+            ...catMeta[catId],
+            id: catId,
+            items: Object.values(itemMap).filter(e => e.catId === catId).map(e => e.item),
+        }))
+        .filter(c => c.items.length > 0);
+}
+
+export async function generateRetirementChecklistInsights(inputs, results, provider, model, apiKeyOverride, language, existingCategories) {
     const isHe = language === 'he';
     const fmt = (n) => n ? Math.round(n).toLocaleString() : '0';
 
@@ -528,15 +615,45 @@ export async function generateRetirementChecklistInsights(inputs, results, provi
             : null,
     ].filter(Boolean).join('\n');
 
-    const jsonSchema = `{
+    const hasExisting = existingCategories && existingCategories.length > 0;
+
+    // Summarize existing items — include description for semantic coverage judgment
+    const existingSummary = hasExisting
+        ? (() => {
+            const totalItems = existingCategories.reduce((n, c) => n + (c.items || []).length, 0);
+            const body = existingCategories.map(cat =>
+                `[${cat.id}] ${cat.title}:\n` +
+                (cat.items || []).map(i =>
+                    `  - id="${i.id}" priority=${i.priority}: ${i.title}` +
+                    (i.description ? ` — ${i.description.slice(0, 150)}` : '')
+                ).join('\n')
+            ).join('\n');
+            return `Total existing items: ${totalItems}\n\n${body}`;
+        })()
+        : null;
+
+    const jsonSchema = hasExisting ? `{
+  "add": [
+    {
+      "id": "stable-kebab-id",
+      "categoryId": "category-slug (must match existing category id or a new one)",
+      "categoryTitle": "${isHe ? 'כותרת קטגוריה (רק אם חדשה)' : 'Category title (only if new)'}",
+      "priority": "critical | high | medium | low",
+      "title": "${isHe ? 'כותרת פריט' : 'Item title'}",
+      "description": "${isHe ? 'תיאור' : 'Description'}",
+      "details": "${isHe ? 'פרטים' : 'Details'}"
+    }
+  ],
+  "remove": ["item-id-that-may-no-longer-be-relevant"]
+}` : `{
   "categories": [
     {
       "id": "string (unique slug)",
       "title": "${isHe ? 'כותרת בעברית' : 'Category title'}",
-      "emoji": "single emoji",
+      "emoji": "",
       "items": [
         {
-          "id": "stable-kebab-case-id (e.g. ni-voluntary-payment, insurance-ltc) — must remain identical across regenerations for the same concept",
+          "id": "stable-kebab-case-id (e.g. ni-voluntary-payment, insurance-ltc)",
           "priority": "critical | high | medium | low",
           "title": "${isHe ? 'כותרת פריט' : 'Item title'}",
           "description": "${isHe ? 'תיאור קצר' : 'Short description'}",
@@ -547,8 +664,74 @@ export async function generateRetirementChecklistInsights(inputs, results, provi
   ]
 }`;
 
-    const prompt = isHe
-        ? `אתה יועץ פרישה ישראלי מומחה. בהתבסס על הנתונים הבאים, צור רשימת תכנון מפורטת ומותאמת אישית לתקופת הפרישה המוקדמת בישראל.
+    const sharedGuidelines = isHe ? `
+- השתמש ב-IDs קבועים לקטגוריות: national-insurance, pension, insurance, tax, financial, healthcare, legal, lifestyle
+- שדה emoji חייב להיות מחרוזת ריקה ""
+- סמן כ-critical דברים שאם לא מטפלים בהם מאבדים זכויות
+- הגב בעברית בלבד` : `
+- Use these EXACT category IDs: national-insurance, pension, insurance, tax, financial, healthcare, legal, lifestyle
+- The emoji field MUST be an empty string ""
+- Mark as critical anything where inaction results in loss of rights or coverage
+- Respond in English only`;
+
+    const earlyRetirementNote = isEarlyRetirement
+        ? (isHe
+            ? `- יש פער של ${gapYears} שנים עד גיל 67 ללא הכנסת עבודה ותשלומי ביטוח לאומי אוטומטיים`
+            : `- There is a ${gapYears}-year gap until age 67 with no employment income and no automatic NI contributions`)
+        : '';
+
+    const prompt = hasExisting
+        ? (isHe
+            ? `אתה יועץ פרישה ישראלי מומחה. הלקוח קיבל רשימת תכנון לפרישה. הרשימה קבועה — אתה לא יכול לשנות פריטים קיימים.
+
+תפקידך הכפול:
+1. לזהות נושאים חשובים שחסרים לחלוטין מהרשימה ולהציע להוסיף אותם
+2. לזהות פריטים קיימים שאולי כבר לא רלוונטיים לפרופיל הלקוח ולסמן אותם לבדיקה (הם לא יימחקו אוטומטית — המשתמש יחליט)
+
+נתוני הלקוח:
+${context}
+
+רשימה קיימת (קרא אותה לפני שאתה מחליט!):
+${existingSummary}
+
+החזר JSON בפורמט diff בלבד (ללא טקסט נוסף):
+${jsonSchema}
+
+כללים מחייבים:
+- לפני כל הוספה: עבור על כל הפריטים הקיימים ושאל "האם מילות המפתח של ההצעה שלי מופיעות כבר בכותרת או בתיאור של פריט קיים?" אם כן — אל תוסיף
+- השוואה לפי מהות ולא לפי ניסוח. "ביטוח בריאות", "כיסוי רפואי", "ביטוח פרטי לבריאות" — כולם אותו נושא
+- טרם כל הצעה, ציין לעצמך מה ה-ID של הפריט הקיים שמכסה נושא דומה. אם אין — אפשר להוסיף
+- הוסף רק נושא שלא קיים בשום פריט, גם לא ברמז
+- סמן להסרה (remove) פריטים שאינם רלוונטיים — הם לא יימחקו, רק יסומנו
+- אל תשנה פריטים קיימים
+- אם אין שינויים — החזר {"add":[],"remove":[]}
+${earlyRetirementNote}${sharedGuidelines}`
+            : `You are an expert Israeli retirement advisor. The client has a retirement planning checklist. This list is the source of truth — you cannot modify existing items.
+
+Your dual role:
+1. Identify important topics completely missing from the list and suggest adding them
+2. Identify existing items that may no longer be relevant to this client's profile and flag them for review (they will NOT be deleted automatically — the user decides)
+
+Client data:
+${context}
+
+Existing checklist (read it carefully before deciding!):
+${existingSummary}
+
+Return ONLY a diff JSON (no extra text):
+${jsonSchema}
+
+Binding rules:
+- Before proposing any addition, scan every existing item and ask: "Do the key words of my proposed item already appear in any existing item's title or description?" If yes — skip it
+- Comparison is by meaning, not wording. "Private health insurance", "medical coverage", "health plan" are the same topic
+- For each proposed addition, identify which existing item ID covers the most similar topic. Only add if no existing item is related
+- Only add a topic completely absent from the list in any form
+- Flag for removal (remove) items not relevant to the client's data — they will only be marked, not deleted
+- Do NOT modify existing items
+- If nothing needs to change — return {"add":[],"remove":[]}
+${earlyRetirementNote}${sharedGuidelines}`)
+        : (isHe
+            ? `אתה יועץ פרישה ישראלי מומחה. בהתבסס על הנתונים הבאים, צור רשימת תכנון מפורטת ומותאמת אישית.
 
 נתוני הלקוח:
 ${context}
@@ -557,19 +740,10 @@ ${context}
 ${jsonSchema}
 
 הנחיות:
-- זוהי פרישה מוקדמת — הלקוח אינו עובד אבל עדיין לא הגיע לגיל הפרישה הרשמי (67)
-${isEarlyRetirement ? `- יש פער של ${gapYears} שנים עד גיל 67 שבו אין הכנסה מעבודה ואין תשלומי ביטוח לאומי אוטומטיים
-- קטגוריית ביטוח לאומי חייבת להתמקד בתקופת הפער: תשלומים מרצון, שמירת זכויות, ביטוח בריאות` : ''}
-- השתמש ב-IDs קבועים לקטגוריות הבאות (בדיוק כך): national-insurance, pension, insurance, tax, financial, healthcare, legal, lifestyle (הוסף housing או digital אם רלוונטי)
-- שדה emoji חייב להיות מחרוזת ריקה "" — ה-UI מציג אייקונים קבועים לפי ה-ID, אל תשלח emoji
-- כלול קטגוריות: ביטוח לאומי (פער עד גיל 67), פנסיה והשפעות הפרישה המוקדמת, ביטוח, מיסוי, ניהול פיננסי, בריאות, משפטי/עיזבון, אורח חיים
-- בקטגוריית national-insurance: כלול תשלומים מרצון, עלות משוערת, השלכות על קצבת זקנה, ביטוח בריאות דרך ביטוח לאומי בתקופת הפער
-- בקטגוריית pension: הסבר את ההשפעה של הפסקת הפקדות על גובה הקצבה בגיל 67, שיקול הפקדות עצמאיות בתקופת הפרישה המוקדמת, מועד משיכה ראשון אפשרי, הפחתה אקטוארית
-- התאם את הפריטים לנתונים האישיים
-- סמן כ-critical דברים שאם לא מטפלים בהם מאבדים זכויות
-- כלול 3-6 פריטים לקטגוריה
-- הגב בעברית בלבד`
-        : `You are an expert Israeli retirement advisor. Based on the following client data, generate a detailed personalized checklist for EARLY retirement in Israel.
+- כלול קטגוריות: ביטוח לאומי, פנסיה, ביטוח, מיסוי, ניהול פיננסי, בריאות, משפטי/עיזבון, אורח חיים
+${earlyRetirementNote}
+- כלול 3-6 פריטים לקטגוריה${sharedGuidelines}`
+            : `You are an expert Israeli retirement advisor. Generate a detailed personalized planning checklist based on the client data below.
 
 Client data:
 ${context}
@@ -578,18 +752,9 @@ Return ONLY JSON in this exact format (no extra text):
 ${jsonSchema}
 
 Guidelines:
-- This is EARLY retirement — the client stops working before the official Israeli retirement age (67)
-${isEarlyRetirement ? `- There is a ${gapYears}-year gap until age 67 with no employment income and no automatic NI contributions
-- The National Insurance category must focus on this gap: voluntary payments, preserving entitlements, health insurance` : ''}
-- Use these EXACT category IDs: national-insurance, pension, insurance, tax, financial, healthcare, legal, lifestyle (add housing or digital if relevant)
-- The emoji field MUST be an empty string "" — the UI renders fixed icons based on the category ID, do NOT provide emoji
-- Include categories: National Insurance (gap until 67), Pension & Early Retirement Impact, Insurance, Taxation, Financial Management, Healthcare, Legal/Estate, Lifestyle
-- For national-insurance: include voluntary payment obligation, estimated cost, impact on old-age pension entitlement, health insurance via NI during the gap years
-- For pension: impact of stopping contributions on the monthly pension at 67, whether voluntary contributions during early retirement are worth it, earliest possible withdrawal age, actuarial reduction for early draw, vesting status
-- Personalize items based on the client data
-- Mark as critical anything where inaction results in loss of rights or coverage
-- Include 3-6 items per category
-- Respond in English only`;
+- Include categories: National Insurance, Pension, Insurance, Taxation, Financial Management, Healthcare, Legal/Estate, Lifestyle
+${earlyRetirementNote}
+- Include 3-6 items per category${sharedGuidelines}`);
 
     const envKey = getProviderEnvKey(provider);
     const apiKey = apiKeyOverride?.trim() || (envKey ? import.meta.env[envKey]?.trim() : null);
@@ -636,11 +801,38 @@ ${isEarlyRetirement ? `- There is a ${gapYears}-year gap until age 67 with no em
         throw new Error('AI returned malformed JSON — could not parse response');
     }
 
-    // Normalize and validate structure so partial/bad AI output doesn't crash the UI
+    const VALID_PRIORITIES = new Set(['critical', 'high', 'medium', 'low']);
+
+    if (hasExisting) {
+        // Diff mode: validate and apply diff onto existing categories
+        if (!parsed || typeof parsed !== 'object') throw new Error('AI returned malformed diff JSON');
+        const diff = {
+            add: Array.isArray(parsed.add) ? parsed.add : [],
+            remove: Array.isArray(parsed.remove) ? parsed.remove : [],
+        };
+        // Normalize new items
+        diff.add = diff.add
+            .filter(i => i && i.id && i.categoryId && (i.title || i.description))
+            .map(i => ({
+                id: String(i.id).trim(),
+                categoryId: String(i.categoryId).trim(),
+                categoryTitle: String(i.categoryTitle || i.categoryId),
+                priority: VALID_PRIORITIES.has(i.priority) ? i.priority : 'medium',
+                title: String(i.title || ''),
+                description: String(i.description || ''),
+                details: String(i.details || ''),
+            }))
+;
+        diff.remove = diff.remove.filter(id => typeof id === 'string' && id.trim()).map(id => id.trim());
+
+        const mergedCategories = applyChecklistDiff(existingCategories, diff);
+        return { categories: mergedCategories, diff };
+    }
+
+    // Full generation mode
     if (!parsed || !Array.isArray(parsed.categories)) {
         throw new Error('AI response missing required "categories" array');
     }
-    const VALID_PRIORITIES = new Set(['critical', 'high', 'medium', 'low']);
     parsed.categories = parsed.categories
         .filter(c => c && Array.isArray(c.items) && c.items.length > 0)
         .map(c => ({
@@ -663,5 +855,5 @@ ${isEarlyRetirement ? `- There is a ${gapYears}-year gap until age 67 with no em
         throw new Error('AI returned no valid categories after normalization');
     }
 
-    return parsed;
+    return { categories: parsed.categories, diff: null };
 }

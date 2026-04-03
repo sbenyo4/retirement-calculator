@@ -2,6 +2,8 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useTheme } from '../contexts/ThemeContext';
 import { formatCurrency } from '../utils/formatters';
 import { generateRetirementChecklistInsights } from '../utils/ai-calculator';
+import { useAuth } from '../contexts/AuthContext';
+import { getChecklistState, setChecklistState } from '../utils/db';
 import {
     Shield, Heart, Receipt, TrendingUp, Home, Scale, Laptop,
     AlertTriangle, CheckCircle, ChevronDown, ChevronRight,
@@ -15,6 +17,24 @@ const PRIORITIES = {
     medium:   { en: 'Medium',   he: 'בינוני', color: 'bg-yellow-500', text: 'text-yellow-400', border: 'border-yellow-500/30', bg: 'bg-yellow-500/10', order: 2 },
     low:      { en: 'Low',      he: 'נמוך',  color: 'bg-blue-500', text: 'text-blue-400', border: 'border-blue-500/30', bg: 'bg-blue-500/10', order: 3 },
 };
+
+// Known category ID → translated title. Used for AI-generated categories whose title was saved in a different language.
+const CATEGORY_TITLES = {
+    'insurance':         { en: 'Insurance',                       he: 'ביטוחים' },
+    'national-insurance':{ en: 'National Insurance (Bituach Leumi)', he: 'ביטוח לאומי' },
+    'pension':           { en: 'Pension',                         he: 'פנסיה' },
+    'tax':               { en: 'Tax Planning',                    he: 'תכנון מס' },
+    'financial':         { en: 'Financial Management',            he: 'ניהול פיננסי' },
+    'healthcare':        { en: 'Healthcare Planning',             he: 'תכנון בריאות' },
+    'legal':             { en: 'Legal & Estate Planning',         he: 'תכנון משפטי ועיזבון' },
+    'lifestyle':         { en: 'Lifestyle & Daily Life',          he: 'אורח חיים ויום-יום' },
+};
+
+function getCategoryTitle(cat, language) {
+    const known = CATEGORY_TITLES[cat.id];
+    if (known) return language === 'he' ? known.he : known.en;
+    return cat.title; // fallback for AI-invented categories
+}
 
 function buildItems(inputs, results, language) {
     const isHe = language === 'he';
@@ -596,15 +616,19 @@ function PriorityBadge({ priority, isLight, language }) {
     );
 }
 
-function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck }) {
+function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem }) {
     const p = PRIORITIES[item.priority] || PRIORITIES.medium;
+    const isHe = language === 'he';
+    const flagged = item.aiSuggestedRemoval;
 
     return (
-        <div className={`rounded-lg border transition-all ${checked
-            ? (isLight ? 'border-gray-200 bg-gray-50 opacity-60' : 'border-white/5 bg-white/2 opacity-50')
-            : isLight
-                ? `border-gray-200 ${item.priority === 'critical' ? 'bg-red-50' : item.priority === 'high' ? 'bg-orange-50/50' : 'bg-white'}`
-                : `border-white/10 ${item.priority === 'critical' ? 'bg-red-500/5' : item.priority === 'high' ? 'bg-orange-500/5' : 'bg-white/3'}`
+        <div className={`rounded-lg border transition-all ${flagged
+            ? (isLight ? 'border-amber-300 bg-amber-50' : 'border-amber-500/40 bg-amber-500/5')
+            : checked
+                ? (isLight ? 'border-gray-200 bg-gray-50 opacity-60' : 'border-white/5 bg-white/2 opacity-50')
+                : isLight
+                    ? `border-gray-200 ${item.priority === 'critical' ? 'bg-red-50' : item.priority === 'high' ? 'bg-orange-50/50' : 'bg-white'}`
+                    : `border-white/10 ${item.priority === 'critical' ? 'bg-red-500/5' : item.priority === 'high' ? 'bg-orange-500/5' : 'bg-white/3'}`
         }`}>
             <div className="flex items-start">
                 {/* Checkbox */}
@@ -625,6 +649,11 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                                 {item.title}
                             </span>
                             {!checked && <PriorityBadge priority={item.priority} isLight={isLight} language={language} />}
+                            {flagged && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isLight ? 'bg-amber-200 text-amber-800' : 'bg-amber-500/30 text-amber-300'}`}>
+                                    {isHe ? 'AI: אולי לא רלוונטי?' : 'AI: maybe irrelevant?'}
+                                </span>
+                            )}
                         </div>
                         <p className={`text-xs mt-1 leading-relaxed ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
                             {item.desc}
@@ -635,6 +664,25 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                     </span>
                 </button>
             </div>
+            {flagged && (
+                <div className={`flex items-center gap-2 px-3 pb-2 ms-10 text-xs`}>
+                    <span className={isLight ? 'text-amber-700' : 'text-amber-400'}>
+                        {isHe ? 'ה-AI הציע להסיר. מה תרצה לעשות?' : 'AI suggested removing this. What would you like to do?'}
+                    </span>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onConfirmRemove?.(); }}
+                        className={`px-2 py-0.5 rounded text-[11px] font-medium ${isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'}`}
+                    >
+                        {isHe ? 'הסר' : 'Remove'}
+                    </button>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onKeepItem?.(); }}
+                        className={`px-2 py-0.5 rounded text-[11px] font-medium ${isLight ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}
+                    >
+                        {isHe ? 'השאר' : 'Keep'}
+                    </button>
+                </div>
+            )}
             {isExpanded && item.details && (
                 <div className={`px-3 pb-3 pt-0 ms-10 text-xs leading-relaxed border-t ${isLight ? 'border-gray-100 text-gray-700 bg-white/60' : 'border-white/5 text-gray-300'}`}>
                     <div className="pt-2">{item.details}</div>
@@ -648,32 +696,42 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     const { theme } = useTheme();
     const isLight = theme === 'light';
     const isRtl = language === 'he';
+    const { currentUser } = useAuth();
+    const uid = currentUser?.uid;
 
     const [expandedCategories, setExpandedCategories] = useState(new Set());
     const [expandedItems, setExpandedItems] = useState(new Set());
-    const [aiData, setAiData] = useState(() => {
-        try { return JSON.parse(sessionStorage.getItem('rc-ai-data') || 'null'); }
-        catch { return null; }
-    });
-    const [aiLoading, setAiLoading] = useState(false); // true = manual refresh (blocks button)
-    const [aiSilentLoading, setAiSilentLoading] = useState(false); // true = background auto-refresh
+    const [aiData, setAiData] = useState(null);           // { categories, snapshot, updatedAt }
+    const [dbLoaded, setDbLoaded] = useState(false);
+    const [aiLoading, setAiLoading] = useState(false);
+    const [aiSilentLoading, setAiSilentLoading] = useState(false);
     const [aiError, setAiError] = useState(null);
-    const [filterMode, setFilterMode] = useState(null); // null | 'critical' | 'high'
-    const [aiTimestamp, setAiTimestamp] = useState(() => {
-        try { return parseInt(sessionStorage.getItem('rc-ai-ts') || '0', 10) || null; }
-        catch { return null; }
-    });
-    const [checkedItems, setCheckedItems] = useState(() => {
-        try { return new Set(JSON.parse(localStorage.getItem('retirement-checklist-done') || '[]')); }
-        catch { return new Set(); }
-    });
+    const [filterMode, setFilterMode] = useState(null);
+    const [aiTimestamp, setAiTimestamp] = useState(null);
+    const [checkedItems, setCheckedItems] = useState(new Set());
+
+    // Load persisted checklist state from Firestore on mount
+    useEffect(() => {
+        if (!uid) { setDbLoaded(true); return; }
+        getChecklistState(uid).then(saved => {
+            if (saved?.categories?.length) {
+                setAiData({ categories: saved.categories, snapshot: saved.snapshot || null });
+                setAiTimestamp(saved.updatedAt || null);
+            }
+            if (Array.isArray(saved?.checkedItems)) {
+                setCheckedItems(new Set(saved.checkedItems));
+            }
+            setDbLoaded(true);
+        }).catch(() => setDbLoaded(true));
+    }, [uid]);
 
     // Stable refs so doRefresh never becomes stale
     const latestRef = useRef({});
     latestRef.current = { inputs, results, aiProvider, aiModel, apiKeyOverride, language };
+    const aiDataRef = useRef(null);
+    aiDataRef.current = aiData;
     const refreshIdRef = useRef(0);
     const autoTimerRef = useRef(null);
-    const hasDataRef = useRef(!!sessionStorage.getItem('rc-ai-data'));
 
     const getSnapshot = (inp, res) => JSON.stringify({
         a: inp?.currentAge, b: inp?.retirementStartAge, c: inp?.retirementEndAge,
@@ -684,76 +742,139 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         o: inp?.pensionIncomeSources?.length,
     });
 
+    const persistState = useCallback((categories, snapshot) => {
+        if (!uid) return;
+        const ts = Date.now();
+        setChecklistState(uid, { categories, snapshot, updatedAt: ts })
+            .catch(err => console.error('[Checklist save]', err));
+        setAiTimestamp(ts);
+    }, [uid]);
+
+    // Expose uid to toggleChecked via ref so it doesn't need to be a dep
+    const uidRef = useRef(uid);
+    uidRef.current = uid;
+
     const doRefresh = useCallback(async (silent = false) => {
         const { inputs, results, aiProvider, aiModel, apiKeyOverride, language } = latestRef.current;
         if (!aiProvider || !aiModel) return;
         const id = ++refreshIdRef.current;
-        // Set loading state before async work
         if (silent) setAiSilentLoading(true);
         else { setAiLoading(true); setAiError(null); }
-        let succeeded = false;
         try {
+            const existingCats = aiDataRef.current?.categories || null;
             const data = await generateRetirementChecklistInsights(
-                inputs, results, aiProvider, aiModel, apiKeyOverride, language
+                inputs, results, aiProvider, aiModel, apiKeyOverride, language, existingCats
             );
-            if (id !== refreshIdRef.current) return; // a newer request superseded this one
-            succeeded = true;
-            const ts = Date.now();
-            try {
-                sessionStorage.setItem('rc-ai-data', JSON.stringify(data));
-                sessionStorage.setItem('rc-ai-snapshot', getSnapshot(inputs, results));
-                sessionStorage.setItem('rc-ai-ts', String(ts));
-            } catch {}
-            hasDataRef.current = true;
-            setAiData(data);
-            setAiTimestamp(ts);
-            setExpandedCategories(new Set());
+            if (id !== refreshIdRef.current) return;
+            const snapshot = getSnapshot(inputs, results);
+            const newAiData = { categories: data.categories, snapshot };
+            setAiData(newAiData);
             setAiError(null);
+            persistState(data.categories, snapshot);
         } catch (err) {
             if (id !== refreshIdRef.current) return;
             if (!silent) setAiError(err.message);
-            // silent failure: keep existing data untouched
         } finally {
-            // Always clear loading for the request that is still "current"
             if (id === refreshIdRef.current) {
                 if (silent) setAiSilentLoading(false);
                 else setAiLoading(false);
             }
         }
-    }, []); // no deps — reads from ref
+    }, [persistState]);
 
     const handleRefresh = useCallback(() => {
-        try { sessionStorage.removeItem('rc-ai-snapshot'); } catch {}
         doRefresh(false);
     }, [doRefresh]);
 
-    // Auto-refresh: skip if cached data matches current inputs (same session)
+    const staticCategories = useMemo(
+        () => buildItems(inputs, results, language),
+        [inputs, results, language]
+    );
+
+    // Clear list only (no AI call) — next auto or manual refresh starts fresh
+    const handleClearList = useCallback(() => {
+        setAiData(null);
+        setAiTimestamp(null);
+        if (uid) setChecklistState(uid, { categories: [], snapshot: null, updatedAt: Date.now() }).catch(() => {});
+    }, [uid]);
+
+    // Reset to the fixed static base list — AI will diff from this clean baseline
+    const handleResetToBase = useCallback(() => {
+        const base = staticCategories
+            .map(cat => ({
+                id: cat.category,
+                title: cat.title,
+                emoji: '',
+                items: cat.items
+                    .filter(i => i.relevant)
+                    .map(i => ({
+                        id: i.id,
+                        priority: i.priority,
+                        title: i.title,
+                        description: i.desc || '',
+                        details: i.details || '',
+                    })),
+            }))
+            .filter(cat => cat.items.length > 0);
+        const snap = getSnapshot(inputs, results);
+        const ts = Date.now();
+        setAiData({ categories: base, snapshot: snap });
+        setAiTimestamp(ts);
+        if (uid) setChecklistState(uid, { categories: base, snapshot: snap, updatedAt: ts }).catch(() => {});
+    }, [uid, staticCategories, inputs, results]);
+
+    // Confirm AI's removal suggestion — actually delete the item
+    const handleConfirmRemove = useCallback((catId, itemId) => {
+        setAiData(prev => {
+            if (!prev?.categories) return prev;
+            const categories = prev.categories
+                .map(cat => cat.id !== catId ? cat : { ...cat, items: cat.items.filter(i => i.id !== itemId) })
+                .filter(cat => cat.items.length > 0);
+            const next = { ...prev, categories };
+            if (uid) setChecklistState(uid, { categories, snapshot: prev.snapshot, updatedAt: Date.now() }).catch(() => {});
+            return next;
+        });
+    }, [uid]);
+
+    // Dismiss AI's removal suggestion — keep the item, clear the flag
+    const handleKeepItem = useCallback((catId, itemId) => {
+        setAiData(prev => {
+            if (!prev?.categories) return prev;
+            const categories = prev.categories.map(cat =>
+                cat.id !== catId ? cat : {
+                    ...cat,
+                    items: cat.items.map(i => i.id !== itemId ? i : { ...i, aiSuggestedRemoval: false })
+                }
+            );
+            const next = { ...prev, categories };
+            if (uid) setChecklistState(uid, { categories, snapshot: prev.snapshot, updatedAt: Date.now() }).catch(() => {});
+            return next;
+        });
+    }, [uid]);
+
+    // Auto-refresh: ONLY when DB has loaded and there are no categories yet (first-time population)
     useEffect(() => {
-        if (!aiProvider || !aiModel) return;
-        clearTimeout(autoTimerRef.current);
-        try {
-            const currentSnapshot = getSnapshot(latestRef.current.inputs, latestRef.current.results);
-            const storedSnapshot = sessionStorage.getItem('rc-ai-snapshot');
-            if (hasDataRef.current && currentSnapshot === storedSnapshot) return; // nothing changed
-        } catch {}
-        const delay = hasDataRef.current ? 2500 : 0;
-        autoTimerRef.current = setTimeout(() => doRefresh(true), delay);
+        if (!dbLoaded || !aiProvider || !aiModel) return;
+        if (aiDataRef.current?.categories?.length) return; // already have data — never auto-run again
+        autoTimerRef.current = setTimeout(() => doRefresh(true), 0);
         return () => clearTimeout(autoTimerRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dbLoaded, aiProvider, aiModel, doRefresh]);
+
+    // Stale indicator: inputs changed since last AI run
+    const isStale = useMemo(() => {
+        if (!aiData?.categories?.length || !aiData?.snapshot) return false;
+        return getSnapshot(inputs, results) !== aiData.snapshot;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
+        aiData?.snapshot,
         inputs?.currentAge, inputs?.retirementStartAge, inputs?.retirementEndAge,
         inputs?.currentSavings, inputs?.monthlyContribution, inputs?.monthlyNetIncomeDesired,
         inputs?.annualReturnRate, inputs?.inflationRate,
         inputs?.taxRate, inputs?.withdrawalStrategy, inputs?.enableBuckets,
         inputs?.pensionIncomeSources?.length,
         results?.balanceAtRetirement, results?.ranOutAtAge, results?.surplus,
-        language, aiProvider, aiModel, doRefresh,
     ]);
-
-    const staticCategories = useMemo(
-        () => buildItems(inputs, results, language),
-        [inputs, results, language]
-    );
 
     const activeCategories = aiData?.categories ?? null;
 
@@ -772,7 +893,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         if (!filterMode) return null;
         const cats = activeCategories
             ? activeCategories.map(c => ({
-                id: c.id, title: c.title, emoji: c.emoji,
+                id: c.id, title: getCategoryTitle(c, language), emoji: c.emoji,
                 items: c.items.filter(i => i.priority === filterMode)
             }))
             : staticCategories.map(c => ({
@@ -836,7 +957,11 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         setCheckedItems(prev => {
             const next = new Set(prev);
             next.has(key) ? next.delete(key) : next.add(key);
-            try { localStorage.setItem('retirement-checklist-done', JSON.stringify([...next])); } catch {}
+            if (uidRef.current) {
+                setChecklistState(uidRef.current, { checkedItems: [...next] }).catch(err =>
+                    console.error('[Checklist checked save]', err)
+                );
+            }
             return next;
         });
     };
@@ -899,14 +1024,30 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                     {aiSilentLoading && <RefreshCw size={11} className="animate-spin text-purple-400" />}
                 </div>
                 {aiProvider && aiModel && (
-                    <button
-                        onClick={handleRefresh}
-                        disabled={aiLoading}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${isLight ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' : 'bg-purple-500/20 text-purple-300 hover:bg-purple-500/30'} disabled:opacity-50`}
-                    >
-                        <RefreshCw size={12} className={aiLoading ? 'animate-spin' : ''} />
-                        {aiLoading ? txt('Generating...', 'מייצר...') : txt('Refresh with AI', 'רענן עם AI')}
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                        {isStale && !aiLoading && !aiSilentLoading && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-400'}`}>
+                                {txt('inputs changed', 'נתונים השתנו')}
+                            </span>
+                        )}
+                        <button
+                            onClick={handleRefresh}
+                            disabled={aiLoading}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${isStale && !aiLoading ? (isLight ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30') : (isLight ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' : 'bg-purple-500/20 text-purple-300 hover:bg-purple-500/30')} disabled:opacity-50`}
+                        >
+                            <RefreshCw size={12} className={aiLoading ? 'animate-spin' : ''} />
+                            {aiLoading ? txt('Generating...', 'מייצר...') : txt('Refresh with AI', 'רענן עם AI')}
+                        </button>
+                        {!aiLoading && (
+                            <button
+                                onClick={handleResetToBase}
+                                title={txt('Reset to base list (removes AI additions)', 'אפס לרשימת בסיס (מסיר תוספות AI)')}
+                                className={`p-1 rounded transition-all opacity-40 hover:opacity-100 ${isLight ? 'text-gray-500 hover:text-blue-600' : 'text-gray-500 hover:text-blue-400'}`}
+                            >
+                                <RotateCcw size={12} />
+                            </button>
+                        )}
+                    </div>
                 )}
                 <div className="flex items-center gap-2 ms-auto flex-wrap">
                     {criticalCount > 0 && (
@@ -948,7 +1089,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             )}
 
             {/* Scrollable content - dir=ltr forces scrollbar to right side even in RTL mode */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar" dir="ltr">
+            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar scrollbar-right" dir="ltr">
             <div dir={isRtl ? 'rtl' : 'ltr'}>
 
             {/* Disclaimer */}
@@ -1045,7 +1186,14 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             {/* Categories */}
             {!filteredItems && !(!aiData && aiSilentLoading) && <div className="p-4 space-y-3">
                 {(activeCategories
-                    ? activeCategories.map(cat => {
+                    ? [...activeCategories].sort((a, b) => {
+                        const critA = a.items.filter(i => i.priority === 'critical').length;
+                        const critB = b.items.filter(i => i.priority === 'critical').length;
+                        if (critB !== critA) return critB - critA;
+                        const highA = a.items.filter(i => i.priority === 'high').length;
+                        const highB = b.items.filter(i => i.priority === 'high').length;
+                        return highB - highA;
+                    }).map(cat => {
                         const c = (isLight ? LIGHT_COLOR_MAP : COLOR_MAP).blue;
                         const isOpen = expandedCategories.has(cat.id);
                         const criticals = cat.items.filter(i => i.priority === 'critical').length;
@@ -1059,7 +1207,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                     <div className={`p-1.5 rounded-lg ${isLight ? 'bg-blue-50' : 'bg-blue-500/10'}`}>
                                         {categoryIcon(cat)}
                                     </div>
-                                    <span className={`text-sm font-semibold flex-1 ${isLight ? 'text-gray-900' : 'text-white'}`}>{cat.title}</span>
+                                    <span className={`text-sm font-semibold flex-1 ${isLight ? 'text-gray-900' : 'text-white'}`}>{getCategoryTitle(cat, language)}</span>
                                     <div className="flex items-center gap-1.5">
                                         {criticals > 0 && <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{criticals}</span>}
                                         {highs > 0 && <span className="w-4 h-4 rounded-full bg-orange-500 text-white text-[9px] font-bold flex items-center justify-center">{highs}</span>}
@@ -1082,6 +1230,8 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                                         onToggle={() => toggleItem(`${cat.id}-${idx}`)}
                                                         checked={checkedItems.has(key)}
                                                         onCheck={() => toggleChecked(key)}
+                                                        onConfirmRemove={() => handleConfirmRemove(cat.id, normalizedItem.id)}
+                                                        onKeepItem={() => handleKeepItem(cat.id, normalizedItem.id)}
                                                     />
                                                 );
                                             })}
