@@ -60,30 +60,30 @@ export function useRateLimit(userId) {
 
         // Check per-minute limit
         const lastMinute = now - 60 * 1000;
-        const callsLastMinute = calls.filter(c => c.timestamp > lastMinute).length;
-        if (callsLastMinute >= DEFAULT_LIMITS.perMinute) {
-            const oldestCall = calls.find(c => c.timestamp > lastMinute);
-            const resetTime = new Date(oldestCall.timestamp + 60 * 1000);
+        const recentMinuteCalls = calls.filter(c => c.timestamp > lastMinute);
+        if (recentMinuteCalls.length >= DEFAULT_LIMITS.perMinute) {
+            const oldestCall = recentMinuteCalls[0];
+            const resetTime = oldestCall ? new Date(oldestCall.timestamp + 60 * 1000) : new Date(now + 60 * 1000);
             return {
                 allowed: false,
                 reason: 'minute',
                 resetTime,
-                current: callsLastMinute,
+                current: recentMinuteCalls.length,
                 limit: DEFAULT_LIMITS.perMinute
             };
         }
 
         // Check hourly limit
         const lastHour = now - 60 * 60 * 1000;
-        const callsLastHour = calls.filter(c => c.timestamp > lastHour).length;
-        if (callsLastHour >= DEFAULT_LIMITS.hourly) {
-            const oldestCall = calls.find(c => c.timestamp > lastHour);
-            const resetTime = new Date(oldestCall.timestamp + 60 * 60 * 1000);
+        const recentHourCalls = calls.filter(c => c.timestamp > lastHour);
+        if (recentHourCalls.length >= DEFAULT_LIMITS.hourly) {
+            const oldestCall = recentHourCalls[0];
+            const resetTime = oldestCall ? new Date(oldestCall.timestamp + 60 * 60 * 1000) : new Date(now + 60 * 60 * 1000);
             return {
                 allowed: false,
                 reason: 'hour',
                 resetTime,
-                current: callsLastHour,
+                current: recentHourCalls.length,
                 limit: DEFAULT_LIMITS.hourly
             };
         }

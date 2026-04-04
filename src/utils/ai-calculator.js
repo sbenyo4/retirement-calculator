@@ -522,7 +522,7 @@ function isSemanticallyDuplicate(newTitle, newCatId, existingEntries) {
     return false;
 }
 
-function applyChecklistDiff(existingCategories, diff, dismissedItemIds = new Set()) {
+function applyChecklistDiff(existingCategories, diff, dismissedItemIds = new Set(), keptItemIds = new Set()) {
     // Build mutable map: itemId → { catId, item }
     const itemMap = {};
     const catMeta = {}; // catId → { id, title, emoji }
@@ -534,8 +534,9 @@ function applyChecklistDiff(existingCategories, diff, dismissedItemIds = new Set
     }
 
     // 1. Flag items suggested for removal — do NOT delete, let the user decide
+    // Skip if user has already explicitly chosen to keep this item
     for (const id of (diff.remove || [])) {
-        if (itemMap[id]) {
+        if (itemMap[id] && !keptItemIds.has(id)) {
             itemMap[id].item = { ...itemMap[id].item, aiSuggestedRemoval: true };
         }
     }
@@ -568,7 +569,7 @@ function applyChecklistDiff(existingCategories, diff, dismissedItemIds = new Set
         .filter(c => c.items.length > 0);
 }
 
-export async function generateRetirementChecklistInsights(inputs, results, provider, model, apiKeyOverride, language, existingCategories, dismissedItemIds = new Set()) {
+export async function generateRetirementChecklistInsights(inputs, results, provider, model, apiKeyOverride, language, existingCategories, dismissedItemIds = new Set(), keptItemIds = new Set()) {
     const isHe = language === 'he';
     const fmt = (n) => n ? Math.round(n).toLocaleString() : '0';
 
@@ -826,7 +827,7 @@ ${earlyRetirementNote}
 ;
         diff.remove = diff.remove.filter(id => typeof id === 'string' && id.trim()).map(id => id.trim());
 
-        const mergedCategories = applyChecklistDiff(existingCategories, diff, dismissedItemIds);
+        const mergedCategories = applyChecklistDiff(existingCategories, diff, dismissedItemIds, keptItemIds);
         return { categories: mergedCategories, diff };
     }
 

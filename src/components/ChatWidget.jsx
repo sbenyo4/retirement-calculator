@@ -45,7 +45,7 @@ function clampPos(pos) {
 
 function loadBtnPos() {
     try {
-        const saved = localStorage.getItem(STORAGE_KEY);
+        const saved = sessionStorage.getItem(STORAGE_KEY);
         return saved ? clampPos(JSON.parse(saved)) : null;
     } catch { return null; }
 }
@@ -196,7 +196,7 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
                 const newBottom = Math.max(8, Math.min(window.innerHeight - btnH - 8, (prev.bottom || 24) - dy));
                 btnOrigin.current = { x: e.clientX, y: e.clientY };
                 const next = { right: newRight, bottom: newBottom };
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+                sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
                 return next;
             });
         };
@@ -219,9 +219,8 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
         if (!trimmed || loading) return;
         setInput('');
         setError(null);
-        const history = messages.slice(-MAX_DISPLAY_MESSAGES);
-        const newMessages = [...history, { role: 'user', content: trimmed }];
-        setMessages(prev => [...prev.slice(-MAX_DISPLAY_MESSAGES), { role: 'user', content: trimmed }]);
+        const newMessages = [...messages.slice(-MAX_DISPLAY_MESSAGES), { role: 'user', content: trimmed }];
+        setMessages(newMessages);
         setLoading(true);
         abortRef.current?.abort();
         const controller = new AbortController();

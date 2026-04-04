@@ -48,7 +48,7 @@ export function useProfiles() {
         if (!uid) return null;
 
         const newProfile = {
-            id: Date.now().toString(),
+            id: crypto.randomUUID(),
             name,
             data
         };

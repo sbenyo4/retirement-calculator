@@ -8,7 +8,7 @@ import {
     Shield, Heart, Receipt, TrendingUp, Home, Scale, Laptop,
     AlertTriangle, CheckCircle, ChevronDown, ChevronRight,
     Umbrella, Stethoscope, Building2, FileText, Users,
-    Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Flag, Landmark, RotateCcw, Search, X, EyeOff, Undo2
+    Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Flag, Landmark, RotateCcw, Search, X, EyeOff, Undo2, Trash2
 } from 'lucide-react';
 
 const PRIORITIES = {
@@ -616,13 +616,13 @@ function PriorityBadge({ priority, isLight, language }) {
     );
 }
 
-function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem, isNew, onSeen, onKeepNew, onDismissNew }) {
+function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem, isNew, onSeen, onKeepNew, onDismissNew, onManualRemove }) {
     const p = PRIORITIES[item.priority] || PRIORITIES.medium;
     const isHe = language === 'he';
     const flagged = item.aiSuggestedRemoval;
 
     return (
-        <div className={`rounded-lg border transition-all ${flagged
+        <div className={`group rounded-lg border transition-all ${flagged
             ? (isLight ? 'border-amber-300 bg-amber-50' : 'border-amber-500/40 bg-amber-500/5')
             : checked
                 ? (isLight ? 'border-gray-200 bg-gray-50 opacity-60' : 'border-white/5 bg-white/2 opacity-50')
@@ -668,18 +668,22 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                         {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                     </span>
                 </button>
+                {/* Manual remove — always available */}
+                {onManualRemove && (
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onManualRemove(); }}
+                        title={isHe ? 'הסר' : 'Remove'}
+                        className={`shrink-0 m-2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${isLight ? 'text-gray-400 hover:text-red-600 hover:bg-red-50' : 'text-gray-600 hover:text-red-400 hover:bg-red-500/10'}`}
+                    >
+                        <Trash2 size={13} />
+                    </button>
+                )}
             </div>
             {flagged && (
                 <div className={`flex items-center gap-2 px-3 pb-2 ms-10 text-xs`}>
                     <span className={isLight ? 'text-amber-700' : 'text-amber-400'}>
                         {isHe ? 'ה-AI הציע להסיר. מה תרצה לעשות?' : 'AI suggested removing this. What would you like to do?'}
                     </span>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onConfirmRemove?.(); }}
-                        className={`px-2 py-0.5 rounded text-[11px] font-medium ${isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'}`}
-                    >
-                        {isHe ? 'הסר' : 'Remove'}
-                    </button>
                     <button
                         onClick={(e) => { e.stopPropagation(); onKeepItem?.(); }}
                         className={`px-2 py-0.5 rounded text-[11px] font-medium ${isLight ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}
@@ -731,6 +735,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     const [newItemIds, setNewItemIds] = useState(new Set()); // IDs added in the last AI run
     const [seenNewIds, setSeenNewIds] = useState(new Set()); // new items the user has expanded
     const [dismissedItems, setDismissedItems] = useState([]); // ever-dismissed/removed items: [{id, catId, categoryTitle, item}]
+    const [keptItemIds, setKeptItemIds] = useState(new Set()); // items user explicitly kept (AI won't re-flag)
     const [aiSilentLoading, setAiSilentLoading] = useState(false);
     const [aiError, setAiError] = useState(null);
     const [filterMode, setFilterMode] = useState(null);
@@ -752,6 +757,9 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             if (Array.isArray(saved?.dismissedItems)) {
                 setDismissedItems(saved.dismissedItems);
             }
+            if (Array.isArray(saved?.keptItemIds)) {
+                setKeptItemIds(new Set(saved.keptItemIds));
+            }
             setDbLoaded(true);
         }).catch(() => setDbLoaded(true));
     }, [uid]);
@@ -765,6 +773,8 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     dismissedItemsRef.current = dismissedItems;
     const dismissedItemIdsRef = useRef(new Set());
     dismissedItemIdsRef.current = new Set(dismissedItems.map(d => d.id));
+    const keptItemIdsRef = useRef(new Set());
+    keptItemIdsRef.current = keptItemIds;
     const refreshIdRef = useRef(0);
     const autoTimerRef = useRef(null);
 
@@ -781,8 +791,8 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         if (!uid) return;
         const ts = Date.now();
         setChecklistState(uid, { categories, snapshot, updatedAt: ts })
+            .then(() => setAiTimestamp(ts))
             .catch(err => console.error('[Checklist save]', err));
-        setAiTimestamp(ts);
     }, [uid]);
 
     // Expose uid to toggleChecked via ref so it doesn't need to be a dep
@@ -798,7 +808,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         try {
             const existingCats = aiDataRef.current?.categories || null;
             const data = await generateRetirementChecklistInsights(
-                inputs, results, aiProvider, aiModel, apiKeyOverride, language, existingCats, dismissedItemIdsRef.current
+                inputs, results, aiProvider, aiModel, apiKeyOverride, language, existingCats, dismissedItemIdsRef.current, keptItemIdsRef.current
             );
             if (id !== refreshIdRef.current) return;
             const snapshot = getSnapshot(inputs, results);
@@ -889,7 +899,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         }
     }, [uid]);
 
-    // Dismiss AI's removal suggestion — keep the item, clear the flag
+    // Dismiss AI's removal suggestion — keep the item, clear the flag, remember choice permanently
     const handleKeepItem = useCallback((catId, itemId) => {
         setAiData(prev => {
             if (!prev?.categories) return prev;
@@ -901,6 +911,12 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             );
             const next = { ...prev, categories };
             if (uid) setChecklistState(uid, { categories, snapshot: prev.snapshot, updatedAt: Date.now() }).catch(() => {});
+            return next;
+        });
+        setKeptItemIds(prev => {
+            if (prev.has(itemId)) return prev;
+            const next = new Set([...prev, itemId]);
+            if (uid) setChecklistState(uid, { keptItemIds: [...next] }).catch(() => {});
             return next;
         });
     }, [uid]);
@@ -964,14 +980,39 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         });
     }, [uid]);
 
+    // Permanently delete from dismissed list — item can be re-added by AI in future
+    const handlePermanentDelete = useCallback((itemId) => {
+        setDismissedItems(prev => {
+            const next = prev.filter(d => d.id !== itemId);
+            if (uid) setChecklistState(uid, { dismissedItems: next }).catch(() => {});
+            return next;
+        });
+        // Also remove from keptItemIds so AI can freely re-suggest it
+        setKeptItemIds(prev => {
+            if (!prev.has(itemId)) return prev;
+            const next = new Set(prev);
+            next.delete(itemId);
+            if (uid) setChecklistState(uid, { keptItemIds: [...next] }).catch(() => {});
+            return next;
+        });
+    }, [uid]);
+
+    // Manual remove by user — move item to dismissed list
+    const handleManualRemove = useCallback((catId, itemId) => {
+        handleConfirmRemove(catId, itemId);
+    }, [handleConfirmRemove]);
+
+    // Stable ref so auto-refresh effect never re-fires due to doRefresh identity change
+    const doRefreshRef = useRef(doRefresh);
+    doRefreshRef.current = doRefresh;
+
     // Auto-refresh: ONLY when DB has loaded and there are no categories yet (first-time population)
     useEffect(() => {
         if (!dbLoaded || !aiProvider || !aiModel) return;
         if (aiDataRef.current?.categories?.length) return; // already have data — never auto-run again
-        autoTimerRef.current = setTimeout(() => doRefresh(true), 0);
+        autoTimerRef.current = setTimeout(() => doRefreshRef.current(true), 0);
         return () => clearTimeout(autoTimerRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dbLoaded, aiProvider, aiModel, doRefresh]);
+    }, [dbLoaded, aiProvider, aiModel]);
 
     // Stale indicator: inputs changed since last AI run
     const isStale = useMemo(() => {
@@ -1453,10 +1494,18 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                     </div>
                                     <button
                                         onClick={() => handleRestoreItem(id)}
+                                        title={txt('Restore to list', 'החזר לרשימה')}
                                         className={`shrink-0 flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-all ${isLight ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'}`}
                                     >
                                         <Undo2 size={11} />
                                         {txt('Restore', 'שחזר')}
+                                    </button>
+                                    <button
+                                        onClick={() => handlePermanentDelete(id)}
+                                        title={txt('Delete permanently (AI may re-add)', 'מחק לצמיתות (AI יוכל להוסיף שוב)')}
+                                        className={`shrink-0 p-1.5 rounded transition-all ${isLight ? 'text-gray-400 hover:text-red-600 hover:bg-red-50' : 'text-gray-600 hover:text-red-400 hover:bg-red-500/10'}`}
+                                    >
+                                        <Trash2 size={13} />
                                     </button>
                                 </div>
                             </div>
@@ -1518,6 +1567,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                                         onSeen={() => setSeenNewIds(prev => new Set([...prev, normalizedItem.id]))}
                                                         onKeepNew={() => handleKeepNewItem(normalizedItem.id)}
                                                         onDismissNew={() => handleDismissNewItem(cat.id, normalizedItem.id)}
+                                                        onManualRemove={() => handleManualRemove(cat.id, normalizedItem.id)}
                                                     />
                                                 );
                                             })}

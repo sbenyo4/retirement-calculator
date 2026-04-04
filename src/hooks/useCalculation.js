@@ -38,10 +38,13 @@ export function useCalculation(inputs, settings) {
     const memoizedDebouncedInputs = useDeepCompareMemo(debouncedInputs);
 
     // Standard Mathematical Calculation & Simulation
+    // memoizedDebouncedInputs is a stable reference — only changes when values actually differ (deep equality).
+    // Using it as the sole inputs dependency prevents spurious recalculations on every debounce tick
+    // when the user hasn't actually changed anything meaningful.
     useEffect(() => {
-        const age = parseFloat(debouncedInputs.currentAge);
-        const retirementStart = parseFloat(debouncedInputs.retirementStartAge);
-        const retirementEnd = parseFloat(debouncedInputs.retirementEndAge);
+        const age = parseFloat(memoizedDebouncedInputs.currentAge);
+        const retirementStart = parseFloat(memoizedDebouncedInputs.retirementStartAge);
+        const retirementEnd = parseFloat(memoizedDebouncedInputs.retirementEndAge);
 
         // Basic validation to prevent obviously broken inputs
         // Include age sequence validation to prevent console errors during profile loading
@@ -58,10 +61,9 @@ export function useCalculation(inputs, settings) {
             // If inputs change before the worker responds, the stale result is discarded.
             const generation = ++generationRef.current;
             const { calculationMode, simulationType } = settings;
-            const capturedMemoInputs = memoizedDebouncedInputs;
 
             runProjection(
-                debouncedInputs,
+                memoizedDebouncedInputs,
                 ({ projection, goalSeekWithdrawal: gsw }) => {
                     if (generationRef.current !== generation) return; // stale — discard
 
@@ -71,18 +73,18 @@ export function useCalculation(inputs, settings) {
 
                     // Handle Simulation Mode (async via Web Worker)
                     // Also auto-trigger Monte Carlo for Dynamic strategy even in mathematical mode
-                    const isDynamicStrategy = debouncedInputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC;
+                    const isDynamicStrategy = memoizedDebouncedInputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC;
                     if (calculationMode === 'simulations' || calculationMode === 'compare' || isDynamicStrategy) {
                         const shouldUpdate =
-                            lastSimInputs.current !== capturedMemoInputs ||
+                            lastSimInputs.current !== memoizedDebouncedInputs ||
                             lastSimType.current !== simulationType;
 
                         if (shouldUpdate) {
-                            lastSimInputs.current = capturedMemoInputs;
+                            lastSimInputs.current = memoizedDebouncedInputs;
                             lastSimType.current = simulationType;
 
                             runSimulation(
-                                debouncedInputs,
+                                memoizedDebouncedInputs,
                                 simulationType,
                                 (result) => {
                                     if (generationRef.current !== generation) return; // stale — discard
@@ -113,7 +115,7 @@ export function useCalculation(inputs, settings) {
             setResults(null);
             setSimulationResults(null);
         }
-    }, [debouncedInputs, memoizedDebouncedInputs, settings.calculationMode, settings.simulationType, runProjection, runSimulation]);
+    }, [memoizedDebouncedInputs, settings.calculationMode, settings.simulationType, runProjection, runSimulation]);
 
     return {
         results,
