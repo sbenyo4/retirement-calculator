@@ -78,11 +78,11 @@ export async function setCurrentSession(uid, inputs) {
 
 export async function getPensionSources(uid) {
     const snap = await getDoc(pensionSourcesRef(uid));
-    return snap.exists() ? snap.data().sources : null;
+    return snap.exists() ? snap.data() : null;
 }
 
-export async function setPensionSources(uid, sources) {
-    await setDoc(pensionSourcesRef(uid), { sources, updatedAt: Date.now() }, { merge: true });
+export async function setPensionSources(uid, data) {
+    await setDoc(pensionSourcesRef(uid), { ...data, updatedAt: Date.now() }, { merge: true });
 }
 
 // ─── Profiles (subcollection) ──────────────────────────────────────

@@ -12,6 +12,19 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+// Prevent browser zoom (Ctrl +/-, Ctrl+0, Ctrl+scroll)
+document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) {
+        e.preventDefault();
+    }
+});
+
+document.addEventListener('wheel', (e) => {
+    if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+    }
+}, { passive: false });
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <App />

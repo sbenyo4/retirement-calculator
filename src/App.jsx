@@ -313,7 +313,7 @@ function MainApp() {
   }
 
   return (
-    <div className={`min-h-screen ${theme === 'light' ? 'bg-slate-100' : 'bg-gradient-to-br from-gray-900 to-blue-900'} p-2 md:p-4`} dir={translations[language].dir}>
+    <div className={`min-h-screen ${theme === 'light' ? 'bg-slate-100' : 'bg-gradient-to-br from-gray-900 to-blue-900'} p-2 md:p-4 pb-[18px]`} dir={translations[language].dir}>
       <div className="max-w-7xl mx-auto">
         <header className="mb-4 flex flex-col md:flex-row justify-between items-center gap-4">
           <div>
@@ -344,8 +344,8 @@ function MainApp() {
           </div>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-          <div className="lg:col-span-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 shadow-xl flex flex-col relative z-20 overflow-hidden" onFocus={preloadResultsDashboard} onPointerEnter={preloadResultsDashboard}>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+          <div className="lg:col-span-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl pt-4 px-4 pb-0 shadow-xl flex flex-col relative z-20" onFocus={preloadResultsDashboard} onPointerEnter={preloadResultsDashboard}>
             <ProfileManager
               currentInputs={inputs}
               onLoad={setInputs}
@@ -361,7 +361,7 @@ function MainApp() {
               onSaveGlobalPension={saveGlobalPension}
             />
             <div className="my-2 border-t border-white/10 flex-shrink-0"></div>
-            <div className="overflow-y-auto custom-scrollbar max-h-[calc(100vh-14rem)]">
+            <div>
             <InputForm
               inputs={inputs}
               setInputs={setInputs}
@@ -410,10 +410,10 @@ function MainApp() {
               updateProfile={updateProfile}
               currentProfileId={lastLoadedProfileId}
             />
-            </div>{/* end scrollable InputForm */}
+            </div>
           </div>
 
-          <div className="lg:col-span-8 flex flex-col">
+          <div className="lg:col-span-8" style={{overflow:'hidden', alignSelf:'stretch', marginBottom:'2px'}}>
             <ErrorBoundary t={t}>
               {validationError && (
                 <div className="bg-red-900/50 border border-red-500 rounded-xl p-4 mb-4 text-white">
@@ -441,7 +441,7 @@ function MainApp() {
                 </div>
               )}
               {results && settings.calculationMode === 'planning' && (
-                <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-xl overflow-hidden h-[calc(100vh-10rem)]">
+                <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-xl overflow-hidden" style={{height:'100%'}}>
                   <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"></div></div>}>
                     <RetirementChecklist
                       inputs={memoizedDebouncedInputs}
@@ -483,6 +483,7 @@ function MainApp() {
                     fiscalParameters={settings.fiscalParameters}
                     familyStatus={settings.familyStatus}
                     onUpdateFiscalData={handleUpdateFiscalData}
+                    saveGlobalPension={saveGlobalPension}
 
                     // Sensitivity analysis props
                     showInterestSensitivity={showInterestSensitivity}

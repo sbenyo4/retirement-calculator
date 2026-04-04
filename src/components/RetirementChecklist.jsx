@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { formatCurrency } from '../utils/formatters';
 import { generateRetirementChecklistInsights } from '../utils/ai-calculator';
@@ -8,7 +8,7 @@ import {
     Shield, Heart, Receipt, TrendingUp, Home, Scale, Laptop,
     AlertTriangle, CheckCircle, ChevronDown, ChevronRight,
     Umbrella, Stethoscope, Building2, FileText, Users,
-    Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Flag, Landmark, RotateCcw, Search, X
+    Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Flag, Landmark, RotateCcw, Search, X, EyeOff, Undo2
 } from 'lucide-react';
 
 const PRIORITIES = {
@@ -616,7 +616,7 @@ function PriorityBadge({ priority, isLight, language }) {
     );
 }
 
-function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem, isNew, onSeen }) {
+function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem, isNew, onSeen, onKeepNew, onDismissNew }) {
     const p = PRIORITIES[item.priority] || PRIORITIES.medium;
     const isHe = language === 'he';
     const flagged = item.aiSuggestedRemoval;
@@ -688,6 +688,25 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                     </button>
                 </div>
             )}
+            {isNew && !checked && (onKeepNew || onDismissNew) && (
+                <div className={`flex items-center gap-2 px-3 pb-2 ms-10 text-xs`}>
+                    <span className={isLight ? 'text-green-700' : 'text-green-400'}>
+                        {isHe ? 'פריט חדש מה-AI. מה תרצה לעשות?' : 'New AI item. What would you like to do?'}
+                    </span>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onKeepNew?.(); }}
+                        className={`px-2 py-0.5 rounded text-[11px] font-medium ${isLight ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-green-500/20 text-green-400 hover:bg-green-500/30'}`}
+                    >
+                        {isHe ? 'שמור' : 'Keep'}
+                    </button>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onDismissNew?.(); }}
+                        className={`px-2 py-0.5 rounded text-[11px] font-medium ${isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'}`}
+                    >
+                        {isHe ? 'בטל' : 'Dismiss'}
+                    </button>
+                </div>
+            )}
             {isExpanded && item.details && (
                 <div className={`px-3 pb-3 pt-0 ms-10 text-xs leading-relaxed border-t ${isLight ? 'border-gray-100 text-gray-700 bg-white/60' : 'border-white/5 text-gray-300'}`}>
                     <div className="pt-2">{item.details}</div>
@@ -711,6 +730,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     const [aiLoading, setAiLoading] = useState(false);
     const [newItemIds, setNewItemIds] = useState(new Set()); // IDs added in the last AI run
     const [seenNewIds, setSeenNewIds] = useState(new Set()); // new items the user has expanded
+    const [dismissedItems, setDismissedItems] = useState([]); // ever-dismissed/removed items: [{id, catId, categoryTitle, item}]
     const [aiSilentLoading, setAiSilentLoading] = useState(false);
     const [aiError, setAiError] = useState(null);
     const [filterMode, setFilterMode] = useState(null);
@@ -729,6 +749,9 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             if (Array.isArray(saved?.checkedItems)) {
                 setCheckedItems(new Set(saved.checkedItems));
             }
+            if (Array.isArray(saved?.dismissedItems)) {
+                setDismissedItems(saved.dismissedItems);
+            }
             setDbLoaded(true);
         }).catch(() => setDbLoaded(true));
     }, [uid]);
@@ -738,6 +761,10 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     latestRef.current = { inputs, results, aiProvider, aiModel, apiKeyOverride, language };
     const aiDataRef = useRef(null);
     aiDataRef.current = aiData;
+    const dismissedItemsRef = useRef([]);
+    dismissedItemsRef.current = dismissedItems;
+    const dismissedItemIdsRef = useRef(new Set());
+    dismissedItemIdsRef.current = new Set(dismissedItems.map(d => d.id));
     const refreshIdRef = useRef(0);
     const autoTimerRef = useRef(null);
 
@@ -771,7 +798,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         try {
             const existingCats = aiDataRef.current?.categories || null;
             const data = await generateRetirementChecklistInsights(
-                inputs, results, aiProvider, aiModel, apiKeyOverride, language, existingCats
+                inputs, results, aiProvider, aiModel, apiKeyOverride, language, existingCats, dismissedItemIdsRef.current
             );
             if (id !== refreshIdRef.current) return;
             const snapshot = getSnapshot(inputs, results);
@@ -838,17 +865,28 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         if (uid) setChecklistState(uid, { categories: base, snapshot: snap, updatedAt: ts }).catch(() => {});
     }, [uid, staticCategories, inputs, results]);
 
-    // Confirm AI's removal suggestion — actually delete the item
+    // Confirm AI's removal suggestion — actually delete the item, remember it as dismissed
     const handleConfirmRemove = useCallback((catId, itemId) => {
+        const cat = aiDataRef.current?.categories?.find(c => c.id === catId);
+        const item = cat?.items?.find(i => i.id === itemId);
+        const categoryTitle = cat ? getCategoryTitle(cat, latestRef.current.language) : catId;
         setAiData(prev => {
             if (!prev?.categories) return prev;
             const categories = prev.categories
-                .map(cat => cat.id !== catId ? cat : { ...cat, items: cat.items.filter(i => i.id !== itemId) })
-                .filter(cat => cat.items.length > 0);
+                .map(c => c.id !== catId ? c : { ...c, items: c.items.filter(i => i.id !== itemId) })
+                .filter(c => c.items.length > 0);
             const next = { ...prev, categories };
             if (uid) setChecklistState(uid, { categories, snapshot: prev.snapshot, updatedAt: Date.now() }).catch(() => {});
             return next;
         });
+        if (item) {
+            setDismissedItems(prev => {
+                if (prev.some(d => d.id === itemId)) return prev;
+                const next = [...prev, { id: itemId, catId, categoryTitle, item: { ...item, aiSuggestedRemoval: false } }];
+                if (uid) setChecklistState(uid, { dismissedItems: next }).catch(() => {});
+                return next;
+            });
+        }
     }, [uid]);
 
     // Dismiss AI's removal suggestion — keep the item, clear the flag
@@ -861,6 +899,65 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                     items: cat.items.map(i => i.id !== itemId ? i : { ...i, aiSuggestedRemoval: false })
                 }
             );
+            const next = { ...prev, categories };
+            if (uid) setChecklistState(uid, { categories, snapshot: prev.snapshot, updatedAt: Date.now() }).catch(() => {});
+            return next;
+        });
+    }, [uid]);
+
+    // Keep a new AI item (just clear the "new" badge)
+    const handleKeepNewItem = useCallback((itemId) => {
+        setSeenNewIds(prev => new Set([...prev, itemId]));
+    }, []);
+
+    // Dismiss a new AI item: remove from list + remember forever (with full data for restore)
+    const handleDismissNewItem = useCallback((catId, itemId) => {
+        const cat = aiDataRef.current?.categories?.find(c => c.id === catId);
+        const item = cat?.items?.find(i => i.id === itemId);
+        const categoryTitle = cat ? getCategoryTitle(cat, latestRef.current.language) : catId;
+        setNewItemIds(prev => { const next = new Set(prev); next.delete(itemId); return next; });
+        setAiData(prev => {
+            if (!prev?.categories) return prev;
+            const categories = prev.categories
+                .map(c => c.id !== catId ? c : { ...c, items: c.items.filter(i => i.id !== itemId) })
+                .filter(c => c.items.length > 0);
+            const next = { ...prev, categories };
+            if (uid) setChecklistState(uid, { categories, snapshot: prev.snapshot, updatedAt: Date.now() }).catch(() => {});
+            return next;
+        });
+        setDismissedItems(prev => {
+            if (prev.some(d => d.id === itemId)) return prev;
+            const stored = item || { id: itemId, title: itemId, priority: 'medium', description: '', details: '' };
+            const next = [...prev, { id: itemId, catId, categoryTitle, item: stored }];
+            if (uid) setChecklistState(uid, { dismissedItems: next }).catch(() => {});
+            return next;
+        });
+    }, [uid]);
+
+    // Restore a dismissed item back to its category
+    const handleRestoreItem = useCallback((itemId) => {
+        const dismissed = dismissedItemsRef.current.find(d => d.id === itemId);
+        if (!dismissed) return;
+        const { catId, categoryTitle, item } = dismissed;
+        setDismissedItems(prev => {
+            const next = prev.filter(d => d.id !== itemId);
+            if (uid) setChecklistState(uid, { dismissedItems: next }).catch(() => {});
+            return next;
+        });
+        setAiData(prev => {
+            if (!prev?.categories) return prev;
+            const cats = prev.categories;
+            const catIdx = cats.findIndex(c => c.id === catId);
+            let categories;
+            if (catIdx >= 0) {
+                if (cats[catIdx].items.some(i => i.id === itemId)) {
+                    categories = cats;
+                } else {
+                    categories = cats.map((c, i) => i !== catIdx ? c : { ...c, items: [...c.items, item] });
+                }
+            } else {
+                categories = [...cats, { id: catId, title: categoryTitle, emoji: '', items: [item] }];
+            }
             const next = { ...prev, categories };
             if (uid) setChecklistState(uid, { categories, snapshot: prev.snapshot, updatedAt: Date.now() }).catch(() => {});
             return next;
@@ -908,6 +1005,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     const flaggedCount = useMemo(() =>
         activeCategories ? activeCategories.flatMap(c => c.items).filter(i => i.aiSuggestedRemoval).length : 0,
     [activeCategories]);
+    const dismissedCount = dismissedItems.length;
 
     // Flat filtered list: [{ categoryTitle, categoryEmoji, item }]
     const filteredItems = useMemo(() => {
@@ -1052,9 +1150,26 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         return txt(`Updated ${hrs}h ago`, `עודכן לפני ${hrs} שע'`);
     })();
 
+    const scrollRef = useRef(null);
+    useLayoutEffect(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        const update = () => {
+            const top = el.getBoundingClientRect().top;
+            el.style.maxHeight = (window.innerHeight - top - 2) + 'px';
+        };
+        update();
+        window.addEventListener('resize', update);
+        window.visualViewport?.addEventListener('resize', update);
+        return () => {
+            window.removeEventListener('resize', update);
+            window.visualViewport?.removeEventListener('resize', update);
+        };
+    });
+
     return (
         <div
-            className={`flex flex-col h-full overflow-hidden ${isLight ? 'bg-gray-50' : 'bg-transparent'}`}
+            className={`flex flex-col overflow-hidden ${isLight ? 'bg-gray-50' : 'bg-transparent'}`} style={{height:'100%'}}
             dir={isRtl ? 'rtl' : 'ltr'}
         >
             {/* Header summary strip */}
@@ -1095,43 +1210,29 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                         )}
                     </div>
                 )}
-                <div className="flex items-center gap-2 ms-auto flex-wrap">
-                    {criticalCount > 0 && (
+                <div className="flex items-center gap-1 ms-auto">
+                    {[
+                        { mode: 'critical', icon: AlertTriangle, count: criticalCount, active: 'bg-red-500 text-white ring-1 ring-red-400', inactive: 'text-red-400 hover:bg-red-500/30', badge: 'bg-red-500', tip: txt('Critical', 'קריטי') },
+                        { mode: 'high',     icon: BadgeAlert,    count: highCount,     active: 'bg-orange-500 text-white ring-1 ring-orange-400', inactive: 'text-orange-400 hover:bg-orange-500/30', badge: 'bg-orange-500', tip: txt('High', 'גבוה') },
+                        { mode: 'new',      icon: Zap,           count: newCount,      active: 'bg-green-500 text-white ring-1 ring-green-400',  inactive: 'text-green-400 hover:bg-green-500/30',  badge: 'bg-green-500',  tip: txt('New', 'חדש') },
+                        { mode: 'flagged',  icon: Flag,          count: flaggedCount,  active: 'bg-amber-500 text-white ring-1 ring-amber-400',  inactive: 'text-amber-400 hover:bg-amber-500/30',  badge: 'bg-amber-500',  tip: txt('Needs review', 'לבדיקה') },
+                        { mode: 'dismissed',icon: EyeOff,        count: dismissedCount,active: 'bg-gray-500 text-white ring-1 ring-gray-400',    inactive: 'text-gray-400 hover:bg-gray-500/30',    badge: 'bg-gray-500',   tip: txt('Dismissed', 'נדחו') },
+                    ].map(({ mode, icon: Icon, count, active, inactive, badge, tip }) => (
                         <button
-                            onClick={() => setFilterMode(f => f === 'critical' ? null : 'critical')}
-                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold transition-all ${filterMode === 'critical' ? 'bg-red-500 text-white ring-2 ring-red-300' : 'bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white'}`}
+                            key={mode}
+                            onClick={() => setFilterMode(f => f === mode ? null : mode)}
+                            title={`${tip}${count > 0 ? ` (${count})` : ''}`}
+                            className={`relative p-1.5 rounded-lg transition-all ${filterMode === mode ? active : `${isLight ? 'bg-gray-100' : 'bg-white/5'} ${count === 0 ? 'opacity-30 cursor-default' : inactive}`}`}
+                            disabled={count === 0 && filterMode !== mode}
                         >
-                            <AlertTriangle size={10} />
-                            {criticalCount} {txt('Critical', 'קריטי')}
+                            <Icon size={13} />
+                            {count > 0 && (
+                                <span className={`absolute -top-1 -end-1 min-w-[14px] h-[14px] px-0.5 rounded-full text-white text-[9px] font-bold flex items-center justify-center ${filterMode === mode ? 'bg-white/30' : badge}`}>
+                                    {count}
+                                </span>
+                            )}
                         </button>
-                    )}
-                    {highCount > 0 && (
-                        <button
-                            onClick={() => setFilterMode(f => f === 'high' ? null : 'high')}
-                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold transition-all ${filterMode === 'high' ? 'bg-orange-500 text-white ring-2 ring-orange-300' : 'bg-orange-500/20 text-orange-400 hover:bg-orange-500 hover:text-white'}`}
-                        >
-                            <BadgeAlert size={10} />
-                            {highCount} {txt('High', 'גבוה')}
-                        </button>
-                    )}
-                    {newCount > 0 && (
-                        <button
-                            onClick={() => setFilterMode(f => f === 'new' ? null : 'new')}
-                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold transition-all ${filterMode === 'new' ? 'bg-green-500 text-white ring-2 ring-green-300' : 'bg-green-500/20 text-green-400 hover:bg-green-500 hover:text-white'}`}
-                        >
-                            <Zap size={10} />
-                            {newCount} {txt('New', 'חדש')}
-                        </button>
-                    )}
-                    {flaggedCount > 0 && (
-                        <button
-                            onClick={() => setFilterMode(f => f === 'flagged' ? null : 'flagged')}
-                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold transition-all ${filterMode === 'flagged' ? 'bg-amber-500 text-white ring-2 ring-amber-300' : 'bg-amber-500/20 text-amber-400 hover:bg-amber-500 hover:text-white'}`}
-                        >
-                            <AlertTriangle size={10} />
-                            {flaggedCount} {txt('Review', 'לבדיקה')}
-                        </button>
-                    )}
+                    ))}
                 </div>
             </div>
 
@@ -1173,7 +1274,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             )}
 
             {/* Scrollable content - dir=ltr forces scrollbar to right side even in RTL mode */}
-            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar scrollbar-right" dir="ltr">
+            <div ref={scrollRef} className="overflow-y-auto custom-scrollbar scrollbar-right" dir="ltr">
             <div dir={isRtl ? 'rtl' : 'ltr'}>
 
             {/* Disclaimer */}
@@ -1331,8 +1432,41 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                 </div>
             )}
 
+            {/* Dismissed items panel */}
+            {!searchResults && filterMode === 'dismissed' && (
+                <div className="p-4 space-y-2">
+                    <div className={`text-xs font-semibold mb-3 flex items-center gap-2 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                        <EyeOff size={13} />
+                        {txt(`${dismissedItems.length} dismissed item${dismissedItems.length !== 1 ? 's' : ''}`, `${dismissedItems.length} פריטים שנדחו`)}
+                    </div>
+                    {dismissedItems.map(({ id, catId, categoryTitle, item }) => {
+                        const p = PRIORITIES[item.priority] || PRIORITIES.medium;
+                        return (
+                            <div key={id} className={`rounded-xl ring-1 overflow-hidden ${isLight ? 'ring-gray-200 bg-white opacity-70' : 'ring-white/10 bg-white/5 opacity-60'}`}>
+                                <div className="flex items-center gap-3 p-3">
+                                    <div className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold text-white ${p.color}`}>
+                                        {p[isRtl ? 'he' : 'en'].toUpperCase()}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className={`text-xs font-semibold line-through ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>{item.title}</div>
+                                        <div className={`text-[11px] mt-0.5 ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>{categoryTitle}</div>
+                                    </div>
+                                    <button
+                                        onClick={() => handleRestoreItem(id)}
+                                        className={`shrink-0 flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-all ${isLight ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'}`}
+                                    >
+                                        <Undo2 size={11} />
+                                        {txt('Restore', 'שחזר')}
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
             {/* Categories */}
-            {!searchResults && !filteredItems && !(!aiData && aiSilentLoading) && <div className="p-4 space-y-3">
+            {!searchResults && filterMode !== 'dismissed' && !filteredItems && !(!aiData && aiSilentLoading) && <div className="p-4 space-y-3">
                 {(activeCategories
                     ? [...activeCategories].sort((a, b) => {
                         const critA = a.items.filter(i => i.priority === 'critical').length;
@@ -1382,6 +1516,8 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                                         onKeepItem={() => handleKeepItem(cat.id, normalizedItem.id)}
                                                         isNew={newItemIds.has(normalizedItem.id) && !seenNewIds.has(normalizedItem.id)}
                                                         onSeen={() => setSeenNewIds(prev => new Set([...prev, normalizedItem.id]))}
+                                                        onKeepNew={() => handleKeepNewItem(normalizedItem.id)}
+                                                        onDismissNew={() => handleDismissNewItem(cat.id, normalizedItem.id)}
                                                     />
                                                 );
                                             })}

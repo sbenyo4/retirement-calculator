@@ -215,12 +215,16 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         const profile = profiles.find(p => p.id === selectedProfileId);
         if (profile) {
             const data = normalizeInputs(profile.data);
-            // MERGE: Keep current global pension sources from storage
+            // MERGE: Keep current global pension sources and interest rate from storage
             const globalPension = getGlobalPensionSources();
-            onLoad({
+            const payload = {
                 ...data,
                 pensionIncomeSources: globalPension.length > 0 ? globalPension : (currentInputs?.pensionIncomeSources || [])
-            });
+            };
+            if (currentInputs?.pensionInterestRate !== undefined) {
+                payload.pensionInterestRate = currentInputs.pensionInterestRate;
+            }
+            onLoad(payload);
             showMessage(language === 'he' ? 'פרופיל נטען מחדש!' : 'Profile reloaded!');
         }
     };
@@ -239,12 +243,16 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         const profile = profiles.find(p => p.id === id);
         if (profile) {
             const data = normalizeInputs(profile.data);
-            // MERGE: Keep current global pension sources from storage
+            // MERGE: Keep current global pension sources and interest rate from storage
             const globalPension = getGlobalPensionSources();
-            onLoad({
+            const payload = {
                 ...data,
                 pensionIncomeSources: globalPension.length > 0 ? globalPension : (currentInputs?.pensionIncomeSources || [])
-            });
+            };
+            if (currentInputs?.pensionInterestRate !== undefined) {
+                payload.pensionInterestRate = currentInputs.pensionInterestRate;
+            }
+            onLoad(payload);
             setSelectedProfileId(id);
             // We NO LONGER set comparisonSnapshot here manually.
             // When App.jsx receives onLoad, it updates `currentInputs` and passes it back down.

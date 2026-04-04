@@ -376,7 +376,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const [incomeSources, setIncomeSources] = useState(getSafeSources);
     const [showIncomeSources, setShowIncomeSources] = useState(true);
     const [expandedMilestone, setExpandedMilestone] = useState(null);
-    const [pensionInterestRate, setPensionInterestRate] = useState(() => parseFloat(inputs.annualReturnRate) || 4);
+    const [pensionInterestRate, setPensionInterestRate] = useState(() => inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : (parseFloat(inputs.annualReturnRate) || 4));
     const [showRateTooltip, setShowRateTooltip] = useState(false);
     const rateTooltipRef = useRef(null);
 
@@ -603,8 +603,9 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
             const { calculationDetails, ...rest } = s;
             return rest;
         });
-        return JSON.stringify(clean(incomeSources)) !== JSON.stringify(clean(initialIncomeSources));
-    }, [incomeSources, initialIncomeSources]);
+        const initialRate = inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : (parseFloat(inputs.annualReturnRate) || 4);
+        return JSON.stringify(clean(incomeSources)) !== JSON.stringify(clean(initialIncomeSources)) || pensionInterestRate !== initialRate;
+    }, [incomeSources, initialIncomeSources, pensionInterestRate, inputs]);
 
     const runAIAnalysis = useCallback(async () => {
         if (!aiProvider || isLoadingAI) return;
@@ -995,7 +996,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                         {onSave && (
                             <button
                                 onClick={() => {
-                                    onSave(incomeSources);
+                                    onSave(incomeSources, pensionInterestRate);
                                     onClose();
                                 }}
                                 disabled={!hasChanges}

@@ -27,21 +27,34 @@ export function useRetirementData() {
                 // Initialize empty inputs
                 let baseInputs = normalizeInputs({});
 
-                // 1. Fetch Global Pension Sources
-                const pensionSources = await getPensionSources(uid);
+                // 1. Fetch Global Pension Data
+                const pensionData = await getPensionSources(uid);
 
-                if (Array.isArray(pensionSources)) {
-                    const niExists = pensionSources.some(s => s.type === 'nationalInsurance');
-                    if (!niExists) {
-                        try {
-                            const defaults = createDefaultIncomeSources(baseInputs);
-                            const niSource = defaults.find(s => s.type === 'nationalInsurance');
-                            if (niSource) pensionSources.push(niSource);
-                        } catch (err) {
-                            console.error('Error recreating default NI source:', err);
-                        }
+                if (pensionData) {
+                    let pensionSources = [];
+                    if (Array.isArray(pensionData.sources)) {
+                        pensionSources = pensionData.sources;
+                    } else if (Array.isArray(pensionData)) {
+                        pensionSources = pensionData;
                     }
-                    baseInputs.pensionIncomeSources = pensionSources;
+
+                    if (Array.isArray(pensionSources)) {
+                        const niExists = pensionSources.some(s => s.type === 'nationalInsurance');
+                        if (!niExists) {
+                            try {
+                                const defaults = createDefaultIncomeSources(baseInputs);
+                                const niSource = defaults.find(s => s.type === 'nationalInsurance');
+                                if (niSource) pensionSources.push(niSource);
+                            } catch (err) {
+                                console.error('Error recreating default NI source:', err);
+                            }
+                        }
+                        baseInputs.pensionIncomeSources = pensionSources;
+                    }
+
+                    if (pensionData.interestRate !== undefined) {
+                        baseInputs.pensionInterestRate = pensionData.interestRate;
+                    }
                 }
 
                 // 2. Fetch the ID of the last active profile
@@ -79,12 +92,16 @@ export function useRetirementData() {
     // the user's manual changes on refresh or navigation.
 
     /**
-     * Explicitly save global pension sources.
+     * Explicitly save global pension sources and optional interest rate.
      */
-    const saveGlobalPension = useCallback(async (pensionData) => {
-        if (!uid || !pensionData) return;
+    const saveGlobalPension = useCallback(async (sources, interestRate) => {
+        if (!uid || !sources) return;
         try {
-            await setPensionSources(uid, pensionData);
+            const dataToSave = { sources };
+            if (interestRate !== undefined) {
+                dataToSave.interestRate = interestRate;
+            }
+            await setPensionSources(uid, dataToSave);
         } catch (err) {
             console.error('Error saving global pension sources:', err);
         }

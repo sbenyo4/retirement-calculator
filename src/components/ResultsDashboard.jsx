@@ -35,7 +35,7 @@ ChartJS.register(
     Filler
 );
 
-export const ResultsDashboard = React.memo(function ResultsDashboard({ results, inputs, setInputs, t, language, calculationMode, aiResults, simulationResults, aiLoading, aiError, simulationType, profiles, selectedProfileIds, setSelectedProfileIds, profileResults, showInterestSensitivity, setShowInterestSensitivity, showIncomeSensitivity, setShowIncomeSensitivity, showAgeSensitivity, setShowAgeSensitivity, aiProvider, aiModel, apiKeyOverride, aiInsightsData, setAiInsightsData, fiscalParameters, familyStatus, onUpdateFiscalData }) {
+export const ResultsDashboard = React.memo(function ResultsDashboard({ results, inputs, setInputs, t, language, calculationMode, aiResults, simulationResults, aiLoading, aiError, simulationType, profiles, selectedProfileIds, setSelectedProfileIds, profileResults, showInterestSensitivity, setShowInterestSensitivity, showIncomeSensitivity, setShowIncomeSensitivity, showAgeSensitivity, setShowAgeSensitivity, aiProvider, aiModel, apiKeyOverride, aiInsightsData, setAiInsightsData, fiscalParameters, familyStatus, onUpdateFiscalData, saveGlobalPension }) {
     // ALL HOOKS MUST BE AT THE TOP - React rules of hooks
     const { theme } = useTheme();
     const isLight = theme === 'light';
@@ -1013,12 +1013,15 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                                     : activeResults
                             }
                             onClose={() => setShowPensionModal(false)}
-                            onSave={(newIncomeSources) => {
+                            onSave={(newIncomeSources, newInterestRate) => {
                                 setInputs(prev => ({
                                     ...prev,
-                                    pensionIncomeSources: newIncomeSources
+                                    pensionIncomeSources: newIncomeSources,
+                                    pensionInterestRate: newInterestRate
                                 }));
-                                // Don't close modal on save
+                                if (saveGlobalPension) {
+                                    saveGlobalPension(newIncomeSources, newInterestRate);
+                                }
                             }}
                             onUpdateFiscalData={(data) => {
                                 setInputs(prev => ({
