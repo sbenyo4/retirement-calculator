@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getBudgetItems, setBudgetItems } from '../utils/db';
 import { getChatResponse } from '../utils/ai-chat';
@@ -113,6 +113,18 @@ const DEFAULT_ITEMS = [
 
 
 const getNowYM = () => { const d = new Date(); return d.getFullYear() * 12 + d.getMonth(); };
+
+// ─── Backup display helper ────────────────────────────────────────────────────
+const MAX_BACKUP_SLOTS = 3;
+
+function backupAge(savedAt, isHe) {
+    const mins = Math.round((Date.now() - savedAt) / 60000);
+    if (mins < 1) return isHe ? 'עכשיו' : 'just now';
+    if (mins < 60) return isHe ? `לפני ${mins} דק׳` : `${mins}m ago`;
+    const h = Math.floor(mins / 60);
+    if (h < 24) return isHe ? `לפני ${h} שע׳` : `${h}h ago`;
+    return isHe ? `לפני ${Math.floor(h / 24)} ימים` : `${Math.floor(h / 24)}d ago`;
+}
 
 const trackActive = (track) => {
     if (!track.endDate) return true;
@@ -469,8 +481,16 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
     const uid = currentUser?.uid;
 
     const [items, setItems] = useState(DEFAULT_ITEMS);
+    const [householdSize, setHouseholdSize] = useState(2);
     const [loaded, setLoaded] = useState(false);
+    const saveAllowedRef = useRef(false); // only true after successful Firestore load
     const saveTimerRef = useRef(null);
+    const confirmedRef = useRef(null);   // last successfully saved snapshot
+    const latestStateRef = useRef({ items, householdSize }); // always-current ref for closures
+    const backupSlotsRef = useRef([]);   // in-memory mirror of Firestore backupSlots
+    const [backups, setBackups] = useState([]);
+    const [showRestore, setShowRestore] = useState(false);
+    const [pendingConfirm, setPendingConfirm] = useState(null); // { type: 'restore'|'reset', backup? }
     const [openCategoryId, setOpenCategoryId] = useState(null);
     const [aiInsight, setAiInsight] = useState(null);
     const [aiModalOpen, setAiModalOpen] = useState(false);
@@ -480,25 +500,82 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
     const aiInsightRef = useRef(null);  // cached insight text (survives modal close)
     const { dragStyle: aiDragStyle, onDragMouseDown: onAiDragMouseDown } = useDraggable(aiModalOpen);
     const [showFuture, setShowFuture] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+
+    // Always-current ref so closures (setTimeout, beforeunload) always see latest state
+    latestStateRef.current = { items, householdSize };
+
+    const searchResults = useMemo(() => {
+        const q = searchQuery.trim().toLowerCase();
+        if (!q) return null;
+        return items.filter(item => {
+            const hay = [
+                item.label,
+                ...(item.tracks || []).map(tr => tr.label),
+            ].filter(Boolean).join(' ').toLowerCase();
+            return hay.includes(q);
+        });
+    }, [searchQuery, items]);
 
     // Load from Firestore on mount
     useEffect(() => {
         if (!uid) return;
         getBudgetItems(uid).then(saved => {
-            if (saved && Array.isArray(saved)) setItems(saved);
+            let loadedItems = null;
+            let loadedHouseholdSize = 2;
+            if (saved) {
+                if (Array.isArray(saved)) { loadedItems = saved; } // legacy format
+                else {
+                    if (Array.isArray(saved.items)) loadedItems = saved.items;
+                    if (saved.householdSize) loadedHouseholdSize = saved.householdSize;
+                }
+            }
+            if (loadedItems) {
+                setItems(loadedItems);
+                setHouseholdSize(loadedHouseholdSize);
+                confirmedRef.current = { items: loadedItems, householdSize: loadedHouseholdSize, savedAt: Date.now() };
+                const slots = Array.isArray(saved?.backupSlots) ? saved.backupSlots : [];
+                backupSlotsRef.current = slots;
+                setBackups(slots);
+            }
+            saveAllowedRef.current = true;
             setLoaded(true);
-        }).catch(() => setLoaded(true));
+        }).catch(err => {
+            console.error('[Budget load error]', err);
+            // Do NOT allow saves if load failed — prevents overwriting Firestore with DEFAULT_ITEMS
+            setLoaded(true);
+        });
     }, [uid]);
 
     // Debounced save to Firestore whenever items change (after initial load)
     useEffect(() => {
-        if (!uid || !loaded) return;
+        if (!uid || !loaded || !saveAllowedRef.current) return;
         clearTimeout(saveTimerRef.current);
         saveTimerRef.current = setTimeout(() => {
-            setBudgetItems(uid, items).catch(err => console.error('[Budget save]', err));
+            const { items: latestItems, householdSize: latestHouseholdSize } = latestStateRef.current;
+            // Build updated backup slots: push previous confirmed state (if has real data, not duplicate)
+            const prev = confirmedRef.current;
+            let newSlots = backupSlotsRef.current;
+            if (prev?.items?.some(i => i.enabled && toMonthly(i) > 0)) {
+                const isDup = newSlots[0] && JSON.stringify(newSlots[0].items) === JSON.stringify(prev.items);
+                if (!isDup) {
+                    newSlots = [
+                        { items: prev.items, householdSize: prev.householdSize, totalMonthly: prev.items.filter(i => i.enabled).reduce((s, i) => s + toMonthly(i), 0), savedAt: prev.savedAt },
+                        ...newSlots,
+                    ].slice(0, MAX_BACKUP_SLOTS);
+                }
+            }
+            const snap = { items: latestItems, householdSize: latestHouseholdSize, savedAt: Date.now() };
+            setBudgetItems(uid, latestItems, latestHouseholdSize, newSlots)
+                .then(() => {
+                    confirmedRef.current = snap;
+                    backupSlotsRef.current = newSlots;
+                    setBackups(newSlots);
+                })
+                .catch(err => console.error('[Budget save]', err));
         }, SAVE_DEBOUNCE_MS);
         return () => clearTimeout(saveTimerRef.current);
-    }, [uid, items, loaded]);
+    }, [uid, items, householdSize, loaded]);
 
     // Keep sessionStorage in sync so AI chat and AI insights can read the budget
     useEffect(() => {
@@ -605,6 +682,26 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
         setOpenCategoryId(categoryId);
     }, [updateItems, t]);
 
+    const handleRestore = useCallback((backup) => {
+        setPendingConfirm({ type: 'restore', backup });
+    }, []);
+
+    const handleConfirmAction = useCallback(() => {
+        if (!pendingConfirm) return;
+        if (pendingConfirm.type === 'restore') {
+            const { backup } = pendingConfirm;
+            if (Array.isArray(backup.items)) setItems(backup.items);
+            if (backup.householdSize) setHouseholdSize(backup.householdSize);
+            setShowRestore(false);
+        } else if (pendingConfirm.type === 'reset') {
+            updateItems(DEFAULT_ITEMS);
+            setAiInsight(null);
+            aiInsightRef.current = null;
+            aiSnapshotRef.current = null;
+        }
+        setPendingConfirm(null);
+    }, [pendingConfirm, updateItems]);
+
     const handleAddCategory = useCallback(() => {
         const name = prompt(t('budgetCategoryName'));
         if (!name?.trim()) return;
@@ -618,20 +715,16 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
     }, [setInputs, totalMonthly]);
 
     const handleReset = useCallback(() => {
-        if (window.confirm(t('budgetResetConfirm'))) {
-            updateItems(DEFAULT_ITEMS);
-            setAiInsight(null);
-            aiInsightRef.current = null;
-            aiSnapshotRef.current = null;
-        }
-    }, [updateItems, t]);
+        setPendingConfirm({ type: 'reset' });
+    }, []);
 
     const handleAiInsight = useCallback(async () => {
         if (!aiProvider || !aiModel) return;
 
-        // Fingerprint: enabled items with non-zero amounts + target
+        // Fingerprint: enabled items with non-zero amounts + target + household
         const snapshot = JSON.stringify({
             target,
+            householdSize,
             items: items
                 .filter(i => i.enabled && toMonthly(i) > 0)
                 .map(i => i.type === 'loan'
@@ -648,15 +741,26 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
         aiInsightRef.current = null;
         try {
             const cur = isHe ? '₪' : '$';
+            // Categories whose total scales with number of people
+            const SCALABLE_CATS = new Set(['food', 'health', 'personal', 'family', 'entertainment']);
             const catLabels = Object.fromEntries(CATEGORIES.map(c => [c.id, isHe ? c.labelHe : c.labelEn]));
+
+            const emptyCatNames = [];
             const lines = CATEGORIES.map(cat => {
                 const catItems = items.filter(i => i.categoryId === cat.id && i.enabled);
                 const activeItems = catItems.filter(i => {
                     if (i.type === 'loan') return (i.tracks || []).some(trackActive);
                     return i.amount > 0;
                 });
-                if (!activeItems.length) return null;
+                if (!activeItems.length) {
+                    emptyCatNames.push(catLabels[cat.id] || cat.id);
+                    return null;
+                }
                 const catTotal = activeItems.reduce((s, i) => s + toMonthly(i), 0);
+                const catPerPerson = householdSize > 0 ? Math.round(catTotal / householdSize) : 0;
+                const scaleTag = SCALABLE_CATS.has(cat.id)
+                    ? (isHe ? ` | ${cur}${catPerPerson}/נפש [משתנה לפי נפשות]` : ` | ${cur}${catPerPerson}/person [scales with people]`)
+                    : (isHe ? ` [קבועה — לא תלויה בנפשות]` : ` [fixed — doesn't scale]`);
                 const itemLines = activeItems.map(i => {
                     if (i.type === 'loan') {
                         const allTracks = (i.tracks || []);
@@ -672,8 +776,14 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
                     }
                     return `  - ${i.label}: ${cur}${Math.round(toMonthly(i))}/mo`;
                 }).join('\n');
-                return `${catLabels[cat.id] || cat.id} (${cur}${Math.round(catTotal)}/mo):\n${itemLines}`;
+                return `${catLabels[cat.id] || cat.id} (${cur}${Math.round(catTotal)}/mo${scaleTag}):\n${itemLines}`;
             }).filter(Boolean).join('\n');
+
+            const missingSection = emptyCatNames.length
+                ? (isHe
+                    ? `\nקטגוריות ריקות (₪0 — ייתכן שחסרות הוצאות): ${emptyCatNames.join(', ')}`
+                    : `\nEmpty categories (₪0 — possibly missing expenses): ${emptyCatNames.join(', ')}`)
+                : '';
 
             // Build a summary of future savings from expiring loan tracks
             const futureSavings = items.filter(i => i.type === 'loan' && i.enabled)
@@ -693,13 +803,40 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
                     : `\nFuture expense reductions (loan tracks ending):\n${futureSavings.join('\n')}`)
                 : '';
 
-            const systemPrompt = isHe
-                ? 'אתה יועץ פיננסי. נתח את תקציב ההוצאות החודשי של המשתמש בצורה תמציתית (עד 250 מילה). ציין דפוסים, הוצאות גבוהות, חוסרים אפשריים, ומה ניתן לייעל. אם יש הלוואות עם תאריכי סיום — ציין מתי ההוצאה תרד וב-כמה, ומה זה אומר מבחינת הפנסיה. דבר ישירות ובעברית.'
-                : 'You are a financial advisor. Analyze the monthly budget concisely (under 250 words). Note spending patterns, high categories, possible gaps, and optimization opportunities. If there are loans with end dates, explicitly state when and by how much expenses will drop, and what that means for retirement cash flow. Be direct and specific.';
+            const perPerson = householdSize > 0 ? Math.round(totalMonthly / householdSize) : 0;
 
+            const systemPrompt = isHe
+                ? `אתה יועץ פיננסי בכיר המתמחה בתכנון פרישה בישראל. נתח את תקציב ההוצאות החודשי. המשתמש הזין ${householdSize} נפש/ות. הוצאה לנפש: ${cur}${perPerson.toLocaleString()}/חודש.
+
+**מבנה התשובה הנדרש (עד 350 מילה):**
+
+⚠️ התראות לפי נפשות:
+עבור כל קטגוריה המסומנת [משתנה לפי נפשות] — בדוק אם הסכום לנפש הגיוני. ציין במפורש: גבוה מדי / נמוך מדי / סביר, עם הסבר קצר. עבור קטגוריות [קבועות] — בדוק אם הסכום הכולל הגיוני ללא תלות בנפשות.
+
+➕ הוצאות חסרות:
+סקור את הקטגוריות הריקות שצוינו. ציין אילו מהן כנראה חסרות הוצאות אמיתיות (לפי גיל פרישה ומשפחה ישראלית), ואת ההוצאה הצפויה הממוצעת. גם הצע הוצאות שאינן ברשימה כלל אך חשובות לגיל זה.
+
+📊 סיכום:
+פער מהיעד ומה אפשר לייעל.`
+                : `You are a senior financial advisor specializing in retirement planning. The user has ${householdSize} person${householdSize !== 1 ? 's' : ''} in the household. Per-person spending: ${cur}${perPerson.toLocaleString()}/mo.
+
+**Required response structure (under 350 words):**
+
+⚠️ Per-person anomalies:
+For each category tagged [scales with people] — check if the per-person amount is reasonable. State explicitly: too high / too low / reasonable, with a brief reason. For [fixed] categories — check if the total amount makes sense regardless of household size.
+
+➕ Missing expenses:
+Review the empty categories listed. State which ones likely have real expenses missing (for a retired household), with expected typical amounts. Also suggest important expenses not in the list at all for this life stage.
+
+📊 Summary:
+Gap vs target and what can be optimized.`;
+
+            const householdLine = isHe
+                ? `נפשות בבית: ${householdSize} | הוצאה לנפש: ${cur}${perPerson.toLocaleString()}/חודש`
+                : `Household: ${householdSize} person${householdSize !== 1 ? 's' : ''} | Per-person: ${cur}${perPerson.toLocaleString()}/mo`;
             const userMsg = isHe
-                ? `יעד הכנסה חודשית: ${cur}${Math.round(target)}\nסה"כ הוצאות: ${cur}${Math.round(totalMonthly)}\nפער: ${cur}${Math.round(target - totalMonthly)}\n\nפירוט:\n${lines || 'אין הוצאות מוזנות'}${futureSavingsSection}`
-                : `Monthly income target: ${cur}${Math.round(target)}\nTotal expenses: ${cur}${Math.round(totalMonthly)}\nGap: ${cur}${Math.round(target - totalMonthly)}\n\nBreakdown:\n${lines || 'No expenses entered'}${futureSavingsSection}`;
+                ? `${householdLine}\nיעד הכנסה חודשית: ${cur}${Math.round(target)}\nסה"כ הוצאות: ${cur}${Math.round(totalMonthly)}\nפער: ${cur}${Math.round(target - totalMonthly)}\n\nפירוט:\n${lines || 'אין הוצאות מוזנות'}${futureSavingsSection}`
+                : `${householdLine}\nMonthly income target: ${cur}${Math.round(target)}\nTotal expenses: ${cur}${Math.round(totalMonthly)}\nGap: ${cur}${Math.round(target - totalMonthly)}\n\nBreakdown:\n${lines || 'No expenses entered'}${futureSavingsSection}`;
 
             const reply = await getChatResponse(
                 [{ role: 'user', content: userMsg }],
@@ -755,6 +892,23 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
                         </div>
                     </div>
                 </div>
+                {/* Household size */}
+                <div className={`flex items-center gap-2 mb-2 text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                    <span>👥</span>
+                    <span>{isHe ? 'נפשות בבית:' : 'Household size:'}</span>
+                    <div className="flex items-center gap-1">
+                        <button
+                            onClick={() => setHouseholdSize(s => Math.max(1, s - 1))}
+                            className={`w-5 h-5 rounded flex items-center justify-center font-bold transition-colors ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}
+                        >−</button>
+                        <span className={`w-5 text-center font-semibold ${isLight ? 'text-slate-700' : 'text-white'}`}>{householdSize}</span>
+                        <button
+                            onClick={() => setHouseholdSize(s => Math.min(10, s + 1))}
+                            className={`w-5 h-5 rounded flex items-center justify-center font-bold transition-colors ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}
+                        >+</button>
+                    </div>
+                </div>
+
                 <div className={`h-2 rounded-full overflow-hidden ${isLight ? 'bg-slate-100' : 'bg-white/10'}`}>
                     <div className={`h-full rounded-full transition-all duration-300 ${barColor}`} style={{ width: `${Math.min(pct * 100, 100)}%` }} />
                 </div>
@@ -842,6 +996,53 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
                 )}
             </div>
 
+            {/* ── Search ── */}
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${isLight ? 'bg-white border-slate-200' : 'bg-white/10 border-white/20'}`}>
+                <Search size={13} className={isLight ? 'text-slate-400 shrink-0' : 'text-gray-500 shrink-0'} />
+                <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    placeholder={isHe ? 'חפש פריט… (למשל: סיעוד, ביטוח)' : 'Search item… (e.g. insurance, mortgage)'}
+                    className={`flex-1 bg-transparent text-xs outline-none placeholder:text-gray-400 ${isLight ? 'text-slate-800' : 'text-white'}`}
+                    dir={isHe ? 'rtl' : 'ltr'}
+                />
+                {searchQuery && (
+                    <button onClick={() => setSearchQuery('')} className={isLight ? 'text-slate-400 hover:text-slate-600' : 'text-gray-500 hover:text-gray-300'}>
+                        <X size={13} />
+                    </button>
+                )}
+            </div>
+
+            {/* ── Search results ── */}
+            {searchResults && (
+                <div className={`rounded-xl border ${isLight ? 'border-slate-200 bg-white' : 'border-white/20 bg-white/10'}`}>
+                    <div className={`px-3 py-2 text-xs font-medium border-b ${isLight ? 'text-slate-500 border-slate-100' : 'text-gray-400 border-white/10'}`} dir={isHe ? 'rtl' : 'ltr'}>
+                        {searchResults.length > 0
+                            ? (isHe ? `${searchResults.length} תוצאות` : `${searchResults.length} result${searchResults.length !== 1 ? 's' : ''}`)
+                            : (isHe ? 'אין תוצאות' : 'No results')}
+                    </div>
+                    {searchResults.map(item => {
+                        const cat = visibleCategories.find(c => c.id === item.categoryId);
+                        const monthly = toMonthly(item);
+                        return (
+                            <div key={item.id} className={`flex items-center gap-2 px-3 py-2 border-b last:border-0 text-sm ${item.enabled ? '' : 'opacity-40'} ${isLight ? 'border-slate-100' : 'border-white/5'}`} dir={isHe ? 'rtl' : 'ltr'}>
+                                <span className="text-base shrink-0">{cat?.icon ?? '📋'}</span>
+                                <div className="flex-1 min-w-0">
+                                    <div className={`font-medium truncate ${isLight ? 'text-slate-800' : 'text-white'}`}>{item.label}</div>
+                                    <div className={`text-xs ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? (cat?.labelHe ?? item.categoryId) : (cat?.labelEn ?? item.categoryId)}</div>
+                                </div>
+                                {monthly > 0 && (
+                                    <span className={`text-xs font-semibold shrink-0 ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                                        {currency}{Math.round(monthly).toLocaleString()}/{isHe ? 'חודש' : 'mo'}
+                                    </span>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
             {/* ── Categories ── */}
             {visibleCategories.map(cat => {
                 const catItems = items.filter(i => i.categoryId === cat.id);
@@ -865,15 +1066,83 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
                 );
             })}
 
+            {/* ── Restore panel ── */}
+            {showRestore && (
+                <div className={`rounded-xl border p-3 space-y-2 ${isLight ? 'bg-amber-50 border-amber-200' : 'bg-amber-900/20 border-amber-500/30'}`}>
+                    <div className={`text-xs font-semibold flex items-center gap-1.5 ${isLight ? 'text-amber-800' : 'text-amber-300'}`}>
+                        <History size={13} />
+                        {isHe ? 'שחזור מגיבוי' : 'Restore from backup'}
+                    </div>
+                    {backups.length === 0 ? (
+                        <p className={`text-xs ${isLight ? 'text-amber-700' : 'text-amber-400'}`}>{isHe ? 'אין גיבויים זמינים' : 'No backups available'}</p>
+                    ) : backups.map((bk, i) => (
+                        <div key={i} className={`flex items-center justify-between gap-3 py-1.5 px-2 rounded-lg ${isLight ? 'bg-white border border-amber-100' : 'bg-white/5 border border-white/10'}`}>
+                            <div className="flex items-center gap-2 min-w-0">
+                                <Clock size={11} className={isLight ? 'text-amber-500 shrink-0' : 'text-amber-400 shrink-0'} />
+                                <div>
+                                    <div className={`text-xs font-medium ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{backupAge(bk.savedAt, isHe)}</div>
+                                    <div className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                        {isHe ? `סה"כ ${currency}${Math.round(bk.totalMonthly).toLocaleString()}/חודש` : `Total ${currency}${Math.round(bk.totalMonthly).toLocaleString()}/mo`}
+                                    </div>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => handleRestore(bk)}
+                                className={`shrink-0 px-2 py-1 rounded text-[10px] font-bold transition-colors ${isLight ? 'bg-amber-600 text-white hover:bg-amber-700' : 'bg-amber-500 text-white hover:bg-amber-400'}`}
+                            >
+                                {isHe ? 'שחזר' : 'Restore'}
+                            </button>
+                        </div>
+                    ))}
+                    <button onClick={() => setShowRestore(false)} className={`text-[10px] ${isLight ? 'text-slate-400 hover:text-slate-600' : 'text-gray-500 hover:text-gray-300'}`}>
+                        {isHe ? 'סגור' : 'Close'}
+                    </button>
+                </div>
+            )}
+
+            {/* ── Inline confirmation banner ── */}
+            {pendingConfirm && (
+                <div className={`rounded-xl border px-3 py-2.5 flex items-center justify-between gap-3 ${isLight ? 'bg-red-50 border-red-200' : 'bg-red-900/20 border-red-500/30'}`}>
+                    <span className={`text-xs font-medium ${isLight ? 'text-red-800' : 'text-red-300'}`}>
+                        {pendingConfirm.type === 'reset'
+                            ? (isHe ? 'לאפס את כל הנתונים?' : 'Reset all budget data?')
+                            : (isHe ? `לשחזר גיבוי מ-${backupAge(pendingConfirm.backup.savedAt, isHe)}?` : `Restore backup from ${backupAge(pendingConfirm.backup.savedAt, isHe)}?`)}
+                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button
+                            onClick={() => setPendingConfirm(null)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${isLight ? 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50' : 'bg-white/10 border border-white/20 text-gray-300 hover:bg-white/20'}`}
+                        >
+                            {isHe ? 'ביטול' : 'Cancel'}
+                        </button>
+                        <button
+                            onClick={handleConfirmAction}
+                            className="px-2.5 py-1 rounded-lg text-xs font-bold bg-red-600 text-white hover:bg-red-700 transition-colors"
+                        >
+                            {isHe ? 'כן, המשך' : 'Yes, proceed'}
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* ── Bottom actions — Reset pinned to left, rest on right ── */}
             <div className="flex items-center justify-between gap-2 pt-1" dir="ltr">
-                <button
-                    onClick={handleReset}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border transition-colors ${isLight ? 'border-slate-200 text-slate-500 hover:bg-slate-50' : 'border-white/20 text-gray-400 hover:bg-white/10'}`}
-                >
-                    <RotateCcw size={13} />
-                    {t('budgetReset')}
-                </button>
+                <div className="flex items-center gap-1.5">
+                    <button
+                        onClick={handleReset}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border transition-colors ${isLight ? 'border-slate-200 text-slate-500 hover:bg-slate-50' : 'border-white/20 text-gray-400 hover:bg-white/10'}`}
+                    >
+                        <RotateCcw size={13} />
+                        {t('budgetReset')}
+                    </button>
+                    <button
+                        onClick={() => setShowRestore(v => !v)}
+                        title={isHe ? 'שחזור מגיבוי' : 'Restore from backup'}
+                        className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg border transition-colors ${showRestore ? (isLight ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-amber-500/50 bg-amber-900/20 text-amber-400') : (isLight ? 'border-slate-200 text-slate-400 hover:bg-slate-50' : 'border-white/20 text-gray-500 hover:bg-white/10')}`}
+                    >
+                        <History size={13} />
+                    </button>
+                </div>
                 <div className="flex items-center gap-2 flex-wrap justify-end" dir={isHe ? 'rtl' : 'ltr'}>
                     <button
                         onClick={handleAddCategory}

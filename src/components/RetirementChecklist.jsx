@@ -8,7 +8,7 @@ import {
     Shield, Heart, Receipt, TrendingUp, Home, Scale, Laptop,
     AlertTriangle, CheckCircle, ChevronDown, ChevronRight,
     Umbrella, Stethoscope, Building2, FileText, Users,
-    Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Flag, Landmark, RotateCcw
+    Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Flag, Landmark, RotateCcw, Search, X
 } from 'lucide-react';
 
 const PRIORITIES = {
@@ -616,7 +616,7 @@ function PriorityBadge({ priority, isLight, language }) {
     );
 }
 
-function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem }) {
+function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem, isNew, onSeen }) {
     const p = PRIORITIES[item.priority] || PRIORITIES.medium;
     const isHe = language === 'he';
     const flagged = item.aiSuggestedRemoval;
@@ -641,7 +641,7 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                     {checked && <CheckCircle size={10} className="text-white" />}
                 </button>
                 {/* Expand button */}
-                <button onClick={onToggle} className="flex-1 text-start p-3 ps-0 flex items-start gap-3">
+                <button onClick={() => { onToggle(); if (!isExpanded && isNew) onSeen?.(); }} className="flex-1 text-start p-3 ps-0 flex items-start gap-3">
                     <span className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${p.color}`} />
                     <div className="flex-1 min-w-0">
                         <div className="flex items-start gap-2 flex-wrap">
@@ -649,6 +649,11 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                                 {item.title}
                             </span>
                             {!checked && <PriorityBadge priority={item.priority} isLight={isLight} language={language} />}
+                            {isNew && !checked && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isLight ? 'bg-green-100 text-green-700' : 'bg-green-500/20 text-green-400'}`}>
+                                    {isHe ? 'חדש' : 'New'}
+                                </span>
+                            )}
                             {flagged && (
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isLight ? 'bg-amber-200 text-amber-800' : 'bg-amber-500/30 text-amber-300'}`}>
                                     {isHe ? 'AI: אולי לא רלוונטי?' : 'AI: maybe irrelevant?'}
@@ -704,9 +709,12 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     const [aiData, setAiData] = useState(null);           // { categories, snapshot, updatedAt }
     const [dbLoaded, setDbLoaded] = useState(false);
     const [aiLoading, setAiLoading] = useState(false);
+    const [newItemIds, setNewItemIds] = useState(new Set()); // IDs added in the last AI run
+    const [seenNewIds, setSeenNewIds] = useState(new Set()); // new items the user has expanded
     const [aiSilentLoading, setAiSilentLoading] = useState(false);
     const [aiError, setAiError] = useState(null);
     const [filterMode, setFilterMode] = useState(null);
+    const [searchQuery, setSearchQuery] = useState('');
     const [aiTimestamp, setAiTimestamp] = useState(null);
     const [checkedItems, setCheckedItems] = useState(new Set());
 
@@ -771,6 +779,11 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             setAiData(newAiData);
             setAiError(null);
             persistState(data.categories, snapshot);
+            // Compute which IDs were actually inserted (not filtered by dedup)
+            const existingIds = new Set((existingCats || []).flatMap(c => c.items.map(i => i.id)));
+            const actuallyAdded = data.categories.flatMap(c => c.items).filter(i => !existingIds.has(i.id));
+            setNewItemIds(actuallyAdded.length ? new Set(actuallyAdded.map(i => i.id)) : new Set());
+            setSeenNewIds(new Set());
         } catch (err) {
             if (id !== refreshIdRef.current) return;
             if (!silent) setAiError(err.message);
@@ -800,6 +813,8 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
 
     // Reset to the fixed static base list — AI will diff from this clean baseline
     const handleResetToBase = useCallback(() => {
+        setNewItemIds(new Set());
+        setSeenNewIds(new Set());
         const base = staticCategories
             .map(cat => ({
                 id: cat.category,
@@ -878,7 +893,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
 
     const activeCategories = aiData?.categories ?? null;
 
-    // Count critical/high items
+    // Count critical/high/new/flagged items
     const criticalCount = useMemo(() => {
         if (activeCategories) return activeCategories.flatMap(c => c.items).filter(i => i.priority === 'critical').length;
         return staticCategories.flatMap(c => c.items).filter(i => i.relevant && i.priority === 'critical').length;
@@ -887,21 +902,43 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         if (activeCategories) return activeCategories.flatMap(c => c.items).filter(i => i.priority === 'high').length;
         return staticCategories.flatMap(c => c.items).filter(i => i.relevant && i.priority === 'high').length;
     }, [activeCategories, staticCategories]);
+    const newCount = useMemo(() =>
+        activeCategories ? activeCategories.flatMap(c => c.items).filter(i => newItemIds.has(i.id) && !seenNewIds.has(i.id)).length : 0,
+    [activeCategories, newItemIds, seenNewIds]);
+    const flaggedCount = useMemo(() =>
+        activeCategories ? activeCategories.flatMap(c => c.items).filter(i => i.aiSuggestedRemoval).length : 0,
+    [activeCategories]);
 
     // Flat filtered list: [{ categoryTitle, categoryEmoji, item }]
     const filteredItems = useMemo(() => {
         if (!filterMode) return null;
-        const cats = activeCategories
-            ? activeCategories.map(c => ({
-                id: c.id, title: getCategoryTitle(c, language), emoji: c.emoji,
-                items: c.items.filter(i => i.priority === filterMode)
-            }))
-            : staticCategories.map(c => ({
-                id: c.category, title: c.title, emoji: null, icon: c.icon,
-                items: c.items.filter(i => i.relevant && i.priority === filterMode)
-            }));
-        return cats.flatMap(c => c.items.map(item => ({ categoryTitle: c.title, categoryEmoji: c.emoji, categoryIcon: c.icon, catId: c.id || c.category, item })));
-    }, [filterMode, activeCategories, staticCategories]);
+        const allItems = activeCategories
+            ? activeCategories.flatMap(c =>
+                c.items.map(item => ({ categoryTitle: getCategoryTitle(c, language), categoryEmoji: c.emoji, categoryIcon: null, catId: c.id, item }))
+            )
+            : staticCategories.flatMap(c =>
+                c.items.filter(i => i.relevant).map(item => ({ categoryTitle: c.title, categoryEmoji: null, categoryIcon: c.icon, catId: c.category, item }))
+            );
+        if (filterMode === 'new') return allItems.filter(e => newItemIds.has(e.item.id) && !seenNewIds.has(e.item.id));
+        if (filterMode === 'flagged') return allItems.filter(e => e.item.aiSuggestedRemoval);
+        return allItems.filter(e => e.item.priority === filterMode);
+    }, [filterMode, activeCategories, staticCategories, newItemIds, seenNewIds, language]);
+
+    const searchResults = useMemo(() => {
+        const q = searchQuery.trim().toLowerCase();
+        if (!q) return null;
+        const allItems = activeCategories
+            ? activeCategories.flatMap(c =>
+                c.items.map((item, idx) => ({ categoryTitle: getCategoryTitle(c, language), categoryEmoji: c.emoji, categoryIcon: null, catId: c.id, item, itemExpandId: `${c.id}-${idx}` }))
+            )
+            : staticCategories.flatMap(c =>
+                c.items.filter(i => i.relevant).map(item => ({ categoryTitle: c.title, categoryEmoji: null, categoryIcon: c.icon, catId: c.category, item, itemExpandId: item.id }))
+            );
+        return allItems.filter(({ item }) => {
+            const hay = [item.title, item.desc, item.description, item.details].filter(Boolean).join(' ').toLowerCase();
+            return hay.includes(q);
+        });
+    }, [searchQuery, activeCategories, staticCategories, language]);
 
     const toggleCategory = (id) => {
         setExpandedCategories(prev => prev.has(id) ? new Set() : new Set([id]));
@@ -913,6 +950,14 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             next.has(id) ? next.delete(id) : next.add(id);
             return next;
         });
+    };
+
+    const handleGoToCategory = (catId, itemId) => {
+        setSearchQuery('');
+        setExpandedCategories(new Set([catId]));
+        if (itemId) {
+            setExpandedItems(prev => { const next = new Set(prev); next.add(itemId); return next; });
+        }
     };
 
     const categoryIcon = (cat) => {
@@ -1020,6 +1065,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                         {txt('Retirement Planning Checklist', 'רשימת תכנון לפרישה')}
                     </span>
                     {aiData && <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-500/20 text-purple-300'}`}>AI</span>}
+                    {totalItems > 0 && <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isLight ? 'bg-gray-100 text-gray-500' : 'bg-white/10 text-gray-400'}`}>{totalItems} {txt('items', 'סעיפים')}</span>}
                     {tsLabel && <span className={`text-[10px] ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>{tsLabel}</span>}
                     {aiSilentLoading && <RefreshCw size={11} className="animate-spin text-purple-400" />}
                 </div>
@@ -1066,6 +1112,44 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                         >
                             <BadgeAlert size={10} />
                             {highCount} {txt('High', 'גבוה')}
+                        </button>
+                    )}
+                    {newCount > 0 && (
+                        <button
+                            onClick={() => setFilterMode(f => f === 'new' ? null : 'new')}
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold transition-all ${filterMode === 'new' ? 'bg-green-500 text-white ring-2 ring-green-300' : 'bg-green-500/20 text-green-400 hover:bg-green-500 hover:text-white'}`}
+                        >
+                            <Zap size={10} />
+                            {newCount} {txt('New', 'חדש')}
+                        </button>
+                    )}
+                    {flaggedCount > 0 && (
+                        <button
+                            onClick={() => setFilterMode(f => f === 'flagged' ? null : 'flagged')}
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold transition-all ${filterMode === 'flagged' ? 'bg-amber-500 text-white ring-2 ring-amber-300' : 'bg-amber-500/20 text-amber-400 hover:bg-amber-500 hover:text-white'}`}
+                        >
+                            <AlertTriangle size={10} />
+                            {flaggedCount} {txt('Review', 'לבדיקה')}
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* Search bar */}
+            <div className={`flex-shrink-0 px-4 py-2 border-b ${isLight ? 'bg-white border-gray-100' : 'bg-gray-900/60 border-white/5'}`}>
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${isLight ? 'bg-gray-100' : 'bg-white/10'}`}>
+                    <Search size={13} className={isLight ? 'text-gray-400 shrink-0' : 'text-gray-500 shrink-0'} />
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        placeholder={txt('Search items… (e.g. inflation, nursing care)', 'חפש סעיף… (למשל: אינפלציה, סיעוד)')}
+                        className={`flex-1 bg-transparent text-xs outline-none placeholder:text-gray-400 ${isLight ? 'text-gray-800' : 'text-white'}`}
+                        dir={isRtl ? 'rtl' : 'ltr'}
+                    />
+                    {searchQuery && (
+                        <button onClick={() => setSearchQuery('')} className={isLight ? 'text-gray-400 hover:text-gray-600' : 'text-gray-500 hover:text-gray-300'}>
+                            <X size={13} />
                         </button>
                     )}
                 </div>
@@ -1132,12 +1216,61 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                 </div>
             )}
 
-            {/* Filtered flat list */}
-            {filteredItems && (
+            {/* Search results */}
+            {searchResults && (
                 <div className="p-4 space-y-2">
-                    <div className={`text-xs font-semibold mb-3 flex items-center gap-2 ${filterMode === 'critical' ? 'text-red-400' : 'text-orange-400'}`}>
-                        {filterMode === 'critical' ? <AlertTriangle size={13} /> : <BadgeAlert size={13} />}
-                        {filterMode === 'critical' ? txt(`${filteredItems.length} Critical Items`, `${filteredItems.length} פריטים קריטיים`) : txt(`${filteredItems.length} High Priority Items`, `${filteredItems.length} פריטים בעדיפות גבוהה`)}
+                    <div className={`text-xs font-semibold mb-3 flex items-center gap-2 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                        <Search size={13} />
+                        {searchResults.length > 0
+                            ? txt(`${searchResults.length} result${searchResults.length !== 1 ? 's' : ''} for "${searchQuery}"`, `${searchResults.length} תוצאות עבור "${searchQuery}"`)
+                            : txt(`No results for "${searchQuery}"`, `אין תוצאות עבור "${searchQuery}"`)}
+                    </div>
+                    {searchResults.map(({ categoryTitle, categoryEmoji, categoryIcon: CatIcon, catId, item, itemExpandId }, idx) => {
+                        const key = itemKey(catId || categoryTitle, item);
+                        const p = PRIORITIES[item.priority] || PRIORITIES.low;
+                        const isChecked = checkedItems.has(key);
+                        return (
+                            <div key={idx} className={`rounded-xl ring-1 overflow-hidden ${p.border} ${isChecked ? 'opacity-50' : ''} ${isLight ? 'bg-white' : 'bg-white/5'}`}>
+                                <div className="flex items-start">
+                                    <button onClick={() => toggleChecked(key)} className={`shrink-0 m-3 mt-3.5 w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${isChecked ? 'bg-green-500 border-green-500' : isLight ? 'border-gray-300 hover:border-green-400' : 'border-gray-600 hover:border-green-500'}`}>
+                                        {isChecked && <CheckCircle size={10} className="text-white" />}
+                                    </button>
+                                    <button onClick={() => handleGoToCategory(catId, itemExpandId)} className={`flex-1 flex items-start gap-3 p-3 ps-0 text-start transition-colors ${isLight ? 'hover:bg-gray-50' : 'hover:bg-white/5'}`}>
+                                        <div className={`mt-0.5 shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold text-white ${p.color}`}>
+                                            {(PRIORITIES[item.priority] || PRIORITIES.low)[isRtl ? 'he' : 'en'].toUpperCase()}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className={`text-xs font-semibold ${isChecked ? 'line-through' : ''} ${isLight ? 'text-gray-900' : 'text-white'}`}>{item.title}</div>
+                                            <div className={`text-[11px] mt-0.5 flex items-center gap-1 ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                {categoryEmoji ? <span>{categoryEmoji}</span> : CatIcon ? <CatIcon size={10} /> : null}
+                                                {categoryTitle}
+                                                <ChevronRight size={10} className="opacity-50" />
+                                            </div>
+                                        </div>
+                                        <ChevronRight size={13} className="shrink-0 mt-0.5 text-gray-400" />
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Filtered flat list */}
+            {!searchResults && filteredItems && (
+                <div className="p-4 space-y-2">
+                    <div className={`text-xs font-semibold mb-3 flex items-center gap-2 ${
+                        filterMode === 'critical' ? 'text-red-400' :
+                        filterMode === 'high' ? 'text-orange-400' :
+                        filterMode === 'new' ? 'text-green-400' : 'text-amber-400'
+                    }`}>
+                        {filterMode === 'critical' ? <AlertTriangle size={13} /> :
+                         filterMode === 'high' ? <BadgeAlert size={13} /> :
+                         filterMode === 'new' ? <Zap size={13} /> : <AlertTriangle size={13} />}
+                        {filterMode === 'critical' ? txt(`${filteredItems.length} Critical Items`, `${filteredItems.length} פריטים קריטיים`) :
+                         filterMode === 'high' ? txt(`${filteredItems.length} High Priority Items`, `${filteredItems.length} פריטים בעדיפות גבוהה`) :
+                         filterMode === 'new' ? txt(`${filteredItems.length} New Items`, `${filteredItems.length} פריטים חדשים`) :
+                         txt(`${filteredItems.length} Items for Review`, `${filteredItems.length} פריטים לבדיקה`)}
                     </div>
                     {filteredItems.map(({ categoryTitle, categoryEmoji, categoryIcon: CatIcon, catId, item }, idx) => {
                         const itemId = `filter-${idx}`;
@@ -1159,10 +1292,18 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                         className={`flex-1 flex items-start gap-3 p-3 ps-0 text-start transition-colors ${isLight ? 'hover:bg-gray-50' : 'hover:bg-white/5'}`}
                                     >
                                         <div className={`mt-0.5 shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold text-white ${p.color}`}>
-                                            {filterMode === 'critical' ? txt('CRITICAL', 'קריטי') : txt('HIGH', 'גבוה')}
+                                            {(PRIORITIES[item.priority] || PRIORITIES.low)[isRtl ? 'he' : 'en'].toUpperCase()}
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <div className={`text-xs font-semibold ${isChecked ? 'line-through' : ''} ${isLight ? 'text-gray-900' : 'text-white'}`}>{item.title}</div>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className={`text-xs font-semibold ${isChecked ? 'line-through' : ''} ${isLight ? 'text-gray-900' : 'text-white'}`}>{item.title}</span>
+                                                {newItemIds.has(item.id) && !isChecked && (
+                                                    <span className={`text-[10px] px-1 py-0.5 rounded-full font-medium ${isLight ? 'bg-green-100 text-green-700' : 'bg-green-500/20 text-green-400'}`}>{txt('New', 'חדש')}</span>
+                                                )}
+                                                {item.aiSuggestedRemoval && (
+                                                    <span className={`text-[10px] px-1 py-0.5 rounded-full font-medium ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-400'}`}>{txt('Review', 'לבדיקה')}</span>
+                                                )}
+                                            </div>
                                             <div className={`text-[11px] mt-0.5 flex items-center gap-1 ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
                                                 {categoryEmoji ? <span>{categoryEmoji}</span> : CatIcon ? <CatIcon size={10} /> : null}
                                                 {categoryTitle}
@@ -1171,6 +1312,13 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                         {isExpanded ? <ChevronDown size={13} className="shrink-0 mt-0.5 text-gray-400" /> : <ChevronRight size={13} className="shrink-0 mt-0.5 text-gray-400" />}
                                     </button>
                                 </div>
+                                {item.aiSuggestedRemoval && (
+                                    <div className="flex items-center gap-2 px-3 pb-2 ms-10 text-xs">
+                                        <span className={isLight ? 'text-amber-700' : 'text-amber-400'}>{txt('AI suggested removing this.', 'ה-AI הציע להסיר.')}</span>
+                                        <button onClick={() => handleConfirmRemove(catId, item.id)} className={`px-2 py-0.5 rounded text-[11px] font-medium ${isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'}`}>{txt('Remove', 'הסר')}</button>
+                                        <button onClick={() => handleKeepItem(catId, item.id)} className={`px-2 py-0.5 rounded text-[11px] font-medium ${isLight ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}>{txt('Keep', 'השאר')}</button>
+                                    </div>
+                                )}
                                 {isExpanded && (
                                     <div className={`px-3 pb-3 space-y-1 border-t ${isLight ? 'border-gray-100' : 'border-white/5'}`}>
                                         <p className={`pt-2 text-xs ${isLight ? 'text-gray-600' : 'text-gray-300'}`}>{item.desc || item.description}</p>
@@ -1184,7 +1332,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             )}
 
             {/* Categories */}
-            {!filteredItems && !(!aiData && aiSilentLoading) && <div className="p-4 space-y-3">
+            {!searchResults && !filteredItems && !(!aiData && aiSilentLoading) && <div className="p-4 space-y-3">
                 {(activeCategories
                     ? [...activeCategories].sort((a, b) => {
                         const critA = a.items.filter(i => i.priority === 'critical').length;
@@ -1232,6 +1380,8 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                                         onCheck={() => toggleChecked(key)}
                                                         onConfirmRemove={() => handleConfirmRemove(cat.id, normalizedItem.id)}
                                                         onKeepItem={() => handleKeepItem(cat.id, normalizedItem.id)}
+                                                        isNew={newItemIds.has(normalizedItem.id) && !seenNewIds.has(normalizedItem.id)}
+                                                        onSeen={() => setSeenNewIds(prev => new Set([...prev, normalizedItem.id]))}
                                                     />
                                                 );
                                             })}

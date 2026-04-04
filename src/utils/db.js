@@ -117,11 +117,20 @@ export function onProfilesSnapshot(uid, callback) {
 
 export async function getBudgetItems(uid) {
     const snap = await getDoc(budgetItemsRef(uid));
-    return snap.exists() ? snap.data().items : null;
+    if (!snap.exists()) return null;
+    const data = snap.data();
+    return {
+        items: data.items,
+        householdSize: data.householdSize ?? 2,
+        backupSlots: data.backupSlots ?? [],
+    };
 }
 
-export async function setBudgetItems(uid, items) {
-    await setDoc(budgetItemsRef(uid), { items, updatedAt: Date.now() }, { merge: true });
+export async function setBudgetItems(uid, items, householdSize, backupSlots) {
+    const payload = { items, updatedAt: Date.now() };
+    if (householdSize !== undefined) payload.householdSize = householdSize;
+    if (backupSlots !== undefined) payload.backupSlots = backupSlots;
+    await setDoc(budgetItemsRef(uid), payload, { merge: true });
 }
 
 // ─── Checklist State ───────────────────────────────────────────────
