@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getBudgetItems, setBudgetItems } from '../utils/db';
 import { getChatResponse } from '../utils/ai-chat';
@@ -169,12 +169,15 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete })
             dir={isHe ? 'rtl' : 'ltr'}>
 
             {/* Enable toggle */}
-            <input
-                type="checkbox"
-                checked={item.enabled}
-                onChange={e => onChange({ ...item, enabled: e.target.checked })}
-                className="accent-blue-500 shrink-0 cursor-pointer"
-            />
+            <button
+                onClick={() => onChange({ ...item, enabled: !item.enabled })}
+                className="shrink-0 p-0.5"
+                title={item.enabled ? (isHe ? 'השהה' : 'Pause') : (isHe ? 'הפעל' : 'Enable')}
+            >
+                {item.enabled
+                    ? <ToggleRight size={18} className="text-blue-500" />
+                    : <ToggleLeft size={18} className={isLight ? 'text-slate-400' : 'text-gray-400'} />}
+            </button>
 
             {/* Label */}
             {editingLabel ? (
@@ -299,10 +302,15 @@ function LoanItemRow({ item, isHe, isLight, currency, t, onChange, onDelete }) {
         <div className={`rounded-lg border my-1 ${item.enabled ? '' : 'opacity-40'} ${isLight ? 'border-indigo-100 bg-indigo-50/40' : 'border-indigo-500/20 bg-indigo-900/10'}`}>
             {/* Header — click chevron area to toggle tracks */}
             <div className="flex items-center gap-2 px-2 py-1.5 text-sm" dir={isHe ? 'rtl' : 'ltr'}>
-                <input type="checkbox" checked={item.enabled}
-                    onChange={e => onChange({ ...item, enabled: e.target.checked })}
-                    className="accent-blue-500 shrink-0 cursor-pointer"
-                />
+                <button
+                    onClick={() => onChange({ ...item, enabled: !item.enabled })}
+                    className="shrink-0 p-0.5"
+                    title={item.enabled ? (isHe ? 'השהה' : 'Pause') : (isHe ? 'הפעל' : 'Enable')}
+                >
+                    {item.enabled
+                        ? <ToggleRight size={18} className="text-blue-500" />
+                        : <ToggleLeft size={18} className={isLight ? 'text-slate-400' : 'text-gray-400'} />}
+                </button>
                 <span className="shrink-0">🏦</span>
                 {editingLabel ? (
                     <input autoFocus value={labelDraft}
@@ -402,26 +410,46 @@ function LoanItemRow({ item, isHe, isLight, currency, t, onChange, onDelete }) {
 }
 
 // ─── Category accordion ───────────────────────────────────────────────────────
-function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onAddItem, onAddLoanItem }) {
+function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onAddItem, onAddLoanItem, onToggleAll }) {
     const label = isHe ? category.labelHe : category.labelEn;
-    const categoryTotal = items.filter(i => i.enabled).reduce((s, i) => s + toMonthly(i), 0);
+    const enabledItems = items.filter(i => i.enabled);
+    const categoryTotal = enabledItems.reduce((s, i) => s + toMonthly(i), 0);
+    const disabledCount = items.length - enabledItems.length;
+    const allDisabled = items.length > 0 && enabledItems.length === 0;
 
     return (
-        <div className={`rounded-xl border ${isLight ? 'border-slate-200 bg-white' : 'border-white/20 bg-white/10'}`}>
-            <button
-                onClick={onToggle}
-                className={`sticky top-0 z-10 w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors backdrop-blur-md ${isLight ? 'bg-white hover:bg-slate-50' : 'bg-white/10 hover:bg-white/15'}`}
+        <div className={`rounded-xl border transition-opacity ${allDisabled ? 'opacity-50' : ''} ${isLight ? 'border-slate-200 bg-white' : 'border-white/20 bg-white/10'}`}>
+            <div
+                className={`sticky top-0 z-10 flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium backdrop-blur-md ${isLight ? 'bg-white' : 'bg-white/10'}`}
                 dir={isHe ? 'rtl' : 'ltr'}
             >
-                <span className="text-base">{category.icon}</span>
-                <span className="flex-1 text-start">{label}</span>
+                <button onClick={onToggle} className="flex items-center gap-2 flex-1 min-w-0 text-start">
+                    <span className="text-base shrink-0">{category.icon}</span>
+                    <span className="flex-1 min-w-0 truncate">{label}</span>
+                </button>
+                {disabledCount > 0 && (
+                    <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${isLight ? 'bg-amber-100 text-amber-600' : 'bg-amber-500/20 text-amber-400'}`}>
+                        {isHe ? `${disabledCount} מושהה` : `${disabledCount} paused`}
+                    </span>
+                )}
                 {categoryTotal > 0 && (
-                    <span className={`text-sm font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                    <span className={`text-sm font-semibold shrink-0 ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
                         {currency}{Math.round(categoryTotal).toLocaleString()}
                     </span>
                 )}
-                {open ? <ChevronUp size={14} className="shrink-0 opacity-50" /> : <ChevronDown size={14} className="shrink-0 opacity-50" />}
-            </button>
+                <button
+                    onClick={e => { e.stopPropagation(); onToggleAll(); }}
+                    title={allDisabled ? (isHe ? 'הפעל הכל' : 'Enable all') : (isHe ? 'השהה הכל' : 'Pause all')}
+                    className="shrink-0 p-0.5"
+                >
+                    {allDisabled
+                        ? <ToggleLeft size={18} className={isLight ? 'text-slate-400' : 'text-gray-400'} />
+                        : <ToggleRight size={18} className="text-blue-500" />}
+                </button>
+                <button onClick={onToggle} className="shrink-0 opacity-50">
+                    {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+            </div>
 
             {open && (
                 <div className="px-2 pb-2 space-y-0.5">
@@ -612,6 +640,11 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
         () => items.filter(i => i.enabled).reduce((s, i) => s + toMonthly(i), 0),
         [items]
     );
+    const fullMonthly = useMemo(
+        () => items.reduce((s, i) => s + toMonthly(i), 0),
+        [items]
+    );
+    const pausedMonthly = fullMonthly - totalMonthly;
 
     // Future milestones: points in time where loan tracks expire and expenses drop
     const futureMilestones = useMemo(() => {
@@ -650,10 +683,15 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
             ...CATEGORIES,
             ...customCategoryIds.map(id => ({ id, icon: '📋', labelHe: id, labelEn: id })),
         ];
-        // Sort categories by total enabled monthly cost — highest first
+        // Fully-disabled categories sink to the bottom; within each group sort by enabled monthly cost desc
         return all.sort((a, b) => {
-            const totalA = items.filter(i => i.categoryId === a.id && i.enabled).reduce((s, i) => s + toMonthly(i), 0);
-            const totalB = items.filter(i => i.categoryId === b.id && i.enabled).reduce((s, i) => s + toMonthly(i), 0);
+            const catItemsA = items.filter(i => i.categoryId === a.id);
+            const catItemsB = items.filter(i => i.categoryId === b.id);
+            const allOffA = catItemsA.length > 0 && catItemsA.every(i => !i.enabled);
+            const allOffB = catItemsB.length > 0 && catItemsB.every(i => !i.enabled);
+            if (allOffA !== allOffB) return allOffA ? 1 : -1;
+            const totalA = catItemsA.filter(i => i.enabled).reduce((s, i) => s + toMonthly(i), 0);
+            const totalB = catItemsB.filter(i => i.enabled).reduce((s, i) => s + toMonthly(i), 0);
             return totalB - totalA;
         });
     }, [items, customCategoryIds]);
@@ -713,6 +751,15 @@ export default function BudgetPlanner({ inputs, setInputs, t, language, isLight,
     const handleAdoptAsTarget = useCallback(() => {
         setInputs(prev => ({ ...prev, monthlyNetIncomeDesired: Math.round(totalMonthly) }));
     }, [setInputs, totalMonthly]);
+
+    const handleToggleCategoryItems = useCallback((categoryId) => {
+        updateItems(prev => {
+            const catItems = prev.filter(i => i.categoryId === categoryId);
+            const allEnabled = catItems.every(i => i.enabled);
+            // If all enabled → disable all; otherwise → enable all
+            return prev.map(i => i.categoryId === categoryId ? { ...i, enabled: !allEnabled } : i);
+        });
+    }, [updateItems]);
 
     const handleReset = useCallback(() => {
         setPendingConfirm({ type: 'reset' });
@@ -857,6 +904,7 @@ Gap vs target and what can be optimized.`;
     const gap = target - totalMonthly;
     const statusColor = pct > 1 ? 'text-red-500' : pct > 0.9 ? 'text-amber-500' : 'text-emerald-500';
     const barColor   = pct > 1 ? 'bg-red-500'   : pct > 0.9 ? 'bg-amber-500'   : 'bg-emerald-500';
+    const pctColor   = pct > 0.9 ? 'text-red-500' : pct > 0.8 ? 'text-amber-400' : 'text-emerald-500';
 
     return (
         <div className="space-y-3" dir={isHe ? 'rtl' : 'ltr'}>
@@ -864,31 +912,44 @@ Gap vs target and what can be optimized.`;
             {/* ── Summary banner — sticky ── */}
             <div className={`sticky top-0 z-20 rounded-xl p-3 border backdrop-blur-md ${isLight ? 'bg-white border-slate-200' : 'bg-white/10 border-white/20'}`}>
                 <div className="flex items-end justify-between mb-2 gap-4">
-                    <div>
-                        <div className={`text-xs mb-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                    <div className="text-right">
+                        <div className={`text-sm font-medium mb-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                             {t('budgetIncomeTarget')}
                         </div>
                         <div className={`text-lg font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
                             {currency}{target.toLocaleString()}
                         </div>
+                        <div className={`text-xs mt-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                            {currency}{(target * 12).toLocaleString()} {isHe ? '/ שנה' : '/ yr'}
+                        </div>
                     </div>
-                    <div className="text-end">
-                        <div className={`text-xs mb-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                    <div className="text-right">
+                        <div className={`text-sm font-medium mb-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                             {t('budgetTotalExpenses')}
                         </div>
-                        <div className={`text-lg font-semibold ${statusColor}`}>
-                            {currency}{Math.round(totalMonthly).toLocaleString()}
+                        <div className="flex items-baseline justify-end gap-2" dir="ltr">
+                            {pausedMonthly > 0 && (
+                                <span className={`text-xs ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                    (+{currency}{Math.round(pausedMonthly).toLocaleString()})
+                                </span>
+                            )}
+                            <span className={`text-lg font-semibold ${statusColor}`}>
+                                {currency}{Math.round(totalMonthly).toLocaleString()}
+                            </span>
                         </div>
                         <div className={`text-xs mt-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
                             {currency}{Math.round(totalMonthly * 12).toLocaleString()} {isHe ? '/ שנה' : '/ yr'}
                         </div>
                     </div>
-                    <div className="text-end">
-                        <div className={`text-xs mb-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                    <div className="text-right">
+                        <div className={`text-sm font-medium mb-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                             {t('budgetGap')}
                         </div>
-                        <div className={`text-lg font-semibold ${gap >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                        <div className={`text-lg font-semibold ${gap >= 0 ? 'text-emerald-500' : 'text-red-500'}`} dir="ltr">
                             {gap >= 0 ? '+' : ''}{currency}{Math.round(gap).toLocaleString()}
+                        </div>
+                        <div className={`text-xs mt-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                            {currency}{Math.round(Math.abs(gap * 12)).toLocaleString()}{gap >= 0 ? '+' : '-'} {isHe ? '/ שנה' : '/ yr'}
                         </div>
                     </div>
                 </div>
@@ -909,14 +970,16 @@ Gap vs target and what can be optimized.`;
                     </div>
                 </div>
 
-                <div className={`h-2 rounded-full overflow-hidden ${isLight ? 'bg-slate-100' : 'bg-white/10'}`}>
-                    <div className={`h-full rounded-full transition-all duration-300 ${barColor}`} style={{ width: `${Math.min(pct * 100, 100)}%` }} />
-                </div>
-                {target > 0 && (
-                    <div className={`text-xs mt-1 text-end ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
-                        {Math.round(pct * 100)}% {t('budgetOfTarget')}
+                <div className="flex items-center gap-2">
+                    <div className={`flex-1 h-2 rounded-full overflow-hidden ${isLight ? 'bg-slate-100' : 'bg-white/10'}`}>
+                        <div className={`h-full rounded-full transition-all duration-300 ${barColor}`} style={{ width: `${Math.min(pct * 100, 100)}%` }} />
                     </div>
-                )}
+                    {target > 0 && (
+                        <span className={`text-xs shrink-0 font-medium ${pctColor}`}>
+                            {Math.round(pct * 100)}% {t('budgetOfTarget')}
+                        </span>
+                    )}
+                </div>
 
                 {/* Future budget toggle — shown only when there are expiring loan tracks */}
                 {futureMilestones.length > 0 && (
@@ -1062,6 +1125,7 @@ Gap vs target and what can be optimized.`;
                         onDeleteItem={handleDeleteItem}
                         onAddItem={() => handleAddItem(cat.id)}
                         onAddLoanItem={() => handleAddLoanItem(cat.id)}
+                        onToggleAll={() => handleToggleCategoryItems(cat.id)}
                     />
                 );
             })}
