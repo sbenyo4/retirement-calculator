@@ -41,59 +41,36 @@ export default function LifeEventsManager({
     const [itemsPerView, setItemsPerView] = useState(6);
     const listContainerRef = useRef(null);
 
-    // Reset offset when events change length
-    useEffect(() => {
-        if (viewOffset > Math.max(0, events.length - itemsPerView)) {
-            setViewOffset(Math.max(0, events.length - itemsPerView));
-        }
-    }, [events.length, itemsPerView]);
+    const ITEM_H = 48; // h-[48px]
+    const GAP    = 2;  // space-y-0.5
+    const NAV_H  = 26; // h-6 (24px) + mb-0.5 (2px)
 
+    // N items take: N*ITEM_H + (N-1)*GAP = 50N - 2
+    // Max N: 50N - 2 <= available  =>  N = floor((available + 2) / 50)
     const calculateItems = () => {
-        const container = listContainerRef.current;
-        if (!container) return;
-
-        // Use slight buffer to avoid rounding errors
-        const effectiveHeight = container.clientHeight;
-
-        // TIGHTER HEIGHT CONSTANTS
-        // py-1.5 = 6px * 2 = 12px
-        // border = 2px
-        // gap = 2px
-        // Content: 2 lines of text (approx 16px*2) = 32px
-        // Total Item approx: 48-50px. Let's assume 50px safe average including gap.
-        const ITEM_HEIGHT = 46;
-        const ARROW_HEIGHT = 20; // Height of the arrow button
-
-        // 1. Calculate max items assuming NO buttons
-        const maxItemsNoButtons = Math.floor(effectiveHeight / ITEM_HEIGHT);
-
-        // 2. If all events fit without buttons, just use that
-        if (events.length <= maxItemsNoButtons) {
-            setItemsPerView(Math.max(1, maxItemsNoButtons));
-            return;
-        }
-
-        // 3. If they don't fit, we need buttons (top and bottom)
-        const heightForButtons = ARROW_HEIGHT * 2;
-        const remainingHeight = effectiveHeight - heightForButtons;
-
-        // 4. Calculate how many fit in the remaining space
-        const maxItemsWithButtons = Math.floor(remainingHeight / ITEM_HEIGHT);
-
-        // Ensure at least 1 item is shown
-        setItemsPerView(Math.max(1, maxItemsWithButtons));
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            const container = listContainerRef.current;
+            if (!container) return;
+            const available = container.clientHeight - NAV_H;
+            const n = Math.floor((available + GAP) / (ITEM_H + GAP));
+            setItemsPerView(Math.max(1, n));
+        }));
     };
 
-    // Observer for resize (ResizeObserver covers window resize too)
     useEffect(() => {
         if (!listContainerRef.current) return;
         const observer = new ResizeObserver(calculateItems);
         observer.observe(listContainerRef.current);
-
-        calculateItems(); // Initial
-
+        calculateItems();
         return () => observer.disconnect();
-    }, [events.length]); // Re-calc if events count changes (to toggle buttons/no-buttons mode)
+    }, []);
+
+    useEffect(() => { calculateItems(); }, [events.length]);
+
+    // Reset offset if it's now out of range
+    useEffect(() => {
+        setViewOffset(p => Math.min(p, Math.max(0, events.length - itemsPerView)));
+    }, [events.length, itemsPerView]);
 
     const handleScrollUp = () => setViewOffset(p => Math.max(0, p - 1));
     const handleScrollDown = () => setViewOffset(p => Math.min(Math.max(0, events.length - itemsPerView), p + 1));
@@ -254,7 +231,7 @@ export default function LifeEventsManager({
     };
 
     return (
-        <div className="flex flex-col flex-1 space-y-2 mt-2">
+        <div className="flex flex-col flex-1 space-y-2 mt-2 mb-2">
             {/* Header */}
             <div className={`${classes.container} rounded-xl p-2 flex-1 min-h-0 flex flex-col`}>
                 <div className="flex items-center justify-between mb-2">
@@ -262,13 +239,6 @@ export default function LifeEventsManager({
                         <Calendar className={`w-4 h-4 ${classes.icon}`} />
                         <label className={`text-xs font-medium ${classes.headerLabel} whitespace-nowrap flex items-center`}>
                             {t ? t('lifeEventsTimeline') : 'Life Events Timeline'}
-                            {events.length > 0 && (
-                                <span dir="ltr" className="mx-2 px-2 py-0.5 bg-white/10 rounded-full text-[10px] text-gray-300 font-normal">
-                                    {itemsPerView < events.length ?
-                                        `${viewOffset + 1}-${Math.min(events.length, viewOffset + itemsPerView)} / ${events.length}`
-                                        : events.length}
-                                </span>
-                            )}
                         </label>
                     </div>
                     <div className="flex gap-2">
@@ -298,21 +268,33 @@ export default function LifeEventsManager({
                             {t ? t('noEventsYet') : 'No life events added yet. Click "Add" to create one.'}
                         </div>
                     ) : (
-                        <div className="flex-1 flex flex-col justify-between" translate="no">
+                        <div className="flex-1 flex flex-col" translate="no">
 
-                            {/* UP ARROW - Visible only if needed (more events than fits) */}
-                            {events.length > itemsPerView && (
+                            {/* Always-visible nav bar */}
+                            <div data-nav-bar className="flex items-center justify-between h-6 mb-0.5">
                                 <button
                                     onClick={handleScrollUp}
                                     disabled={viewOffset === 0}
-                                    className={`w-full flex-none h-5 flex items-center justify-center rounded transition-colors ${viewOffset === 0 ? 'opacity-0 cursor-default' : 'hover:bg-white/10 text-blue-400'}`}
+                                    className={`p-0.5 rounded transition-colors ${viewOffset === 0 ? 'opacity-20 cursor-default' : 'hover:bg-white/10 text-blue-400'}`}
                                 >
-                                    <ChevronUp size={16} />
+                                    <ChevronUp size={14} />
                                 </button>
-                            )}
+                                <span className={`text-[10px] ${classes.label}`}>
+                                    {events.length > itemsPerView
+                                        ? `${viewOffset + 1}–${Math.min(events.length, viewOffset + itemsPerView)} / ${events.length}`
+                                        : events.length}
+                                </span>
+                                <button
+                                    onClick={handleScrollDown}
+                                    disabled={viewOffset + itemsPerView >= events.length}
+                                    className={`p-0.5 rounded transition-colors ${viewOffset + itemsPerView >= events.length ? 'opacity-20 cursor-default' : 'hover:bg-white/10 text-blue-400'}`}
+                                >
+                                    <ChevronDown size={14} />
+                                </button>
+                            </div>
 
                             {/* ITEM LIST */}
-                            <div className="flex-1 space-y-0.5 mt-0.5">
+                            <div className="flex-1 space-y-0.5 overflow-hidden">
                                 {[...events].sort((a, b) => {
                                     const ay = a.startDate?.year ?? 9999, am = a.startDate?.month ?? 1;
                                     const by = b.startDate?.year ?? 9999, bm = b.startDate?.month ?? 1;
@@ -320,6 +302,7 @@ export default function LifeEventsManager({
                                 }).slice(viewOffset, viewOffset + itemsPerView).map(event => (
                                     <div
                                         key={event.id}
+                                        data-event-item
                                         className={`${classes.container} border ${event.enabled ? classes.border : 'border-gray-600'} rounded-lg px-2 py-1.5 ${!event.enabled ? 'opacity-50' : ''} select-none h-[48px] flex flex-col justify-center`}
                                     >
                                         <div className="flex items-center justify-between gap-2">
@@ -377,16 +360,6 @@ export default function LifeEventsManager({
                                 ))}
                             </div>
 
-                            {/* DOWN ARROW */}
-                            {events.length > itemsPerView && (
-                                <button
-                                    onClick={handleScrollDown}
-                                    disabled={viewOffset + itemsPerView >= events.length}
-                                    className={`w-full flex-none h-5 flex items-center justify-center rounded transition-colors ${viewOffset + itemsPerView >= events.length ? 'opacity-0 cursor-default' : 'hover:bg-white/10 text-blue-400'}`}
-                                >
-                                    <ChevronDown size={16} />
-                                </button>
-                            )}
                         </div>
                     )}
                 </div>

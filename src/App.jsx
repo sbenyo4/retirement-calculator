@@ -361,7 +361,7 @@ function MainApp() {
               onSaveGlobalPension={saveGlobalPension}
             />
             <div className="my-2 border-t border-white/10 flex-shrink-0"></div>
-            <div>
+            <div className="flex-1 flex flex-col min-h-0">
             <InputForm
               inputs={inputs}
               setInputs={setInputs}
