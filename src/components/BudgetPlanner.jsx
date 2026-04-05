@@ -501,10 +501,11 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
 // ─── Main component ───────────────────────────────────────────────────────────
 // Budget is stored globally in Firestore per user — not per-profile.
 // setInputs is only called when the user explicitly clicks "adopt as income target".
-export default function BudgetPlanner({ inputs, setInputs, t, language, isLight, aiProvider, aiModel, apiKeyOverride }) {
+export default function BudgetPlanner({ inputs, setInputs, results, t, language, isLight, aiProvider, aiModel, apiKeyOverride }) {
     const isHe = language === 'he';
     const currency = isHe ? '₪' : '$';
-    const target = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
+    // Use actual calculated net withdrawal if available (reflects withdrawal strategy), else use the manual input
+    const target = Math.round(results?.initialNetWithdrawal ?? parseFloat(inputs.monthlyNetIncomeDesired) ?? 0);
     const { currentUser } = useAuth();
     const uid = currentUser?.uid;
 

@@ -548,6 +548,7 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                 <BudgetPlanner
                     inputs={inputs}
                     setInputs={setInputs}
+                    results={results}
                     t={t}
                     language={language}
                     isLight={isLight}

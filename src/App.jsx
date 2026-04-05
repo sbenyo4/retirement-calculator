@@ -345,7 +345,7 @@ function MainApp() {
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-          <div className="lg:col-span-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl pt-4 px-4 pb-0 shadow-xl flex flex-col relative z-20" onFocus={preloadResultsDashboard} onPointerEnter={preloadResultsDashboard}>
+          <div className="lg:col-span-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl pt-4 px-4 pb-0 shadow-xl flex flex-col relative z-20 overflow-hidden min-h-[700px]" onFocus={preloadResultsDashboard} onPointerEnter={preloadResultsDashboard}>
             <ProfileManager
               currentInputs={inputs}
               onLoad={setInputs}
