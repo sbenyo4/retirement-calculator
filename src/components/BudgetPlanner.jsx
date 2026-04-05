@@ -618,6 +618,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                     labelHe: cat.labelHe,
                     labelEn: cat.labelEn,
                     total: Math.round(catItems.reduce((s, i) => s + toMonthly(i), 0)),
+                    items: catItems.map(i => ({ label: i.label, amount: Math.round(toMonthly(i)) })),
                 };
             }).filter(Boolean);
             const loanTracks = items.filter(i => i.type === 'loan' && i.enabled)

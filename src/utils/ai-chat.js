@@ -71,7 +71,11 @@ export function buildChatSystemPrompt(inputs, results, language) {
         const budget = JSON.parse(sessionStorage.getItem('rc-budget-summary') || 'null');
         if (budget && budget.totalMonthly > 0) {
             const catLines = (budget.categories || [])
-                .map(c => `  ${isHe ? c.labelHe : c.labelEn}: ${currency}${c.total}/mo`)
+                .map(c => {
+                    const label = isHe ? c.labelHe : c.labelEn;
+                    const itemLines = (c.items || []).map(i => `    • ${i.label}: ${currency}${i.amount}/mo`).join('\n');
+                    return `  ${label}: ${currency}${c.total}/mo${itemLines ? '\n' + itemLines : ''}`;
+                })
                 .join('\n');
             const loanLines = (budget.loanTracks || [])
                 .map(lt => lt.active
