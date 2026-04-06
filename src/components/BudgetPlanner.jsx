@@ -139,12 +139,29 @@ const toMonthly = (item) => {
     return item.frequency === 'annual' ? (item.amount || 0) / 12 : (item.amount || 0);
 };
 
+const trackActiveInFuture = (track, projYears) => {
+    if (!track.endDate) return true;
+    const [y, m] = track.endDate.split('-').map(Number);
+    return y * 12 + (m - 1) >= getNowYM() + Math.round(projYears * 12);
+};
+
+// Projected monthly cost accounting for loan end dates and per-track inflation flag
+const toProjectedMonthly = (item, projFactor, projYears) => {
+    if (!item.enabled) return 0;
+    if (item.type === 'loan') {
+        return (item.tracks || [])
+            .filter(tr => trackActive(tr) && trackActiveInFuture(tr, projYears))
+            .reduce((s, tr) => s + (tr.amount || 0) * (tr.inflationAffected ? projFactor : 1), 0);
+    }
+    return toMonthly(item) * projFactor;
+};
+
 function genId() {
     return `b-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
 // ─── Single item row ──────────────────────────────────────────────────────────
-function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete }) {
+function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, projFactor, showInflation }) {
     const [editingLabel, setEditingLabel] = useState(false);
     const [labelDraft, setLabelDraft] = useState(item.label);
     const [amountDraft, setAmountDraft] = useState(item.amount === 0 ? '' : String(item.amount));
@@ -199,9 +216,9 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete })
                 </span>
             )}
 
-            {/* Amount + annual hint */}
+            {/* Amount + annual hint + inflation projection */}
             <div className="flex flex-col items-end shrink-0">
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1" dir="ltr">
                     <span className={`text-xs ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{currency}</span>
                     <input
                         type="number"
@@ -213,6 +230,11 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete })
                         onKeyDown={e => { if (e.key === 'Enter') { e.target.blur(); } }}
                         className={`w-24 text-sm text-end px-1.5 py-0.5 rounded border ${isLight ? 'border-slate-200 bg-white text-slate-800' : 'border-white/20 bg-white/10 text-white'} outline-none focus:border-blue-400`}
                     />
+                    {showInflation && monthly > 0 && (
+                        <span className={`text-xs ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
+                            → {Math.round(monthly * projFactor)}
+                        </span>
+                    )}
                 </div>
                 {showMonthlyHint && (
                     <span className={`text-xs mt-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
@@ -253,7 +275,7 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete })
 }
 
 // ─── Loan / Mortgage item (multi-track) ──────────────────────────────────────
-function LoanItemRow({ item, isHe, isLight, currency, t, onChange, onDelete }) {
+function LoanItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, projFactor, projYears, showInflation }) {
     const [open, setOpen] = useState((item.tracks || []).length <= 1); // open by default when freshly created
     const [editingLabel, setEditingLabel] = useState(false);
     const [labelDraft, setLabelDraft] = useState(item.label);
@@ -324,9 +346,32 @@ function LoanItemRow({ item, isHe, isLight, currency, t, onChange, onDelete }) {
                         {item.label}
                     </span>
                 )}
+                {showInflation && (() => {
+                    const activeTracks = (item.tracks || []).filter(trackActive);
+                    const linkedCount = activeTracks.filter(tr => tr.inflationAffected).length;
+                    const allLinked = activeTracks.length > 0 && linkedCount === activeTracks.length;
+                    const partial = linkedCount > 0 && linkedCount < activeTracks.length;
+                    const label = allLinked ? (isHe ? 'צמוד' : 'CPI') : partial ? (isHe ? 'צמוד חלקי' : 'partial CPI') : (isHe ? 'קבוע' : 'fixed');
+                    const colorClass = allLinked
+                        ? (isLight ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-amber-500 bg-amber-900/20 text-amber-400')
+                        : partial
+                        ? (isLight ? 'border-orange-300 bg-orange-50 text-orange-600' : 'border-orange-400 bg-orange-900/20 text-orange-400')
+                        : (isLight ? 'border-slate-200 bg-slate-50 text-slate-400' : 'border-white/20 bg-white/5 text-gray-500');
+                    return <span className={`text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 ${colorClass}`}>{label}</span>;
+                })()}
                 {activeMonthly > 0 && (
-                    <span className={`text-sm font-semibold shrink-0 ${isLight ? 'text-indigo-700' : 'text-indigo-300'}`}>
-                        {currency}{Math.round(activeMonthly).toLocaleString()}/{t('budgetMonthly')}
+                    <span className="flex items-baseline gap-1 shrink-0" dir="ltr">
+                        <span className={`text-sm font-semibold ${isLight ? 'text-indigo-700' : 'text-indigo-300'}`}>
+                            {currency}{Math.round(activeMonthly).toLocaleString()}/{t('budgetMonthly')}
+                        </span>
+                        {showInflation && (() => {
+                            const proj = toProjectedMonthly(item, projFactor, projYears);
+                            return (
+                                <span className={`text-xs font-normal ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
+                                    → {proj > 0 ? `${currency}${Math.round(proj).toLocaleString()}` : (isHe ? 'יסתיים' : 'ends')}
+                                </span>
+                            );
+                        })()}
                     </span>
                 )}
                 <button onClick={() => setOpen(o => !o)}
@@ -392,6 +437,17 @@ function LoanItemRow({ item, isHe, isLight, currency, t, onChange, onDelete }) {
                                         : t('budgetLoanDone')}
                                 </span>
                             )}
+                            {showInflation && (
+                                <button
+                                    onClick={() => updateTrack(track.id, { inflationAffected: !track.inflationAffected })}
+                                    className={`text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 transition-colors ${track.inflationAffected
+                                        ? (isLight ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-amber-500 bg-amber-900/20 text-amber-400')
+                                        : (isLight ? 'border-slate-200 bg-slate-50 text-slate-400' : 'border-white/20 bg-white/5 text-gray-500')}`}
+                                    title={isHe ? (track.inflationAffected ? 'צמוד מדד' : 'קבוע') : (track.inflationAffected ? 'CPI-linked' : 'Fixed rate')}
+                                >
+                                    {isHe ? (track.inflationAffected ? 'צמוד' : 'קבוע') : (track.inflationAffected ? 'CPI' : 'fixed')}
+                                </button>
+                            )}
                             <button onClick={() => deleteTrack(track.id)}
                                 className={`shrink-0 p-0.5 rounded ${isLight ? 'text-slate-300 hover:text-red-500' : 'text-gray-600 hover:text-red-400'}`}>
                                 <Trash2 size={11} />
@@ -410,10 +466,11 @@ function LoanItemRow({ item, isHe, isLight, currency, t, onChange, onDelete }) {
 }
 
 // ─── Category accordion ───────────────────────────────────────────────────────
-function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onAddItem, onAddLoanItem, onToggleAll }) {
+function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onAddItem, onAddLoanItem, onToggleAll, projFactor, projYears, showInflation }) {
     const label = isHe ? category.labelHe : category.labelEn;
     const enabledItems = items.filter(i => i.enabled);
     const categoryTotal = enabledItems.reduce((s, i) => s + toMonthly(i), 0);
+    const categoryProjected = enabledItems.reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0);
     const disabledCount = items.length - enabledItems.length;
     const allDisabled = items.length > 0 && enabledItems.length === 0;
 
@@ -433,8 +490,15 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
                     </span>
                 )}
                 {categoryTotal > 0 && (
-                    <span className={`text-sm font-semibold shrink-0 ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
-                        {currency}{Math.round(categoryTotal).toLocaleString()}
+                    <span className="flex items-baseline gap-1 shrink-0" dir="ltr">
+                        <span className={`text-sm font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                            {currency}{Math.round(categoryTotal).toLocaleString()}
+                        </span>
+                        {showInflation && (
+                            <span className={`text-xs font-normal ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
+                                → {currency}{Math.round(categoryProjected).toLocaleString()}
+                            </span>
+                        )}
                     </span>
                 )}
                 <button
@@ -463,6 +527,9 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
                             t={t}
                             onChange={onChangeItem}
                             onDelete={() => onDeleteItem(item.id)}
+                            projFactor={projFactor}
+                            projYears={projYears}
+                            showInflation={showInflation}
                         />
                     ) : (
                         <BudgetItemRow
@@ -474,6 +541,8 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
                             t={t}
                             onChange={onChangeItem}
                             onDelete={() => onDeleteItem(item.id)}
+                            projFactor={projFactor}
+                            showInflation={showInflation}
                         />
                     ))}
                     <div className="flex items-center gap-2 mt-1 flex-wrap" dir={isHe ? 'rtl' : 'ltr'}>
@@ -511,6 +580,14 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
 
     const [items, setItems] = useState(DEFAULT_ITEMS);
     const [householdSize, setHouseholdSize] = useState(2);
+    const [showInflation, setShowInflation] = useState(false);
+    const [projYears, setProjYears] = useState(5);
+
+    // Effective annual inflation rate: use inputs if set, else country default
+    const inflationRate = inputs.inflationRate > 0
+        ? inputs.inflationRate / 100
+        : (isHe ? 0.035 : 0.025);
+    const projFactor = Math.pow(1 + inflationRate, projYears);
     const [loaded, setLoaded] = useState(false);
     const saveAllowedRef = useRef(false); // only true after successful Firestore load
     const saveTimerRef = useRef(null);
@@ -647,6 +724,10 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         [items]
     );
     const pausedMonthly = fullMonthly - totalMonthly;
+    const totalProjectedMonthly = useMemo(
+        () => items.filter(i => i.enabled).reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0),
+        [items, projFactor, projYears]
+    );
 
     // Future milestones: points in time where loan tracks expire and expenses drop
     const futureMilestones = useMemo(() => {
@@ -938,37 +1019,74 @@ Gap vs target and what can be optimized.`;
                             <span className={`text-lg font-semibold ${statusColor}`}>
                                 {currency}{Math.round(totalMonthly).toLocaleString()}
                             </span>
+                            {showInflation && (
+                                <span className={`text-xs ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
+                                    → {currency}{Math.round(totalProjectedMonthly).toLocaleString()}
+                                </span>
+                            )}
                         </div>
-                        <div className={`text-xs mt-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
-                            {currency}{Math.round(totalMonthly * 12).toLocaleString()} {isHe ? '/ שנה' : '/ yr'}
+                        <div className="flex items-baseline justify-end gap-1.5 mt-0.5" dir="ltr">
+                            <span className={`text-xs ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                {currency}{Math.round(totalMonthly * 12).toLocaleString()} {isHe ? '/ שנה' : '/ yr'}
+                            </span>
+                            {showInflation && (
+                                <span className={`text-xs ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
+                                    → {currency}{Math.round(totalProjectedMonthly * 12).toLocaleString()}
+                                </span>
+                            )}
                         </div>
                     </div>
                     <div className="text-right">
                         <div className={`text-sm font-medium mb-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                             {t('budgetGap')}
                         </div>
-                        <div className={`text-lg font-semibold ${gap >= 0 ? 'text-emerald-500' : 'text-red-500'}`} dir="ltr">
-                            {gap >= 0 ? '+' : ''}{currency}{Math.round(gap).toLocaleString()}
+                        <div className="flex items-baseline justify-end gap-2" dir="ltr">
+                            <span className={`text-lg font-semibold ${gap >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                {gap >= 0 ? '+' : ''}{currency}{Math.round(gap).toLocaleString()}
+                            </span>
+                            {showInflation && (
+                                <span className={`text-xs ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
+                                    → {(() => { const pg = target - Math.round(totalProjectedMonthly); return `${pg >= 0 ? '+' : ''}${currency}${Math.abs(pg).toLocaleString()}`; })()}
+                                </span>
+                            )}
                         </div>
-                        <div className={`text-xs mt-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
-                            {currency}{Math.round(Math.abs(gap * 12)).toLocaleString()}{gap >= 0 ? '+' : '-'} {isHe ? '/ שנה' : '/ yr'}
+                        <div className="flex items-baseline justify-end gap-1.5 mt-0.5" dir="ltr">
+                            <span className={`text-xs ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                {currency}{Math.round(Math.abs(gap * 12)).toLocaleString()}{gap >= 0 ? '+' : '-'} {isHe ? '/ שנה' : '/ yr'}
+                            </span>
+                            {showInflation && (() => { const pg = target - Math.round(totalProjectedMonthly); return (
+                                <span className={`text-xs ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
+                                    → {currency}{Math.round(Math.abs(pg * 12)).toLocaleString()}{pg >= 0 ? '+' : '-'}
+                                </span>
+                            ); })()}
                         </div>
                     </div>
                 </div>
-                {/* Household size */}
-                <div className={`flex items-center gap-2 mb-2 text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                {/* Household size + inflation controls */}
+                <div className={`flex items-center gap-3 mb-2 text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                     <span>👥</span>
-                    <span>{isHe ? 'נפשות בבית:' : 'Household size:'}</span>
+                    <span>{isHe ? 'נפשות:' : 'Household:'}</span>
                     <div className="flex items-center gap-1">
-                        <button
-                            onClick={() => setHouseholdSize(s => Math.max(1, s - 1))}
-                            className={`w-5 h-5 rounded flex items-center justify-center font-bold transition-colors ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}
-                        >−</button>
+                        <button onClick={() => setHouseholdSize(s => Math.max(1, s - 1))} className={`w-5 h-5 rounded flex items-center justify-center font-bold transition-colors ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}>−</button>
                         <span className={`w-5 text-center font-semibold ${isLight ? 'text-slate-700' : 'text-white'}`}>{householdSize}</span>
-                        <button
-                            onClick={() => setHouseholdSize(s => Math.min(10, s + 1))}
-                            className={`w-5 h-5 rounded flex items-center justify-center font-bold transition-colors ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}
-                        >+</button>
+                        <button onClick={() => setHouseholdSize(s => Math.min(10, s + 1))} className={`w-5 h-5 rounded flex items-center justify-center font-bold transition-colors ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}>+</button>
+                    </div>
+                    <div className="flex-1" />
+                    {/* Inflation projection controls — always visible, no layout shift */}
+                    <button
+                        onClick={() => setShowInflation(v => !v)}
+                        className="shrink-0 p-0.5 transition-colors"
+                        title={isHe ? (showInflation ? 'הסתר הקרנת אינפלציה' : 'הצג הקרנת אינפלציה') : (showInflation ? 'Hide inflation projection' : 'Show inflation projection')}
+                    >
+                        {showInflation
+                            ? <ToggleRight size={18} className="text-blue-500" />
+                            : <ToggleLeft size={18} className={isLight ? 'text-slate-400' : 'text-gray-400'} />}
+                    </button>
+                    <span className={`shrink-0 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>📈 {isHe ? 'אינפלציה' : 'Inflation'} {(inflationRate * 100).toFixed(1)}%</span>
+                    <div className="flex items-center gap-1 shrink-0">
+                        <button onClick={() => setProjYears(y => Math.max(1, y - 1))} className={`w-5 h-5 rounded flex items-center justify-center font-bold transition-colors ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}>−</button>
+                        <span className={`w-7 text-center font-semibold tabular-nums ${isLight ? 'text-slate-700' : 'text-white'}`}>{projYears}{isHe ? 'ש' : 'y'}</span>
+                        <button onClick={() => setProjYears(y => Math.min(30, y + 1))} className={`w-5 h-5 rounded flex items-center justify-center font-bold transition-colors ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}>+</button>
                     </div>
                 </div>
 
@@ -1128,6 +1246,9 @@ Gap vs target and what can be optimized.`;
                         onAddItem={() => handleAddItem(cat.id)}
                         onAddLoanItem={() => handleAddLoanItem(cat.id)}
                         onToggleAll={() => handleToggleCategoryItems(cat.id)}
+                        projFactor={projFactor}
+                        projYears={projYears}
+                        showInflation={showInflation}
                     />
                 );
             })}
@@ -1240,42 +1361,38 @@ Gap vs target and what can be optimized.`;
 
             {/* ── AI Insight modal ── */}
             {aiModalOpen && (
-                <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-12 px-4 pointer-events-none">
-                    <div className="absolute inset-0 pointer-events-auto" onClick={() => setAiModalOpen(false)} />
+                <div
+                    className={`fixed z-[9999] w-80 rounded-2xl shadow-2xl border overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-white/20'}`}
+                    style={{ top: 72, right: 16, ...aiDragStyle }}
+                >
+                    {/* Header — draggable */}
                     <div
-                        className={`relative w-full max-w-lg rounded-2xl shadow-2xl border overflow-hidden pointer-events-auto ${isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-white/20'}`}
-                        style={aiDragStyle}
-                        onClick={e => e.stopPropagation()}
+                        className={`flex items-center justify-between px-4 py-3 border-b cursor-grab active:cursor-grabbing select-none ${isLight ? 'border-slate-100' : 'border-white/10'}`}
+                        onMouseDown={onAiDragMouseDown}
                     >
-                        {/* Modal header — draggable */}
-                        <div
-                            className={`flex items-center justify-between px-4 py-3 border-b cursor-grab active:cursor-grabbing select-none ${isLight ? 'border-slate-100' : 'border-white/10'}`}
-                            onMouseDown={onAiDragMouseDown}
-                        >
-                            <div className="flex items-center gap-2">
-                                <BrainCircuit size={15} className="text-purple-400" />
-                                <span className={`font-semibold text-sm ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
-                                    {isHe ? 'תובנות AI על התקציב' : 'AI Budget Insights'}
-                                </span>
+                        <div className="flex items-center gap-2">
+                            <BrainCircuit size={15} className="text-purple-400" />
+                            <span className={`font-semibold text-sm ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
+                                {isHe ? 'תובנות AI על התקציב' : 'AI Budget Insights'}
+                            </span>
+                        </div>
+                        <button
+                            onClick={() => setAiModalOpen(false)}
+                            className={`text-lg leading-none opacity-40 hover:opacity-80 transition-opacity ${isLight ? 'text-slate-600' : 'text-gray-300'}`}
+                        >✕</button>
+                    </div>
+                    {/* Body */}
+                    <div className="px-4 py-4 max-h-[70vh] overflow-y-auto custom-scrollbar scrollbar-right" dir={isHe ? 'rtl' : 'ltr'}>
+                        {aiLoading ? (
+                            <div className={`flex items-center gap-2 text-sm ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                <Loader2 size={15} className="animate-spin text-purple-400" />
+                                {isHe ? 'מנתח תקציב...' : 'Analyzing budget...'}
                             </div>
-                            <button
-                                onClick={() => setAiModalOpen(false)}
-                                className={`text-lg leading-none opacity-40 hover:opacity-80 transition-opacity ${isLight ? 'text-slate-600' : 'text-gray-300'}`}
-                            >✕</button>
-                        </div>
-                        {/* Modal body */}
-                        <div className="px-4 py-4 max-h-[70vh] overflow-y-auto custom-scrollbar scrollbar-right" dir={isHe ? 'rtl' : 'ltr'}>
-                            {aiLoading ? (
-                                <div className={`flex items-center gap-2 text-sm ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
-                                    <Loader2 size={15} className="animate-spin text-purple-400" />
-                                    {isHe ? 'מנתח תקציב...' : 'Analyzing budget...'}
-                                </div>
-                            ) : aiError ? (
-                                <p className="text-sm text-red-500">{aiError}</p>
-                            ) : (
-                                <InsightRenderer text={aiInsight} isLight={isLight} />
-                            )}
-                        </div>
+                        ) : aiError ? (
+                            <p className="text-sm text-red-500">{aiError}</p>
+                        ) : (
+                            <InsightRenderer text={aiInsight} isLight={isLight} />
+                        )}
                     </div>
                 </div>
             )}
