@@ -42,6 +42,10 @@ import { useDeepCompareMemo } from './hooks/useDeepCompare';
 import { WITHDRAWAL_STRATEGIES } from './constants';
 import { getUserSettings } from './utils/db';
 import { Settings } from 'lucide-react';
+import { ReminderBell } from './components/ReminderBell';
+import { ReminderAlert } from './components/ReminderAlert';
+import { GlobalRemindersSync } from './components/GlobalRemindersSync';
+import { resetReminderSession } from './hooks/useReminders';
 
 function App() {
   return (
@@ -57,6 +61,11 @@ function MainApp() {
   const { currentUser, logout } = useAuth();
   const { theme } = useTheme();
   const [language, setLanguage] = useState('he');
+
+  // Reset reminder shown-state on every login
+  useEffect(() => {
+    if (currentUser) resetReminderSession();
+  }, [currentUser?.uid]);
   // Wrap t in useCallback to prevent it from changing on every render
   const t = React.useCallback((key) => translations[language][key] || key, [language]);
 
@@ -149,6 +158,29 @@ function MainApp() {
   useEffect(() => {
     setAiInputsChanged(true);
   }, [inputs, settings.aiProvider, settings.aiModel, settings.apiKeyOverride]);
+
+  // Handle navigation from reminders to items
+  useEffect(() => {
+    const handleNav = (e) => {
+        const { source, id } = e.detail;
+        if (source === 'checklist') {
+            if (settings.calculationMode !== 'planning') {
+                 dispatchSettings({ type: SETTINGS_ACTIONS.SET_CALCULATION_MODE, payload: 'planning' });
+            }
+            setTimeout(() => window.dispatchEvent(new CustomEvent('rc-scroll-to-checklist-item', { detail: { id } })), 100);
+        } else if (source === 'budget') {
+            if (settings.calculationMode === 'planning') {
+                 dispatchSettings({ type: SETTINGS_ACTIONS.SET_CALCULATION_MODE, payload: 'mathematical' });
+            }
+            setTimeout(() => {
+                window.dispatchEvent(new Event('rc-open-budget-tab'));
+                setTimeout(() => window.dispatchEvent(new CustomEvent('rc-scroll-to-budget-item', { detail: { id } })), 200);
+            }, 100);
+        }
+    };
+    window.addEventListener('rc-navigate-to-item', handleNav);
+    return () => window.removeEventListener('rc-navigate-to-item', handleNav);
+  }, [settings.calculationMode, dispatchSettings]);
 
   // Effect to update linked events when retirement ages change
   useEffect(() => {
@@ -325,6 +357,7 @@ function MainApp() {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <ReminderBell t={t} language={language} isLight={theme === 'light'} />
             <UserMenu t={t} />
             <ThemeToggle t={t} />
             <ZoomToggle />
@@ -514,6 +547,12 @@ function MainApp() {
         aiModel={settings.aiModel}
         apiKeyOverride={settings.apiKeyOverride}
       />
+
+      {/* Global Reminder Sync — loads reminders on login and syncs confirmation to db */}
+      <GlobalRemindersSync uid={currentUser.uid} />
+
+      {/* Reminder Alert — shown once per session per due reminder */}
+      <ReminderAlert language={language} isLight={theme === 'light'} />
 
       {/* Idle Warning Modal */}
       {warningActive && (

@@ -83,7 +83,10 @@ export function buildChatSystemPrompt(inputs, results, language) {
                     : `  - "${lt.track}" (${lt.loan}): ${currency}${lt.amount}/mo — already expired (${lt.endDate})`)
                 .join('\n');
             const loanSection = loanLines ? `\n- Loan tracks (scheduled expense reductions):\n${loanLines}` : '';
-            budgetSection = `\nBUDGET PLANNER (monthly expense plan):\n- Total monthly: ${currency}${budget.totalMonthly} | Annual: ${currency}${budget.totalAnnual}\n- Gap vs income target: ${currency}${budget.gap} (${budget.gap >= 0 ? 'surplus' : 'shortfall'})\n- By category:\n${catLines}${loanSection}\n`;
+            const inflSection = budget.inflation
+                ? `\n- Inflation projection (${Math.round(budget.inflation.rate * 100 * 10) / 10}%/yr, ${budget.inflation.years} years): projected ${currency}${budget.inflation.projectedMonthly}/mo | ${currency}${budget.inflation.projectedAnnual}/yr`
+                : '';
+            budgetSection = `\nBUDGET PLANNER (monthly expense plan):\n- Total monthly: ${currency}${budget.totalMonthly} | Annual: ${currency}${budget.totalAnnual}\n- Gap vs income target: ${currency}${budget.gap} (${budget.gap >= 0 ? 'surplus' : 'shortfall'})${inflSection}\n- By category:\n${catLines}${loanSection}\n`;
         }
     } catch {}
 

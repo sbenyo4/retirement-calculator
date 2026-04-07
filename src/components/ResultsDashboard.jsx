@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { calculateRetirementProjection } from '../utils/calculator';
 import { getProjectedYear } from '../utils/dateUtils';
@@ -47,6 +47,13 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
     const [showInflationModal, setShowInflationModal] = useState(false);
     const [showPensionModal, setShowPensionModal] = useState(false);
     const [activeTab, setActiveTab] = useState('numerical'); // 'numerical' | 'insights' | 'budget'
+
+    useEffect(() => {
+        const handler = () => setActiveTab('budget');
+        window.addEventListener('rc-open-budget-tab', handler);
+        return () => window.removeEventListener('rc-open-budget-tab', handler);
+    }, []);
+
     // Note: showInterestSensitivity and showIncomeSensitivity are now received as props
 
     // Determine which results to display

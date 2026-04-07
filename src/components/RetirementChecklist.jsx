@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { formatCurrency } from '../utils/formatters';
 import { generateRetirementChecklistInsights } from '../utils/ai-calculator';
@@ -8,8 +9,9 @@ import {
     Shield, Heart, Receipt, TrendingUp, Home, Scale, Laptop,
     AlertTriangle, CheckCircle, ChevronDown, ChevronRight,
     Umbrella, Stethoscope, Building2, FileText, Users,
-    Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Flag, Landmark, RotateCcw, Search, X, EyeOff, Undo2, Trash2
+    Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Flag, Landmark, RotateCcw, Search, X, EyeOff, Undo2, Trash2, MessageSquare, Bell
 } from 'lucide-react';
+import { syncComponentReminders, silenceReminder } from '../hooks/useReminders';
 
 const PRIORITIES = {
     critical: { en: 'Critical', he: 'קריטי', color: 'bg-red-500', text: 'text-red-500', border: 'border-red-500/30', bg: 'bg-red-500/10', order: 0 },
@@ -616,13 +618,61 @@ function PriorityBadge({ priority, isLight, language }) {
     );
 }
 
-function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem, isNew, onSeen, onKeepNew, onDismissNew, onManualRemove }) {
+
+
+/** Renders children into document.body anchored at a given DOMRect */
+function PopupPortal({ anchorRect, align = 'right', children }) {
+    if (!anchorRect) return null;
+    const top = anchorRect.bottom + window.scrollY + 4;
+    const style = align === 'right'
+        ? { position: 'absolute', top, right: window.innerWidth - anchorRect.right + window.scrollX, zIndex: 9999 }
+        : { position: 'absolute', top, left: anchorRect.left + window.scrollX, zIndex: 9999 };
+    return ReactDOM.createPortal(
+        <div style={style}>{children}</div>,
+        document.body
+    );
+}
+
+function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem, isNew, onSeen, onKeepNew, onDismissNew, onManualRemove, onChangeItem }) {
     const p = PRIORITIES[item.priority] || PRIORITIES.medium;
     const isHe = language === 'he';
     const flagged = item.aiSuggestedRemoval;
+    
+    const [showNote, setShowNote] = useState(false);
+    const [noteDraft, setNoteDraft] = useState(item.note || '');
+    
+    const [showReminder, setShowReminder] = useState(false);
+    const [reminderDate, setReminderDate] = useState(item.reminder?.date || '');
+    const [reminderText, setReminderText] = useState(item.reminder?.text || '');
+
+    const reminderBtnRef = useRef(null);
+    const noteBtnRef = useRef(null);
+    const [reminderAnchor, setReminderAnchor] = useState(null);
+    const [noteAnchor, setNoteAnchor] = useState(null);
+    
+    // Reset local reminder state when the item's reminder changes externally (e.g. after confirm/delete)
+    useEffect(() => {
+        setReminderDate(item.reminder?.date || '');
+        setReminderText(item.reminder?.text || '');
+    }, [item.reminder?.date, item.reminder?.text]);
+
+    // Reset note draft when item.note changes externally
+    useEffect(() => {
+        setNoteDraft(item.note || '');
+    }, [item.note]);
+
+    const commitNote = () => {
+        const text = noteDraft.trim();
+        if (text !== (item.note || '')) {
+            const updated = { ...item };
+            if (!text) delete updated.note; else updated.note = text;
+            onChangeItem(updated);
+        }
+    };
+
 
     return (
-        <div className={`group rounded-lg border transition-all ${flagged
+        <div id={`checklist-item-${item.id}`} className={`group rounded-lg border transition-all ${flagged
             ? (isLight ? 'border-amber-300 bg-amber-50' : 'border-amber-500/40 bg-amber-500/5')
             : checked
                 ? (isLight ? 'border-gray-200 bg-gray-50 opacity-60' : 'border-white/5 bg-white/2 opacity-50')
@@ -664,21 +714,147 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                             {item.desc}
                         </p>
                     </div>
-                    <span className={`shrink-0 mt-0.5 ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
-                        {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                    </span>
                 </button>
-                {/* Manual remove — always available */}
-                {onManualRemove && (
+                <div className="flex items-center gap-0.5 shrink-0 me-1 mt-1">
                     <button
-                        onClick={(e) => { e.stopPropagation(); onManualRemove(); }}
-                        title={isHe ? 'הסר' : 'Remove'}
-                        className={`shrink-0 m-2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${isLight ? 'text-gray-400 hover:text-red-600 hover:bg-red-50' : 'text-gray-600 hover:text-red-400 hover:bg-red-500/10'}`}
+                        onClick={() => { onToggle(); if (!isExpanded && isNew) onSeen?.(); }}
+                        className={`p-1 rounded transition-colors ${isLight ? 'text-gray-400 hover:text-gray-600' : 'text-gray-500 hover:text-gray-300'}`}
                     >
-                        <Trash2 size={13} />
+                        {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                     </button>
-                )}
+                    <button
+                        ref={reminderBtnRef}
+                        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); if (!showReminder) { setReminderAnchor(reminderBtnRef.current?.getBoundingClientRect()); } setShowReminder(v => !v); setShowNote(false); setNoteAnchor(null); }}
+                        className={`p-1 rounded transition-colors ${showReminder
+                            ? (isLight ? 'text-blue-600 bg-blue-100' : 'text-blue-400 bg-blue-500/20')
+                            : item.reminder?.date
+                                ? (isLight ? 'text-blue-500 hover:text-blue-600' : 'text-blue-400 hover:text-blue-300')
+                                : (isLight ? 'text-gray-400 hover:text-gray-600' : 'text-gray-500 hover:text-gray-300')}`}
+                        title={isHe ? 'תזכורת' : 'Reminder'}
+                    >
+                        <Bell size={13} />
+                    </button>
+                    <button
+                        ref={noteBtnRef}
+                        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); if (!showNote) { setNoteAnchor(noteBtnRef.current?.getBoundingClientRect()); } setShowNote(v => !v); setShowReminder(false); setReminderAnchor(null); }}
+                        className={`p-1 rounded transition-colors ${showNote
+                            ? (isLight ? 'text-amber-600 bg-amber-100' : 'text-amber-400 bg-amber-500/20')
+                            : item.note
+                                ? (isLight ? 'text-amber-500 hover:text-amber-600' : 'text-amber-400 hover:text-amber-300')
+                                : (isLight ? 'text-gray-400 hover:text-gray-600' : 'text-gray-500 hover:text-gray-300')}`}
+                        title={isHe ? 'הערה' : 'Note'}
+                    >
+                        <MessageSquare size={13} />
+                    </button>
+                    {onManualRemove && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onManualRemove(); }}
+                            title={isHe ? 'הסר' : 'Remove'}
+                            className={`p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${isLight ? 'text-gray-400 hover:text-red-600 hover:bg-red-50' : 'text-gray-600 hover:text-red-400 hover:bg-red-500/10'}`}
+                        >
+                            <Trash2 size={13} />
+                        </button>
+                    )}
+                </div>
             </div>
+            {/* Popups via portal to escape overflow-hidden parents */}
+            {showReminder && reminderAnchor && (
+                <PopupPortal anchorRect={reminderAnchor} align={isHe ? 'left' : 'right'}>
+                    <div
+                        className={`w-52 rounded-lg border shadow-xl overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-white/20'}`}
+                        dir={isHe ? 'rtl' : 'ltr'}
+                    >
+                        <div className={`flex items-center justify-between px-2.5 py-2 border-b ${isLight ? 'bg-blue-50 border-blue-100' : 'bg-blue-500/10 border-white/10'}`}>
+                            <div className="flex items-center gap-1.5">
+                                <Bell size={12} className={isLight ? 'text-blue-500' : 'text-blue-400'} />
+                                <span className={`text-[11px] font-semibold ${isLight ? 'text-blue-700' : 'text-blue-300'}`}>
+                                    {isHe ? 'תזכורת' : 'Reminder'}
+                                </span>
+                            </div>
+                            {item.reminder?.date && (
+                                <button
+                                    onMouseDown={e => { e.preventDefault(); const updated = { ...item }; delete updated.reminder; onChangeItem(updated); setReminderDate(''); setReminderText(''); setShowReminder(false); setReminderAnchor(null); }}
+                                    className={`transition-colors ${isLight ? 'text-slate-300 hover:text-red-500' : 'text-gray-600 hover:text-red-400'}`}
+                                    title={isHe ? 'מחק תזכורת' : 'Delete reminder'}
+                                ><Trash2 size={11} /></button>
+                            )}
+                        </div>
+                        <div className="p-2.5 space-y-2">
+                            <div>
+                                <label className={`text-[10px] font-medium ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'תאריך תזכורת' : 'Reminder date'}</label>
+                                <input
+                                    type="date"
+                                    value={reminderDate}
+                                    onChange={e => setReminderDate(e.target.value)}
+                                    className={`mt-0.5 w-full text-xs px-2 py-1 rounded border outline-none ${isLight ? 'border-slate-200 bg-white text-slate-700' : 'border-white/20 bg-white/10 text-gray-200'}`}
+                                />
+                            </div>
+                            <div>
+                                <label className={`text-[10px] font-medium ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'טקסט (אופציונלי)' : 'Note (optional)'}</label>
+                                <input
+                                    type="text"
+                                    value={reminderText}
+                                    onChange={e => setReminderText(e.target.value)}
+                                    placeholder={isHe ? 'למשל: לבדוק מול סוכן...' : 'e.g. check with agent...'}
+                                    className={`mt-0.5 w-full text-xs px-2 py-1 rounded border outline-none ${isLight ? 'border-slate-200 bg-white text-slate-700 placeholder-slate-300' : 'border-white/20 bg-white/10 text-gray-200 placeholder-gray-600'}`}
+                                />
+                            </div>
+                            <button
+                                onMouseDown={e => {
+                                    e.preventDefault();
+                                    if (!reminderDate) return;
+                                    // Silence BEFORE onChangeItem so the popup doesn't fire
+                                    silenceReminder(item.id);
+                                    onChangeItem({ ...item, reminder: { date: reminderDate, text: reminderText.trim() } });
+                                    setShowReminder(false);
+                                    setReminderAnchor(null);
+                                }}
+                                disabled={!reminderDate}
+                                className={`w-full text-xs py-1.5 rounded font-medium transition-colors ${reminderDate
+                                    ? (isLight ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-blue-600 text-white hover:bg-blue-500')
+                                    : (isLight ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white/5 text-gray-600 cursor-not-allowed')}`}
+                            >
+                                {isHe ? 'שמור תזכורת' : 'Save reminder'}
+                            </button>
+                        </div>
+                    </div>
+                </PopupPortal>
+            )}
+            {showNote && noteAnchor && (
+                <PopupPortal anchorRect={noteAnchor} align={isHe ? 'left' : 'right'}>
+                    <div
+                        className={`w-64 rounded-lg border shadow-xl border-s-4 border-s-amber-400 ${isLight ? 'bg-white border-slate-200' : 'bg-slate-800 border-white/20'}`}
+                        dir={isHe ? 'rtl' : 'ltr'}
+                    >
+                        <div className="flex items-center justify-between px-2 pt-1.5 pb-0.5">
+                            <span
+                                className={`text-[10px] font-medium truncate flex-1 min-w-0 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}
+                                title={isHe ? `הערה: ${item.title}` : `Note: ${item.title}`}
+                            >
+                                {isHe ? `הערה: ${item.title}` : `Note: ${item.title}`}
+                            </span>
+                            {noteDraft && (
+                                <button
+                                    onMouseDown={e => { e.preventDefault(); setNoteDraft(''); const updated = { ...item }; delete updated.note; onChangeItem(updated); setShowNote(false); setNoteAnchor(null); }}
+                                    className={`transition-colors shrink-0 ms-1 ${isLight ? 'text-slate-300 hover:text-red-500' : 'text-gray-600 hover:text-red-400'}`}
+                                >
+                                    <Trash2 size={11} />
+                                </button>
+                            )}
+                        </div>
+                        <textarea
+                            autoFocus
+                            rows={4}
+                            value={noteDraft}
+                            onChange={e => setNoteDraft(e.target.value)}
+                            onBlur={() => { commitNote(); setShowNote(false); setNoteAnchor(null); }}
+                            onKeyDown={e => { if (e.key === 'Escape') { setNoteDraft(item.note || ''); setShowNote(false); setNoteAnchor(null); } if (e.key === 'Enter' && e.ctrlKey) { commitNote(); setShowNote(false); setNoteAnchor(null); } }}
+                            placeholder={isHe ? 'הערה...' : 'Note...'}
+                            className={`w-full text-xs bg-transparent outline-none resize-none px-2 py-1.5 hide-scrollbar ${isLight ? 'text-gray-800 placeholder-slate-300' : 'text-white placeholder-gray-500'}`}
+                        />
+                    </div>
+                </PopupPortal>
+            )}
             {flagged && (
                 <div className={`flex items-center gap-2 px-3 pb-2 ms-10 text-xs`}>
                     <span className={isLight ? 'text-amber-700' : 'text-amber-400'}>
@@ -799,6 +975,34 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     const uidRef = useRef(uid);
     uidRef.current = uid;
 
+    useEffect(() => {
+        const handleScroll = (e) => {
+            const { id } = e.detail;
+            const activeCategories = aiDataRef.current ? aiDataRef.current.categories : buildItems(latestRef.current.inputs, latestRef.current.results, latestRef.current.language);
+            const cat = activeCategories.find(c => c.items && c.items.some(i => i.id === id));
+            if (cat) {
+                 setExpandedCategories(prev => new Set([...prev, cat.category || cat.id]));
+                 setExpandedItems(prev => new Set([...prev, id]));
+                 setTimeout(() => {
+                     const el = document.getElementById(`checklist-item-${id}`);
+                     if (el) {
+                         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                         const oldBg = el.style.backgroundColor;
+                         const oldTransition = el.style.transition;
+                         el.style.transition = 'background-color 0.5s';
+                         el.style.backgroundColor = 'rgba(234, 179, 8, 0.3)'; // yellow
+                         setTimeout(() => {
+                             el.style.backgroundColor = oldBg;
+                             setTimeout(() => { el.style.transition = oldTransition; }, 500);
+                         }, 2000);
+                     }
+                 }, 100);
+            }
+        };
+        window.addEventListener('rc-scroll-to-checklist-item', handleScroll);
+        return () => window.removeEventListener('rc-scroll-to-checklist-item', handleScroll);
+    }, []);
+
     const doRefresh = useCallback(async (silent = false) => {
         const { inputs, results, aiProvider, aiModel, apiKeyOverride, language } = latestRef.current;
         if (!aiProvider || !aiModel) return;
@@ -836,10 +1040,106 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         doRefresh(false);
     }, [doRefresh]);
 
+    useEffect(() => {
+        const handleConfirm = (e) => {
+            const { id } = e.detail;
+            if (!aiDataRef.current || !aiDataRef.current.categories) return;
+
+            let changed = false;
+            const newCategories = aiDataRef.current.categories.map(c => {
+                if (!c.items) return c;
+                let changedItems = false;
+                const newItems = c.items.map(i => {
+                    if (i.id === id && i.reminder) {
+                        changed = true;
+                        changedItems = true;
+                        const { reminder, ...rest } = i;
+                        return rest;
+                    }
+                    return i;
+                });
+                return changedItems ? { ...c, items: newItems } : c;
+            });
+
+            if (changed) {
+                // tell the global sync we handled it
+                window.__rc_handling_reminder_confirm = id;
+                const newAiData = { ...aiDataRef.current, categories: newCategories };
+                setAiData(newAiData);
+                persistState(newAiData.categories, newAiData.snapshot);
+                const allFlatItems = newAiData.categories.flatMap(cat => cat.items);
+                syncComponentReminders('checklist', allFlatItems);
+                
+                setTimeout(() => { window.__rc_handling_reminder_confirm = null; }, 500);
+            }
+        };
+        window.addEventListener('rc-reminder-confirmed', handleConfirm);
+        return () => window.removeEventListener('rc-reminder-confirmed', handleConfirm);
+    }, [persistState]);
+
     const staticCategories = useMemo(
         () => buildItems(inputs, results, language),
         [inputs, results, language]
     );
+
+    const handleChangeItem = useCallback((catId, updatedItem) => {
+        let changed = false;
+        let newAiData = null;
+
+        if (aiDataRef.current && aiDataRef.current.categories) {
+            newAiData = { ...aiDataRef.current };
+            newAiData.categories = newAiData.categories.map(c => {
+                if (c.category !== catId && c.id !== catId) return c;
+                const itemIdx = c.items.findIndex(i => i.id === updatedItem.id || i.title === updatedItem.title);
+                if (itemIdx === -1) return c;
+                changed = true;
+                const newItems = [...c.items];
+                newItems[itemIdx] = updatedItem;
+                return { ...c, items: newItems };
+            });
+        }
+
+        if (!changed) {
+            const base = staticCategories
+                .map(cat => ({
+                    id: cat.category,
+                    title: cat.title,
+                    emoji: '',
+                    items: cat.items
+                        .filter(i => i.relevant)
+                        .map(i => {
+                            const mapped = {
+                                id: i.id,
+                                priority: i.priority,
+                                title: i.title,
+                                description: i.desc || '',
+                                details: i.details || '',
+                            };
+                            return (i.id === updatedItem.id && cat.category === catId) ? updatedItem : mapped;
+                        }),
+                }))
+                .filter(cat => cat.items.length > 0);
+            
+            changed = true;
+            newAiData = { categories: base, snapshot: getSnapshot(latestRef.current.inputs, latestRef.current.results) };
+            if (uid) {
+               const ts = Date.now();
+               setAiTimestamp(ts);
+               setChecklistState(uid, { categories: base, snapshot: newAiData.snapshot, updatedAt: ts }).catch(() => {});
+            }
+        }
+
+        if (changed && newAiData) {
+            setAiData(newAiData);
+            if (aiDataRef.current?.categories) {
+                persistState(newAiData.categories, newAiData.snapshot);
+            }
+            
+            const allFlatItems = newAiData.categories.flatMap(c => c.items);
+            syncComponentReminders('checklist', allFlatItems);
+        }
+    }, [staticCategories, persistState, uid]);
+
 
     // Clear list only (no AI call) — next auto or manual refresh starts fresh
     const handleClearList = useCallback(() => {
@@ -1568,6 +1868,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                                         onKeepNew={() => handleKeepNewItem(normalizedItem.id)}
                                                         onDismissNew={() => handleDismissNewItem(cat.id, normalizedItem.id)}
                                                         onManualRemove={() => handleManualRemove(cat.id, normalizedItem.id)}
+                                                        onChangeItem={(updated) => handleChangeItem(cat.id, updated)}
                                                     />
                                                 );
                                             })}
@@ -1624,6 +1925,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                                         onToggle={() => toggleItem(item.id)}
                                                         checked={checkedItems.has(key)}
                                                         onCheck={() => toggleChecked(key)}
+                                                        onChangeItem={(updated) => handleChangeItem(cat.category, updated)}
                                                     />
                                                 );
                                             })}

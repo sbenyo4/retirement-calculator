@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell } from 'lucide-react';
+import { writeReminders, syncComponentReminders, silenceReminder } from '../hooks/useReminders';
 import { useAuth } from '../contexts/AuthContext';
 import { getBudgetItems, setBudgetItems } from '../utils/db';
 import { getChatResponse } from '../utils/ai-chat';
@@ -165,6 +166,11 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, p
     const [editingLabel, setEditingLabel] = useState(false);
     const [labelDraft, setLabelDraft] = useState(item.label);
     const [amountDraft, setAmountDraft] = useState(item.amount === 0 ? '' : String(item.amount));
+    const [showNote, setShowNote] = useState(false);
+    const [noteDraft, setNoteDraft] = useState(item.note || '');
+    const [showReminder, setShowReminder] = useState(false);
+    const [reminderDate, setReminderDate] = useState(item.reminder?.date || '');
+    const [reminderText, setReminderText] = useState(item.reminder?.text || '');
 
     const commitLabel = () => {
         setEditingLabel(false);
@@ -181,8 +187,13 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, p
     const monthly = toMonthly({ ...item, amount: parseFloat(amountDraft) || 0 });
     const showMonthlyHint = item.frequency === 'annual' && (parseFloat(amountDraft) || 0) > 0;
 
+    const commitNote = () => {
+        const trimmed = noteDraft.trim();
+        if (trimmed !== (item.note || '').trim()) onChange({ ...item, note: trimmed || undefined });
+    };
+
     return (
-        <div className={`flex items-center gap-2 py-1.5 px-2 rounded-lg text-sm ${item.enabled ? '' : 'opacity-40'} ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/10'}`}
+        <div id={`budget-item-${item.id}`} className={`relative flex items-center gap-2 py-1.5 px-2 rounded-lg text-sm ${item.enabled ? '' : 'opacity-40'} ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/10'}`}
             dir={isHe ? 'rtl' : 'ltr'}>
 
             {/* Enable toggle */}
@@ -263,6 +274,32 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, p
                 </button>
             </div>
 
+            {/* Reminder button */}
+            <button
+                onMouseDown={e => { e.preventDefault(); setShowReminder(v => !v); setShowNote(false); }}
+                className={`shrink-0 p-0.5 rounded transition-colors ${showReminder
+                    ? (isLight ? 'text-blue-600 bg-blue-100' : 'text-blue-400 bg-blue-500/20')
+                    : item.reminder?.date
+                        ? (isLight ? 'text-blue-500 hover:text-blue-600' : 'text-blue-400 hover:text-blue-300')
+                        : (isLight ? 'text-slate-300 hover:text-slate-500' : 'text-gray-600 hover:text-gray-400')}`}
+                title={isHe ? 'תזכורת' : 'Reminder'}
+            >
+                <Bell size={13} />
+            </button>
+
+            {/* Note button — toggle */}
+            <button
+                onMouseDown={e => { e.preventDefault(); setShowNote(v => !v); setShowReminder(false); }}
+                className={`shrink-0 p-0.5 rounded transition-colors ${showNote
+                    ? (isLight ? 'text-amber-600 bg-amber-100' : 'text-amber-400 bg-amber-500/20')
+                    : item.note
+                        ? (isLight ? 'text-amber-500 hover:text-amber-600' : 'text-amber-400 hover:text-amber-300')
+                        : (isLight ? 'text-slate-300 hover:text-slate-500' : 'text-gray-600 hover:text-gray-400')}`}
+                title={isHe ? 'הערה' : 'Note'}
+            >
+                <MessageSquare size={13} />
+            </button>
+
             {/* Delete */}
             <button
                 onClick={onDelete}
@@ -270,6 +307,102 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, p
             >
                 <Trash2 size={13} />
             </button>
+
+            {/* Floating reminder panel */}
+            {showReminder && (
+                <div
+                    className={`absolute z-[9999] top-full mt-1 w-52 rounded-lg border shadow-lg overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-white/20'}`}
+                    style={{ [isHe ? 'right' : 'left']: '4rem' }}
+                    dir={isHe ? 'rtl' : 'ltr'}
+                >
+                    <div className={`flex items-center justify-between px-2.5 py-2 border-b ${isLight ? 'bg-blue-50 border-blue-100' : 'bg-blue-500/10 border-white/10'}`}>
+                        <div className="flex items-center gap-1.5">
+                            <Bell size={12} className={isLight ? 'text-blue-500' : 'text-blue-400'} />
+                            <span className={`text-[11px] font-semibold ${isLight ? 'text-blue-700' : 'text-blue-300'}`}>
+                                {isHe ? `תזכורת — ${item.label}` : `Reminder — ${item.label}`}
+                            </span>
+                        </div>
+                        {item.reminder?.date && (
+                            <button
+                                onMouseDown={e => { e.preventDefault(); onChange({ ...item, reminder: undefined }); setReminderDate(''); setReminderText(''); setShowReminder(false); }}
+                                className={`transition-colors ${isLight ? 'text-slate-300 hover:text-red-500' : 'text-gray-600 hover:text-red-400'}`}
+                                title={isHe ? 'מחק תזכורת' : 'Delete reminder'}
+                            ><Trash2 size={11} /></button>
+                        )}
+                    </div>
+                    <div className="p-2.5 space-y-2">
+                        <div>
+                            <label className={`text-[10px] font-medium ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'תאריך תזכורת' : 'Reminder date'}</label>
+                            <input
+                                type="date"
+                                value={reminderDate}
+                                onChange={e => setReminderDate(e.target.value)}
+                                className={`mt-0.5 w-full text-xs px-2 py-1 rounded border outline-none ${isLight ? 'border-slate-200 bg-white text-slate-700' : 'border-white/20 bg-white/10 text-gray-200'}`}
+                            />
+                        </div>
+                        <div>
+                            <label className={`text-[10px] font-medium ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'טקסט (אופציונלי)' : 'Note (optional)'}</label>
+                            <input
+                                type="text"
+                                value={reminderText}
+                                onChange={e => setReminderText(e.target.value)}
+                                placeholder={isHe ? 'למשל: לבדוק מחיר...' : 'e.g. check price...'}
+                                className={`mt-0.5 w-full text-xs px-2 py-1 rounded border outline-none ${isLight ? 'border-slate-200 bg-white text-slate-700 placeholder-slate-300' : 'border-white/20 bg-white/10 text-gray-200 placeholder-gray-600'}`}
+                            />
+                        </div>
+                        <button
+                            onMouseDown={e => {
+                                e.preventDefault();
+                                if (!reminderDate) return;
+                                silenceReminder(item.id);
+                                onChange({ ...item, reminder: { date: reminderDate, text: reminderText.trim() } });
+                                setShowReminder(false);
+                            }}
+                            disabled={!reminderDate}
+                            className={`w-full text-xs py-1.5 rounded font-medium transition-colors ${reminderDate
+                                ? (isLight ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-blue-600 text-white hover:bg-blue-500')
+                                : (isLight ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white/5 text-gray-600 cursor-not-allowed')}`}
+                        >
+                            {isHe ? 'שמור תזכורת' : 'Save reminder'}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Floating note panel — no layout shift */}
+            {showNote && (
+                <div
+                    className={`absolute z-50 top-full mt-1 w-36 rounded-lg border shadow-lg border-s-4 border-s-amber-400 ${isLight ? 'bg-white border-slate-200' : 'bg-slate-800 border-white/20'}`}
+                    style={{ [isHe ? 'right' : 'left']: '2rem' }}
+                    dir={isHe ? 'rtl' : 'ltr'}
+                >
+                    {/* Note header with delete */}
+                    <div className="flex items-center justify-between px-2 pt-1.5 pb-0.5">
+                        <span className={`text-[10px] font-medium truncate ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                            {isHe ? `הערה ל${item.label}` : `Note: ${item.label}`}
+                        </span>
+                        {noteDraft && (
+                            <button
+                                onMouseDown={e => { e.preventDefault(); setNoteDraft(''); onChange({ ...item, note: undefined }); setShowNote(false); }}
+                                className={`transition-colors shrink-0 ms-1 ${isLight ? 'text-slate-300 hover:text-red-500' : 'text-gray-600 hover:text-red-400'}`}
+                                title={isHe ? 'מחק הערה' : 'Delete note'}
+                            >
+                                <Trash2 size={11} />
+                            </button>
+                        )}
+                    </div>
+                    <textarea
+                        autoFocus
+                        rows={5}
+                        value={noteDraft}
+                        onChange={e => setNoteDraft(e.target.value)}
+                        onBlur={() => { commitNote(); setShowNote(false); }}
+                        onKeyDown={e => { if (e.key === 'Escape') { setNoteDraft(item.note || ''); setShowNote(false); } if (e.key === 'Enter' && e.ctrlKey) { commitNote(); setShowNote(false); } }}
+                        placeholder={isHe ? 'הערה חופשית...' : 'Free note...'}
+                        className={`w-full text-xs px-2 pb-2 resize-none outline-none leading-relaxed bg-transparent ${isLight ? 'text-slate-700 placeholder-slate-300' : 'text-gray-200 placeholder-gray-600'}`}
+                    />
+                </div>
+            )}
         </div>
     );
 }
@@ -309,7 +442,7 @@ function LoanItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, pro
         onChange({ ...item, tracks: (item.tracks || []).filter(tr => tr.id !== trackId) });
 
     const addTrack = () => {
-        const newTrack = { id: genId(), label: t('budgetTrack'), amount: 0, endDate: '' };
+        const newTrack = { id: genId(), label: t('budgetTrack'), amount: 0, endDate: '', inflationAffected: false };
         setTrackDrafts(prev => ({ ...prev, [newTrack.id]: { label: newTrack.label, amount: '' } }));
         onChange({ ...item, tracks: [...(item.tracks || []), newTrack] });
     };
@@ -321,7 +454,7 @@ function LoanItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, pro
     };
 
     return (
-        <div className={`rounded-lg border my-1 ${item.enabled ? '' : 'opacity-40'} ${isLight ? 'border-indigo-100 bg-indigo-50/40' : 'border-indigo-500/20 bg-indigo-900/10'}`}>
+        <div id={`budget-item-${item.id}`} className={`rounded-lg border my-1 ${item.enabled ? '' : 'opacity-40'} ${isLight ? 'border-indigo-100 bg-indigo-50/40' : 'border-indigo-500/20 bg-indigo-900/10'}`}>
             {/* Header — click chevron area to toggle tracks */}
             <div className="flex items-center gap-2 px-2 py-1.5 text-sm" dir={isHe ? 'rtl' : 'ltr'}>
                 <button
@@ -611,6 +744,57 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     // Always-current ref so closures (setTimeout, beforeunload) always see latest state
     latestStateRef.current = { items, householdSize };
 
+    const updateItems = useCallback((updater) => {
+        setItems(prev => typeof updater === 'function' ? updater(prev) : updater);
+    }, []);
+
+    // Listen for confirmed reminders and remove them from items
+    useEffect(() => {
+        const handler = (e) => {
+            const { id } = e.detail;
+            window.__rc_handling_reminder_confirm = id;
+            updateItems(prev => prev.map(i => i.id === id ? { ...i, reminder: undefined } : i));
+            setTimeout(() => {
+                if (window.__rc_handling_reminder_confirm === id) {
+                    window.__rc_handling_reminder_confirm = null;
+                }
+            }, 1000);
+        };
+        window.addEventListener('rc-reminder-confirmed', handler);
+        return () => window.removeEventListener('rc-reminder-confirmed', handler);
+    }, [updateItems]);
+
+    // Handle incoming navigation to a specific budget item
+    useEffect(() => {
+        const handleScroll = (e) => {
+            const { id } = e.detail;
+            const state = latestStateRef.current;
+            const item = state.items.find(i => i.id === id || (i.tracks && i.tracks.some(tr => tr.id === id)));
+            if (item) {
+                // Ensure the category is open
+                setOpenCategoryId(item.categoryId);
+                
+                // Allow time for the category to render and expand if it was closed
+                setTimeout(() => {
+                    const el = document.getElementById(`budget-item-${item.id}`);
+                    if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        const oldBg = el.style.backgroundColor;
+                        const oldTransition = el.style.transition;
+                        el.style.transition = 'background-color 0.5s';
+                        el.style.backgroundColor = 'rgba(234, 179, 8, 0.3)'; // Highlight with yellow for 2s
+                        setTimeout(() => {
+                            el.style.backgroundColor = oldBg;
+                            setTimeout(() => { el.style.transition = oldTransition; }, 500);
+                        }, 2000);
+                    }
+                }, 100);
+            }
+        };
+        window.addEventListener('rc-scroll-to-budget-item', handleScroll);
+        return () => window.removeEventListener('rc-scroll-to-budget-item', handleScroll);
+    }, []);
+
     const searchResults = useMemo(() => {
         const q = searchQuery.trim().toLowerCase();
         if (!q) return null;
@@ -704,15 +888,24 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                     const ml = y * 12 + (m - 1) - getNowYM();
                     return { loan: i.label, track: tr.label, amount: tr.amount, endDate: tr.endDate, monthsLeft: ml, active: ml >= 0 };
                 }));
+            const projectedMonthly = items.filter(i => i.enabled).reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0);
             sessionStorage.setItem('rc-budget-summary', JSON.stringify({
                 totalMonthly: Math.round(monthly),
                 totalAnnual: Math.round(monthly * 12),
                 gap: Math.round((parseFloat(inputs.monthlyNetIncomeDesired) || 0) - monthly),
                 categories,
                 loanTracks: loanTracks.length ? loanTracks : undefined,
+                inflation: showInflation ? {
+                    rate: inflationRate,
+                    years: projYears,
+                    projectedMonthly: Math.round(projectedMonthly),
+                    projectedAnnual: Math.round(projectedMonthly * 12),
+                } : undefined,
             }));
         } catch {}
-    }, [items, loaded, inputs.monthlyNetIncomeDesired]);
+        // Write reminders separately so ReminderBell can read them
+        syncComponentReminders('budget', items);
+    }, [items, loaded, inputs.monthlyNetIncomeDesired, showInflation, inflationRate, projFactor, projYears]);
 
     // totalMonthly must be declared before any callbacks that reference it
     const totalMonthly = useMemo(
@@ -735,7 +928,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             .filter(i => i.type === 'loan' && i.enabled)
             .flatMap(i => (i.tracks || [])
                 .filter(tr => tr.endDate && tr.amount > 0 && trackActive(tr))
-                .map(tr => ({ loanLabel: i.label, trackLabel: tr.label, amount: tr.amount, endDate: tr.endDate }))
+                .map(tr => ({ loanLabel: i.label, trackLabel: tr.label, amount: tr.amount, endDate: tr.endDate, inflationAffected: !!tr.inflationAffected, itemRef: i }))
             )
             .sort((a, b) => a.endDate.localeCompare(b.endDate));
         if (!expiring.length) return [];
@@ -745,17 +938,30 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             return acc;
         }, {});
         const nowYM = getNowYM();
-        let cumSaving = 0;
-        return Object.entries(byDate)
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([date, tracks]) => {
-                const saving = tracks.reduce((s, tr) => s + tr.amount, 0);
-                cumSaving += saving;
-                const [y, m] = date.split('-').map(Number);
-                const ml = y * 12 + (m - 1) - nowYM;
-                return { date, tracks, saving, cumSaving, newTotal: totalMonthly - cumSaving, monthsLeft: ml };
-            });
-    }, [items, totalMonthly]);
+        // For each milestone date, compute the projected total at that future point
+        const allDates = Object.keys(byDate).sort();
+        return allDates.map((date, idx) => {
+            const tracks = byDate[date];
+            const saving = tracks.reduce((s, tr) => s + tr.amount, 0);
+            const [y, m] = date.split('-').map(Number);
+            const ml = y * 12 + (m - 1) - nowYM;
+            const yearsAway = ml / 12;
+            // After this milestone: all loan tracks that end by this date are gone
+            const expiredByNow = new Set(allDates.slice(0, idx + 1).flatMap(d => byDate[d].map(tr => `${tr.loanLabel}|${tr.trackLabel}`)));
+            const newTotal = items.filter(i => i.enabled).reduce((s, i) => {
+                if (i.type === 'loan') {
+                    const remaining = (i.tracks || []).filter(tr => {
+                        if (!trackActive(tr)) return false;
+                        if (expiredByNow.has(`${i.label}|${tr.label}`)) return false;
+                        return true;
+                    }).reduce((ts, tr) => ts + (tr.amount || 0) * (showInflation && tr.inflationAffected ? Math.pow(1 + inflationRate, yearsAway) : 1), 0);
+                    return s + remaining;
+                }
+                return s + toMonthly(i) * (showInflation ? Math.pow(1 + inflationRate, yearsAway) : 1);
+            }, 0);
+            return { date, tracks, saving, monthsLeft: ml, newTotal };
+        });
+    }, [items, totalMonthly, showInflation, inflationRate]);
 
     const allCategoryIds = CATEGORIES.map(c => c.id);
     const customCategoryIds = [...new Set(
@@ -778,10 +984,6 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             return totalB - totalA;
         });
     }, [items, customCategoryIds]);
-
-    const updateItems = useCallback((updater) => {
-        setItems(prev => typeof updater === 'function' ? updater(prev) : updater);
-    }, []);
 
     const handleChangeItem = useCallback((updated) => {
         updateItems(prev => prev.map(i => i.id === updated.id ? updated : i));
@@ -1167,11 +1369,12 @@ Gap vs target and what can be optimized.`;
                         {/* Final state summary */}
                         {futureMilestones.length > 1 && (() => {
                             const last = futureMilestones[futureMilestones.length - 1];
+                            const totalSaving = futureMilestones.reduce((s, ms) => s + ms.saving, 0);
                             return (
                                 <div className={`text-xs text-center py-1 rounded-lg ${isLight ? 'text-emerald-700 bg-emerald-50' : 'text-emerald-400 bg-emerald-900/10'}`}>
                                     {isHe
-                                        ? `לאחר כל השינויים: ${currency}${Math.round(last.newTotal).toLocaleString()}/חודש (חיסכון של ${currency}${Math.round(last.cumSaving).toLocaleString()} בחודש)`
-                                        : `After all changes: ${currency}${Math.round(last.newTotal).toLocaleString()}/mo (saving ${currency}${Math.round(last.cumSaving).toLocaleString()}/mo)`}
+                                        ? `לאחר כל השינויים: ${currency}${Math.round(last.newTotal).toLocaleString()}/חודש (חיסכון של ${currency}${Math.round(totalSaving).toLocaleString()} בחודש)`
+                                        : `After all changes: ${currency}${Math.round(last.newTotal).toLocaleString()}/mo (saving ${currency}${Math.round(totalSaving).toLocaleString()}/mo)`}
                                 </div>
                             );
                         })()}
