@@ -147,9 +147,18 @@ export default function AddEventModal({
         linkedTo
     });
 
-    const handleSave = () => {
-        if (!isValid) return;
-        onSave(buildEvent());
+    const [isSaving, setIsSaving] = useState(false);
+
+    const handleSave = async () => {
+        if (!isValid || isSaving) return;
+        setIsSaving(true);
+        // We wrap onSave in a timeout to ensure the UI has a chance to show the loading state
+        // and to decouple the modal closure from the potentially heavy re-render.
+        setTimeout(() => {
+            onSave(buildEvent());
+            // Note: the parent will unmount this component, so we don't necessarily need to set isSaving(false) here,
+            // but but it's good for robustness if onSave doesn't immediately close the modal.
+        }, 10);
     };
 
     return (
@@ -606,19 +615,24 @@ export default function AddEventModal({
                             </button>
                             {event && onSaveAll && (
                                 <button
-                                    onClick={() => { if (isValid) { const e = buildEvent(); onSaveAll(e); } }}
-                                    disabled={!isValid}
-                                    className={`px-4 py-2 rounded text-sm transition-opacity flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white ${!isValid ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    onClick={() => { if (isValid && !isSaving) { setIsSaving(true); setTimeout(() => onSaveAll(buildEvent()), 10); } }}
+                                    disabled={!isValid || isSaving}
+                                    className={`px-4 py-2 rounded text-sm transition-opacity flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white ${!isValid || isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 >
-                                    <Copy className="w-3.5 h-3.5" />
+                                    {isSaving ? (
+                                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    ) : (
+                                        <Copy className="w-3.5 h-3.5" />
+                                    )}
                                     {language === 'he' ? 'שמור לכולם' : 'Save to All'}
                                 </button>
                             )}
                             <button
                                 onClick={handleSave}
-                                disabled={!isValid}
-                                className={`${classes.buttonPrimary} px-4 py-2 rounded text-sm transition-opacity ${!isValid ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                disabled={!isValid || isSaving}
+                                className={`${classes.buttonPrimary} px-4 py-2 rounded text-sm transition-opacity flex items-center gap-2 ${!isValid || isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}
                             >
+                                {isSaving && <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
                                 {event
                                     ? (t ? t('saveChanges') : 'Save Changes')
                                     : (t ? t('addEvent') : 'Add Event')

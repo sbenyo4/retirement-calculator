@@ -546,7 +546,7 @@ function MainApp() {
       />
 
       {/* Global Reminder Sync — loads reminders on login and syncs confirmation to db */}
-      <GlobalRemindersSync uid={currentUser.uid} />
+      <GlobalRemindersSync uid={currentUser.uid} lifeEvents={inputs.lifeEvents} />
 
       {/* Reminder Alert — shown once per session per due reminder */}
       <ReminderAlert language={language} isLight={theme === 'light'} />

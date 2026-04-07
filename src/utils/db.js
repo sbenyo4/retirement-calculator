@@ -44,6 +44,14 @@ function checklistStateRef(uid) {
     return userDoc(uid, 'data', 'checklistState');
 }
 
+function generalRemindersRef(uid) {
+    return userDoc(uid, 'data', 'generalReminders');
+}
+
+function dismissedRemindersRef(uid) {
+    return userDoc(uid, 'data', 'dismissedReminders');
+}
+
 function profilesCollection(uid) {
     return collection(db, 'users', uid, 'profiles');
 }
@@ -142,6 +150,35 @@ export async function getChecklistState(uid) {
 
 export async function setChecklistState(uid, state) {
     await setDoc(checklistStateRef(uid), { ...state, updatedAt: Date.now() }, { merge: true });
+}
+
+// ─── General Reminders ─────────────────────────────────────────────
+
+export async function getGeneralReminders(uid) {
+    const snap = await getDoc(generalRemindersRef(uid));
+    return snap.exists() ? (snap.data().reminders || []) : [];
+}
+
+export async function setGeneralReminders(uid, reminders) {
+    await setDoc(generalRemindersRef(uid), { reminders, updatedAt: Date.now() });
+}
+
+// ─── Dismissed Reminders ───────────────────────────────────────────
+
+export async function getDismissedReminders(uid) {
+    const snap = await getDoc(dismissedRemindersRef(uid));
+    return snap.exists() ? (snap.data().ids || []) : [];
+}
+
+export async function dismissReminder(uid, id) {
+    const snap = await getDoc(dismissedRemindersRef(uid));
+    const currentIds = snap.exists() ? (snap.data().ids || []) : [];
+    if (!currentIds.includes(String(id))) {
+        await setDoc(dismissedRemindersRef(uid), { 
+            ids: [...currentIds, String(id)], 
+            updatedAt: Date.now() 
+        });
+    }
 }
 
 // ─── Rate Limit ────────────────────────────────────────────────────

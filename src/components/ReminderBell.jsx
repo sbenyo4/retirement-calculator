@@ -1,12 +1,27 @@
-import { useState, useRef, useEffect } from 'react';
-import { Bell, BellRing, X, Clock, CheckCheck, Trash2 } from 'lucide-react';
-import { useReminders } from '../hooks/useReminders';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { Bell, BellRing, X, Clock, Trash2, FileText, Plus } from 'lucide-react';
+import { useReminders, syncComponentReminders, silenceReminder } from '../hooks/useReminders';
+import { useAuth } from '../contexts/AuthContext';
+import { setGeneralReminders } from '../utils/db';
 
 export function ReminderBell({ id, t, language, isLight }) {
     const { reminders, dueNow, future, dueCount, count, dismiss, confirmReminder } = useReminders();
+    const { currentUser } = useAuth();
+    const uid = currentUser?.uid;
+
     const [open, setOpen] = useState(false);
     const panelRef = useRef(null);
+    const [isAdding, setIsAdding] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [form, setForm] = useState({ label: '', date: '', text: '' });
+    
     const isHe = language === 'he';
+    
+    // Derived state: general reminders are just a filter of the global list
+    // This is the SINGLE SOURCE OF TRUTH. No local state or effects needed to sync.
+    const genReminders = useMemo(() => 
+        reminders.filter(r => r.source === 'general'), 
+    [reminders]);
 
     // Close on outside click
     useEffect(() => {
@@ -15,6 +30,38 @@ export function ReminderBell({ id, t, language, isLight }) {
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
     }, [open]);
+
+    const handleAdd = async () => {
+        if (!form.label || !form.date || !uid) return;
+        const newId = `gen-${Date.now()}`;
+        const newRem = {
+            id: newId,
+            label: form.label,
+            date: form.date, // Browser input type="date" is already YYYY-MM-DD
+            text: form.text
+        };
+
+        // 1. SILENT local update (Immediate UI feedback, no popup)
+        silenceReminder(newId);
+        
+        // 2. CLOSE modal and clear form immediately for responsive feel
+        const nextList = [...genReminders, newRem];
+        setForm({ label: '', date: '', text: '' });
+        setIsAdding(false);
+        setIsSaving(true);
+
+        try {
+            // 3. Update Global Session Storage (which triggers useReminders hooks)
+            syncComponentReminders('general', nextList, true);
+
+            // 4. Persist to Firestore
+            await setGeneralReminders(uid, nextList);
+        } catch (err) {
+            console.error('[ReminderBell] Save failed:', err);
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     const hasDue = dueCount > 0;
 
@@ -26,7 +73,10 @@ export function ReminderBell({ id, t, language, isLight }) {
 
     function sourceLabel(source) {
         if (source === 'checklist') return isHe ? 'צ׳קליסט' : 'Checklist';
-        return isHe ? 'תקציב' : 'Budget';
+        if (source === 'budget') return isHe ? 'תקציב' : 'Budget';
+        if (source === 'general') return isHe ? 'כללי' : 'General';
+        if (source === 'general') return isHe ? 'כללי' : 'General';
+        return source;
     }
 
     return (
@@ -78,7 +128,6 @@ export function ReminderBell({ id, t, language, isLight }) {
                             </div>
                         ) : (
                             <div className="divide-y divide-inherit">
-                                {/* Due now */}
                                 {dueNow.length > 0 && (
                                     <div>
                                         <div className={`px-3 py-1 text-[10px] font-semibold uppercase tracking-wide ${isLight ? 'text-red-500 bg-red-50' : 'text-red-400 bg-red-500/10'}`}>
@@ -89,7 +138,6 @@ export function ReminderBell({ id, t, language, isLight }) {
                                         ))}
                                     </div>
                                 )}
-                                {/* Future */}
                                 {future.length > 0 && (
                                     <div>
                                         <div className={`px-3 py-1 text-[10px] font-semibold uppercase tracking-wide ${isLight ? 'text-slate-400 bg-slate-50' : 'text-gray-500 bg-white/5'}`}>
@@ -101,6 +149,60 @@ export function ReminderBell({ id, t, language, isLight }) {
                                     </div>
                                 )}
                             </div>
+                        )}
+                    </div>
+
+                    {/* Footer / Add Action */}
+                    <div className={`border-t ${isLight ? 'border-slate-100 bg-slate-50' : 'border-white/10 bg-white/5'}`}>
+                        {isAdding ? (
+                            <div className="p-3 space-y-2.5">
+                                <div className="space-y-1">
+                                    <label className={`text-[10px] font-bold uppercase tracking-wider ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'מה התזכורת?' : 'What is the reminder?'}</label>
+                                    <div className="relative">
+                                        <FileText size={14} className="absolute start-2 top-2.5 text-slate-400" />
+                                        <input
+                                            autoFocus
+                                            className={`w-full ps-8 pe-3 py-2 text-xs rounded-lg border outline-none transition-all ${isLight ? 'bg-white border-slate-200 focus:border-blue-500' : 'bg-slate-800 border-white/10 focus:border-blue-500 text-white'}`}
+                                            placeholder={isHe ? 'למשל: לבדוק דמי ניהול' : 'e.g. Check management fees'}
+                                            value={form.label}
+                                            onChange={e => setForm(f => ({ ...f, label: e.target.value }))}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="grid gap-2" style={{ gridTemplateColumns: '1fr auto' }}>
+                                    <div className="space-y-1">
+                                        <label className={`text-[10px] font-bold uppercase tracking-wider ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'מתי?' : 'When?'}</label>
+                                        <input
+                                            type="date"
+                                            className={`w-full px-2 py-2 text-xs rounded-lg border outline-none ${isLight ? 'bg-white border-slate-200' : 'bg-slate-800 border-white/10 text-white'}`}
+                                            value={form.date}
+                                            onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+                                        />
+                                    </div>
+                                    <div className="flex items-end">
+                                        <button
+                                            onClick={handleAdd}
+                                            disabled={!form.label || !form.date || isSaving}
+                                            className="px-4 py-2 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                                        >
+                                            {isSaving ? (isHe ? 'שומר...' : 'Saving...') : (isHe ? 'שמור' : 'Save')}
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex justify-center">
+                                    <button onClick={() => setIsAdding(false)} className={`text-[10px] font-medium hover:underline ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                        {isHe ? 'ביטול' : 'Cancel'}
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <button
+                                onClick={() => setIsAdding(true)}
+                                className={`w-full py-3 flex items-center justify-center gap-2 text-xs font-semibold transition-colors hover:bg-blue-500/5 ${isLight ? 'text-blue-600' : 'text-blue-400'}`}
+                            >
+                                <Plus size={14} />
+                                {isHe ? 'הוסף תזכורת כללית' : 'Add general reminder'}
+                            </button>
                         )}
                     </div>
                 </div>
@@ -117,13 +219,12 @@ function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onD
                 <div 
                     className="flex items-center gap-1.5 flex-wrap cursor-pointer group"
                     onClick={() => {
+                        if (r.source === 'general') return;
                         window.dispatchEvent(new CustomEvent('rc-navigate-to-item', { detail: { source: r.source, id: r.id } }));
-                        // We also want to close the dropdown... but setOpen is in the parent. We can just dispatch a general mousedown on document or a custom event if easier.
-                        // For now we can just let it navigate. The dropdown closes on click outside.
-                        document.dispatchEvent(new Event('mousedown')); // Hack to trigger click-outside listener
+                        document.dispatchEvent(new Event('mousedown')); // trigger click-outside
                     }}
                 >
-                    <span className={`text-xs font-medium truncate group-hover:underline ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{r.label}</span>
+                    <span className={`text-xs font-medium truncate ${r.source !== 'general' ? 'group-hover:underline' : ''} ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{r.label}</span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isLight ? 'bg-slate-100 text-slate-500' : 'bg-white/10 text-gray-400'}`}>{sourceLabel(r.source)}</span>
                 </div>
                 <div className={`text-[11px] mt-0.5 ${due ? (isLight ? 'text-red-500' : 'text-red-400') : (isLight ? 'text-blue-500' : 'text-blue-400')}`}>

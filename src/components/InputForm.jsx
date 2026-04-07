@@ -854,10 +854,6 @@ export default function InputForm({
                         events={inputs.lifeEvents || []}
                         onChange={(newEvents) => {
                             setInputs(prev => ({ ...prev, lifeEvents: newEvents }));
-                            if (currentProfileId && updateProfile) {
-                                const { pensionIncomeSources, ...dataToSave } = inputs;
-                                updateProfile(currentProfileId, { ...dataToSave, lifeEvents: newEvents });
-                            }
                         }}
                         t={t}
                         language={language}

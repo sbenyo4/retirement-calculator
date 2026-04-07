@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell } from 'lucide-react';
-import { writeReminders, syncComponentReminders, silenceReminder } from '../hooks/useReminders';
+import { syncComponentReminders, silenceReminder } from '../hooks/useReminders';
 import { useAuth } from '../contexts/AuthContext';
 import { getBudgetItems, setBudgetItems } from '../utils/db';
 import { getChatResponse } from '../utils/ai-chat';

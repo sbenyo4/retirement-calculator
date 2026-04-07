@@ -641,7 +641,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         <>
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                 {/* Backdrop */}
-                <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+                <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
                 {/* Modal */}
                 <div className={`relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl shadow-2xl ${isLight ? 'bg-white' : ''} border ${isLight ? 'border-gray-200' : 'border-white/30'}`} style={{ ...dragStyle, overflow: 'clip', overflowClipMargin: '30px' }}>

@@ -111,16 +111,16 @@ export default function LifeEventsManager({
             enabled: true
         };
         const newEvents = [...events, newEvent];
-        onChange(newEvents);
         setShowAddModal(false);
         setEditingEvent(null);
+        onChange(newEvents);
     };
 
     const handleEditEvent = (eventData) => {
         const newEvents = events.map(evt => evt.id === editingEvent.id ? { ...eventData, id: evt.id, enabled: evt.enabled } : evt);
-        onChange(newEvents);
-        setEditingEvent(null);
         setShowAddModal(false);
+        setEditingEvent(null);
+        onChange(newEvents);
     };
 
     const handleEditEventAll = async (eventData) => {
