@@ -357,7 +357,7 @@ function MainApp() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <ReminderBell t={t} language={language} isLight={theme === 'light'} />
+            <ReminderBell id="reminder-bell" t={t} language={language} isLight={theme === 'light'} />
             <UserMenu t={t} />
             <ThemeToggle t={t} />
             <ZoomToggle />
@@ -548,6 +548,7 @@ function MainApp() {
         aiProvider={settings.aiProvider}
         aiModel={settings.aiModel}
         apiKeyOverride={settings.apiKeyOverride}
+        resetKey={currentUser?.uid}
       />
 
       {/* Global Reminder Sync — loads reminders on login and syncs confirmation to db */}

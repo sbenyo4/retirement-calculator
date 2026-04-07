@@ -32,7 +32,7 @@ const SUGGESTIONS = {
 };
 
 const DEFAULT_BTN_POS = { bottom: 24, right: 24 };
-const BTN_SIZE = 56;
+const BTN_SIZE = 40;
 
 function clampPos(pos) {
     const maxRight = Math.max(8, window.innerWidth - BTN_SIZE - 8);
@@ -50,7 +50,7 @@ function loadBtnPos() {
     } catch { return null; }
 }
 
-export function ChatWidget({ inputs, results, language, aiProvider, aiModel, apiKeyOverride }) {
+export function ChatWidget({ inputs, results, language, aiProvider, aiModel, apiKeyOverride, resetKey }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
     const isHe = language === 'he';
@@ -75,6 +75,36 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
         window.addEventListener('resize', onResize);
         return () => window.removeEventListener('resize', onResize);
     }, []);
+
+    // Snap to reminders position on resetKey (login) or mount
+    useEffect(() => {
+        const handleAutoPos = () => {
+            const bell = document.getElementById('reminder-bell');
+            if (bell) {
+                const rect = bell.getBoundingClientRect();
+                const vw = window.innerWidth;
+                const vh = window.innerHeight;
+                const btnSize = 40;
+                // Align with the top of the bell (nudged 2px up for total precision)
+                const btnTop = rect.top - 2;
+                const nextBottom = vh - (btnTop + btnSize);
+                
+                // Position to the right of the bell (approaching the right edge)
+                // rect.right is the distance from left edge to bell's right edge.
+                // vw - rect.right is the distance from right edge to bell's right edge.
+                let nextRight = (vw - rect.right) - btnSize - 8;
+                if (nextRight < 8) nextRight = 8; // clamp to edge
+                
+                const next = clampPos({ right: nextRight, bottom: nextBottom });
+                setBtnPos(next);
+                sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+            }
+        };
+        // Small timeout to ensure header is rendered and layout is stable
+        const timer = setTimeout(handleAutoPos, 300);
+        return () => clearTimeout(timer);
+    }, [resetKey]);
+
     const btnMoved = useRef(false);
     const btnRef = useRef(null);
 
@@ -517,7 +547,7 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
             <button
                 ref={btnRef}
                 onMouseDown={onBtnMouseDown}
-                className={`fixed z-[149] w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-colors select-none ${
+                className={`fixed z-[149] w-10 h-10 rounded-full shadow-xl flex items-center justify-center transition-colors select-none ${
                     open
                         ? 'bg-gray-700 text-white'
                         : 'bg-blue-600 hover:bg-blue-700 text-white'
@@ -525,7 +555,7 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
                 style={{ bottom: btnPos.bottom, right: btnPos.right, cursor: 'grab' }}
                 title={isHe ? 'שאל את היועץ' : 'Ask your advisor'}
             >
-                {open ? <X size={22} /> : <MessageCircle size={22} />}
+                {open ? <X size={18} /> : <MessageCircle size={18} />}
             </button>
         </>
     );

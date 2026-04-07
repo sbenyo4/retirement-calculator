@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Bell, BellRing, X, Clock, CheckCheck, Trash2 } from 'lucide-react';
 import { useReminders } from '../hooks/useReminders';
 
-export function ReminderBell({ t, language, isLight }) {
+export function ReminderBell({ id, t, language, isLight }) {
     const { reminders, dueNow, future, dueCount, count, dismiss, confirmReminder } = useReminders();
     const [open, setOpen] = useState(false);
     const panelRef = useRef(null);
@@ -30,7 +30,7 @@ export function ReminderBell({ t, language, isLight }) {
     }
 
     return (
-        <div className="relative" ref={panelRef}>
+        <div id={id} className="relative" ref={panelRef}>
             <button
                 onClick={() => setOpen(v => !v)}
                 className={`relative px-2.5 py-2 rounded-lg backdrop-blur-sm transition-colors h-10 flex items-center ${
