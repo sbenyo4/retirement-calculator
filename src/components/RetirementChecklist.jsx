@@ -633,7 +633,7 @@ function PopupPortal({ anchorRect, align = 'right', children }) {
     );
 }
 
-function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem, isNew, onSeen, onKeepNew, onDismissNew, onManualRemove, onChangeItem }) {
+function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem, isNew, onSeen, onKeepNew, onDismissNew, onManualRemove, onChangeItem, categoryTitle, categoryEmoji, categoryIcon: CatIcon }) {
     const p = PRIORITIES[item.priority] || PRIORITIES.medium;
     const isHe = language === 'he';
     const flagged = item.aiSuggestedRemoval;
@@ -713,6 +713,12 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                         <p className={`text-xs mt-1 leading-relaxed ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
                             {item.desc}
                         </p>
+                        {categoryTitle && (
+                            <div className={`text-[10px] mt-1.5 flex items-center gap-1 font-medium ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
+                                {categoryEmoji ? <span>{categoryEmoji}</span> : CatIcon ? <CatIcon size={11} /> : null}
+                                {categoryTitle}
+                            </div>
+                        )}
                     </div>
                 </button>
                 <div className="flex items-center gap-0.5 shrink-0 me-1 mt-1">
@@ -860,6 +866,12 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                     <span className={isLight ? 'text-amber-700' : 'text-amber-400'}>
                         {isHe ? 'ה-AI הציע להסיר. מה תרצה לעשות?' : 'AI suggested removing this. What would you like to do?'}
                     </span>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onConfirmRemove?.(); }}
+                        className={`px-2 py-0.5 rounded text-[11px] font-medium ${isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'}`}
+                    >
+                        {isHe ? 'הסר' : 'Remove'}
+                    </button>
                     <button
                         onClick={(e) => { e.stopPropagation(); onKeepItem?.(); }}
                         className={`px-2 py-0.5 rounded text-[11px] font-medium ${isLight ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}
@@ -1346,6 +1358,12 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     const flaggedCount = useMemo(() =>
         activeCategories ? activeCategories.flatMap(c => c.items).filter(i => i.aiSuggestedRemoval).length : 0,
     [activeCategories]);
+    const hasNoteCount = useMemo(() =>
+        activeCategories ? activeCategories.flatMap(c => c.items).filter(i => i.note?.trim()).length : 0,
+    [activeCategories]);
+    const hasReminderCount = useMemo(() =>
+        activeCategories ? activeCategories.flatMap(c => c.items).filter(i => i.reminder?.date).length : 0,
+    [activeCategories]);
     const dismissedCount = dismissedItems.length;
 
     // Flat filtered list: [{ categoryTitle, categoryEmoji, item }]
@@ -1360,6 +1378,8 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             );
         if (filterMode === 'new') return allItems.filter(e => newItemIds.has(e.item.id) && !seenNewIds.has(e.item.id));
         if (filterMode === 'flagged') return allItems.filter(e => e.item.aiSuggestedRemoval);
+        if (filterMode === 'hasNote') return allItems.filter(e => e.item.note?.trim());
+        if (filterMode === 'hasReminder') return allItems.filter(e => e.item.reminder?.date);
         return allItems.filter(e => e.item.priority === filterMode);
     }, [filterMode, activeCategories, staticCategories, newItemIds, seenNewIds, language]);
 
@@ -1557,6 +1577,8 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                         { mode: 'high',     icon: BadgeAlert,    count: highCount,     active: 'bg-orange-500 text-white ring-1 ring-orange-400', inactive: 'text-orange-400 hover:bg-orange-500/30', badge: 'bg-orange-500', tip: txt('High', 'גבוה') },
                         { mode: 'new',      icon: Zap,           count: newCount,      active: 'bg-green-500 text-white ring-1 ring-green-400',  inactive: 'text-green-400 hover:bg-green-500/30',  badge: 'bg-green-500',  tip: txt('New', 'חדש') },
                         { mode: 'flagged',  icon: Flag,          count: flaggedCount,  active: 'bg-amber-500 text-white ring-1 ring-amber-400',  inactive: 'text-amber-400 hover:bg-amber-500/30',  badge: 'bg-amber-500',  tip: txt('Needs review', 'לבדיקה') },
+                        { mode: 'hasNote',  icon: MessageSquare, count: hasNoteCount,  active: 'bg-amber-600 text-white ring-1 ring-amber-500',  inactive: 'text-amber-500 hover:bg-amber-500/30',  badge: 'bg-amber-600',  tip: txt('Notes', 'הערות') },
+                        { mode: 'hasReminder', icon: Bell,       count: hasReminderCount, active: 'bg-blue-600 text-white ring-1 ring-blue-500', inactive: 'text-blue-500 hover:bg-blue-500/30',    badge: 'bg-blue-600',   tip: txt('Reminders', 'תזכורות') },
                         { mode: 'dismissed',icon: EyeOff,        count: dismissedCount,active: 'bg-gray-500 text-white ring-1 ring-gray-400',    inactive: 'text-gray-400 hover:bg-gray-500/30',    badge: 'bg-gray-500',   tip: txt('Dismissed', 'נדחו') },
                     ].map(({ mode, icon: Icon, count, active, inactive, badge, tip }) => (
                         <button
@@ -1704,70 +1726,49 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                     <div className={`text-xs font-semibold mb-3 flex items-center gap-2 ${
                         filterMode === 'critical' ? 'text-red-400' :
                         filterMode === 'high' ? 'text-orange-400' :
-                        filterMode === 'new' ? 'text-green-400' : 'text-amber-400'
+                        filterMode === 'new' ? 'text-green-400' : 
+                        filterMode === 'hasNote' ? 'text-amber-500' :
+                        filterMode === 'hasReminder' ? 'text-blue-500' :
+                        'text-amber-400'
                     }`}>
                         {filterMode === 'critical' ? <AlertTriangle size={13} /> :
                          filterMode === 'high' ? <BadgeAlert size={13} /> :
-                         filterMode === 'new' ? <Zap size={13} /> : <AlertTriangle size={13} />}
+                         filterMode === 'new' ? <Zap size={13} /> : 
+                         filterMode === 'hasNote' ? <MessageSquare size={13} /> :
+                         filterMode === 'hasReminder' ? <Bell size={13} /> :
+                         <AlertTriangle size={13} />}
                         {filterMode === 'critical' ? txt(`${filteredItems.length} Critical Items`, `${filteredItems.length} פריטים קריטיים`) :
                          filterMode === 'high' ? txt(`${filteredItems.length} High Priority Items`, `${filteredItems.length} פריטים בעדיפות גבוהה`) :
                          filterMode === 'new' ? txt(`${filteredItems.length} New Items`, `${filteredItems.length} פריטים חדשים`) :
+                         filterMode === 'hasNote' ? txt(`${filteredItems.length} Items with Notes`, `${filteredItems.length} פריטים עם הערות`) :
+                         filterMode === 'hasReminder' ? txt(`${filteredItems.length} Items with Reminders`, `${filteredItems.length} פריטים עם תזכורות`) :
                          txt(`${filteredItems.length} Items for Review`, `${filteredItems.length} פריטים לבדיקה`)}
                     </div>
                     {filteredItems.map(({ categoryTitle, categoryEmoji, categoryIcon: CatIcon, catId, item }, idx) => {
                         const itemId = `filter-${idx}`;
                         const key = itemKey(catId || categoryTitle, item);
-                        const p = PRIORITIES[item.priority] || PRIORITIES.low;
-                        const isExpanded = expandedItems.has(itemId);
-                        const isChecked = checkedItems.has(key);
                         return (
-                            <div key={itemId} className={`rounded-xl ring-1 overflow-hidden ${p.border} ${isChecked ? 'opacity-50' : ''} ${isLight ? 'bg-white' : 'bg-white/5'}`}>
-                                <div className="flex items-start">
-                                    <button
-                                        onClick={() => toggleChecked(key)}
-                                        className={`shrink-0 m-3 mt-3.5 w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${isChecked ? 'bg-green-500 border-green-500' : isLight ? 'border-gray-300 hover:border-green-400' : 'border-gray-600 hover:border-green-500'}`}
-                                    >
-                                        {isChecked && <CheckCircle size={10} className="text-white" />}
-                                    </button>
-                                    <button
-                                        onClick={() => toggleItem(itemId)}
-                                        className={`flex-1 flex items-start gap-3 p-3 ps-0 text-start transition-colors ${isLight ? 'hover:bg-gray-50' : 'hover:bg-white/5'}`}
-                                    >
-                                        <div className={`mt-0.5 shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold text-white ${p.color}`}>
-                                            {(PRIORITIES[item.priority] || PRIORITIES.low)[isRtl ? 'he' : 'en'].toUpperCase()}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                                <span className={`text-xs font-semibold ${isChecked ? 'line-through' : ''} ${isLight ? 'text-gray-900' : 'text-white'}`}>{item.title}</span>
-                                                {newItemIds.has(item.id) && !isChecked && (
-                                                    <span className={`text-[10px] px-1 py-0.5 rounded-full font-medium ${isLight ? 'bg-green-100 text-green-700' : 'bg-green-500/20 text-green-400'}`}>{txt('New', 'חדש')}</span>
-                                                )}
-                                                {item.aiSuggestedRemoval && (
-                                                    <span className={`text-[10px] px-1 py-0.5 rounded-full font-medium ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-400'}`}>{txt('Review', 'לבדיקה')}</span>
-                                                )}
-                                            </div>
-                                            <div className={`text-[11px] mt-0.5 flex items-center gap-1 ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
-                                                {categoryEmoji ? <span>{categoryEmoji}</span> : CatIcon ? <CatIcon size={10} /> : null}
-                                                {categoryTitle}
-                                            </div>
-                                        </div>
-                                        {isExpanded ? <ChevronDown size={13} className="shrink-0 mt-0.5 text-gray-400" /> : <ChevronRight size={13} className="shrink-0 mt-0.5 text-gray-400" />}
-                                    </button>
-                                </div>
-                                {item.aiSuggestedRemoval && (
-                                    <div className="flex items-center gap-2 px-3 pb-2 ms-10 text-xs">
-                                        <span className={isLight ? 'text-amber-700' : 'text-amber-400'}>{txt('AI suggested removing this.', 'ה-AI הציע להסיר.')}</span>
-                                        <button onClick={() => handleConfirmRemove(catId, item.id)} className={`px-2 py-0.5 rounded text-[11px] font-medium ${isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'}`}>{txt('Remove', 'הסר')}</button>
-                                        <button onClick={() => handleKeepItem(catId, item.id)} className={`px-2 py-0.5 rounded text-[11px] font-medium ${isLight ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}>{txt('Keep', 'השאר')}</button>
-                                    </div>
-                                )}
-                                {isExpanded && (
-                                    <div className={`px-3 pb-3 space-y-1 border-t ${isLight ? 'border-gray-100' : 'border-white/5'}`}>
-                                        <p className={`pt-2 text-xs ${isLight ? 'text-gray-600' : 'text-gray-300'}`}>{item.desc || item.description}</p>
-                                        {item.details && <p className={`text-[11px] mt-1 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>{item.details}</p>}
-                                    </div>
-                                )}
-                            </div>
+                            <ChecklistItem
+                                key={itemId}
+                                item={item}
+                                isLight={isLight}
+                                language={language}
+                                isExpanded={expandedItems.has(itemId)}
+                                onToggle={() => toggleItem(itemId)}
+                                checked={checkedItems.has(key)}
+                                onCheck={() => toggleChecked(key)}
+                                onConfirmRemove={() => handleConfirmRemove(catId, item.id)}
+                                onKeepItem={() => handleKeepItem(catId, item.id)}
+                                isNew={newItemIds.has(item.id) && !seenNewIds.has(item.id)}
+                                onSeen={() => setSeenNewIds(prev => new Set([...prev, item.id]))}
+                                onKeepNew={() => handleKeepNewItem(item.id)}
+                                onDismissNew={() => handleDismissNewItem(catId, item.id)}
+                                onManualRemove={() => handleManualRemove(catId, item.id)}
+                                onChangeItem={(updated) => handleChangeItem(catId, updated)}
+                                categoryTitle={categoryTitle}
+                                categoryEmoji={categoryEmoji}
+                                categoryIcon={CatIcon}
+                            />
                         );
                     })}
                 </div>
@@ -1829,6 +1830,8 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                         const isOpen = expandedCategories.has(cat.id);
                         const criticals = cat.items.filter(i => i.priority === 'critical').length;
                         const highs = cat.items.filter(i => i.priority === 'high').length;
+                        const notes = cat.items.filter(i => i.note?.trim()).length;
+                        const reminders = cat.items.filter(i => i.reminder?.date).length;
                         return (
                             <div key={cat.id} className={`rounded-xl ring-1 overflow-hidden ${c.ring} ${isLight ? 'bg-white' : 'bg-white/5'}`}>
                                 <button
@@ -1840,6 +1843,18 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                     </div>
                                     <span className={`text-sm font-semibold flex-1 ${isLight ? 'text-gray-900' : 'text-white'}`}>{getCategoryTitle(cat, language)}</span>
                                     <div className="flex items-center gap-1.5">
+                                        {notes > 0 && (
+                                            <span className={`flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-400'}`} title={language === 'he' ? 'הערות' : 'Notes'}>
+                                                <MessageSquare size={10} />
+                                                {notes}
+                                            </span>
+                                        )}
+                                        {reminders > 0 && (
+                                            <span className={`flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-500/20 text-blue-400'}`} title={language === 'he' ? 'תזכורות' : 'Reminders'}>
+                                                <Bell size={10} />
+                                                {reminders}
+                                            </span>
+                                        )}
                                         {criticals > 0 && <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{criticals}</span>}
                                         {highs > 0 && <span className="w-4 h-4 rounded-full bg-orange-500 text-white text-[9px] font-bold flex items-center justify-center">{highs}</span>}
                                         {isOpen ? <ChevronDown size={14} className={isLight ? 'text-gray-400' : 'text-gray-500'} /> : <ChevronRight size={14} className={isLight ? 'text-gray-400' : 'text-gray-500'} />}
@@ -1886,6 +1901,8 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                     const relevantItems = cat.items.filter(i => i.relevant);
                     const criticals = relevantItems.filter(i => i.priority === 'critical').length;
                     const highs = relevantItems.filter(i => i.priority === 'high').length;
+                    const notes = relevantItems.filter(i => i.note?.trim()).length;
+                    const reminders = relevantItems.filter(i => i.reminder?.date).length;
 
                     return (
                         <div key={cat.category} className={`rounded-xl ring-1 overflow-hidden ${c.ring} ${isLight ? 'bg-white' : 'bg-white/5'}`}>
@@ -1901,6 +1918,18 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                     {cat.title}
                                 </span>
                                 <div className="flex items-center gap-1.5">
+                                    {notes > 0 && (
+                                        <span className={`flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-400'}`} title={language === 'he' ? 'הערות' : 'Notes'}>
+                                            <MessageSquare size={10} />
+                                            {notes}
+                                        </span>
+                                    )}
+                                    {reminders > 0 && (
+                                        <span className={`flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-500/20 text-blue-400'}`} title={language === 'he' ? 'תזכורות' : 'Reminders'}>
+                                            <Bell size={10} />
+                                            {reminders}
+                                        </span>
+                                    )}
                                     {criticals > 0 && <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{criticals}</span>}
                                     {highs > 0 && <span className="w-4 h-4 rounded-full bg-orange-500 text-white text-[9px] font-bold flex items-center justify-center">{highs}</span>}
                                     {isOpen ? <ChevronDown size={14} className={isLight ? 'text-gray-400' : 'text-gray-500'} /> : <ChevronRight size={14} className={isLight ? 'text-gray-400' : 'text-gray-500'} />}

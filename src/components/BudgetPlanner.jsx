@@ -606,6 +606,8 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
     const categoryProjected = enabledItems.reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0);
     const disabledCount = items.length - enabledItems.length;
     const allDisabled = items.length > 0 && enabledItems.length === 0;
+    const notesCount = items.filter(i => i.note?.trim()).length;
+    const remindersCount = items.filter(i => i.reminder?.date).length;
 
     return (
         <div className={`rounded-xl border transition-opacity ${allDisabled ? 'opacity-50' : ''} ${isLight ? 'border-slate-200 bg-white' : 'border-white/20 bg-white/10'}`}>
@@ -616,6 +618,20 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
                 <button onClick={onToggle} className="flex items-center gap-2 flex-1 min-w-0 text-start">
                     <span className="text-base shrink-0">{category.icon}</span>
                     <span className="flex-1 min-w-0 truncate">{label}</span>
+                    <div className="flex items-center gap-1 shrink-0">
+                        {notesCount > 0 && (
+                            <span className={`flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-400'}`} title={isHe ? 'הערות' : 'Notes'}>
+                                <MessageSquare size={10} />
+                                {notesCount}
+                            </span>
+                        )}
+                        {remindersCount > 0 && (
+                            <span className={`flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-500/20 text-blue-400'}`} title={isHe ? 'תזכורות' : 'Reminders'}>
+                                <Bell size={10} />
+                                {remindersCount}
+                            </span>
+                        )}
+                    </div>
                 </button>
                 {disabledCount > 0 && (
                     <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${isLight ? 'bg-amber-100 text-amber-600' : 'bg-amber-500/20 text-amber-400'}`}>
