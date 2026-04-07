@@ -14,7 +14,9 @@ const SETTINGS_ACTIONS = {
     SET_MODELS_OVERRIDE: 'SET_MODELS_OVERRIDE',
     SET_IDLE_TIMEOUT: 'SET_IDLE_TIMEOUT',
     SET_IDLE_TIMEOUT_ENABLED: 'SET_IDLE_TIMEOUT_ENABLED',
-    SET_FOUR_PERCENT_MODE: 'SET_FOUR_PERCENT_MODE'
+    SET_FOUR_PERCENT_MODE: 'SET_FOUR_PERCENT_MODE',
+    SET_ACTIVE_VIEW: 'SET_ACTIVE_VIEW',
+    RESET_TO_DEFAULTS: 'RESET_TO_DEFAULTS'
 };
 
 function getDefaultSettings() {
@@ -30,7 +32,8 @@ function getDefaultSettings() {
         aiModelsOverride: null, // User-selected custom AI models
         idleTimeoutMinutes: 5,
         idleTimeoutEnabled: true,
-        fourPercentMode: 'net'
+        fourPercentMode: 'net',
+        activeView: 'parameters'
     };
 }
 
@@ -40,6 +43,8 @@ function settingsReducer(state, action) {
             const db = action.payload;
             return {
                 ...state,
+                calculationMode: 'mathematical', // Always default to mathematical on login
+                activeView: 'parameters',        // Always default to parameters on login
                 aiProvider: db.aiProvider || state.aiProvider,
                 aiModel: db.aiModel || state.aiModel,
                 apiKeyOverride: db.apiKeys?.[db.aiProvider || state.aiProvider] || '',
@@ -53,6 +58,9 @@ function settingsReducer(state, action) {
                 fourPercentMode: db.fourPercentMode ?? state.fourPercentMode,
             };
         }
+
+        case SETTINGS_ACTIONS.RESET_TO_DEFAULTS:
+            return getDefaultSettings();
 
         case SETTINGS_ACTIONS.SET_CALCULATION_MODE:
             return { ...state, calculationMode: action.payload };
@@ -106,6 +114,9 @@ function settingsReducer(state, action) {
         case SETTINGS_ACTIONS.SET_FOUR_PERCENT_MODE:
             return { ...state, fourPercentMode: action.payload };
 
+        case SETTINGS_ACTIONS.SET_ACTIVE_VIEW:
+            return { ...state, activeView: action.payload };
+
         default:
             return state;
     }
@@ -129,7 +140,8 @@ export function useAppSettings() {
                 // isInitialLoad stays true — the save effect will clear it
                 // after skipping the first post-dispatch run (deterministic)
             } else {
-                // No saved settings — no dispatch, so clear immediately
+                // No saved settings — reset to defaults (especially calculationMode)
+                dispatch({ type: SETTINGS_ACTIONS.RESET_TO_DEFAULTS });
                 isInitialLoad.current = false;
             }
             loadedRef.current = true;

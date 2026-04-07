@@ -442,6 +442,8 @@ function MainApp() {
               profiles={profiles}
               updateProfile={updateProfile}
               currentProfileId={lastLoadedProfileId}
+              activeView={settings.activeView}
+              setActiveView={(view) => dispatchSettings({ type: SETTINGS_ACTIONS.SET_ACTIVE_VIEW, payload: view })}
             />
             </div>
           </div>

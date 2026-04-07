@@ -39,7 +39,9 @@ export default function InputForm({
     profiles,
     updateProfile,
     currentProfileId,
-    aiModelsOverride
+    aiModelsOverride,
+    activeView,
+    setActiveView
     // Note: sensitivity props (showInterestSensitivity, etc.) were previously passed but are not used in this component
 }) {
     const { theme } = useTheme();
@@ -60,8 +62,6 @@ export default function InputForm({
     const [showCapitalPreservationBtn, setShowCapitalPreservationBtn] = useState(false);
     const [showApiKey, setShowApiKey] = useState(false);
     const [promptText, setPromptText] = useState(null);
-    // View Toggle State: 'parameters' | 'events'
-    const [activeView, setActiveView] = useState('parameters');
     const [showVariableRates, setShowVariableRates] = useState(false);
     const [activeVRType, setActiveVRType] = useState('accumulation'); // 'accumulation' | 'safe' | 'surplus'
     const [showScenario, setShowScenario] = useState(false);

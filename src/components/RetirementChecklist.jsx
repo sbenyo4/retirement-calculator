@@ -1398,6 +1398,13 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             return hay.includes(q);
         });
     }, [searchQuery, activeCategories, staticCategories, language]);
+ 
+    // Auto-reset filter if it becomes empty (e.g. user removed the only note that was being filtered)
+    useEffect(() => {
+        if (filterMode && filterMode !== 'dismissed' && filteredItems && filteredItems.length === 0) {
+            setFilterMode(null);
+        }
+    }, [filterMode, filteredItems]);
 
     const toggleCategory = (id) => {
         setExpandedCategories(prev => prev.has(id) ? new Set() : new Set([id]));
