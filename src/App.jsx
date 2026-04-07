@@ -61,12 +61,6 @@ function MainApp() {
   const { currentUser, logout } = useAuth();
   const { theme } = useTheme();
   const [language, setLanguage] = useState('he');
-
-  // Reset reminder shown-state on every login
-  useEffect(() => {
-    if (currentUser) resetReminderSession();
-  }, [currentUser?.uid]);
-  // Wrap t in useCallback to prevent it from changing on every render
   const t = React.useCallback((key) => translations[language][key] || key, [language]);
 
   // Use Custom Hooks for Logic

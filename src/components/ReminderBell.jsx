@@ -43,9 +43,14 @@ export function ReminderBell({ id, t, language, isLight }) {
                 {hasDue
                     ? <BellRing size={18} className="animate-[wiggle_1s_ease-in-out_infinite]" />
                     : <Bell size={18} />}
-                {count > 0 && (
-                    <span className={`absolute -top-1 -end-1 min-w-[16px] h-4 px-0.5 rounded-full text-[10px] font-bold flex items-center justify-center text-white ${hasDue ? 'bg-red-500' : 'bg-blue-500'}`}>
-                        {count}
+                {dueCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center shadow-sm border border-white/20 pointer-events-none z-10">
+                        {dueCount}
+                    </span>
+                )}
+                {future.length > 0 && (
+                    <span className="absolute -top-1.5 -left-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-blue-500 text-white text-[10px] font-black flex items-center justify-center shadow-sm border border-white/20 pointer-events-none z-10">
+                        {future.length}
                     </span>
                 )}
             </button>

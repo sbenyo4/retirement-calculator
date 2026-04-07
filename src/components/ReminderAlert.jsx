@@ -17,8 +17,8 @@ export function ReminderAlert({ language, isLight }) {
 
     return (
         <div className="fixed inset-0 z-[10000] flex items-start justify-center pt-16 px-4 pointer-events-none">
-            {/* Backdrop — dim but doesn't block */}
-            <div className="absolute inset-0 bg-black/20 pointer-events-auto" onClick={() => remindAgain(r.id)} />
+            {/* Backdrop — blocking until decision */}
+            <div className="absolute inset-0 bg-black/40 pointer-events-auto" />
 
             <div
                 className={`relative pointer-events-auto w-full max-w-sm rounded-2xl shadow-2xl border overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-white/20'}`}
@@ -45,7 +45,6 @@ export function ReminderAlert({ language, isLight }) {
                                     onClick={(e) => {
                                         e.preventDefault();
                                         window.dispatchEvent(new CustomEvent('rc-navigate-to-item', { detail: { source: r.source, id: r.id } }));
-                                        remindAgain(r.id); // dismiss popup so they can view the item
                                     }}
                                     className={`p-1.5 rounded-full transition-colors shrink-0 ${isLight ? 'bg-amber-100 text-amber-600 hover:bg-amber-200' : 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'}`}
                                     title={isHe ? 'מעבר לפריט' : 'Go to item'}

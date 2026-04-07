@@ -8,7 +8,9 @@ const shownThisSession = new Set();
 /** Call this on every login to reset shown state */
 export function resetReminderSession() {
     shownThisSession.clear();
+    try { sessionStorage.removeItem(SESSION_KEY); } catch {}
     window.dispatchEvent(new Event('rc-reminders-session-reset'));
+    window.dispatchEvent(new Event('rc-reminders-updated')); // Notify hooks to clear local state
 }
 
 /** Instantly marks a reminder as shown so it doesn't pop up for the first time in the same session it was created */
@@ -57,8 +59,13 @@ export function useReminders() {
     }, []);
 
     const today = todayStr();
-    const dueNow = reminders.filter(r => r.date && r.date <= today);
-    const future = reminders.filter(r => r.date && r.date > today);
+    const dueNow = reminders
+        .filter(r => r.date && r.date <= today)
+        .sort((a, b) => b.date.localeCompare(a.date));
+    const future = reminders
+        .filter(r => r.date && r.date > today)
+        .sort((a, b) => a.date.localeCompare(b.date));
+
     // pendingAlert: due reminders not yet shown this session — show one at a time
     // Read directly from module-level shownThisSession (always current) instead of React state (can be stale due to batching)
     const pendingAlert = dueNow.find(r => !shownThisSession.has(r.id)) || null;
@@ -102,7 +109,7 @@ export function useReminders() {
 }
 
 /** Write the full reminders array to sessionStorage and notify listeners */
-export function writeReminders(items) {
+export function writeReminders(items, silent = false) {
     try {
         const list = items
             .filter(i => i.reminder?.date)
@@ -113,13 +120,18 @@ export function writeReminders(items) {
                 date: i.reminder.date,
                 text: i.reminder.text || '',
             }));
+        
+        if (silent) {
+            list.forEach(r => shownThisSession.add(r.id));
+        }
+
         sessionStorage.setItem(SESSION_KEY, JSON.stringify(list));
         window.dispatchEvent(new Event('rc-reminders-updated'));
     } catch {}
 }
 
 /** Merges items from a specific source without overwriting other sources' reminders */
-export function syncComponentReminders(source, items) {
+export function syncComponentReminders(source, items, silent = false) {
     try {
         const existing = JSON.parse(sessionStorage.getItem(SESSION_KEY) || '[]');
         const filtered = existing.filter(r => r.source !== source);
@@ -132,6 +144,11 @@ export function syncComponentReminders(source, items) {
                 date: i.reminder.date,
                 text: i.reminder.text || '',
             }));
+
+        if (silent) {
+            newReminders.forEach(r => shownThisSession.add(r.id));
+        }
+
         sessionStorage.setItem(SESSION_KEY, JSON.stringify([...filtered, ...newReminders]));
         window.dispatchEvent(new Event('rc-reminders-updated'));
     } catch {}

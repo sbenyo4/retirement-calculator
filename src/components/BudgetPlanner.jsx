@@ -743,6 +743,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const confirmedRef = useRef(null);   // last successfully saved snapshot
     const latestStateRef = useRef({ items, householdSize }); // always-current ref for closures
     const backupSlotsRef = useRef([]);   // in-memory mirror of Firestore backupSlots
+    const initialSyncRef = useRef(true); // track first sync for reminders behavior
     const [backups, setBackups] = useState([]);
     const [showRestore, setShowRestore] = useState(false);
     const [pendingConfirm, setPendingConfirm] = useState(null); // { type: 'restore'|'reset', backup? }
@@ -920,7 +921,9 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             }));
         } catch {}
         // Write reminders separately so ReminderBell can read them
-        syncComponentReminders('budget', items);
+        // Only allow alerts on the very first sync since mount (login/refresh)
+        syncComponentReminders('budget', items, !initialSyncRef.current);
+        initialSyncRef.current = false;
     }, [items, loaded, inputs.monthlyNetIncomeDesired, showInflation, inflationRate, projFactor, projYears]);
 
     // totalMonthly must be declared before any callbacks that reference it

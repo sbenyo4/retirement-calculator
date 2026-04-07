@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { auth, googleProvider } from '../firebase';
 import { signInWithPopup, signOut, onAuthStateChanged, setPersistence, inMemoryPersistence } from 'firebase/auth';
 import { migrateFromLocalStorage } from '../utils/db';
+import { resetReminderSession } from '../hooks/useReminders';
 
 const AuthContext = createContext();
 
@@ -35,6 +36,8 @@ export function AuthProvider({ children }) {
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
+            // Reset reminder shown-state on every actual user-transition
+            resetReminderSession();
             setCurrentUser(user);
             setLoading(false);
         });

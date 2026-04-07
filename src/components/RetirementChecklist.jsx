@@ -938,6 +938,9 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             if (saved?.categories?.length) {
                 setAiData({ categories: saved.categories, snapshot: saved.snapshot || null });
                 setAiTimestamp(saved.updatedAt || null);
+                // Initial sync to sessionStorage so popups trigger on login
+                const allFlatItems = saved.categories.flatMap(c => c.items);
+                syncComponentReminders('checklist', allFlatItems, false);
             }
             if (Array.isArray(saved?.checkedItems)) {
                 setCheckedItems(new Set(saved.checkedItems));
@@ -1080,7 +1083,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                 setAiData(newAiData);
                 persistState(newAiData.categories, newAiData.snapshot);
                 const allFlatItems = newAiData.categories.flatMap(cat => cat.items);
-                syncComponentReminders('checklist', allFlatItems);
+                syncComponentReminders('checklist', allFlatItems, true);
                 
                 setTimeout(() => { window.__rc_handling_reminder_confirm = null; }, 500);
             }
@@ -1148,7 +1151,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             }
             
             const allFlatItems = newAiData.categories.flatMap(c => c.items);
-            syncComponentReminders('checklist', allFlatItems);
+            syncComponentReminders('checklist', allFlatItems, true);
         }
     }, [staticCategories, persistState, uid]);
 
