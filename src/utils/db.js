@@ -196,6 +196,18 @@ export async function dismissReminder(uid, id) {
     }
 }
 
+export async function undismissReminder(uid, id) {
+    const snap = await getDoc(dismissedRemindersRef(uid));
+    const currentIds = snap.exists() ? (snap.data().ids || []) : [];
+    const nextIds = currentIds.filter(existingId => String(existingId) !== String(id));
+    if (nextIds.length !== currentIds.length) {
+        await setDoc(dismissedRemindersRef(uid), { 
+            ids: nextIds, 
+            updatedAt: Date.now() 
+        });
+    }
+}
+
 // ─── Rate Limit ────────────────────────────────────────────────────
 
 export async function getRateLimitData(uid) {

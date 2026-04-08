@@ -15,8 +15,24 @@ export function GlobalRemindersSync({ uid, lifeEvents = [], currentProfileId, pr
 
     // 1. Initial Load from DB Sources (Budget, Checklist, General)
     useEffect(() => {
-        if (!uid || lastSyncedUidRef.current === uid) return;
+        if (!uid) {
+            lastSyncedUidRef.current = null;
+            return;
+        }
+        if (lastSyncedUidRef.current === uid) return;
         lastSyncedUidRef.current = uid;
+
+        const loadChecklistWithRetry = async (attempt = 0) => {
+            const snap = await getChecklistState(uid).catch(err => {
+                console.error("[Sync] Checklist failed:", err);
+                return {};
+            });
+            const hasCategories = Array.isArray(snap?.categories) && snap.categories.length > 0;
+            if (hasCategories || attempt >= 4) return snap;
+            await new Promise(resolve => setTimeout(resolve, 300));
+            if (lastSyncedUidRef.current !== uid) return {};
+            return loadChecklistWithRetry(attempt + 1);
+        };
 
         setTimeout(() => {
             if (lastSyncedUidRef.current !== uid) return; 
@@ -28,7 +44,7 @@ export function GlobalRemindersSync({ uid, lifeEvents = [], currentProfileId, pr
                     const dismissedSet = new Set(dismissedIds.map(String));
 
                     return Promise.all([
-                        getChecklistState(uid).catch(err => { console.error("[Sync] Checklist failed:", err); return {}; }),
+                        loadChecklistWithRetry(),
                         getGeneralReminders(uid).catch(err => { console.error("[Sync] General failed:", err); return []; }),
                     ]).then(([checklistSnap, generalSnap]) => {
                         const configs = [];
@@ -39,7 +55,7 @@ export function GlobalRemindersSync({ uid, lifeEvents = [], currentProfileId, pr
                             checklistSnap.categories.forEach(c => {
                                 if (c.items) {
                                     c.items.forEach(i => {
-                                        if (i.reminder?.date && !dismissedSet.has(String(i.id))) checklistReminders.push({
+                                        if (i.reminder?.date) checklistReminders.push({
                                             id: String(i.id),
                                             label: i.label || i.title,
                                             reminder: { date: i.reminder.date, text: i.reminder.text || '' }

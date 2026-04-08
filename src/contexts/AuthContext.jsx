@@ -14,12 +14,15 @@ export function AuthProvider({ children }) {
     const [currentUser, setCurrentUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const lastAuthUidRef = useRef(undefined);
+    const wasAuthenticatedRef = useRef(false);
 
     async function login() {
         googleProvider.setCustomParameters({
             prompt: 'select_account'
         });
         const result = await signInWithPopup(auth, googleProvider);
+        // Every explicit login starts a fresh reminder-popup session.
+        resetReminderSession();
 
         // One-time migration from localStorage to Firestore
         try {
@@ -38,11 +41,13 @@ export function AuthProvider({ children }) {
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
             const nextUid = user?.uid || null;
-            if (lastAuthUidRef.current !== nextUid) {
-                // Reset reminder shown-state only when the signed-in user actually changes.
+            const becameAuthenticated = !wasAuthenticatedRef.current && !!user;
+            if (lastAuthUidRef.current !== nextUid || becameAuthenticated) {
+                // Reset reminder session when auth identity changes OR when a fresh login occurs.
                 resetReminderSession();
                 lastAuthUidRef.current = nextUid;
             }
+            wasAuthenticatedRef.current = !!user;
             setCurrentUser(user);
             setLoading(false);
         });

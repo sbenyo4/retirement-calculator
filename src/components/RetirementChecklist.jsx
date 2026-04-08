@@ -11,7 +11,8 @@ import {
     Umbrella, Stethoscope, Building2, FileText, Users,
     Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Flag, Landmark, RotateCcw, Search, X, EyeOff, Undo2, Trash2, MessageSquare, Bell, Save
 } from 'lucide-react';
-import { syncComponentReminders, silenceReminder } from '../hooks/useReminders';
+import { syncComponentReminders, forgetReminderShown, silenceReminder } from '../hooks/useReminders';
+import { undismissReminder } from '../utils/db';
 
 const PRIORITIES = {
     critical: { en: 'Critical', he: 'קריטי', color: 'bg-red-500', text: 'text-red-500', border: 'border-red-500/30', bg: 'bg-red-500/10', order: 0 },
@@ -633,7 +634,7 @@ function PopupPortal({ anchorRect, align = 'right', children }) {
     );
 }
 
-function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem, isNew, onSeen, onKeepNew, onDismissNew, onManualRemove, onChangeItem, categoryTitle, categoryEmoji, categoryIcon: CatIcon }) {
+function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem, isNew, onSeen, onKeepNew, onDismissNew, onManualRemove, onChangeItem, uid, categoryTitle, categoryEmoji, categoryIcon: CatIcon }) {
     const p = PRIORITIES[item.priority] || PRIORITIES.medium;
     const isHe = language === 'he';
     const flagged = item.aiSuggestedRemoval;
@@ -780,7 +781,16 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                             </div>
                             {item.reminder?.date && (
                                 <button
-                                    onMouseDown={e => { e.preventDefault(); const updated = { ...item }; delete updated.reminder; onChangeItem(updated); setReminderDate(''); setReminderText(''); setShowReminder(false); setReminderAnchor(null); }}
+                                    onMouseDown={e => {
+                                        e.preventDefault();
+                                        const updated = { ...item };
+                                        delete updated.reminder;
+                                        onChangeItem(updated, { reminderChanged: true });
+                                        setReminderDate('');
+                                        setReminderText('');
+                                        setShowReminder(false);
+                                        setReminderAnchor(null);
+                                    }}
                                     className={`transition-colors ${isLight ? 'text-slate-300 hover:text-red-500' : 'text-gray-600 hover:text-red-400'}`}
                                     title={isHe ? 'מחק תזכורת' : 'Delete reminder'}
                                 ><Trash2 size={11} /></button>
@@ -810,9 +820,13 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                                 onMouseDown={e => {
                                     e.preventDefault();
                                     if (!reminderDate) return;
-                                    // Silence BEFORE onChangeItem so the popup doesn't fire
-                                    silenceReminder(item.id);
-                                    onChangeItem({ ...item, reminder: { date: reminderDate, text: reminderText.trim() } });
+                                    if (uid) {
+                                        undismissReminder(uid, item.id).catch(() => {});
+                                    }
+                                    onChangeItem(
+                                        { ...item, reminder: { date: reminderDate, text: reminderText.trim() } },
+                                        { reminderChanged: true, suppressImmediateAlert: true }
+                                    );
                                     setShowReminder(false);
                                     setReminderAnchor(null);
                                 }}
@@ -1117,9 +1131,14 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         [inputs, results, language]
     );
 
-    const handleChangeItem = useCallback((catId, updatedItem) => {
+    const handleChangeItem = useCallback((catId, updatedItem, options = {}) => {
         let changed = false;
         let newAiData = null;
+        const reminderTouched = options.reminderChanged === true;
+        const suppressImmediateAlert = options.suppressImmediateAlert === true;
+        const sourceCategories = aiDataRef.current?.categories || staticCategories;
+        const existingCategory = sourceCategories.find(c => c.category === catId || c.id === catId);
+        const previousReminder = existingCategory?.items?.find(i => i.id === updatedItem.id || i.title === updatedItem.title)?.reminder || null;
 
         if (aiDataRef.current && aiDataRef.current.categories) {
             newAiData = { ...aiDataRef.current };
@@ -1171,7 +1190,15 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             }
             
             const allFlatItems = newAiData.categories.flatMap(c => c.items);
-            syncComponentReminders('checklist', allFlatItems, true);
+            const reminderChanged = reminderTouched || JSON.stringify(previousReminder || null) !== JSON.stringify(updatedItem.reminder || null);
+            if (reminderChanged && updatedItem?.id) {
+                if (suppressImmediateAlert) {
+                    silenceReminder(updatedItem.id, 'checklist');
+                } else {
+                    forgetReminderShown(updatedItem.id, 'checklist');
+                }
+            }
+            syncComponentReminders('checklist', allFlatItems, !reminderChanged);
         }
     }, [staticCategories, persistState, uid]);
 
@@ -1778,13 +1805,14 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                         const itemId = `filter-${idx}`;
                         const key = itemKey(catId || categoryTitle, item);
                         return (
-                            <ChecklistItem
-                                key={itemId}
-                                item={item}
-                                isLight={isLight}
-                                language={language}
-                                isExpanded={expandedItems.has(itemId)}
-                                onToggle={() => toggleItem(itemId)}
+                                                    <ChecklistItem
+                                                        key={itemId}
+                                                        item={item}
+                                                        uid={uid}
+                                                        isLight={isLight}
+                                                        language={language}
+                                                        isExpanded={expandedItems.has(itemId)}
+                                                        onToggle={() => toggleItem(itemId)}
                                 checked={checkedItems.has(key)}
                                 onCheck={() => toggleChecked(key)}
                                 onConfirmRemove={() => handleConfirmRemove(catId, item.id)}
@@ -1794,7 +1822,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                 onKeepNew={() => handleKeepNewItem(item.id)}
                                 onDismissNew={() => handleDismissNewItem(catId, item.id)}
                                 onManualRemove={() => handleManualRemove(catId, item.id)}
-                                onChangeItem={(updated) => handleChangeItem(catId, updated)}
+                                onChangeItem={(updated, options) => handleChangeItem(catId, updated, options)}
                                 categoryTitle={categoryTitle}
                                 categoryEmoji={categoryEmoji}
                                 categoryIcon={CatIcon}
@@ -1900,6 +1928,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                                     <ChecklistItem
                                                         key={idx}
                                                         item={normalizedItem}
+                                                        uid={uid}
                                                         isLight={isLight}
                                                         language={language}
                                                         isExpanded={expandedItems.has(`${cat.id}-${idx}`)}
@@ -1913,7 +1942,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                                         onKeepNew={() => handleKeepNewItem(normalizedItem.id)}
                                                         onDismissNew={() => handleDismissNewItem(cat.id, normalizedItem.id)}
                                                         onManualRemove={() => handleManualRemove(cat.id, normalizedItem.id)}
-                                                        onChangeItem={(updated) => handleChangeItem(cat.id, updated)}
+                                                        onChangeItem={(updated, options) => handleChangeItem(cat.id, updated, options)}
                                                     />
                                                 );
                                             })}
@@ -1978,13 +2007,14 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                                     <ChecklistItem
                                                         key={item.id}
                                                         item={item}
+                                                        uid={uid}
                                                         isLight={isLight}
                                                         language={language}
                                                         isExpanded={expandedItems.has(item.id)}
                                                         onToggle={() => toggleItem(item.id)}
                                                         checked={checkedItems.has(key)}
                                                         onCheck={() => toggleChecked(key)}
-                                                        onChangeItem={(updated) => handleChangeItem(cat.category, updated)}
+                                                        onChangeItem={(updated, options) => handleChangeItem(cat.category, updated, options)}
                                                     />
                                                 );
                                             })}

@@ -600,7 +600,7 @@ function MainApp() {
       <BudgetRemindersSync uid={currentUser.uid} />
 
       {/* Reminder Alert — shown once per session per due reminder */}
-      <ReminderAlert language={language} isLight={theme === 'light'} />
+      <ReminderAlert language={language} isLight={theme === 'light'} sessionKey={currentUser.uid} />
 
       {/* Idle Warning Modal */}
       {warningActive && (

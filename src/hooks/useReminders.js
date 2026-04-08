@@ -4,18 +4,67 @@ const SESSION_KEY = 'rc-reminders';
 
 // In-memory set of reminders shown in CURRENT browser session life
 const shownThisSession = new Set();
+const forcedPopupUntil = new Map();
+const loginTargetReminderIds = new Set();
+const loginHandledReminderIds = new Set();
+let loginPopupMode = true;
+let loginPopupGraceUntil = 0;
+
+function toGlobalId(id, source) {
+    return source ? `${source}-${id}` : String(id);
+}
+
+function isForced(globalId) {
+    const until = forcedPopupUntil.get(globalId);
+    if (!until) return false;
+    if (until <= Date.now()) {
+        forcedPopupUntil.delete(globalId);
+        return false;
+    }
+    return true;
+}
+
+function resetLoginPopupModeState() {
+    loginPopupMode = true;
+    loginPopupGraceUntil = Date.now() + 8000;
+    loginTargetReminderIds.clear();
+    loginHandledReminderIds.clear();
+}
 
 export function resetReminderSession() {
     console.log("%c[Reminders] Resetting session shown-state", "color: #ef4444; font-weight: bold");
     shownThisSession.clear();
+    forcedPopupUntil.clear();
+    resetLoginPopupModeState();
     try { sessionStorage.removeItem(SESSION_KEY); } catch {}
     window.dispatchEvent(new Event('rc-reminders-updated'));
 }
 
 export function silenceReminder(id, source) {
     if (!id) return;
-    const globalId = source ? `${source}-${id}` : String(id);
+    const globalId = toGlobalId(id, source);
     shownThisSession.add(globalId);
+    forcedPopupUntil.delete(globalId);
+    window.dispatchEvent(new Event('rc-reminders-updated'));
+}
+
+export function forgetReminderShown(id, source) {
+    if (!id) return;
+    const globalId = toGlobalId(id, source);
+    shownThisSession.delete(globalId);
+}
+
+export function forceReminderPopup(id, source, durationMs = 15000) {
+    if (!id || !source) return;
+    const globalId = toGlobalId(id, source);
+    shownThisSession.delete(globalId);
+    forcedPopupUntil.set(globalId, Date.now() + Math.max(1000, durationMs));
+    window.dispatchEvent(new Event('rc-reminders-updated'));
+}
+
+export function markLoginReminderHandled(id, source) {
+    if (!id || !source) return;
+    loginHandledReminderIds.add(toGlobalId(id, source));
     window.dispatchEvent(new Event('rc-reminders-updated'));
 }
 
@@ -127,40 +176,91 @@ export function useReminders() {
         };
     }, [normalizedReminders]);
 
+    useEffect(() => {
+        if (!loginPopupMode) return;
+
+        const now = Date.now();
+        if (now <= loginPopupGraceUntil) {
+            dueNow.forEach(r => loginTargetReminderIds.add(toGlobalId(r.id, r.source)));
+            const wait = Math.max(0, loginPopupGraceUntil - now);
+            const timeoutId = setTimeout(() => {
+                window.dispatchEvent(new Event('rc-reminders-updated'));
+            }, wait + 5);
+            return () => clearTimeout(timeoutId);
+        }
+
+        const allHandled = Array.from(loginTargetReminderIds).every(id => loginHandledReminderIds.has(id));
+        if (allHandled) {
+            loginPopupMode = false;
+            window.dispatchEvent(new Event('rc-reminders-updated'));
+        }
+    }, [dueNow, tick]);
+
+    const alertDueNow = useMemo(() => {
+        if (!loginPopupMode) return [];
+        return dueNow.filter(r => {
+            const globalId = toGlobalId(r.id, r.source);
+            if (isForced(globalId)) return true;
+            if (!loginTargetReminderIds.has(globalId)) return false;
+            return !loginHandledReminderIds.has(globalId);
+        });
+    }, [dueNow, tick]);
+
     const pendingAlert = useMemo(() => {
-        if (!systemReady) return null;
-        return dueNow.find(r => !shownThisSession.has(`${r.source}-${r.id}`)) || null;
-    }, [dueNow, tick, systemReady]);
+        return alertDueNow[0] || null;
+    }, [alertDueNow]);
 
     const markShown = useCallback((id, source) => {
         if (!id) return;
-        shownThisSession.add(source ? `${source}-${id}` : String(id));
+        const globalId = toGlobalId(id, source);
+        shownThisSession.add(globalId);
+        forcedPopupUntil.delete(globalId);
         setTick(t => t + 1);
         window.dispatchEvent(new Event('rc-reminders-updated'));
     }, []);
 
-    const confirmReminder = useCallback((id) => {
-        const found = reminders.find(r => String(r.id) === String(id));
-        const source = found?.source;
+    const confirmReminder = useCallback((id, sourceHint) => {
+        const found = sourceHint
+            ? reminders.find(r => String(r.id) === String(id) && r.source === sourceHint)
+            : reminders.find(r => String(r.id) === String(id));
+        const source = sourceHint || found?.source;
         try {
             const current = readReminders();
-            const filtered = current.filter(r => !(String(r.id) === String(id) && r.source === source));
+            const filtered = current.filter(r => {
+                if (String(r.id) !== String(id)) return true;
+                if (!source) return false;
+                return r.source !== source;
+            });
             sessionStorage.setItem(SESSION_KEY, JSON.stringify(filtered));
         } catch {}
+        if (source) {
+            loginHandledReminderIds.add(toGlobalId(id, source));
+        }
         markShown(id, source);
-        setReminders(prev => prev.filter(r => !(String(r.id) === String(id) && r.source === source)));
+        setReminders(prev => prev.filter(r => {
+            if (String(r.id) !== String(id)) return true;
+            if (!source) return false;
+            return r.source !== source;
+        }));
         window.dispatchEvent(new CustomEvent('rc-reminder-confirmed', { detail: { id, source } }));
         window.dispatchEvent(new Event('rc-reminders-updated'));
     }, [markShown, reminders]);
 
-    const dismiss = useCallback((id) => {
-        const found = reminders.find(r => String(r.id) === String(id));
-        markShown(id, found?.source);
+    const dismiss = useCallback((id, sourceHint) => {
+        const found = sourceHint
+            ? reminders.find(r => String(r.id) === String(id) && r.source === sourceHint)
+            : reminders.find(r => String(r.id) === String(id));
+        const source = sourceHint || found?.source;
+        if (source) {
+            loginHandledReminderIds.add(toGlobalId(id, source));
+        }
+        markShown(id, source);
     }, [markShown, reminders]);
 
     return {
         reminders: normalizedReminders,
         dueNow,
+        alertDueNow,
         future,
         pendingAlert,
         dismiss,
@@ -190,9 +290,6 @@ export function syncMultipleSources(syncConfigs) {
                     date: normalizeDate(i.reminder?.date || i.date),
                     text: i.reminder?.text || i.text || '',
                 }));
-            if (silent) {
-                newOnes.forEach(r => shownThisSession.add(`${source}-${r.id}`));
-            }
             nextState = [...nextState, ...newOnes];
         });
         const nextValue = JSON.stringify(nextState);

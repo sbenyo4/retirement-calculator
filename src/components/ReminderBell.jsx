@@ -71,7 +71,7 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
         };
 
         // 1. SILENT local update (Immediate UI feedback, no popup)
-        silenceReminder(newId);
+        silenceReminder(newId, 'general');
         
         // 2. CLOSE modal and clear form immediately for responsive feel
         const nextList = [...genReminders, newRem];
@@ -392,7 +392,7 @@ function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onD
                 >
                     <Pencil size={12} />
                 </button>
-                <button onClick={() => onConfirm(r.id)} title={isHe ? 'מחק תזכורת' : 'Delete reminder'} className={`p-0.5 rounded transition-colors ${isLight ? 'text-slate-300 hover:text-red-500' : 'text-gray-600 hover:text-red-400'}`}>
+                <button onClick={() => onConfirm(r.id, r.source)} title={isHe ? 'מחק תזכורת' : 'Delete reminder'} className={`p-0.5 rounded transition-colors ${isLight ? 'text-slate-300 hover:text-red-500' : 'text-gray-600 hover:text-red-400'}`}>
                     <Trash2 size={12} />
                 </button>
             </div>
