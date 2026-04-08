@@ -1218,6 +1218,7 @@ Gap vs target and what can be optimized.`;
     }, [aiProvider, aiModel, apiKeyOverride, items, target, totalMonthly, isHe]);
 
     const pct = target > 0 ? Math.min(totalMonthly / target, 1.5) : 0;
+    const projectedPct = target > 0 ? Math.min(totalProjectedMonthly / target, 1.5) : 0;
     const gap = target - totalMonthly;
     const statusColor = pct > 1 ? 'text-red-500' : pct > 0.9 ? 'text-amber-500' : 'text-emerald-500';
     const barColor   = pct > 1 ? 'bg-red-500'   : pct > 0.9 ? 'bg-amber-500'   : 'bg-emerald-500';
@@ -1329,9 +1330,16 @@ Gap vs target and what can be optimized.`;
                         <div className={`h-full rounded-full transition-all duration-300 ${barColor}`} style={{ width: `${Math.min(pct * 100, 100)}%` }} />
                     </div>
                     {target > 0 && (
-                        <span className={`text-xs shrink-0 font-medium ${pctColor}`}>
-                            {Math.round(pct * 100)}% {t('budgetOfTarget')}
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0" dir="ltr">
+                            <span className={`text-xs font-medium ${pctColor}`}>
+                                {Math.round(pct * 100)}% {t('budgetOfTarget')}
+                            </span>
+                            {showInflation && (
+                                <span className={`text-xs font-medium ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
+                                    → {Math.round(projectedPct * 100)}%
+                                </span>
+                            )}
+                        </div>
                     )}
                 </div>
 
