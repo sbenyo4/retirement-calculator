@@ -119,6 +119,17 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
         });
     };
 
+    const toggleEditReminder = (reminder) => {
+        if (
+            editingReminder?.id === reminder?.id &&
+            editingReminder?.source === reminder?.source
+        ) {
+            cancelEditReminder();
+            return;
+        }
+        beginEditReminder(reminder);
+    };
+
     const cancelEditReminder = () => {
         setEditingReminder(null);
     };
@@ -199,7 +210,7 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
                                                 sourceLabel={reminderSourceLabel}
                                                 onConfirm={confirmReminder}
                                                 onDismiss={dismiss}
-                                                onEdit={beginEditReminder}
+                                                onEdit={toggleEditReminder}
                                                 due
                                                 isEditing={editingReminder?.id === r.id && editingReminder?.source === r.source}
                                                 editForm={editForm}
@@ -225,7 +236,7 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
                                                 sourceLabel={reminderSourceLabel}
                                                 onConfirm={confirmReminder}
                                                 onDismiss={dismiss}
-                                                onEdit={beginEditReminder}
+                                                onEdit={toggleEditReminder}
                                                 tone="tomorrow"
                                                 isEditing={editingReminder?.id === r.id && editingReminder?.source === r.source}
                                                 editForm={editForm}
@@ -251,7 +262,7 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
                                                 sourceLabel={reminderSourceLabel}
                                                 onConfirm={confirmReminder}
                                                 onDismiss={dismiss}
-                                                onEdit={beginEditReminder}
+                                                onEdit={toggleEditReminder}
                                                 tone="tomorrow"
                                                 isEditing={editingReminder?.id === r.id && editingReminder?.source === r.source}
                                                 editForm={editForm}
@@ -277,7 +288,7 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
                                                 sourceLabel={reminderSourceLabel}
                                                 onConfirm={confirmReminder}
                                                 onDismiss={dismiss}
-                                                onEdit={beginEditReminder}
+                                                onEdit={toggleEditReminder}
                                                 isEditing={editingReminder?.id === r.id && editingReminder?.source === r.source}
                                                 editForm={editForm}
                                                 setEditForm={setEditForm}
