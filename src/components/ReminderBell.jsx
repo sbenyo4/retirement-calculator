@@ -4,8 +4,10 @@ import { useReminders, syncComponentReminders, silenceReminder } from '../hooks/
 import { useAuth } from '../contexts/AuthContext';
 import { setGeneralReminders } from '../utils/db';
 
-export function ReminderBell({ id, t, language, isLight }) {
-    const { reminders, dueNow, future, dueCount, count, dismiss, confirmReminder } = useReminders();
+const isLifeEventSource = (source) => typeof source === 'string' && (source === 'lifeEvents' || source.startsWith('lifeEvents:'));
+
+export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
+    const { reminders, dueNow, future, dismiss, confirmReminder } = useReminders();
     const { currentUser } = useAuth();
     const uid = currentUser?.uid;
 
@@ -16,12 +18,24 @@ export function ReminderBell({ id, t, language, isLight }) {
     const [form, setForm] = useState({ label: '', date: '', text: '' });
     
     const isHe = language === 'he';
+    const activeLifeEventSource = activeProfileId ? `lifeEvents:${activeProfileId}` : null;
+    const isVisibleReminder = (reminder) => {
+        if (!reminder) return false;
+        if (!isLifeEventSource(reminder.source)) return true;
+        return reminder.source === activeLifeEventSource;
+    };
     
     // Derived state: general reminders are just a filter of the global list
     // This is the SINGLE SOURCE OF TRUTH. No local state or effects needed to sync.
     const genReminders = useMemo(() => 
         reminders.filter(r => r.source === 'general'), 
     [reminders]);
+    const visibleReminders = useMemo(() => reminders.filter(isVisibleReminder), [reminders, activeLifeEventSource]);
+    const visibleDueNow = useMemo(() => dueNow.filter(isVisibleReminder), [dueNow, activeLifeEventSource]);
+    const visibleFuture = useMemo(() => future.filter(isVisibleReminder), [future, activeLifeEventSource]);
+    const visibleCount = visibleReminders.length;
+    const visibleDueCount = visibleDueNow.length;
+    const visibleFutureCount = visibleFuture.length;
 
     // Close on outside click
     useEffect(() => {
@@ -63,7 +77,7 @@ export function ReminderBell({ id, t, language, isLight }) {
         }
     };
 
-    const hasDue = dueCount > 0;
+    const hasDue = visibleDueCount > 0;
 
     function formatDate(dateStr) {
         if (!dateStr) return '';
@@ -75,9 +89,11 @@ export function ReminderBell({ id, t, language, isLight }) {
         if (source === 'checklist') return isHe ? 'צ׳קליסט' : 'Checklist';
         if (source === 'budget') return isHe ? 'תקציב' : 'Budget';
         if (source === 'general') return isHe ? 'כללי' : 'General';
-        if (source === 'general') return isHe ? 'כללי' : 'General';
+        if (isLifeEventSource(source)) return isHe ? 'אירוע חיים' : 'Life Event';
         return source;
     }
+
+    const reminderSourceLabel = (source) => sourceLabel(source);
 
     return (
         <div id={id} className="relative" ref={panelRef}>
@@ -93,14 +109,14 @@ export function ReminderBell({ id, t, language, isLight }) {
                 {hasDue
                     ? <BellRing size={18} className="animate-[wiggle_1s_ease-in-out_infinite]" />
                     : <Bell size={18} />}
-                {dueCount > 0 && (
+                {visibleDueCount > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center shadow-sm border border-white/20 pointer-events-none z-10">
-                        {dueCount}
+                        {visibleDueCount}
                     </span>
                 )}
-                {future.length > 0 && (
+                {visibleFutureCount > 0 && (
                     <span className="absolute -top-1.5 -left-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-blue-500 text-white text-[10px] font-black flex items-center justify-center shadow-sm border border-white/20 pointer-events-none z-10">
-                        {future.length}
+                        {visibleFutureCount}
                     </span>
                 )}
             </button>
@@ -122,29 +138,29 @@ export function ReminderBell({ id, t, language, isLight }) {
                     </div>
 
                     <div className="max-h-80 overflow-y-auto custom-scrollbar scrollbar-right">
-                        {count === 0 ? (
+                        {visibleCount === 0 ? (
                             <div className={`px-4 py-6 text-center text-sm ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
                                 {isHe ? 'אין תזכורות' : 'No reminders set'}
                             </div>
                         ) : (
                             <div className="divide-y divide-inherit">
-                                {dueNow.length > 0 && (
+                                {visibleDueNow.length > 0 && (
                                     <div>
                                         <div className={`px-3 py-1 text-[10px] font-semibold uppercase tracking-wide ${isLight ? 'text-red-500 bg-red-50' : 'text-red-400 bg-red-500/10'}`}>
                                             {isHe ? 'לטיפול עכשיו' : 'Due now'}
                                         </div>
-                                        {dueNow.map(r => (
-                                            <ReminderRow key={r.id} r={r} isLight={isLight} isHe={isHe} formatDate={formatDate} sourceLabel={sourceLabel} onConfirm={confirmReminder} onDismiss={dismiss} due />
+                                        {visibleDueNow.map(r => (
+                                            <ReminderRow key={r.id} r={r} isLight={isLight} isHe={isHe} formatDate={formatDate} sourceLabel={reminderSourceLabel} onConfirm={confirmReminder} onDismiss={dismiss} due />
                                         ))}
                                     </div>
                                 )}
-                                {future.length > 0 && (
+                                {visibleFuture.length > 0 && (
                                     <div>
                                         <div className={`px-3 py-1 text-[10px] font-semibold uppercase tracking-wide ${isLight ? 'text-slate-400 bg-slate-50' : 'text-gray-500 bg-white/5'}`}>
                                             {isHe ? 'עתידיות' : 'Upcoming'}
                                         </div>
-                                        {future.map(r => (
-                                            <ReminderRow key={r.id} r={r} isLight={isLight} isHe={isHe} formatDate={formatDate} sourceLabel={sourceLabel} onConfirm={confirmReminder} onDismiss={dismiss} />
+                                        {visibleFuture.map(r => (
+                                            <ReminderRow key={r.id} r={r} isLight={isLight} isHe={isHe} formatDate={formatDate} sourceLabel={reminderSourceLabel} onConfirm={confirmReminder} onDismiss={dismiss} />
                                         ))}
                                     </div>
                                 )}

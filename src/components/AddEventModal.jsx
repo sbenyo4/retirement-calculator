@@ -45,6 +45,7 @@ export default function AddEventModal({
     const currency = language === 'he' ? '₪' : '$';
     const currentYear = new Date().getFullYear();
     const currentMonth = new Date().getMonth() + 1;
+    const toReminderDate = (year, month) => `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`;
 
     // Helper to calculate age based on selected year
     const getAgeAtYear = (year) => {
@@ -76,6 +77,7 @@ export default function AddEventModal({
     const [monthlyChange, setMonthlyChange] = useState(event?.monthlyChange || '');
     const [description, setDescription] = useState(event?.description || '');
     const [linkedTo, setLinkedTo] = useState(event?.linkedTo || null);
+    const [hasReminder, setHasReminder] = useState(!!event?.reminder?.date);
 
     // Derived validation state
     const isRecurring = eventType === EVENT_TYPES.INCOME_CHANGE || eventType === EVENT_TYPES.EXPENSE_CHANGE;
@@ -106,6 +108,7 @@ export default function AddEventModal({
         setMonthlyChange(event?.monthlyChange || '');
         setDescription(event?.description || '');
         setLinkedTo(event?.linkedTo || null);
+        setHasReminder(!!event?.reminder?.date);
     }, [event, currentYear, currentMonth]);
 
 
@@ -144,7 +147,13 @@ export default function AddEventModal({
         amount: isOneTime ? parseFloat(amount) : null,
         monthlyChange: isRecurring ? parseFloat(monthlyChange) : null,
         description,
-        linkedTo
+        linkedTo,
+        reminder: hasReminder
+            ? {
+                date: toReminderDate(parseInt(startYear), parseInt(startMonth)),
+                text: event?.reminder?.text || ''
+            }
+            : null
     });
 
     const [isSaving, setIsSaving] = useState(false);
@@ -589,6 +598,20 @@ export default function AddEventModal({
                                         </p>
                                     )}
                                 </div>
+                            </div>
+
+                            <div className={`rounded-xl border p-3 ${isLight ? 'bg-blue-50/60 border-blue-100' : 'bg-blue-500/10 border-blue-500/20'}`}>
+                                <label className="flex items-start gap-3 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={hasReminder}
+                                        onChange={(e) => setHasReminder(e.target.checked)}
+                                        className="mt-0.5 w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <div className={`text-sm font-medium ${classes.headerLabel}`}>
+                                        {language === 'he' ? 'צור תזכורת אוטומטית לאירוע' : 'Create an automatic reminder for this event'}
+                                    </div>
+                                </label>
                             </div>
                         </div>
                     </div>

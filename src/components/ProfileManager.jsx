@@ -8,7 +8,7 @@ import { normalizeInputs } from '../utils/profileUtils';
 
 import { calculateAgeFromDate } from '../utils/dateUtils';
 
-export function ProfileManager({ currentInputs, onLoad, t, language, profiles, onSaveProfile, onUpdateProfile, onRenameProfile, onDeleteProfile, onProfileLoad, lastLoadedProfileId, onSaveGlobalPension }) {
+export function ProfileManager({ currentInputs, onLoad, t, language, profiles, onSaveProfile, onUpdateProfile, onRenameProfile, onDeleteProfile, onProfileLoad, onActiveProfileChange, lastLoadedProfileId, onSaveGlobalPension }) {
     const [newProfileName, setNewProfileName] = useState('');
     const [selectedProfileId, setSelectedProfileId] = useState('');
     const [saveMessage, setSaveMessage] = useState('');
@@ -236,7 +236,12 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
 
     const deleteProfile = (id) => {
         onDeleteProfile(id);
-        if (selectedProfileId === id) setSelectedProfileId('');
+        if (selectedProfileId === id) {
+            setSelectedProfileId('');
+            if (onActiveProfileChange) {
+                onActiveProfileChange(null);
+            }
+        }
     };
 
     const loadProfile = (id) => {
@@ -254,6 +259,9 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
             }
             onLoad(payload);
             setSelectedProfileId(id);
+            if (onActiveProfileChange) {
+                onActiveProfileChange(id);
+            }
             // We NO LONGER set comparisonSnapshot here manually.
             // When App.jsx receives onLoad, it updates `currentInputs` and passes it back down.
             // Our new useEffect above will intercept the first render with the new profile 

@@ -121,6 +121,21 @@ export function onProfilesSnapshot(uid, callback) {
     });
 }
 
+export function onBudgetItemsSnapshot(uid, callback) {
+    return onSnapshot(budgetItemsRef(uid), (snap) => {
+        if (!snap.exists()) {
+            callback(null);
+            return;
+        }
+        const data = snap.data();
+        callback({
+            items: data.items,
+            householdSize: data.householdSize ?? 2,
+            backupSlots: data.backupSlots ?? [],
+        });
+    });
+}
+
 // ─── Budget Items ──────────────────────────────────────────────────
 
 export async function getBudgetItems(uid) {
@@ -314,4 +329,3 @@ export async function migrateFromLocalStorage(uid) {
     localStorage.clear();
     return true;
 }
-

@@ -45,7 +45,11 @@ import { Settings } from 'lucide-react';
 import { ReminderBell } from './components/ReminderBell';
 import { ReminderAlert } from './components/ReminderAlert';
 import { GlobalRemindersSync } from './components/GlobalRemindersSync';
+import { BudgetRemindersSync } from './components/BudgetRemindersSync';
 import { resetReminderSession } from './hooks/useReminders';
+
+const isLifeEventSource = (source) =>
+  typeof source === 'string' && (source === 'lifeEvents' || source.startsWith('lifeEvents:'));
 
 function App() {
   return (
@@ -62,6 +66,9 @@ function MainApp() {
   const { theme } = useTheme();
   const [language, setLanguage] = useState('he');
   const t = React.useCallback((key) => translations[language][key] || key, [language]);
+  const buildLifeEventReminderDate = useCallback((year, month) =>
+    `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`
+  , []);
 
   // Use Custom Hooks for Logic
   const { settings, dispatch: dispatchSettings, SETTINGS_ACTIONS } = useAppSettings();
@@ -103,6 +110,11 @@ function MainApp() {
   // Custom hooks (must be called unconditionally at top level)
   // Note: profilesLoaded is available but not currently used
   const { profiles, saveProfile, updateProfile, renameProfile, deleteProfile, lastLoadedProfileId, markProfileAsLoaded } = useProfiles();
+  const [activeProfileId, setActiveProfileId] = useState(lastLoadedProfileId || null);
+
+  useEffect(() => {
+    setActiveProfileId(lastLoadedProfileId || null);
+  }, [lastLoadedProfileId]);
 
   // Rate limiting hook
   const {
@@ -162,6 +174,11 @@ function MainApp() {
                  dispatchSettings({ type: SETTINGS_ACTIONS.SET_CALCULATION_MODE, payload: 'planning' });
             }
             setTimeout(() => window.dispatchEvent(new CustomEvent('rc-scroll-to-checklist-item', { detail: { id } })), 100);
+        } else if (isLifeEventSource(source)) {
+            if (settings.activeView !== 'events') {
+                 dispatchSettings({ type: SETTINGS_ACTIONS.SET_ACTIVE_VIEW, payload: 'events' });
+            }
+            setTimeout(() => window.dispatchEvent(new CustomEvent('rc-open-life-event', { detail: { id } })), 150);
         } else if (source === 'budget') {
             if (settings.calculationMode === 'planning') {
                  dispatchSettings({ type: SETTINGS_ACTIONS.SET_CALCULATION_MODE, payload: 'mathematical' });
@@ -174,7 +191,30 @@ function MainApp() {
     };
     window.addEventListener('rc-navigate-to-item', handleNav);
     return () => window.removeEventListener('rc-navigate-to-item', handleNav);
-  }, [settings.calculationMode, dispatchSettings]);
+  }, [settings.calculationMode, settings.activeView, dispatchSettings, SETTINGS_ACTIONS]);
+
+  useEffect(() => {
+    const handleLifeEventReminderConfirm = (e) => {
+      const { id, source } = e.detail || {};
+      if (!isLifeEventSource(source)) return;
+
+      setInputs(prev => {
+        const lifeEvents = prev.lifeEvents || [];
+        let hasChanges = false;
+
+        const nextLifeEvents = lifeEvents.map(event => {
+          if (String(event.id) !== String(id) || !event.reminder) return event;
+          hasChanges = true;
+          return { ...event, reminder: null };
+        });
+
+        return hasChanges ? { ...prev, lifeEvents: nextLifeEvents } : prev;
+      });
+    };
+
+    window.addEventListener('rc-reminder-confirmed', handleLifeEventReminderConfirm);
+    return () => window.removeEventListener('rc-reminder-confirmed', handleLifeEventReminderConfirm);
+  }, [setInputs]);
 
   // Effect to update linked events when retirement ages change
   useEffect(() => {
@@ -222,7 +262,10 @@ function MainApp() {
           hasChanges = true;
           return {
             ...event,
-            startDate: { year: newYear, month: newMonth }
+            startDate: { year: newYear, month: newMonth },
+            reminder: event.reminder
+              ? { ...event.reminder, date: buildLifeEventReminderDate(newYear, newMonth) }
+              : event.reminder
           };
         }
         return event;
@@ -234,7 +277,7 @@ function MainApp() {
       return prev;
     });
   // Use debounced values so this fires once after the user stops typing, not on every keystroke.
-  }, [memoizedDebouncedInputs.retirementStartAge, memoizedDebouncedInputs.retirementEndAge, memoizedDebouncedInputs.currentAge, memoizedDebouncedInputs.birthdate, setInputs]);
+  }, [memoizedDebouncedInputs.retirementStartAge, memoizedDebouncedInputs.retirementEndAge, memoizedDebouncedInputs.currentAge, memoizedDebouncedInputs.birthdate, setInputs, buildLifeEventReminderDate]);
 
   // Sync selected selectedProfileIds with available profiles (cleanup deleted profiles)
   useEffect(() => {
@@ -351,7 +394,7 @@ function MainApp() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <ReminderBell id="reminder-bell" t={t} language={language} isLight={theme === 'light'} />
+            <ReminderBell id="reminder-bell" t={t} language={language} isLight={theme === 'light'} activeProfileId={activeProfileId} />
             <UserMenu t={t} />
             <ThemeToggle t={t} />
             <ZoomToggle />
@@ -384,6 +427,7 @@ function MainApp() {
               onRenameProfile={renameProfile}
               onDeleteProfile={deleteProfile}
               onProfileLoad={markProfileAsLoaded}
+              onActiveProfileChange={setActiveProfileId}
               lastLoadedProfileId={lastLoadedProfileId}
               onSaveGlobalPension={saveGlobalPension}
             />
@@ -435,7 +479,7 @@ function MainApp() {
               setShowAgeSensitivity={setShowAgeSensitivity}
               profiles={profiles}
               updateProfile={updateProfile}
-              currentProfileId={lastLoadedProfileId}
+              currentProfileId={activeProfileId}
               activeView={settings.activeView}
               setActiveView={(view) => dispatchSettings({ type: SETTINGS_ACTIONS.SET_ACTIVE_VIEW, payload: view })}
             />
@@ -546,7 +590,14 @@ function MainApp() {
       />
 
       {/* Global Reminder Sync — loads reminders on login and syncs confirmation to db */}
-      <GlobalRemindersSync uid={currentUser.uid} lifeEvents={inputs.lifeEvents} />
+      <GlobalRemindersSync
+        uid={currentUser.uid}
+        lifeEvents={inputs.lifeEvents}
+        currentProfileId={activeProfileId}
+        profiles={profiles}
+        updateProfile={updateProfile}
+      />
+      <BudgetRemindersSync uid={currentUser.uid} />
 
       {/* Reminder Alert — shown once per session per due reminder */}
       <ReminderAlert language={language} isLight={theme === 'light'} />

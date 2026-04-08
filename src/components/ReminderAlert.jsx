@@ -2,6 +2,8 @@ import { Bell, CheckCircle, Clock, ArrowUpRight } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useReminders } from '../hooks/useReminders';
 
+const isLifeEventSource = (source) => typeof source === 'string' && (source === 'lifeEvents' || source.startsWith('lifeEvents:'));
+
 export function ReminderAlert({ language, isLight }) {
     const { pendingAlert, remindAgain, confirmReminder } = useReminders();
     const isHe = language === 'he';
@@ -20,23 +22,29 @@ export function ReminderAlert({ language, isLight }) {
         return isHe ? `${d}/${m}/${y}` : `${m}/${d}/${y}`;
     }
 
+    function sourceLabel(source) {
+        if (source === 'general') return isHe ? 'כללי' : 'General';
+        if (source === 'checklist') return isHe ? 'צ׳קליסט' : 'Checklist';
+        if (source === 'budget') return isHe ? 'תקציב' : 'Budget';
+        if (isLifeEventSource(source)) return isHe ? 'אירוע חיים' : 'Life Event';
+        return source;
+    }
+
     return createPortal(
         <div className="fixed inset-0 z-[999999] flex items-start justify-center pt-16 px-4 pointer-events-none">
             <div
                 className={`relative pointer-events-auto w-full max-w-sm rounded-2xl shadow-2xl border-2 overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-white/20'}`}
                 dir={isHe ? 'rtl' : 'ltr'}
             >
-                {/* Colored top strip */}
                 <div className="h-2 bg-gradient-to-r from-amber-400 to-orange-500 w-full" />
 
-                {/* Content */}
                 <div className="px-5 py-5">
                     <div className="flex items-start gap-3 mb-5">
                         <div className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${isLight ? 'bg-amber-100' : 'bg-amber-500/20'}`}>
                             <Bell size={20} className="text-amber-500 animate-bounce" />
                         </div>
                         <div className="flex-1 min-w-0">
-                            <div className={`text-xs font-black uppercase tracking-wider mb-1 ${isLight ? 'text-amber-600' : 'text-amber-500'}`}>
+                            <div className={`text-sm font-black uppercase tracking-wider mb-1 ${isLight ? 'text-amber-600' : 'text-amber-500'}`}>
                                 {isHe ? 'תזכורת חשובה' : 'IMPORTANT REMINDER'}
                             </div>
                             <div className="flex items-start justify-between gap-2">
@@ -66,13 +74,12 @@ export function ReminderAlert({ language, isLight }) {
                                 <span>{formatDate(r.date)}</span>
                                 <span className="mx-1 opacity-20">|</span>
                                 <span className="uppercase text-[10px] tracking-widest">
-                                    {isHe && r.source === 'general' ? 'כללי' : r.source}
+                                    {sourceLabel(r.source)}
                                 </span>
                             </div>
                         </div>
                     </div>
 
-                    {/* Actions */}
                     <div className="flex gap-2.5">
                         <button
                             onClick={() => confirmReminder(r.id)}

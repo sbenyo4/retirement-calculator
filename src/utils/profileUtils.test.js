@@ -111,7 +111,8 @@ describe('normalizeInputs', () => {
                 name: "Legacy Event",
                 amount: "5000",
                 duration: "12",
-                startDate: { month: "5", year: "2030" }
+                startDate: { month: "5", year: "2030" },
+                reminder: { date: "2030-05-01", text: "Legacy reminder" }
             }]
         };
         const normalized = normalizeInputs(data);
@@ -121,5 +122,6 @@ describe('normalizeInputs', () => {
         expect(event.duration).toBe(12); // converted to number
         expect(event.startDate.month).toBe(5);
         expect(event.startDate.year).toBe(2030);
+        expect(event.reminder).toEqual({ date: "2030-05-01", text: "Legacy reminder" });
     });
 });

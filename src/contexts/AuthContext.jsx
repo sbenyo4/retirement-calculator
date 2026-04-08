@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { auth, googleProvider } from '../firebase';
 import { signInWithPopup, signOut, onAuthStateChanged, setPersistence, inMemoryPersistence } from 'firebase/auth';
 import { migrateFromLocalStorage } from '../utils/db';
@@ -13,6 +13,7 @@ export function useAuth() {
 export function AuthProvider({ children }) {
     const [currentUser, setCurrentUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    const lastAuthUidRef = useRef(undefined);
 
     async function login() {
         googleProvider.setCustomParameters({
@@ -36,8 +37,12 @@ export function AuthProvider({ children }) {
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
-            // Reset reminder shown-state on every actual user-transition
-            resetReminderSession();
+            const nextUid = user?.uid || null;
+            if (lastAuthUidRef.current !== nextUid) {
+                // Reset reminder shown-state only when the signed-in user actually changes.
+                resetReminderSession();
+                lastAuthUidRef.current = nextUid;
+            }
             setCurrentUser(user);
             setLoading(false);
         });

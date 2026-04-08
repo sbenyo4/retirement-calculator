@@ -82,6 +82,8 @@ export function useReminders() {
             } catch {}
         };
         window.addEventListener('rc-reminders-updated', update);
+        // Catch any session updates that happened before this hook subscribed.
+        update();
         const id = setInterval(update, 60_000);
         return () => {
             clearInterval(id);

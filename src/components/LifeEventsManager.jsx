@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useThemeClasses } from '../hooks/useThemeClasses';
 import { EVENT_TYPES } from '../constants';
-import { Calendar, Plus, Edit2, Trash2, ToggleLeft, ToggleRight, TrendingUp, TrendingDown, DollarSign, BarChart3, ChevronUp, ChevronDown, Copy } from 'lucide-react';
+import { Calendar, Plus, Edit2, Trash2, ToggleLeft, ToggleRight, TrendingUp, TrendingDown, DollarSign, BarChart3, ChevronUp, ChevronDown, Copy, Bell } from 'lucide-react';
 import AddEventModal from './AddEventModal';
 import LifeEventsTimelineModal from './LifeEventsTimelineModal';
+import { syncComponentReminders } from '../hooks/useReminders';
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTHS_SHORT_HE = ['ינו', 'פבר', 'מרץ', 'אפר', 'מאי', 'יונ', 'יול', 'אוג', 'ספט', 'אוק', 'נוב', 'דצמ'];
@@ -67,6 +68,22 @@ export default function LifeEventsManager({
 
     useEffect(() => { calculateItems(); }, [events.length]);
 
+    useEffect(() => {
+        const handleOpenLifeEvent = (e) => {
+            const targetId = String(e.detail?.id || '');
+            if (!targetId) return;
+
+            const targetEvent = events.find(evt => String(evt.id) === targetId);
+            if (!targetEvent) return;
+
+            setShowAddModal(false);
+            setEditingEvent(targetEvent);
+        };
+
+        window.addEventListener('rc-open-life-event', handleOpenLifeEvent);
+        return () => window.removeEventListener('rc-open-life-event', handleOpenLifeEvent);
+    }, [events]);
+
     // Reset offset if it's now out of range
     useEffect(() => {
         setViewOffset(p => Math.min(p, Math.max(0, events.length - itemsPerView)));
@@ -88,7 +105,11 @@ export default function LifeEventsManager({
                 if (copyAction === 'delete') {
                     updatedEvents = targetEvents.filter(e => !(e.description === copyingEvent.description && e.type === copyingEvent.type));
                 } else {
-                    const newEvent = { ...copyingEvent, id: Date.now().toString() + targetProfileId };
+                    const newEvent = {
+                        ...copyingEvent,
+                        id: Date.now().toString() + targetProfileId,
+                        reminder: copyingEvent.reminder ? { ...copyingEvent.reminder } : null
+                    };
                     updatedEvents = [...targetEvents, newEvent];
                 }
                 await updateProfile(targetProfileId, { ...targetInputs, lifeEvents: updatedEvents });
@@ -102,6 +123,13 @@ export default function LifeEventsManager({
         }
     };
 
+    const reminderSourceKey = currentProfileId ? `lifeEvents:${currentProfileId}` : null;
+
+    const syncLifeEventReminders = (nextEvents) => {
+        if (!reminderSourceKey) return;
+        const activeEvents = nextEvents.filter(evt => evt?.enabled !== false && evt?.reminder?.date);
+        syncComponentReminders(reminderSourceKey, activeEvents, true);
+    };
 
 
     const handleAddEvent = (eventData) => {
@@ -114,6 +142,7 @@ export default function LifeEventsManager({
         setShowAddModal(false);
         setEditingEvent(null);
         onChange(newEvents);
+        syncLifeEventReminders(newEvents);
     };
 
     const handleEditEvent = (eventData) => {
@@ -121,6 +150,7 @@ export default function LifeEventsManager({
         setShowAddModal(false);
         setEditingEvent(null);
         onChange(newEvents);
+        syncLifeEventReminders(newEvents);
     };
 
     const handleEditEventAll = async (eventData) => {
@@ -133,17 +163,43 @@ export default function LifeEventsManager({
             const idx = targetEvents.findIndex(e => e.description === sourceEvent.description && e.type === sourceEvent.type);
             if (idx < 0) continue;
             const updated = [...targetEvents];
-            updated[idx] = { ...eventData, id: updated[idx].id, enabled: updated[idx].enabled };
+            updated[idx] = {
+                ...eventData,
+                id: updated[idx].id,
+                enabled: updated[idx].enabled,
+                reminder: eventData.reminder ? { ...eventData.reminder } : null
+            };
             await updateProfile(profile.id, { ...profile.data, lifeEvents: updated });
         }
     };
 
     const handleDeleteEvent = (eventId) => {
-        onChange(events.filter(evt => evt.id !== eventId));
+        const nextEvents = events.filter(evt => evt.id !== eventId);
+        onChange(nextEvents);
+        syncLifeEventReminders(nextEvents);
     };
 
     const handleToggleEvent = (eventId) => {
-        onChange(events.map(evt => evt.id === eventId ? { ...evt, enabled: !evt.enabled } : evt));
+        const nextEvents = events.map(evt => evt.id === eventId ? { ...evt, enabled: !evt.enabled } : evt);
+        onChange(nextEvents);
+        syncLifeEventReminders(nextEvents);
+    };
+
+    const handleToggleReminder = (eventId) => {
+        const target = events.find(evt => evt.id === eventId);
+        if (!target) return;
+
+        const hasReminder = !!target.reminder?.date;
+        const nextReminder = hasReminder
+            ? null
+            : {
+                date: `${String(target.startDate?.year || new Date().getFullYear()).padStart(4, '0')}-${String(target.startDate?.month || 1).padStart(2, '0')}-01`,
+                text: ''
+            };
+
+        const nextEvents = events.map(evt => evt.id === eventId ? { ...evt, reminder: nextReminder } : evt);
+        onChange(nextEvents);
+        syncLifeEventReminders(nextEvents);
     };
 
     const formatDate = (date) => {
@@ -252,7 +308,10 @@ export default function LifeEventsManager({
                             <span className="hidden sm:inline">{t ? t('viewTimeline') : 'Timeline'}</span>
                         </button>
                         <button
-                            onClick={() => setShowAddModal(true)}
+                            onClick={() => {
+                                setEditingEvent(null);
+                                setShowAddModal(true);
+                            }}
                             className={`${classes.buttonPrimary} rounded px-2 py-1 text-xs flex items-center gap-1 whitespace-nowrap`}
                         >
                             <Plus className="w-3 h-3" />
@@ -329,6 +388,14 @@ export default function LifeEventsManager({
                                                     aria-label={event.enabled ? (t ? t('disableEvent') : 'Disable') : (t ? t('enableEvent') : 'Enable')}
                                                 >
                                                     {event.enabled ? <ToggleRight className="w-4 h-4 text-green-500" /> : <ToggleLeft className="w-4 h-4" />}
+                                                </button>
+                                                <button
+                                                    onClick={() => handleToggleReminder(event.id)}
+                                                    className={`p-1 rounded hover:bg-white/10 ${event.reminder?.date ? 'text-blue-500' : classes.icon}`}
+                                                    title={event.reminder?.date ? (language === 'he' ? 'כבה תזכורת' : 'Disable reminder') : (language === 'he' ? 'הפעל תזכורת' : 'Enable reminder')}
+                                                    aria-label={event.reminder?.date ? (language === 'he' ? 'כבה תזכורת' : 'Disable reminder') : (language === 'he' ? 'הפעל תזכורת' : 'Enable reminder')}
+                                                >
+                                                    <Bell className="w-4 h-4" />
                                                 </button>
                                                 <button
                                                     onClick={() => { setCopyError(null); setCopyingEvent(event); }}

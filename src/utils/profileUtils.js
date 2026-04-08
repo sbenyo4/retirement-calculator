@@ -2,6 +2,15 @@
 import { DEFAULT_INPUTS } from '../constants';
 import { calculateAgeFromDate } from './dateUtils';
 
+function normalizeReminderDate(reminderDate, fallbackYear, fallbackMonth) {
+    if (typeof reminderDate === 'string') {
+        const isoMatch = reminderDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (isoMatch) return reminderDate;
+    }
+
+    return `${String(fallbackYear).padStart(4, '0')}-${String(fallbackMonth).padStart(2, '0')}-01`;
+}
+
 export const normalizeInputs = (data) => {
     // 1. Start with a clean object based ONLY on allowed keys in DEFAULT_INPUTS
     // This removes "ghost" fields and treats null as undefined (forcing default)
@@ -76,6 +85,8 @@ export const normalizeInputs = (data) => {
     // 6. Normalize Life Events (Structure, Types, and Deterministic Order)
     if (Array.isArray(normalized.lifeEvents)) {
         normalized.lifeEvents = normalized.lifeEvents.map(event => {
+            const startMonth = parseInt(event.startDate?.month) || 1;
+            const startYear = parseInt(event.startDate?.year) || 2024;
             const normalizedEvent = {
                 id: String(event.id),
                 description: event.description || '',
@@ -87,11 +98,18 @@ export const normalizeInputs = (data) => {
                 duration: (event.duration !== undefined && event.duration !== null) ? parseInt(event.duration) : 1,
                 linkedTo: event.linkedTo || null, // UI uses null for unlinked
                 startDate: {
-                    month: parseInt(event.startDate?.month) || 1,
-                    year: parseInt(event.startDate?.year) || 2024
+                    month: startMonth,
+                    year: startYear
                 },
                 // Explicitly include endDate as null if missing to match deepEqual key counts
-                endDate: null
+                endDate: null,
+                // Life-event reminders are derived from the event date but persisted as a normal reminder object
+                reminder: event.reminder
+                    ? {
+                        date: normalizeReminderDate(event.reminder.date, startYear, startMonth),
+                        text: event.reminder.text || ''
+                    }
+                    : null
             };
 
             if (event.endDate && event.endDate.year) {
