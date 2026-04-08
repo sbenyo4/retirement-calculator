@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell, Save } from 'lucide-react';
 import { silenceReminder } from '../hooks/useReminders';
 import { useAuth } from '../contexts/AuthContext';
 import { getBudgetItems, setBudgetItems } from '../utils/db';
@@ -191,6 +191,7 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, p
         const trimmed = noteDraft.trim();
         if (trimmed !== (item.note || '').trim()) onChange({ ...item, note: trimmed || undefined });
     };
+    const noteDirty = noteDraft.trim() !== (item.note || '').trim();
 
     return (
         <div id={`budget-item-${item.id}`} className={`relative flex items-center gap-2 py-1.5 px-2 rounded-lg text-sm ${item.enabled ? '' : 'opacity-40'} ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/10'}`}
@@ -372,7 +373,7 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, p
             {/* Floating note panel — no layout shift */}
             {showNote && (
                 <div
-                    className={`absolute z-50 top-full mt-1 w-36 rounded-lg border shadow-lg border-s-4 border-s-amber-400 ${isLight ? 'bg-white border-slate-200' : 'bg-slate-800 border-white/20'}`}
+                    className={`absolute z-50 top-full mt-1 w-48 rounded-lg border shadow-lg border-s-4 border-s-amber-400 ${isLight ? 'bg-white border-slate-200' : 'bg-slate-800 border-white/20'}`}
                     style={{ [isHe ? 'right' : 'left']: '2rem' }}
                     dir={isHe ? 'rtl' : 'ltr'}
                 >
@@ -381,19 +382,36 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, p
                         <span className={`text-[10px] font-medium truncate ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                             {isHe ? `הערה ל${item.label}` : `Note: ${item.label}`}
                         </span>
-                        {noteDraft && (
+                        <div className="flex items-center gap-0.5 shrink-0 ms-1">
                             <button
-                                onMouseDown={e => { e.preventDefault(); setNoteDraft(''); onChange({ ...item, note: undefined }); setShowNote(false); }}
-                                className={`transition-colors shrink-0 ms-1 ${isLight ? 'text-slate-300 hover:text-red-500' : 'text-gray-600 hover:text-red-400'}`}
-                                title={isHe ? 'מחק הערה' : 'Delete note'}
+                                onMouseDown={e => {
+                                    e.preventDefault();
+                                    if (!noteDirty) return;
+                                    commitNote();
+                                    setShowNote(false);
+                                }}
+                                disabled={!noteDirty}
+                                className={`transition-colors ${noteDirty
+                                    ? (isLight ? 'text-emerald-600 hover:text-emerald-700' : 'text-emerald-400 hover:text-emerald-300')
+                                    : (isLight ? 'text-slate-200 cursor-not-allowed' : 'text-gray-600 cursor-not-allowed')}`}
+                                title={isHe ? 'שמור הערה' : 'Save note'}
                             >
-                                <Trash2 size={11} />
+                                <Save size={11} />
                             </button>
-                        )}
+                            {noteDraft && (
+                                <button
+                                    onMouseDown={e => { e.preventDefault(); setNoteDraft(''); onChange({ ...item, note: undefined }); setShowNote(false); }}
+                                    className={`transition-colors ${isLight ? 'text-slate-300 hover:text-red-500' : 'text-gray-600 hover:text-red-400'}`}
+                                    title={isHe ? 'מחק הערה' : 'Delete note'}
+                                >
+                                    <Trash2 size={11} />
+                                </button>
+                            )}
+                        </div>
                     </div>
                     <textarea
                         autoFocus
-                        rows={5}
+                        rows={4}
                         value={noteDraft}
                         onChange={e => setNoteDraft(e.target.value)}
                         onBlur={() => { commitNote(); setShowNote(false); }}

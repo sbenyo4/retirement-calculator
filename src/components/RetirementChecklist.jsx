@@ -9,7 +9,7 @@ import {
     Shield, Heart, Receipt, TrendingUp, Home, Scale, Laptop,
     AlertTriangle, CheckCircle, ChevronDown, ChevronRight,
     Umbrella, Stethoscope, Building2, FileText, Users,
-    Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Flag, Landmark, RotateCcw, Search, X, EyeOff, Undo2, Trash2, MessageSquare, Bell
+    Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Flag, Landmark, RotateCcw, Search, X, EyeOff, Undo2, Trash2, MessageSquare, Bell, Save
 } from 'lucide-react';
 import { syncComponentReminders, silenceReminder } from '../hooks/useReminders';
 
@@ -669,6 +669,7 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
             onChangeItem(updated);
         }
     };
+    const noteDirty = noteDraft.trim() !== (item.note || '').trim();
 
 
     return (
@@ -833,21 +834,40 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                         dir={isHe ? 'rtl' : 'ltr'}
                     >
                         <div className="flex items-center justify-between px-2 pt-1.5 pb-0.5">
-                            <span
-                                className={`text-[10px] font-medium truncate flex-1 min-w-0 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}
-                                title={isHe ? `הערה: ${item.title}` : `Note: ${item.title}`}
+                        <span
+                            className={`text-[10px] font-medium truncate flex-1 min-w-0 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}
+                            title={isHe ? `הערה: ${item.title}` : `Note: ${item.title}`}
+                        >
+                            {isHe ? `הערה: ${item.title}` : `Note: ${item.title}`}
+                        </span>
+                        <div className="flex items-center gap-0.5 shrink-0 ms-1">
+                            <button
+                                onMouseDown={e => {
+                                    e.preventDefault();
+                                    if (!noteDirty) return;
+                                    commitNote();
+                                    setShowNote(false);
+                                    setNoteAnchor(null);
+                                }}
+                                disabled={!noteDirty}
+                                className={`transition-colors ${noteDirty
+                                    ? (isLight ? 'text-emerald-600 hover:text-emerald-700' : 'text-emerald-400 hover:text-emerald-300')
+                                    : (isLight ? 'text-slate-200 cursor-not-allowed' : 'text-gray-600 cursor-not-allowed')}`}
+                                title={isHe ? 'שמור הערה' : 'Save note'}
                             >
-                                {isHe ? `הערה: ${item.title}` : `Note: ${item.title}`}
-                            </span>
+                                <Save size={11} />
+                            </button>
                             {noteDraft && (
                                 <button
                                     onMouseDown={e => { e.preventDefault(); setNoteDraft(''); const updated = { ...item }; delete updated.note; onChangeItem(updated); setShowNote(false); setNoteAnchor(null); }}
-                                    className={`transition-colors shrink-0 ms-1 ${isLight ? 'text-slate-300 hover:text-red-500' : 'text-gray-600 hover:text-red-400'}`}
+                                    className={`transition-colors ${isLight ? 'text-slate-300 hover:text-red-500' : 'text-gray-600 hover:text-red-400'}`}
+                                    title={isHe ? 'מחק הערה' : 'Delete note'}
                                 >
                                     <Trash2 size={11} />
                                 </button>
                             )}
                         </div>
+                    </div>
                         <textarea
                             autoFocus
                             rows={4}
