@@ -36,8 +36,8 @@ import { useRateLimit } from './hooks/useRateLimit';
 import { useAppSettings } from './hooks/useAppSettings';
 import { useRetirementData } from './hooks/useRetirementData';
 import { useCalculation } from './hooks/useCalculation';
-import { useSimulationWorker } from './hooks/useSimulationWorker';
 import { useDeepCompareMemo } from './hooks/useDeepCompare';
+import { runProjectionWithGoalSeek } from './utils/calculators/goalSeek';
 
 import { WITHDRAWAL_STRATEGIES } from './constants';
 import { getUserSettings } from './utils/db';
@@ -91,10 +91,6 @@ function MainApp() {
     goalSeekWithdrawal,
     memoizedDebouncedInputs
   } = useCalculation(React.useMemo(() => ({ ...inputs, language, fourPercentMode: settings.fourPercentMode }), [inputs, language, settings.fourPercentMode]), settings);
-
-  // Separate worker instance for profile comparison projections (keeps the main
-  // calculation worker free and moves profile work off the main thread).
-  const { runProjection: runProfileProjection } = useSimulationWorker();
 
   const [aiResults, setAiResults] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -300,44 +296,24 @@ function MainApp() {
     }).filter(Boolean)
   );
 
-  // Profile projections run off the main thread via the worker, sequentially
-  // (the worker processes one message at a time). Results are committed to state
-  // per-profile so each card appears as soon as its calculation finishes.
-  // Only re-runs when profile data actually changes (not on rename).
-  const [profileCalcResults, setProfileCalcResults] = useState({});
-  useEffect(() => {
-    if (selectedProfilesData.length === 0) {
-      setProfileCalcResults({});
-      return;
-    }
-    setProfileCalcResults({}); // reset so stale results don't linger on profile change
-    let i = 0;
-    function runNext() {
-      if (i >= selectedProfilesData.length) return;
-      const { id, data } = selectedProfilesData[i++];
-      runProfileProjection(
-        data,
-        ({ projection }) => {
-          setProfileCalcResults(prev => ({ ...prev, [id]: projection }));
-          runNext();
-        },
-        () => { runNext(); } // skip profiles with invalid data
-      );
-    }
-    runNext();
-  }, [selectedProfilesData, runProfileProjection]);
-
-  // Assemble with current names (cheap - re-runs freely on rename)
+  // Compute selected profile projections in one deterministic pass so
+  // compare view always renders all selected profiles side-by-side.
   const profileResults = useMemo(() => {
-    return selectedProfileIds
-      .map(id => {
-        const calc = profileCalcResults[id];
-        if (!calc) return null;
-        const profile = profiles.find(p => p.id === id);
-        return { id, name: profile?.name || id, results: calc };
-      })
-      .filter(Boolean);
-  }, [selectedProfileIds, profiles, profileCalcResults]);
+    const dataById = new Map(selectedProfilesData.map(p => [p.id, p.data]));
+    return selectedProfileIds.map(id => {
+      const profile = profiles.find(p => p.id === id);
+      const data = dataById.get(id);
+      if (!data) {
+        return { id, name: profile?.name || id, results: null };
+      }
+      try {
+        const { projection } = runProjectionWithGoalSeek(data);
+        return { id, name: profile?.name || id, results: projection || null };
+      } catch {
+        return { id, name: profile?.name || id, results: null };
+      }
+    });
+  }, [selectedProfileIds, selectedProfilesData, profiles]);
 
   // Manual AI Calculation Handler
   const handleAiCalculate = useCallback(async () => {

@@ -56,6 +56,21 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
 
     // Note: showInterestSensitivity and showIncomeSensitivity are now received as props
 
+    // Keep profile selections in UI order synchronized with parent state so
+    // multi-select never collapses to a single visible profile column.
+    useEffect(() => {
+        setOrderedSelections(prev => {
+            const nonProfileSelections = prev.filter(sel => !sel.startsWith('profile_'));
+            const prevProfileSelections = prev.filter(sel => sel.startsWith('profile_'));
+            const selectedProfileTokens = selectedProfileIds.map(id => `profile_${id}`);
+
+            const keptProfiles = prevProfileSelections.filter(sel => selectedProfileTokens.includes(sel));
+            const addedProfiles = selectedProfileTokens.filter(sel => !keptProfiles.includes(sel));
+
+            return [...nonProfileSelections, ...keptProfiles, ...addedProfiles];
+        });
+    }, [selectedProfileIds]);
+
     // Determine which results to display
     let activeResults = results;
     let isAiMode = calculationMode === 'ai';
@@ -71,7 +86,11 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
 
     // Toggle function that maintains order AND syncs selectedProfileIds for profiles
     const toggleSelection = (type) => {
-        const isCurrentlySelected = orderedSelections.includes(type);
+        const isProfileType = type.startsWith('profile_');
+        const profileId = isProfileType ? type.replace('profile_', '') : null;
+        const isCurrentlySelected = isProfileType
+            ? selectedProfileIds.includes(profileId)
+            : orderedSelections.includes(type);
 
         // Update orderedSelections
         if (isCurrentlySelected) {
@@ -81,12 +100,11 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
         }
 
         // Sync selectedProfileIds for profiles (outside the setState callback)
-        if (type.startsWith('profile_')) {
-            const profileId = type.replace('profile_', '');
+        if (isProfileType) {
             if (isCurrentlySelected) {
                 setSelectedProfileIds(ids => ids.filter(id => id !== profileId));
             } else {
-                setSelectedProfileIds(ids => [...ids, profileId]);
+                setSelectedProfileIds(ids => (ids.includes(profileId) ? ids : [...ids, profileId]));
             }
         }
     };

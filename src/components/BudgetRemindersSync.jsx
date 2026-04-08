@@ -15,7 +15,7 @@ export function BudgetRemindersSync({ uid }) {
             try {
                 const items = Array.isArray(budgetSnap?.items) ? budgetSnap.items : [];
                 const budgetReminders = items
-                    .filter(i => i?.reminder?.date)
+                    .filter(i => i?.enabled !== false && i?.reminder?.date)
                     .map(i => ({
                         id: String(i.id),
                         label: i.label || i.title || i.id,

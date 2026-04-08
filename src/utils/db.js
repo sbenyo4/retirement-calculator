@@ -40,6 +40,37 @@ function budgetItemsRef(uid) {
     return userDoc(uid, 'data', 'budgetItems');
 }
 
+function normalizeBudgetItemStatus(item) {
+    if (!item || typeof item !== 'object') return item;
+    const paused = item.status === 'paused' || item.enabled === false;
+    return {
+        ...item,
+        status: paused ? 'paused' : 'active',
+        enabled: !paused
+    };
+}
+
+function normalizeBudgetItemsStatus(items) {
+    if (!Array.isArray(items)) return [];
+    return items.map(normalizeBudgetItemStatus);
+}
+
+function stripUndefinedDeep(value) {
+    if (Array.isArray(value)) {
+        return value.map(stripUndefinedDeep);
+    }
+
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(
+            Object.entries(value)
+                .filter(([, entryValue]) => entryValue !== undefined)
+                .map(([key, entryValue]) => [key, stripUndefinedDeep(entryValue)])
+        );
+    }
+
+    return value;
+}
+
 function checklistStateRef(uid) {
     return userDoc(uid, 'data', 'checklistState');
 }
@@ -129,9 +160,14 @@ export function onBudgetItemsSnapshot(uid, callback) {
         }
         const data = snap.data();
         callback({
-            items: data.items,
+            items: normalizeBudgetItemsStatus(data.items),
             householdSize: data.householdSize ?? 2,
-            backupSlots: data.backupSlots ?? [],
+            backupSlots: Array.isArray(data.backupSlots)
+                ? data.backupSlots.map(slot => ({
+                    ...slot,
+                    items: normalizeBudgetItemsStatus(slot?.items)
+                }))
+                : [],
         });
     });
 }
@@ -143,16 +179,31 @@ export async function getBudgetItems(uid) {
     if (!snap.exists()) return null;
     const data = snap.data();
     return {
-        items: data.items,
+        items: normalizeBudgetItemsStatus(data.items),
         householdSize: data.householdSize ?? 2,
-        backupSlots: data.backupSlots ?? [],
+        backupSlots: Array.isArray(data.backupSlots)
+            ? data.backupSlots.map(slot => ({
+                ...slot,
+                items: normalizeBudgetItemsStatus(slot?.items)
+            }))
+            : [],
     };
 }
 
 export async function setBudgetItems(uid, items, householdSize, backupSlots) {
-    const payload = { items, updatedAt: Date.now() };
+    const payload = {
+        items: stripUndefinedDeep(normalizeBudgetItemsStatus(items)),
+        updatedAt: Date.now()
+    };
     if (householdSize !== undefined) payload.householdSize = householdSize;
-    if (backupSlots !== undefined) payload.backupSlots = backupSlots;
+    if (backupSlots !== undefined) {
+        payload.backupSlots = stripUndefinedDeep(Array.isArray(backupSlots)
+            ? backupSlots.map(slot => ({
+                ...slot,
+                items: normalizeBudgetItemsStatus(slot?.items)
+            }))
+            : []);
+    }
     await setDoc(budgetItemsRef(uid), payload, { merge: true });
 }
 

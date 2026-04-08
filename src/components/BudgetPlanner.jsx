@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell, Save } from 'lucide-react';
-import { silenceReminder } from '../hooks/useReminders';
+import { silenceReminder, syncComponentReminders } from '../hooks/useReminders';
 import { useAuth } from '../contexts/AuthContext';
 import { getBudgetItems, setBudgetItems } from '../utils/db';
 import { getChatResponse } from '../utils/ai-chat';
@@ -140,6 +140,75 @@ const toMonthly = (item) => {
     return item.frequency === 'annual' ? (item.amount || 0) / 12 : (item.amount || 0);
 };
 
+const isBudgetItemPaused = (item) => item?.status === 'paused' || item?.enabled === false;
+
+function normalizeBudgetItem(item) {
+    if (!item) return item;
+    const paused = isBudgetItemPaused(item);
+    return {
+        ...item,
+        status: paused ? 'paused' : 'active',
+        enabled: !paused
+    };
+}
+
+function withReminderPausedState(item, enabled) {
+    if (!item) return item;
+    const nextEnabled = enabled !== false;
+    if (!nextEnabled) {
+        if (item.reminder?.date) {
+            return {
+                ...item,
+                status: 'paused',
+                enabled: false,
+                pausedReminder: { ...item.reminder },
+                reminder: undefined
+            };
+        }
+        return { ...item, status: 'paused', enabled: false };
+    }
+
+    if (!item.reminder?.date && item.pausedReminder?.date) {
+        const { pausedReminder, ...rest } = item;
+        return { ...rest, status: 'active', enabled: true, reminder: { ...pausedReminder } };
+    }
+
+    const { pausedReminder, ...rest } = item;
+    return { ...rest, status: 'active', enabled: true };
+}
+
+function mergeBudgetItemUpdate(currentItem, updatedItem) {
+    if (!currentItem) return normalizeBudgetItem(updatedItem);
+    if (!updatedItem) return normalizeBudgetItem(currentItem);
+
+    const currentPaused = isBudgetItemPaused(currentItem);
+    const {
+        status: _nextStatus,
+        enabled: _nextEnabled,
+        pausedReminder: _nextPausedReminder,
+        ...restUpdated
+    } = updatedItem;
+
+    if (currentPaused) {
+        return normalizeBudgetItem({
+            ...currentItem,
+            ...restUpdated,
+            reminder: currentItem.reminder,
+            pausedReminder: currentItem.pausedReminder,
+            status: currentItem.status,
+            enabled: currentItem.enabled,
+        });
+    }
+
+    return normalizeBudgetItem({
+        ...currentItem,
+        ...restUpdated,
+        status: currentItem.status,
+        enabled: currentItem.enabled,
+        pausedReminder: currentItem.pausedReminder,
+    });
+}
+
 const trackActiveInFuture = (track, projYears) => {
     if (!track.endDate) return true;
     const [y, m] = track.endDate.split('-').map(Number);
@@ -148,7 +217,7 @@ const trackActiveInFuture = (track, projYears) => {
 
 // Projected monthly cost accounting for loan end dates and per-track inflation flag
 const toProjectedMonthly = (item, projFactor, projYears) => {
-    if (!item.enabled) return 0;
+    if (item.enabled === false) return 0;
     if (item.type === 'loan') {
         return (item.tracks || [])
             .filter(tr => trackActive(tr) && trackActiveInFuture(tr, projYears))
@@ -162,7 +231,7 @@ function genId() {
 }
 
 // ─── Single item row ──────────────────────────────────────────────────────────
-function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, projFactor, showInflation }) {
+function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, onToggleEnabled, projFactor, showInflation }) {
     const [editingLabel, setEditingLabel] = useState(false);
     const [labelDraft, setLabelDraft] = useState(item.label);
     const [amountDraft, setAmountDraft] = useState(item.amount === 0 ? '' : String(item.amount));
@@ -194,16 +263,19 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, p
     const noteDirty = noteDraft.trim() !== (item.note || '').trim();
 
     return (
-        <div id={`budget-item-${item.id}`} className={`relative flex items-center gap-2 py-1.5 px-2 rounded-lg text-sm ${item.enabled ? '' : 'opacity-40'} ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/10'}`}
+        <div id={`budget-item-${item.id}`} className={`relative flex items-center gap-2 py-1.5 px-2 rounded-lg text-sm ${item.enabled !== false ? '' : 'opacity-40'} ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/10'}`}
             dir={isHe ? 'rtl' : 'ltr'}>
 
             {/* Enable toggle */}
             <button
-                onClick={() => onChange({ ...item, enabled: !item.enabled })}
+                onClick={() => onToggleEnabled
+                    ? onToggleEnabled(item.id, !(item.enabled !== false))
+                    : onChange(withReminderPausedState(item, !(item.enabled !== false)))
+                }
                 className="shrink-0 p-0.5"
-                title={item.enabled ? (isHe ? 'השהה' : 'Pause') : (isHe ? 'הפעל' : 'Enable')}
+                title={item.enabled !== false ? (isHe ? 'השהה' : 'Pause') : (isHe ? 'הפעל' : 'Enable')}
             >
-                {item.enabled
+                {item.enabled !== false
                     ? <ToggleRight size={18} className="text-blue-500" />
                     : <ToggleLeft size={18} className={isLight ? 'text-slate-400' : 'text-gray-400'} />}
             </button>
@@ -426,7 +498,7 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, p
 }
 
 // ─── Loan / Mortgage item (multi-track) ──────────────────────────────────────
-function LoanItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, projFactor, projYears, showInflation }) {
+function LoanItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, onToggleEnabled, projFactor, projYears, showInflation }) {
     const [open, setOpen] = useState((item.tracks || []).length <= 1); // open by default when freshly created
     const [editingLabel, setEditingLabel] = useState(false);
     const [labelDraft, setLabelDraft] = useState(item.label);
@@ -472,15 +544,18 @@ function LoanItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, pro
     };
 
     return (
-        <div id={`budget-item-${item.id}`} className={`rounded-lg border my-1 ${item.enabled ? '' : 'opacity-40'} ${isLight ? 'border-indigo-100 bg-indigo-50/40' : 'border-indigo-500/20 bg-indigo-900/10'}`}>
+        <div id={`budget-item-${item.id}`} className={`rounded-lg border my-1 ${item.enabled !== false ? '' : 'opacity-40'} ${isLight ? 'border-indigo-100 bg-indigo-50/40' : 'border-indigo-500/20 bg-indigo-900/10'}`}>
             {/* Header — click chevron area to toggle tracks */}
             <div className="flex items-center gap-2 px-2 py-1.5 text-sm" dir={isHe ? 'rtl' : 'ltr'}>
                 <button
-                    onClick={() => onChange({ ...item, enabled: !item.enabled })}
+                    onClick={() => onToggleEnabled
+                        ? onToggleEnabled(item.id, !(item.enabled !== false))
+                        : onChange(withReminderPausedState(item, !(item.enabled !== false)))
+                    }
                     className="shrink-0 p-0.5"
-                    title={item.enabled ? (isHe ? 'השהה' : 'Pause') : (isHe ? 'הפעל' : 'Enable')}
+                    title={item.enabled !== false ? (isHe ? 'השהה' : 'Pause') : (isHe ? 'הפעל' : 'Enable')}
                 >
-                    {item.enabled
+                    {item.enabled !== false
                         ? <ToggleRight size={18} className="text-blue-500" />
                         : <ToggleLeft size={18} className={isLight ? 'text-slate-400' : 'text-gray-400'} />}
                 </button>
@@ -617,15 +692,15 @@ function LoanItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, pro
 }
 
 // ─── Category accordion ───────────────────────────────────────────────────────
-function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onAddItem, onAddLoanItem, onToggleAll, projFactor, projYears, showInflation }) {
+function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onToggleItemEnabled, onAddItem, onAddLoanItem, onToggleAll, projFactor, projYears, showInflation }) {
     const label = isHe ? category.labelHe : category.labelEn;
-    const enabledItems = items.filter(i => i.enabled);
+    const enabledItems = items.filter(i => i.enabled !== false);
     const categoryTotal = enabledItems.reduce((s, i) => s + toMonthly(i), 0);
     const categoryProjected = enabledItems.reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0);
     const disabledCount = items.length - enabledItems.length;
     const allDisabled = items.length > 0 && enabledItems.length === 0;
     const notesCount = items.filter(i => i.note?.trim()).length;
-    const remindersCount = items.filter(i => i.reminder?.date).length;
+    const remindersCount = items.filter(i => i.enabled !== false && i.reminder?.date).length;
 
     return (
         <div className={`rounded-xl border transition-opacity ${allDisabled ? 'opacity-50' : ''} ${isLight ? 'border-slate-200 bg-white' : 'border-white/20 bg-white/10'}`}>
@@ -694,6 +769,7 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
                             t={t}
                             onChange={onChangeItem}
                             onDelete={() => onDeleteItem(item.id)}
+                            onToggleEnabled={onToggleItemEnabled}
                             projFactor={projFactor}
                             projYears={projYears}
                             showInflation={showInflation}
@@ -708,6 +784,7 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
                             t={t}
                             onChange={onChangeItem}
                             onDelete={() => onDeleteItem(item.id)}
+                            onToggleEnabled={onToggleItemEnabled}
                             projFactor={projFactor}
                             showInflation={showInflation}
                         />
@@ -745,7 +822,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const { currentUser } = useAuth();
     const uid = currentUser?.uid;
 
-    const [items, setItems] = useState(DEFAULT_ITEMS);
+    const [items, setItems] = useState(() => DEFAULT_ITEMS.map(normalizeBudgetItem));
     const [householdSize, setHouseholdSize] = useState(2);
     const [showInflation, setShowInflation] = useState(false);
     const [projYears, setProjYears] = useState(5);
@@ -761,6 +838,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const confirmedRef = useRef(null);   // last successfully saved snapshot
     const latestStateRef = useRef({ items, householdSize }); // always-current ref for closures
     const backupSlotsRef = useRef([]);   // in-memory mirror of Firestore backupSlots
+    const pauseStateFingerprintRef = useRef(null);
     const [backups, setBackups] = useState([]);
     const [showRestore, setShowRestore] = useState(false);
     const [pendingConfirm, setPendingConfirm] = useState(null); // { type: 'restore'|'reset', backup? }
@@ -779,8 +857,47 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     latestStateRef.current = { items, householdSize };
 
     const updateItems = useCallback((updater) => {
-        setItems(prev => typeof updater === 'function' ? updater(prev) : updater);
+        setItems(prev => {
+            const next = typeof updater === 'function' ? updater(prev) : updater;
+            if (!Array.isArray(next)) return next;
+            return next.map(normalizeBudgetItem);
+        });
     }, []);
+
+    const persistBudgetSnapshot = useCallback((withBackup = true) => {
+        if (!uid || !loaded || !saveAllowedRef.current) return;
+
+        const { items: latestItems, householdSize: latestHouseholdSize } = latestStateRef.current;
+        const normalizedItems = Array.isArray(latestItems) ? latestItems.map(normalizeBudgetItem) : latestItems;
+        const prev = confirmedRef.current;
+        let newSlots = backupSlotsRef.current;
+
+        if (withBackup && prev?.items?.some(i => i.enabled !== false && toMonthly(i) > 0)) {
+            const isDup = newSlots[0] && JSON.stringify(newSlots[0].items) === JSON.stringify(prev.items);
+            if (!isDup) {
+                newSlots = [
+                    {
+                        items: prev.items,
+                        householdSize: prev.householdSize,
+                        totalMonthly: prev.items.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0),
+                        savedAt: prev.savedAt
+                    },
+                    ...newSlots,
+                ].slice(0, MAX_BACKUP_SLOTS);
+            }
+        }
+
+        const snap = { items: normalizedItems, householdSize: latestHouseholdSize, savedAt: Date.now() };
+        setBudgetItems(uid, normalizedItems, latestHouseholdSize, withBackup ? newSlots : undefined)
+            .then(() => {
+                confirmedRef.current = snap;
+                if (withBackup) {
+                    backupSlotsRef.current = newSlots;
+                    setBackups(newSlots);
+                }
+            })
+            .catch(err => console.error('[Budget save]', err));
+    }, [uid, loaded]);
 
     // Listen for confirmed reminders and remove them from items
     useEffect(() => {
@@ -841,6 +958,17 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         });
     }, [searchQuery, items]);
 
+    const pauseStateFingerprint = useMemo(
+        () => items
+            .map(i => `${i.id}:${i.enabled === false ? '0' : '1'}:${i.reminder?.date || ''}:${i.pausedReminder?.date || ''}`)
+            .join('|'),
+        [items]
+    );
+
+    useEffect(() => {
+        pauseStateFingerprintRef.current = null;
+    }, [uid]);
+
     // Load from Firestore on mount
     useEffect(() => {
         if (!uid) return;
@@ -855,12 +983,17 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                 }
             }
             if (loadedItems) {
-                setItems(loadedItems);
+                const normalizedLoadedItems = loadedItems.map(normalizeBudgetItem);
+                setItems(normalizedLoadedItems);
                 setHouseholdSize(loadedHouseholdSize);
-                confirmedRef.current = { items: loadedItems, householdSize: loadedHouseholdSize, savedAt: Date.now() };
+                confirmedRef.current = { items: normalizedLoadedItems, householdSize: loadedHouseholdSize, savedAt: Date.now() };
                 const slots = Array.isArray(saved?.backupSlots) ? saved.backupSlots : [];
                 backupSlotsRef.current = slots;
                 setBackups(slots);
+                if (JSON.stringify(normalizedLoadedItems) !== JSON.stringify(loadedItems)) {
+                    setBudgetItems(uid, normalizedLoadedItems, loadedHouseholdSize, slots)
+                        .catch(err => console.error('[Budget status migration]', err));
+                }
             }
             saveAllowedRef.current = true;
             setLoaded(true);
@@ -871,43 +1004,37 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         });
     }, [uid]);
 
+    // Persist pause/unpause state immediately so it survives quick logout/login cycles.
+    useEffect(() => {
+        if (!uid || !loaded || !saveAllowedRef.current) return;
+        if (pauseStateFingerprintRef.current === null) {
+            pauseStateFingerprintRef.current = pauseStateFingerprint;
+            return;
+        }
+        if (pauseStateFingerprintRef.current === pauseStateFingerprint) return;
+
+        pauseStateFingerprintRef.current = pauseStateFingerprint;
+        clearTimeout(saveTimerRef.current);
+        persistBudgetSnapshot(false);
+    }, [uid, loaded, pauseStateFingerprint, persistBudgetSnapshot]);
+
     // Debounced save to Firestore whenever items change (after initial load)
     useEffect(() => {
         if (!uid || !loaded || !saveAllowedRef.current) return;
         clearTimeout(saveTimerRef.current);
         saveTimerRef.current = setTimeout(() => {
-            const { items: latestItems, householdSize: latestHouseholdSize } = latestStateRef.current;
-            // Build updated backup slots: push previous confirmed state (if has real data, not duplicate)
-            const prev = confirmedRef.current;
-            let newSlots = backupSlotsRef.current;
-            if (prev?.items?.some(i => i.enabled && toMonthly(i) > 0)) {
-                const isDup = newSlots[0] && JSON.stringify(newSlots[0].items) === JSON.stringify(prev.items);
-                if (!isDup) {
-                    newSlots = [
-                        { items: prev.items, householdSize: prev.householdSize, totalMonthly: prev.items.filter(i => i.enabled).reduce((s, i) => s + toMonthly(i), 0), savedAt: prev.savedAt },
-                        ...newSlots,
-                    ].slice(0, MAX_BACKUP_SLOTS);
-                }
-            }
-            const snap = { items: latestItems, householdSize: latestHouseholdSize, savedAt: Date.now() };
-            setBudgetItems(uid, latestItems, latestHouseholdSize, newSlots)
-                .then(() => {
-                    confirmedRef.current = snap;
-                    backupSlotsRef.current = newSlots;
-                    setBackups(newSlots);
-                })
-                .catch(err => console.error('[Budget save]', err));
+            persistBudgetSnapshot(true);
         }, SAVE_DEBOUNCE_MS);
         return () => clearTimeout(saveTimerRef.current);
-    }, [uid, items, householdSize, loaded]);
+    }, [uid, items, householdSize, loaded, persistBudgetSnapshot]);
 
     // Keep sessionStorage in sync so AI chat and AI insights can read the budget
     useEffect(() => {
         if (!loaded) return;
         try {
-            const monthly = items.filter(i => i.enabled).reduce((s, i) => s + toMonthly(i), 0);
+            const monthly = items.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0);
             const categories = CATEGORIES.map(cat => {
-                const catItems = items.filter(i => i.categoryId === cat.id && i.enabled && toMonthly(i) > 0);
+                const catItems = items.filter(i => i.categoryId === cat.id && i.enabled !== false && toMonthly(i) > 0);
                 if (!catItems.length) return null;
                 return {
                     labelHe: cat.labelHe,
@@ -916,13 +1043,13 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                     items: catItems.map(i => ({ label: i.label, amount: Math.round(toMonthly(i)) })),
                 };
             }).filter(Boolean);
-            const loanTracks = items.filter(i => i.type === 'loan' && i.enabled)
+            const loanTracks = items.filter(i => i.type === 'loan' && i.enabled !== false)
                 .flatMap(i => (i.tracks || []).filter(tr => tr.endDate && tr.amount > 0).map(tr => {
                     const [y, m] = tr.endDate.split('-').map(Number);
                     const ml = y * 12 + (m - 1) - getNowYM();
                     return { loan: i.label, track: tr.label, amount: tr.amount, endDate: tr.endDate, monthsLeft: ml, active: ml >= 0 };
                 }));
-            const projectedMonthly = items.filter(i => i.enabled).reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0);
+            const projectedMonthly = items.filter(i => i.enabled !== false).reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0);
             sessionStorage.setItem('rc-budget-summary', JSON.stringify({
                 totalMonthly: Math.round(monthly),
                 totalAnnual: Math.round(monthly * 12),
@@ -939,9 +1066,22 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         } catch {}
     }, [items, loaded, inputs.monthlyNetIncomeDesired, showInflation, inflationRate, projFactor, projYears]);
 
+    // Keep budget reminders in sync immediately from local state (before DB debounce/save).
+    useEffect(() => {
+        if (!loaded) return;
+        const budgetReminders = items
+            .filter(i => i?.enabled !== false && i?.reminder?.date)
+            .map(i => ({
+                id: String(i.id),
+                label: i.label || i.title || i.id,
+                reminder: { date: i.reminder.date, text: i.reminder.text || '' }
+            }));
+        syncComponentReminders('budget', budgetReminders, true);
+    }, [items, loaded]);
+
     // totalMonthly must be declared before any callbacks that reference it
     const totalMonthly = useMemo(
-        () => items.filter(i => i.enabled).reduce((s, i) => s + toMonthly(i), 0),
+        () => items.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0),
         [items]
     );
     const fullMonthly = useMemo(
@@ -950,14 +1090,14 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     );
     const pausedMonthly = fullMonthly - totalMonthly;
     const totalProjectedMonthly = useMemo(
-        () => items.filter(i => i.enabled).reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0),
+        () => items.filter(i => i.enabled !== false).reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0),
         [items, projFactor, projYears]
     );
 
     // Future milestones: points in time where loan tracks expire and expenses drop
     const futureMilestones = useMemo(() => {
         const expiring = items
-            .filter(i => i.type === 'loan' && i.enabled)
+            .filter(i => i.type === 'loan' && i.enabled !== false)
             .flatMap(i => (i.tracks || [])
                 .filter(tr => tr.endDate && tr.amount > 0 && trackActive(tr))
                 .map(tr => ({ loanLabel: i.label, trackLabel: tr.label, amount: tr.amount, endDate: tr.endDate, inflationAffected: !!tr.inflationAffected, itemRef: i }))
@@ -980,7 +1120,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             const yearsAway = ml / 12;
             // After this milestone: all loan tracks that end by this date are gone
             const expiredByNow = new Set(allDates.slice(0, idx + 1).flatMap(d => byDate[d].map(tr => `${tr.loanLabel}|${tr.trackLabel}`)));
-            const newTotal = items.filter(i => i.enabled).reduce((s, i) => {
+            const newTotal = items.filter(i => i.enabled !== false).reduce((s, i) => {
                 if (i.type === 'loan') {
                     const remaining = (i.tracks || []).filter(tr => {
                         if (!trackActive(tr)) return false;
@@ -1008,18 +1148,39 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         return all.sort((a, b) => {
             const catItemsA = items.filter(i => i.categoryId === a.id);
             const catItemsB = items.filter(i => i.categoryId === b.id);
-            const allOffA = catItemsA.length > 0 && catItemsA.every(i => !i.enabled);
-            const allOffB = catItemsB.length > 0 && catItemsB.every(i => !i.enabled);
+            const allOffA = catItemsA.length > 0 && catItemsA.every(i => i.enabled === false);
+            const allOffB = catItemsB.length > 0 && catItemsB.every(i => i.enabled === false);
             if (allOffA !== allOffB) return allOffA ? 1 : -1;
-            const totalA = catItemsA.filter(i => i.enabled).reduce((s, i) => s + toMonthly(i), 0);
-            const totalB = catItemsB.filter(i => i.enabled).reduce((s, i) => s + toMonthly(i), 0);
+            const totalA = catItemsA.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0);
+            const totalB = catItemsB.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0);
             return totalB - totalA;
         });
     }, [items, customCategoryIds]);
 
+    const applyStatusItemsWithImmediateSave = useCallback((nextItems) => {
+        const normalizedNextItems = Array.isArray(nextItems) ? nextItems.map(normalizeBudgetItem) : [];
+        setItems(normalizedNextItems);
+        const nextHouseholdSize = latestStateRef.current.householdSize;
+        latestStateRef.current = { items: normalizedNextItems, householdSize: nextHouseholdSize };
+
+        if (!uid || !loaded || !saveAllowedRef.current) return;
+        clearTimeout(saveTimerRef.current);
+        setBudgetItems(uid, normalizedNextItems, nextHouseholdSize)
+            .then(() => {
+                confirmedRef.current = { items: normalizedNextItems, householdSize: nextHouseholdSize, savedAt: Date.now() };
+            })
+            .catch(err => console.error('[Budget status immediate save]', err));
+    }, [uid, loaded]);
+
     const handleChangeItem = useCallback((updated) => {
-        updateItems(prev => prev.map(i => i.id === updated.id ? updated : i));
+        updateItems(prev => prev.map(i => i.id === updated.id ? mergeBudgetItemUpdate(i, updated) : i));
     }, [updateItems]);
+
+    const handleToggleItemEnabled = useCallback((itemId, nextEnabled) => {
+        const currentItems = Array.isArray(latestStateRef.current.items) ? latestStateRef.current.items : [];
+        const nextItems = currentItems.map(i => String(i.id) === String(itemId) ? withReminderPausedState(i, nextEnabled) : i);
+        applyStatusItemsWithImmediateSave(nextItems);
+    }, [applyStatusItemsWithImmediateSave]);
 
     const handleDeleteItem = useCallback((id) => {
         updateItems(prev => prev.filter(i => i.id !== id));
@@ -1045,7 +1206,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         if (!pendingConfirm) return;
         if (pendingConfirm.type === 'restore') {
             const { backup } = pendingConfirm;
-            if (Array.isArray(backup.items)) setItems(backup.items);
+            if (Array.isArray(backup.items)) setItems(backup.items.map(normalizeBudgetItem));
             if (backup.householdSize) setHouseholdSize(backup.householdSize);
             setShowRestore(false);
         } else if (pendingConfirm.type === 'reset') {
@@ -1070,13 +1231,13 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     }, [setInputs, totalMonthly]);
 
     const handleToggleCategoryItems = useCallback((categoryId) => {
-        updateItems(prev => {
-            const catItems = prev.filter(i => i.categoryId === categoryId);
-            const allEnabled = catItems.every(i => i.enabled);
+        const currentItems = Array.isArray(latestStateRef.current.items) ? latestStateRef.current.items : [];
+            const catItems = currentItems.filter(i => i.categoryId === categoryId);
+            const allEnabled = catItems.every(i => i.enabled !== false);
             // If all enabled → disable all; otherwise → enable all
-            return prev.map(i => i.categoryId === categoryId ? { ...i, enabled: !allEnabled } : i);
-        });
-    }, [updateItems]);
+            const nextItems = currentItems.map(i => i.categoryId === categoryId ? withReminderPausedState(i, !allEnabled) : i);
+            applyStatusItemsWithImmediateSave(nextItems);
+    }, [applyStatusItemsWithImmediateSave]);
 
     const handleReset = useCallback(() => {
         setPendingConfirm({ type: 'reset' });
@@ -1090,7 +1251,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             target,
             householdSize,
             items: items
-                .filter(i => i.enabled && toMonthly(i) > 0)
+                .filter(i => i.enabled !== false && toMonthly(i) > 0)
                 .map(i => i.type === 'loan'
                     ? { id: i.id, tracks: i.tracks }
                     : { id: i.id, amount: i.amount, frequency: i.frequency })
@@ -1111,7 +1272,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
 
             const emptyCatNames = [];
             const lines = CATEGORIES.map(cat => {
-                const catItems = items.filter(i => i.categoryId === cat.id && i.enabled);
+                const catItems = items.filter(i => i.categoryId === cat.id && i.enabled !== false);
                 const activeItems = catItems.filter(i => {
                     if (i.type === 'loan') return (i.tracks || []).some(trackActive);
                     return i.amount > 0;
@@ -1150,7 +1311,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                 : '';
 
             // Build a summary of future savings from expiring loan tracks
-            const futureSavings = items.filter(i => i.type === 'loan' && i.enabled)
+            const futureSavings = items.filter(i => i.type === 'loan' && i.enabled !== false)
                 .flatMap(i => (i.tracks || []).filter(tr => tr.endDate && trackActive(tr) && tr.amount > 0)
                     .map(tr => {
                         const [y, m] = tr.endDate.split('-').map(Number);
@@ -1452,7 +1613,7 @@ Gap vs target and what can be optimized.`;
                         const cat = visibleCategories.find(c => c.id === item.categoryId);
                         const monthly = toMonthly(item);
                         return (
-                            <div key={item.id} className={`flex items-center gap-2 px-3 py-2 border-b last:border-0 text-sm ${item.enabled ? '' : 'opacity-40'} ${isLight ? 'border-slate-100' : 'border-white/5'}`} dir={isHe ? 'rtl' : 'ltr'}>
+                            <div key={item.id} className={`flex items-center gap-2 px-3 py-2 border-b last:border-0 text-sm ${item.enabled !== false ? '' : 'opacity-40'} ${isLight ? 'border-slate-100' : 'border-white/5'}`} dir={isHe ? 'rtl' : 'ltr'}>
                                 <span className="text-base shrink-0">{cat?.icon ?? '📋'}</span>
                                 <div className="flex-1 min-w-0">
                                     <div className={`font-medium truncate ${isLight ? 'text-slate-800' : 'text-white'}`}>{item.label}</div>
@@ -1486,6 +1647,7 @@ Gap vs target and what can be optimized.`;
                         onToggle={() => setOpenCategoryId(prev => prev === cat.id ? null : cat.id)}
                         onChangeItem={handleChangeItem}
                         onDeleteItem={handleDeleteItem}
+                        onToggleItemEnabled={handleToggleItemEnabled}
                         onAddItem={() => handleAddItem(cat.id)}
                         onAddLoanItem={() => handleAddLoanItem(cat.id)}
                         onToggleAll={() => handleToggleCategoryItems(cat.id)}

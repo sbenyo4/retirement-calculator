@@ -624,12 +624,60 @@ function PriorityBadge({ priority, isLight, language }) {
 /** Renders children into document.body anchored at a given DOMRect */
 function PopupPortal({ anchorRect, align = 'right', children }) {
     if (!anchorRect) return null;
-    const top = anchorRect.bottom + window.scrollY + 4;
-    const style = align === 'right'
-        ? { position: 'absolute', top, right: window.innerWidth - anchorRect.right + window.scrollX, zIndex: 9999 }
-        : { position: 'absolute', top, left: anchorRect.left + window.scrollX, zIndex: 9999 };
+    const popupRef = useRef(null);
+    const [style, setStyle] = useState({
+        position: 'fixed',
+        top: anchorRect.bottom + 4,
+        zIndex: 9999,
+        visibility: 'hidden',
+    });
+
+    useLayoutEffect(() => {
+        const popupEl = popupRef.current;
+        if (!popupEl || !anchorRect) return;
+
+        const gap = 4;
+        const viewportPadding = 8;
+        const popupWidth = popupEl.offsetWidth || 0;
+        const popupHeight = popupEl.offsetHeight || 0;
+        const spaceBelow = window.innerHeight - anchorRect.bottom - gap - viewportPadding;
+        const spaceAbove = anchorRect.top - gap - viewportPadding;
+        const openAbove = popupHeight > spaceBelow && spaceAbove > spaceBelow;
+
+        const top = openAbove
+            ? Math.max(viewportPadding, anchorRect.top - popupHeight - gap)
+            : Math.min(window.innerHeight - popupHeight - viewportPadding, anchorRect.bottom + gap);
+
+        const nextStyle = align === 'right'
+            ? {
+                position: 'fixed',
+                top,
+                left: Math.max(viewportPadding, anchorRect.right - popupWidth),
+                zIndex: 9999,
+                visibility: 'visible',
+            }
+            : {
+                position: 'fixed',
+                top,
+                left: Math.min(
+                    Math.max(viewportPadding, anchorRect.left),
+                    window.innerWidth - popupWidth - viewportPadding
+                ),
+                zIndex: 9999,
+                visibility: 'visible',
+            };
+
+        setStyle(prev => {
+            const sameTop = Math.abs((prev.top ?? 0) - nextStyle.top) < 1;
+            const sameLeft = Math.abs((prev.left ?? 0) - nextStyle.left) < 1;
+            const sameVisibility = prev.visibility === nextStyle.visibility;
+            if (sameTop && sameLeft && sameVisibility) return prev;
+            return nextStyle;
+        });
+    }, [anchorRect, align, children]);
+
     return ReactDOM.createPortal(
-        <div style={style}>{children}</div>,
+        <div ref={popupRef} style={style}>{children}</div>,
         document.body
     );
 }
@@ -1249,8 +1297,10 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                 .filter(c => c.items.length > 0);
             const next = { ...prev, categories };
             if (uid) setChecklistState(uid, { categories, snapshot: prev.snapshot, updatedAt: Date.now() }).catch(() => {});
+            syncComponentReminders('checklist', categories.flatMap(c => c.items), true);
             return next;
         });
+        silenceReminder(itemId, 'checklist');
         if (item) {
             setDismissedItems(prev => {
                 if (prev.some(d => d.id === itemId)) return prev;
@@ -1301,8 +1351,10 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                 .filter(c => c.items.length > 0);
             const next = { ...prev, categories };
             if (uid) setChecklistState(uid, { categories, snapshot: prev.snapshot, updatedAt: Date.now() }).catch(() => {});
+            syncComponentReminders('checklist', categories.flatMap(c => c.items), true);
             return next;
         });
+        silenceReminder(itemId, 'checklist');
         setDismissedItems(prev => {
             if (prev.some(d => d.id === itemId)) return prev;
             const stored = item || { id: itemId, title: itemId, priority: 'medium', description: '', details: '' };
@@ -1338,12 +1390,14 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             }
             const next = { ...prev, categories };
             if (uid) setChecklistState(uid, { categories, snapshot: prev.snapshot, updatedAt: Date.now() }).catch(() => {});
+            syncComponentReminders('checklist', categories.flatMap(c => c.items), true);
             return next;
         });
     }, [uid]);
 
     // Permanently delete from dismissed list — item can be re-added by AI in future
     const handlePermanentDelete = useCallback((itemId) => {
+        silenceReminder(itemId, 'checklist');
         setDismissedItems(prev => {
             const next = prev.filter(d => d.id !== itemId);
             if (uid) setChecklistState(uid, { dismissedItems: next }).catch(() => {});
@@ -1455,6 +1509,13 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             setFilterMode(null);
         }
     }, [filterMode, filteredItems]);
+
+    // Also leave "dismissed" mode once the last dismissed item is restored/removed.
+    useEffect(() => {
+        if (filterMode === 'dismissed' && dismissedItems.length === 0) {
+            setFilterMode(null);
+        }
+    }, [filterMode, dismissedItems.length]);
 
     const toggleCategory = (id) => {
         setExpandedCategories(prev => prev.has(id) ? new Set() : new Set([id]));
