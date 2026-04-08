@@ -201,5 +201,107 @@ export function GlobalRemindersSync({ uid, lifeEvents = [], currentProfileId, pr
         return () => window.removeEventListener('rc-reminder-confirmed', handleConfirm);
     }, [uid]);
 
+    useEffect(() => {
+        if (!uid) return;
+
+        const handleEdit = async (e) => {
+            const { id, source, date, label, text } = e.detail || {};
+            if (!id || !source) return;
+
+            try {
+                const nextLabel = typeof label === 'string' ? label : undefined;
+                const nextText = typeof text === 'string' ? text : undefined;
+
+                // Budget
+                if (source === 'budget') {
+                    const bSnap = await getBudgetItems(uid);
+                    if (bSnap) {
+                        const items = Array.isArray(bSnap) ? bSnap : (bSnap.items || []);
+                        const idx = items.findIndex(i => String(i.id) === String(id));
+                        if (idx > -1) {
+                            const newItems = [...items];
+                            const nextItem = { ...newItems[idx] };
+                            if (nextLabel !== undefined) nextItem.label = nextLabel;
+                            nextItem.reminder = nextText !== undefined
+                                ? { ...(nextItem.reminder || {}), date, text: nextText || '' }
+                                : { ...(nextItem.reminder || {}), date };
+                            newItems[idx] = nextItem;
+                            await setBudgetItems(uid, newItems, bSnap.householdSize, bSnap.backupSlots);
+                        }
+                    }
+                }
+
+                // Checklist
+                if (source === 'checklist') {
+                    const cSnap = await getChecklistState(uid);
+                    if (cSnap?.categories) {
+                        let changed = false;
+                        const newCats = cSnap.categories.map(cat => {
+                            if (!cat.items) return cat;
+                            let catChanged = false;
+                            const newItems = cat.items.map(i => {
+                                if (String(i.id) !== String(id)) return i;
+                                catChanged = true;
+                                changed = true;
+                                const nextItem = { ...i };
+                                if (nextLabel !== undefined) nextItem.label = nextLabel;
+                                nextItem.reminder = nextText !== undefined
+                                    ? { ...(nextItem.reminder || {}), date, text: nextText || '' }
+                                    : { ...(nextItem.reminder || {}), date };
+                                return nextItem;
+                            });
+                            return catChanged ? { ...cat, items: newItems } : cat;
+                        });
+                        if (changed) {
+                            await setChecklistState(uid, { ...cSnap, categories: newCats });
+                        }
+                    }
+                }
+
+                // General
+                if (source === 'general') {
+                    const gRems = await getGeneralReminders(uid);
+                    const next = gRems.map(r => {
+                        if (String(r.id) !== String(id)) return r;
+                        const nextRem = { ...r, date };
+                        if (nextLabel !== undefined) nextRem.label = nextLabel;
+                        if (nextText !== undefined) nextRem.text = nextText || '';
+                        return nextRem;
+                    });
+                    if (JSON.stringify(next) !== JSON.stringify(gRems)) {
+                        await setGeneralReminders(uid, next);
+                    }
+                }
+
+                // Life events are profile-scoped. Only touch the profile that owns the reminder.
+                if (isLifeEventSource(source)) {
+                    const profileId = source.split(':').slice(1).join(':');
+                    const profile = profiles.find(p => p.id === profileId);
+                    if (profile?.data?.lifeEvents) {
+                        const nextLifeEvents = profile.data.lifeEvents.map(event =>
+                            String(event.id) === String(id)
+                                ? {
+                                    ...event,
+                                    ...(nextLabel !== undefined ? { description: nextLabel } : {}),
+                                    reminder: nextText !== undefined
+                                        ? { ...(event.reminder || {}), date, text: nextText || '' }
+                                        : { ...(event.reminder || {}), date }
+                                }
+                                : event
+                        );
+                        if (updateProfile) {
+                            await updateProfile(profileId, { ...profile.data, lifeEvents: nextLifeEvents });
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("[GlobalRemindersSync] Edit DB update failed:", err);
+            }
+        };
+
+        window.addEventListener('rc-reminder-edited', handleEdit);
+        return () => window.removeEventListener('rc-reminder-edited', handleEdit);
+    }, [uid, profiles, updateProfile]);
+
     return null;
 }

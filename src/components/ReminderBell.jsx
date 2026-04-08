@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Bell, BellRing, X, Clock, Trash2, FileText, Plus } from 'lucide-react';
-import { useReminders, syncComponentReminders, silenceReminder } from '../hooks/useReminders';
+import { Bell, BellRing, X, Clock, Trash2, FileText, Plus, Pencil, Save } from 'lucide-react';
+import { useReminders, syncComponentReminders, silenceReminder, updateReminderInSession } from '../hooks/useReminders';
 import { useAuth } from '../contexts/AuthContext';
 import { setGeneralReminders } from '../utils/db';
 
@@ -16,6 +16,8 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
     const [isAdding, setIsAdding] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [form, setForm] = useState({ label: '', date: '', text: '' });
+    const [editingReminder, setEditingReminder] = useState(null);
+    const [editForm, setEditForm] = useState({ date: '', text: '' });
     
     const isHe = language === 'he';
     const activeLifeEventSource = activeProfileId ? `lifeEvents:${activeProfileId}` : null;
@@ -33,9 +35,22 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
     const visibleReminders = useMemo(() => reminders.filter(isVisibleReminder), [reminders, activeLifeEventSource]);
     const visibleDueNow = useMemo(() => dueNow.filter(isVisibleReminder), [dueNow, activeLifeEventSource]);
     const visibleFuture = useMemo(() => future.filter(isVisibleReminder), [future, activeLifeEventSource]);
+    const visibleTomorrow = useMemo(() => {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tmr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+        return visibleFuture.filter(r => r.date === tmr);
+    }, [visibleFuture]);
+    const visibleLater = useMemo(() => {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tmr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+        return visibleFuture.filter(r => r.date > tmr);
+    }, [visibleFuture]);
     const visibleCount = visibleReminders.length;
     const visibleDueCount = visibleDueNow.length;
     const visibleFutureCount = visibleFuture.length;
+    const visibleTomorrowCount = visibleTomorrow.length;
 
     // Close on outside click
     useEffect(() => {
@@ -95,6 +110,31 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
 
     const reminderSourceLabel = (source) => sourceLabel(source);
 
+    const beginEditReminder = (reminder) => {
+        setIsAdding(false);
+        setEditingReminder(reminder);
+        setEditForm({
+            date: reminder?.date || '',
+            text: reminder?.label || reminder?.description || reminder?.text || '',
+        });
+    };
+
+    const cancelEditReminder = () => {
+        setEditingReminder(null);
+    };
+
+    const saveEditReminder = async () => {
+        if (!editingReminder?.id || !editingReminder?.source || !editForm.date) return;
+        const nextText = editForm.text.trim();
+        const { id: reminderId, source } = editingReminder;
+        silenceReminder(reminderId, source);
+        updateReminderInSession(source, reminderId, { date: editForm.date, label: nextText });
+        window.dispatchEvent(new CustomEvent('rc-reminder-edited', {
+            detail: { id: reminderId, source, date: editForm.date, label: nextText }
+        }));
+        setEditingReminder(null);
+    };
+
     return (
         <div id={id} className="relative" ref={panelRef}>
             <button
@@ -115,7 +155,7 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
                     </span>
                 )}
                 {visibleFutureCount > 0 && (
-                    <span className="absolute -top-1.5 -left-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-blue-500 text-white text-[10px] font-black flex items-center justify-center shadow-sm border border-white/20 pointer-events-none z-10">
+                    <span className={`absolute -top-1.5 -left-1.5 min-w-[18px] h-[18px] px-1 rounded-full text-white text-[10px] font-black flex items-center justify-center shadow-sm border border-white/20 pointer-events-none z-10 ${visibleTomorrowCount > 0 ? 'bg-yellow-500' : 'bg-blue-500'}`}>
                         {visibleFutureCount}
                     </span>
                 )}
@@ -150,17 +190,100 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
                                             {isHe ? 'לטיפול עכשיו' : 'Due now'}
                                         </div>
                                         {visibleDueNow.map(r => (
-                                            <ReminderRow key={r.id} r={r} isLight={isLight} isHe={isHe} formatDate={formatDate} sourceLabel={reminderSourceLabel} onConfirm={confirmReminder} onDismiss={dismiss} due />
+                                            <ReminderRow
+                                                key={r.id}
+                                                r={r}
+                                                isLight={isLight}
+                                                isHe={isHe}
+                                                formatDate={formatDate}
+                                                sourceLabel={reminderSourceLabel}
+                                                onConfirm={confirmReminder}
+                                                onDismiss={dismiss}
+                                                onEdit={beginEditReminder}
+                                                due
+                                                isEditing={editingReminder?.id === r.id && editingReminder?.source === r.source}
+                                                editForm={editForm}
+                                                setEditForm={setEditForm}
+                                                onSaveEdit={saveEditReminder}
+                                                onCancelEdit={cancelEditReminder}
+                                            />
                                         ))}
                                     </div>
                                 )}
-                                {visibleFuture.length > 0 && (
+                                {false && visibleFuture.length > 0 && (
                                     <div>
-                                        <div className={`px-3 py-1 text-[10px] font-semibold uppercase tracking-wide ${isLight ? 'text-slate-400 bg-slate-50' : 'text-gray-500 bg-white/5'}`}>
+                                        <div className={`px-3 py-1 text-[10px] font-semibold uppercase tracking-wide ${isLight ? 'text-amber-700 bg-amber-50' : 'text-amber-400 bg-amber-500/10'}`}>
                                             {isHe ? 'עתידיות' : 'Upcoming'}
                                         </div>
                                         {visibleFuture.map(r => (
-                                            <ReminderRow key={r.id} r={r} isLight={isLight} isHe={isHe} formatDate={formatDate} sourceLabel={reminderSourceLabel} onConfirm={confirmReminder} onDismiss={dismiss} />
+                                            <ReminderRow
+                                                key={r.id}
+                                                r={r}
+                                                isLight={isLight}
+                                                isHe={isHe}
+                                                formatDate={formatDate}
+                                                sourceLabel={reminderSourceLabel}
+                                                onConfirm={confirmReminder}
+                                                onDismiss={dismiss}
+                                                onEdit={beginEditReminder}
+                                                tone="tomorrow"
+                                                isEditing={editingReminder?.id === r.id && editingReminder?.source === r.source}
+                                                editForm={editForm}
+                                                setEditForm={setEditForm}
+                                                onSaveEdit={saveEditReminder}
+                                                onCancelEdit={cancelEditReminder}
+                                            />
+                                        ))}
+                                    </div>
+                                )}
+                                {visibleTomorrow.length > 0 && (
+                                    <div>
+                                        <div className={`px-3 py-1 text-[10px] font-semibold uppercase tracking-wide ${isLight ? 'text-yellow-700 bg-yellow-50' : 'text-yellow-300 bg-yellow-500/10'}`}>
+                                            {isHe ? 'מחר' : 'Tomorrow'}
+                                        </div>
+                                        {visibleTomorrow.map(r => (
+                                            <ReminderRow
+                                                key={r.id}
+                                                r={r}
+                                                isLight={isLight}
+                                                isHe={isHe}
+                                                formatDate={formatDate}
+                                                sourceLabel={reminderSourceLabel}
+                                                onConfirm={confirmReminder}
+                                                onDismiss={dismiss}
+                                                onEdit={beginEditReminder}
+                                                tone="tomorrow"
+                                                isEditing={editingReminder?.id === r.id && editingReminder?.source === r.source}
+                                                editForm={editForm}
+                                                setEditForm={setEditForm}
+                                                onSaveEdit={saveEditReminder}
+                                                onCancelEdit={cancelEditReminder}
+                                            />
+                                        ))}
+                                    </div>
+                                )}
+                                {visibleLater.length > 0 && (
+                                    <div>
+                                        <div className={`px-3 py-1 text-[10px] font-semibold uppercase tracking-wide ${isLight ? 'text-slate-400 bg-slate-50' : 'text-gray-500 bg-white/5'}`}>
+                                            {isHe ? 'עתידיות' : 'Later'}
+                                        </div>
+                                        {visibleLater.map(r => (
+                                            <ReminderRow
+                                                key={r.id}
+                                                r={r}
+                                                isLight={isLight}
+                                                isHe={isHe}
+                                                formatDate={formatDate}
+                                                sourceLabel={reminderSourceLabel}
+                                                onConfirm={confirmReminder}
+                                                onDismiss={dismiss}
+                                                onEdit={beginEditReminder}
+                                                isEditing={editingReminder?.id === r.id && editingReminder?.source === r.source}
+                                                editForm={editForm}
+                                                setEditForm={setEditForm}
+                                                onSaveEdit={saveEditReminder}
+                                                onCancelEdit={cancelEditReminder}
+                                            />
                                         ))}
                                     </div>
                                 )}
@@ -227,10 +350,12 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
     );
 }
 
-function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onDismiss, due }) {
+function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onDismiss, onEdit, onSaveEdit, onCancelEdit, isEditing, editForm, setEditForm, due, tone }) {
+    const isTomorrow = tone === 'tomorrow';
     return (
-        <div className={`flex items-start gap-2 px-3 py-2.5 ${due ? (isLight ? 'bg-red-50/50' : 'bg-red-500/5') : ''}`}>
-            <Clock size={13} className={`mt-0.5 shrink-0 ${due ? 'text-red-400' : (isLight ? 'text-slate-400' : 'text-gray-500')}`} />
+        <>
+        <div className={`flex items-start gap-2 px-3 py-2.5 ${due ? (isLight ? 'bg-red-50/50' : 'bg-red-500/5') : isTomorrow ? (isLight ? 'bg-yellow-50/70' : 'bg-yellow-500/5') : ''}`}>
+            <Clock size={13} className={`mt-0.5 shrink-0 ${due ? 'text-red-400' : isTomorrow ? (isLight ? 'text-yellow-500' : 'text-yellow-300') : (isLight ? 'text-slate-400' : 'text-gray-500')}`} />
             <div className="flex-1 min-w-0">
                 <div 
                     className="flex items-center gap-1.5 flex-wrap cursor-pointer group"
@@ -243,21 +368,64 @@ function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onD
                     <span className={`text-xs font-medium truncate ${r.source !== 'general' ? 'group-hover:underline' : ''} ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{r.label}</span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isLight ? 'bg-slate-100 text-slate-500' : 'bg-white/10 text-gray-400'}`}>{sourceLabel(r.source)}</span>
                 </div>
-                <div className={`text-[11px] mt-0.5 ${due ? (isLight ? 'text-red-500' : 'text-red-400') : (isLight ? 'text-blue-500' : 'text-blue-400')}`}>
+                <div className={`text-[11px] mt-0.5 ${due ? (isLight ? 'text-red-500' : 'text-red-400') : isTomorrow ? (isLight ? 'text-yellow-600' : 'text-yellow-300') : (isLight ? 'text-blue-500' : 'text-blue-400')}`}>
                     {formatDate(r.date)}
                 </div>
                 {r.text && <div className={`text-[11px] mt-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{r.text}</div>}
             </div>
             <div className="flex items-center gap-0.5 shrink-0">
-                {due && (
-                    <button onClick={() => onDismiss(r.id)} title={isHe ? 'הזכר שוב' : 'Remind later'} className={`p-0.5 rounded transition-colors ${isLight ? 'text-slate-300 hover:text-slate-500' : 'text-gray-600 hover:text-gray-400'}`}>
-                        <Clock size={12} />
-                    </button>
-                )}
+                <button
+                    onClick={() => onEdit?.(r)}
+                    title={isHe ? 'ערוך תזכורת' : 'Edit reminder'}
+                    className={`p-0.5 rounded transition-colors ${isLight ? 'text-slate-300 hover:text-slate-500' : 'text-gray-600 hover:text-gray-400'}`}
+                >
+                    <Pencil size={12} />
+                </button>
                 <button onClick={() => onConfirm(r.id)} title={isHe ? 'מחק תזכורת' : 'Delete reminder'} className={`p-0.5 rounded transition-colors ${isLight ? 'text-slate-300 hover:text-red-500' : 'text-gray-600 hover:text-red-400'}`}>
                     <Trash2 size={12} />
                 </button>
             </div>
         </div>
+        {isEditing && (
+            <div className={`px-3 pb-3 ${isLight ? 'border-t border-slate-100' : 'border-t border-white/10'}`}>
+                <div className="grid gap-2 pt-2" style={{ gridTemplateColumns: '1fr auto' }}>
+                    <div className="space-y-1">
+                        <label className={`text-[10px] font-bold uppercase tracking-wider ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'מתי?' : 'When?'}</label>
+                        <input
+                            type="date"
+                            value={editForm.date}
+                            onChange={e => setEditForm(prev => ({ ...prev, date: e.target.value }))}
+                            className={`w-full px-2 py-2 text-xs rounded-lg border outline-none ${isLight ? 'bg-white border-slate-200' : 'bg-slate-800 border-white/10 text-white'}`}
+                        />
+                        <label className={`text-[10px] font-bold uppercase tracking-wider ${isLight ? 'text-slate-400' : 'text-gray-500'} pt-1`}>{isHe ? 'טקסט התזכורת' : 'Reminder text'}</label>
+                        <input
+                            type="text"
+                            value={editForm.text}
+                            onChange={e => setEditForm(prev => ({ ...prev, text: e.target.value }))}
+                            placeholder={isHe ? 'הטקסט של התזכורת' : 'Reminder text'}
+                            className={`w-full px-2 py-2 text-xs rounded-lg border outline-none ${isLight ? 'bg-white border-slate-200 text-slate-700 placeholder-slate-300' : 'bg-slate-800 border-white/10 text-white placeholder-gray-500'}`}
+                        />
+                    </div>
+                    <div className="flex items-end gap-1">
+                        <button
+                            onClick={() => onSaveEdit?.()}
+                            disabled={!editForm.date}
+                            className={`px-2.5 py-2 rounded-lg text-xs font-semibold transition-colors ${editForm.date ? 'bg-blue-600 text-white hover:bg-blue-700' : isLight ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white/5 text-gray-600 cursor-not-allowed'}`}
+                            title={isHe ? 'שמור' : 'Save'}
+                        >
+                            <Save size={12} />
+                        </button>
+                        <button
+                            onClick={() => onCancelEdit?.()}
+                            className={`px-2.5 py-2 rounded-lg text-xs font-semibold transition-colors ${isLight ? 'bg-slate-100 text-slate-500 hover:bg-slate-200' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}
+                            title={isHe ? 'בטל' : 'Cancel'}
+                        >
+                            <X size={12} />
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+        </>
     );
 }

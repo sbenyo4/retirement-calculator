@@ -19,6 +19,26 @@ export function silenceReminder(id, source) {
     window.dispatchEvent(new Event('rc-reminders-updated'));
 }
 
+export function updateReminderInSession(source, id, changes = {}) {
+    if (!source || !id) return;
+    try {
+        const current = readReminders();
+        const next = current.map(r => {
+            if (r.source !== source || String(r.id) !== String(id)) return r;
+            return {
+                ...r,
+                ...(changes.label !== undefined ? { label: changes.label } : {}),
+                ...(changes.date !== undefined ? { date: changes.date } : {}),
+                ...(changes.text !== undefined ? { text: changes.text } : {}),
+            };
+        });
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
+        window.dispatchEvent(new Event('rc-reminders-updated'));
+    } catch (err) {
+        console.error('[useReminders] update reminder failed', err);
+    }
+}
+
 function normalizeDate(d) {
     if (!d) return '';
     if (typeof d === 'string') {
