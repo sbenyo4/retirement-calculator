@@ -28,7 +28,11 @@ export function GlobalRemindersSync({ uid, lifeEvents = [], currentProfileId, pr
                 return {};
             });
             const hasCategories = Array.isArray(snap?.categories) && snap.categories.length > 0;
-            if (hasCategories || attempt >= 4) return snap;
+            if (hasCategories) return snap;
+            if (attempt >= 4) {
+                console.warn("[Sync] Checklist: no categories after 4 retries — checklist reminders may not sync");
+                return snap;
+            }
             await new Promise(resolve => setTimeout(resolve, 300));
             if (lastSyncedUidRef.current !== uid) return {};
             return loadChecklistWithRetry(attempt + 1);
@@ -82,7 +86,7 @@ export function GlobalRemindersSync({ uid, lifeEvents = [], currentProfileId, pr
                 .catch(err => {
                     console.error("[GlobalRemindersSync] Atomic sync failed:", err);
                 });
-        }, 500); 
+        }, 100);
     }, [uid]);
 
     useEffect(() => {

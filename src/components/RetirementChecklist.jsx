@@ -1034,7 +1034,10 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                 setKeptItemIds(new Set(saved.keptItemIds));
             }
             setDbLoaded(true);
-        }).catch(() => setDbLoaded(true));
+        }).catch(err => {
+            console.error('[RetirementChecklist] Failed to load checklist state from Firestore:', err);
+            setDbLoaded(true);
+        });
     }, [uid]);
 
     // Stable refs so doRefresh never becomes stale

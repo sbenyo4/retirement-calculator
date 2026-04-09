@@ -39,6 +39,7 @@ export function useRetirementData() {
                     }
 
                     if (Array.isArray(pensionSources)) {
+                        pensionSources = pensionSources.filter(s => s != null);
                         const niExists = pensionSources.some(s => s.type === 'nationalInsurance');
                         if (!niExists) {
                             try {

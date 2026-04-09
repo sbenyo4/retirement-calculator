@@ -566,6 +566,10 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
 
     const formatCurrency = useCallback((val) => formatCurrencyUtil(val, language), [language]);
 
+    const sortedIncomeSources = useMemo(() =>
+        [...incomeSources].sort((a, b) => (parseFloat(a.startAge) || 0) - (parseFloat(b.startAge) || 0)),
+    [incomeSources]);
+
     // Calculate total accumulated capital (base + lump sums)
     const totalAccumulatedCapital = useMemo(() => {
         const lumpSumTotal = incomeSources
@@ -573,13 +577,6 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
             .reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
         return capitalAtRetirement + lumpSumTotal;
     }, [incomeSources, capitalAtRetirement]);
-
-    // Total gross annuity income (excluding lump sums) at age 67 for National Insurance income test
-    const incomeAtNIStart = useMemo(() => {
-        const annuitySources = incomeSources.filter(s => !s.isLumpSum);
-        // We calculate specifically at age 67 because that's when the income test begins for Old Age pension
-        return calculateIncomeAtAge(annuitySources, 67, fiscalParameters ? { ...fiscalParameters, retirementAge: retirementStartAge, familyStatus } : { familyStatus, retirementAge: retirementStartAge });
-    }, [incomeSources, fiscalParameters, retirementStartAge, familyStatus]);
 
     // NI calculation for summary display (at age 67 OR 70 based on income test)
     // NI calculation for summary display (at age 67, ignoring income test as per user request)
@@ -937,7 +934,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
 
                             {showIncomeSources && (
                                 <div className="p-2 space-y-1 max-h-44 overflow-y-auto custom-scrollbar scrollbar-right animate-in slide-in-from-top-2 fade-in duration-200">
-                                    {[...incomeSources].sort((a, b) => (parseFloat(a.startAge) || 0) - (parseFloat(b.startAge) || 0)).map(source => (
+                                    {sortedIncomeSources.map(source => (
                                         <IncomeSourceRow
                                             key={source.id}
                                             source={source}

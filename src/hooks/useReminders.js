@@ -26,7 +26,7 @@ function isForced(globalId) {
 
 function resetLoginPopupModeState() {
     loginPopupMode = true;
-    loginPopupGraceUntil = Date.now() + 8000;
+    loginPopupGraceUntil = Date.now() + 2500;
     loginTargetReminderIds.clear();
     loginHandledReminderIds.clear();
 }

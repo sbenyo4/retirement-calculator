@@ -38,6 +38,7 @@ export default function LifeEventsManager({
     const [copyError, setCopyError] = useState(null);
     const [copySelectedIds, setCopySelectedIds] = useState([]);
     const [copyAction, setCopyAction] = useState('copy'); // 'copy' | 'delete'
+    const [isCopying, setIsCopying] = useState(false);
     const [viewOffset, setViewOffset] = useState(0);
     const [itemsPerView, setItemsPerView] = useState(6);
     const listContainerRef = useRef(null);
@@ -94,7 +95,8 @@ export default function LifeEventsManager({
 
 
     const submitCopyEvent = async () => {
-        if (copySelectedIds.length === 0) return;
+        if (copySelectedIds.length === 0 || isCopying) return;
+        setIsCopying(true);
         try {
             for (const targetProfileId of copySelectedIds) {
                 const targetProfile = profiles.find(p => p.id === targetProfileId);
@@ -120,6 +122,8 @@ export default function LifeEventsManager({
         } catch(e) {
             console.error(e);
             setCopyError(t ? t('copyEventError') : 'Error copying event');
+        } finally {
+            setIsCopying(false);
         }
     };
 
@@ -169,7 +173,11 @@ export default function LifeEventsManager({
                 enabled: updated[idx].enabled,
                 reminder: eventData.reminder ? { ...eventData.reminder } : null
             };
-            await updateProfile(profile.id, { ...profile.data, lifeEvents: updated });
+            try {
+                await updateProfile(profile.id, { ...profile.data, lifeEvents: updated });
+            } catch (err) {
+                console.error('[LifeEventsManager] Failed to update profile', profile.id, err);
+            }
         }
     };
 
@@ -556,7 +564,7 @@ export default function LifeEventsManager({
                                     <button onClick={() => { setCopyingEvent(null); setCopySelectedIds([]); setCopyAction('copy'); }} className={`px-4 py-2 rounded-lg font-bold transition-colors ${classes.buttonSecondary}`}>
                                         {t ? t('cancel') : 'Cancel'}
                                     </button>
-                                    <button onClick={submitCopyEvent} disabled={copySelectedIds.length === 0} className={`px-5 py-2 rounded-lg disabled:opacity-40 text-white font-bold transition-colors flex items-center gap-2 ${isDelete ? 'bg-red-600 hover:bg-red-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
+                                    <button onClick={submitCopyEvent} disabled={copySelectedIds.length === 0 || isCopying} className={`px-5 py-2 rounded-lg disabled:opacity-40 text-white font-bold transition-colors flex items-center gap-2 ${isDelete ? 'bg-red-600 hover:bg-red-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
                                         {isDelete ? <Trash2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                                         {isDelete
                                             ? (language === 'he' ? `מחק (${copySelectedIds.length})` : `Delete (${copySelectedIds.length})`)

@@ -1,5 +1,9 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell, Save } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell, Save, BarChart3 } from 'lucide-react';
+import { Doughnut, Bar } from 'react-chartjs-2';
+import { Chart as ChartJS, ArcElement, CategoryScale, LinearScale, BarElement, Tooltip, Legend } from 'chart.js';
+ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 import { silenceReminder, syncComponentReminders } from '../hooks/useReminders';
 import { useAuth } from '../contexts/AuthContext';
 import { getBudgetItems, setBudgetItems } from '../utils/db';
@@ -114,6 +118,243 @@ const DEFAULT_ITEMS = [
 
 
 const getNowYM = () => { const d = new Date(); return d.getFullYear() * 12 + d.getMonth(); };
+
+// Colors aligned with CATEGORIES order
+const CAT_COLORS = ['#3b82f6','#22c55e','#ef4444','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#6b7280'];
+
+// ─── Budget Statistics Modal ─────────────────────────────────────────────────
+function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showInflation, isLight, isHe, currency, t }) {
+    const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
+
+    // ── Pie: category distribution (current monthly) ──
+    const pieData = useMemo(() => {
+        const cats = CATEGORIES.map((cat, i) => {
+            const total = items
+                .filter(it => it.categoryId === cat.id && it.enabled !== false)
+                .reduce((s, it) => s + toMonthly(it), 0);
+            return { cat, total, color: CAT_COLORS[i] };
+        }).filter(c => c.total > 0);
+
+        const grandTotal = cats.reduce((s, c) => s + c.total, 0);
+        return {
+            labels: cats.map(c => `${c.cat.icon} ${isHe ? c.cat.labelHe : c.cat.labelEn}`),
+            datasets: [{ data: cats.map(c => Math.round(c.total)), backgroundColor: cats.map(c => c.color), borderWidth: 0 }],
+            grandTotal,
+            cats,
+        };
+    }, [items, isHe]);
+
+    // ── Bar: monthly expenses per retirement year, stacked by category ──
+    const barData = useMemo(() => {
+        const retStart = parseFloat(inputs.retirementStartAge) || 67;
+        const retEnd   = parseFloat(inputs.retirementEndAge)   || 90;
+        const curAge   = parseFloat(inputs.currentAge)         || 30;
+        const yearsToRet = Math.max(0, retStart - curAge);
+        const retYears   = Math.max(1, Math.round(retEnd - retStart));
+        const nowYM      = getNowYM();
+        const retYM      = nowYM + Math.round(yearsToRet * 12);
+
+        const ages = Array.from({ length: retYears }, (_, yi) => Math.round(retStart) + yi);
+
+        const datasets = CATEGORIES.map((cat, ci) => {
+            const catItems = items.filter(it => it.categoryId === cat.id && it.enabled !== false);
+            if (!catItems.length) return null;
+
+            const data = ages.map((_, yi) => {
+                const yearsFromNow = yearsToRet + yi;
+                const inflFactor   = showInflation ? Math.pow(1 + inflationRate, yearsFromNow) : 1;
+                const atYM         = retYM + yi * 12;
+
+                return Math.round(catItems.reduce((s, it) => {
+                    if (it.type === 'loan') {
+                        return s + (it.tracks || []).reduce((ts, tr) => {
+                            if (!tr.endDate) return ts + (tr.amount || 0);
+                            const [y, m] = tr.endDate.split('-').map(Number);
+                            if (atYM <= y * 12 + (m - 1))
+                                return ts + (tr.amount || 0) * (showInflation && tr.inflationAffected ? inflFactor : 1);
+                            return ts;
+                        }, 0);
+                    }
+                    const monthly = it.frequency === 'annual' ? (it.amount || 0) / 12 : (it.amount || 0);
+                    return s + monthly * inflFactor;
+                }, 0));
+            });
+
+            if (data.every(v => v === 0)) return null;
+            return {
+                label: `${cat.icon} ${isHe ? cat.labelHe : cat.labelEn}`,
+                data,
+                backgroundColor: CAT_COLORS[ci],
+                stack: 'total',
+                borderRadius: 2,
+                borderSkipped: false,
+            };
+        }).filter(Boolean);
+
+        return { labels: ages.map(a => `${isHe ? 'גיל' : 'Age'} ${a}`), datasets };
+    }, [items, inputs, inflationRate, showInflation, isHe]);
+
+    const textColor   = isLight ? '#475569' : '#94a3b8';
+    const gridColor   = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)';
+
+    const barOptions = useMemo(() => ({
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: {
+                    label: ctx => ` ${ctx.dataset.label}: ${currency}${ctx.parsed.y.toLocaleString()}`,
+                    footer: items => `${isHe ? 'סה"כ' : 'Total'}: ${currency}${items.reduce((s, i) => s + i.parsed.y, 0).toLocaleString()}`,
+                },
+            },
+        },
+        scales: {
+            x: {
+                stacked: true,
+                ticks: { color: textColor, font: { size: 10 }, maxRotation: 45 },
+                grid: { display: false },
+            },
+            y: {
+                stacked: true,
+                ticks: {
+                    color: textColor, font: { size: 10 },
+                    callback: v => `${currency}${v >= 1000 ? `${(v / 1000).toFixed(0)}K` : v}`,
+                },
+                grid: { color: gridColor },
+            },
+        },
+    }), [currency, textColor, gridColor, isHe]);
+
+    const doughnutOptions = useMemo(() => ({
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '62%',
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: {
+                    label: ctx => {
+                        const pct = pieData.grandTotal > 0
+                            ? ((ctx.parsed / pieData.grandTotal) * 100).toFixed(1) : 0;
+                        return ` ${currency}${ctx.parsed.toLocaleString()} (${pct}%)`;
+                    },
+                },
+            },
+        },
+    }), [currency, pieData.grandTotal]);
+
+    if (!isOpen) return null;
+
+    const hasData = pieData.grandTotal > 0;
+
+    return createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div
+                className={`relative w-full max-w-2xl max-h-[88vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden ring-1 ${isLight ? 'bg-white ring-gray-300' : 'ring-white/20'}`}
+                style={dragStyle}
+                dir={isHe ? 'rtl' : 'ltr'}
+            >
+                {!isLight && <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-950" />}
+
+                {/* Header */}
+                <div
+                    className={`relative z-10 flex items-center justify-between px-5 py-4 border-b cursor-grab active:cursor-grabbing shrink-0 ${isLight ? 'border-slate-100' : 'border-white/10'}`}
+                    onMouseDown={onDragMouseDown}
+                >
+                    <div className="flex items-center gap-2.5">
+                        <div className={`p-1.5 rounded-lg ${isLight ? 'bg-blue-50 text-blue-600' : 'bg-blue-500/20 text-blue-400'}`}>
+                            <BarChart3 size={17} />
+                        </div>
+                        <span className={`font-bold text-base ${isLight ? 'text-slate-800' : 'text-white'}`}>
+                            {isHe ? 'סטטיסטיקות תקציב' : 'Budget Statistics'}
+                        </span>
+                    </div>
+                    <button onClick={onClose} className={`p-1.5 rounded-lg transition-colors ${isLight ? 'hover:bg-slate-100 text-slate-400' : 'hover:bg-white/10 text-gray-400'}`}>
+                        <X size={16} />
+                    </button>
+                </div>
+
+                {/* Body */}
+                <div className="relative z-10 overflow-y-auto custom-scrollbar scrollbar-right p-5 space-y-7">
+
+                    {!hasData ? (
+                        <div className={`text-center py-12 text-sm ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                            {isHe ? 'אין נתוני הוצאות להצגה' : 'No expense data to display'}
+                        </div>
+                    ) : (<>
+
+                    {/* ── Pie section ── */}
+                    <div>
+                        <h3 className={`text-sm font-semibold mb-4 ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                            {isHe ? 'התפלגות הוצאות לפי קטגוריה' : 'Expenses by Category'}
+                        </h3>
+                        <div className="flex items-center gap-6">
+                            {/* Doughnut */}
+                            <div className="relative shrink-0" style={{ width: 170, height: 170 }}>
+                                <Doughnut data={pieData} options={doughnutOptions} />
+                                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                    <span className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                        {isHe ? 'סה"כ חודשי' : 'Monthly'}
+                                    </span>
+                                    <span className={`text-sm font-bold ${isLight ? 'text-slate-700' : 'text-white'}`} dir="ltr">
+                                        {currency}{Math.round(pieData.grandTotal).toLocaleString()}
+                                    </span>
+                                </div>
+                            </div>
+                            {/* Legend */}
+                            <div className="flex-1 grid grid-cols-2 gap-x-4 gap-y-1.5">
+                                {pieData.cats.map(({ cat, total, color }) => {
+                                    const pct = pieData.grandTotal > 0 ? ((total / pieData.grandTotal) * 100).toFixed(1) : 0;
+                                    return (
+                                        <div key={cat.id} className="flex items-center gap-1.5 min-w-0">
+                                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
+                                            <span className={`text-xs truncate ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                                                {cat.icon} {isHe ? cat.labelHe : cat.labelEn}
+                                            </span>
+                                            <span className={`text-xs font-semibold shrink-0 ms-auto ${isLight ? 'text-slate-500' : 'text-gray-400'}`} dir="ltr">
+                                                {pct}%
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ── Bar section ── */}
+                    {barData.datasets.length > 0 && (
+                        <div>
+                            <h3 className={`text-sm font-semibold mb-1 ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                                {isHe ? 'הוצאות חודשיות לפי שנת פרישה' : 'Monthly Expenses by Retirement Year'}
+                            </h3>
+                            <p className={`text-xs mb-4 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                {isHe ? 'כולל השפעת אינפלציה וסיום הלוואות' : 'Includes inflation and loan payoffs'}
+                            </p>
+
+                            {/* Stacked bar legend */}
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3">
+                                {barData.datasets.map(ds => (
+                                    <div key={ds.label} className="flex items-center gap-1.5">
+                                        <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: ds.backgroundColor }} />
+                                        <span className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{ds.label}</span>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div style={{ height: 240 }}>
+                                <Bar data={barData} options={barOptions} />
+                            </div>
+                        </div>
+                    )}
+
+                    </>)}
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+}
 
 // ─── Backup display helper ────────────────────────────────────────────────────
 const MAX_BACKUP_SLOTS = 3;
@@ -692,7 +933,7 @@ function LoanItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, onT
 }
 
 // ─── Category accordion ───────────────────────────────────────────────────────
-function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onToggleItemEnabled, onAddItem, onAddLoanItem, onToggleAll, projFactor, projYears, showInflation }) {
+function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onToggleItemEnabled, onAddItem, onAddLoanItem, onToggleAll, projFactor, projYears, showInflation, totalMonthly }) {
     const label = isHe ? category.labelHe : category.labelEn;
     const enabledItems = items.filter(i => i.enabled !== false);
     const categoryTotal = enabledItems.reduce((s, i) => s + toMonthly(i), 0);
@@ -733,6 +974,11 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
                 )}
                 {categoryTotal > 0 && (
                     <span className="flex items-baseline gap-1 shrink-0" dir="ltr">
+                        {totalMonthly > 0 && (
+                            <span className={`text-xs font-medium ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                {Math.round(categoryTotal / totalMonthly * 100)}%
+                            </span>
+                        )}
                         <span className={`text-sm font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
                             {currency}{Math.round(categoryTotal).toLocaleString()}
                         </span>
@@ -852,6 +1098,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const { dragStyle: aiDragStyle, onDragMouseDown: onAiDragMouseDown } = useDraggable(aiModalOpen);
     const [showFuture, setShowFuture] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [showStats, setShowStats] = useState(false);
 
     // Always-current ref so closures (setTimeout, beforeunload) always see latest state
     latestStateRef.current = { items, householdSize };
@@ -1386,6 +1633,7 @@ Gap vs target and what can be optimized.`;
     const pctColor   = pct > 0.9 ? 'text-red-500' : pct > 0.8 ? 'text-amber-400' : 'text-emerald-500';
 
     return (
+        <>
         <div className="space-y-3" dir={isHe ? 'rtl' : 'ltr'}>
 
             {/* ── Summary banner — sticky ── */}
@@ -1583,22 +1831,31 @@ Gap vs target and what can be optimized.`;
                 )}
             </div>
 
-            {/* ── Search ── */}
-            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${isLight ? 'bg-white border-slate-200' : 'bg-white/10 border-white/20'}`}>
-                <Search size={13} className={isLight ? 'text-slate-400 shrink-0' : 'text-gray-500 shrink-0'} />
-                <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    placeholder={isHe ? 'חפש פריט… (למשל: סיעוד, ביטוח)' : 'Search item… (e.g. insurance, mortgage)'}
-                    className={`flex-1 bg-transparent text-xs outline-none placeholder:text-gray-400 ${isLight ? 'text-slate-800' : 'text-white'}`}
-                    dir={isHe ? 'rtl' : 'ltr'}
-                />
-                {searchQuery && (
-                    <button onClick={() => setSearchQuery('')} className={isLight ? 'text-slate-400 hover:text-slate-600' : 'text-gray-500 hover:text-gray-300'}>
-                        <X size={13} />
-                    </button>
-                )}
+            {/* ── Search + Stats ── */}
+            <div className="flex items-center gap-2">
+                <div className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border ${isLight ? 'bg-white border-slate-200' : 'bg-white/10 border-white/20'}`}>
+                    <Search size={13} className={isLight ? 'text-slate-400 shrink-0' : 'text-gray-500 shrink-0'} />
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        placeholder={isHe ? 'חפש פריט… (למשל: סיעוד, ביטוח)' : 'Search item… (e.g. insurance, mortgage)'}
+                        className={`flex-1 bg-transparent text-xs outline-none placeholder:text-gray-400 ${isLight ? 'text-slate-800' : 'text-white'}`}
+                        dir={isHe ? 'rtl' : 'ltr'}
+                    />
+                    {searchQuery && (
+                        <button onClick={() => setSearchQuery('')} className={isLight ? 'text-slate-400 hover:text-slate-600' : 'text-gray-500 hover:text-gray-300'}>
+                            <X size={13} />
+                        </button>
+                    )}
+                </div>
+                <button
+                    onClick={() => setShowStats(true)}
+                    title={isHe ? 'סטטיסטיקות' : 'Statistics'}
+                    className={`shrink-0 p-2 rounded-xl border transition-colors ${isLight ? 'bg-white border-slate-200 text-slate-500 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200' : 'bg-white/10 border-white/20 text-gray-400 hover:bg-blue-500/20 hover:text-blue-400'}`}
+                >
+                    <BarChart3 size={14} />
+                </button>
             </div>
 
             {/* ── Search results ── */}
@@ -1654,6 +1911,7 @@ Gap vs target and what can be optimized.`;
                         projFactor={projFactor}
                         projYears={projYears}
                         showInflation={showInflation}
+                        totalMonthly={totalMonthly}
                     />
                 );
             })}
@@ -1802,5 +2060,19 @@ Gap vs target and what can be optimized.`;
                 </div>
             )}
         </div>
+
+        <BudgetStatsModal
+            isOpen={showStats}
+            onClose={() => setShowStats(false)}
+            items={items}
+            inputs={inputs}
+            inflationRate={inflationRate}
+            showInflation={showInflation}
+            isLight={isLight}
+            isHe={isHe}
+            currency={currency}
+            t={t}
+        />
+        </>
     );
 }

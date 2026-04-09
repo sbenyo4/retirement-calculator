@@ -70,21 +70,19 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
             text: form.text
         };
 
-        // 1. SILENT local update (Immediate UI feedback, no popup)
-        silenceReminder(newId, 'general');
-        
-        // 2. CLOSE modal and clear form immediately for responsive feel
+        // 1. CLOSE modal and clear form immediately for responsive feel
         const nextList = [...genReminders, newRem];
         setForm({ label: '', date: '', text: '' });
         setIsAdding(false);
         setIsSaving(true);
 
         try {
-            // 3. Update Global Session Storage (which triggers useReminders hooks)
-            syncComponentReminders('general', nextList, true);
-
-            // 4. Persist to Firestore
+            // 2. Persist to Firestore first
             await setGeneralReminders(uid, nextList);
+
+            // 3. Only after successful save: update session and silence (no popup)
+            syncComponentReminders('general', nextList, true);
+            silenceReminder(newId, 'general');
         } catch (err) {
             console.error('[ReminderBell] Save failed:', err);
         } finally {
