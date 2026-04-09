@@ -503,7 +503,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100000] p-4">
             <div
                 className={`relative w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden ${
-                    isLight ? 'bg-white border border-gray-200 text-gray-900' : 'border border-white/30 text-white'
+                    isLight ? 'bg-white ring-1 ring-gray-300 text-gray-900' : 'ring-1 ring-white/30 text-white'
                 }`}
                 dir={he ? 'rtl' : 'ltr'}
                 style={dragStyle}
@@ -757,7 +757,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
             {yearDetail && (
                 <div
                     className={`absolute rounded-2xl shadow-2xl overflow-hidden w-[340px] ${
-                        isLight ? 'bg-white border border-gray-200 text-gray-900' : 'border border-white/30 text-white'
+                        isLight ? 'bg-white ring-1 ring-gray-300 text-gray-900' : 'ring-1 ring-white/30 text-white'
                     }`}
                     dir={he ? 'rtl' : 'ltr'}
                     style={{ top: '20%', right: 'calc(50% + 177px)', ...detailDragStyle }}
@@ -860,7 +860,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
             {aiPanelVisible && aiInsight && (
                 <div
                     className={`absolute rounded-2xl shadow-2xl overflow-hidden w-[380px] ${
-                        isLight ? 'bg-white border border-purple-200 text-gray-900' : 'border border-purple-700/40 text-white'
+                        isLight ? 'bg-white ring-1 ring-purple-200 text-gray-900' : 'ring-1 ring-purple-700/40 text-white'
                     }`}
                     dir={he ? 'rtl' : 'ltr'}
                     style={{ top: '8%', right: 'calc(50% + 177px)', ...aiDragStyle }}

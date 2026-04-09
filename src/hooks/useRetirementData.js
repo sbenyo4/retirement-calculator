@@ -71,7 +71,10 @@ export function useRetirementData() {
                         // Merge the explicit data with the newly fetched global pension sources
                         baseInputs = {
                             ...profileData,
-                            pensionIncomeSources: baseInputs.pensionIncomeSources
+                            pensionIncomeSources: baseInputs.pensionIncomeSources,
+                            ...(baseInputs.pensionInterestRate !== undefined
+                                ? { pensionInterestRate: baseInputs.pensionInterestRate }
+                                : {})
                         };
                     }
                 }

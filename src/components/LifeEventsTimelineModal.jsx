@@ -413,7 +413,7 @@ export default function LifeEventsTimelineModal({
     return ReactDOM.createPortal(
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose} style={{ cursor: 'default' }}>
             <div
-                className={`w-[95vw] max-w-6xl h-auto max-h-[90vh] min-h-[480px] rounded-2xl shadow-2xl flex flex-col select-none relative overflow-hidden ${isLight ? 'bg-white' : 'border border-white/30'}`}
+                className={`w-[95vw] max-w-6xl h-auto max-h-[90vh] min-h-[480px] rounded-2xl shadow-2xl flex flex-col select-none relative overflow-hidden ${isLight ? 'bg-white' : 'ring-1 ring-white/30'}`}
                 onClick={e => e.stopPropagation()}
                 dir={language === 'he' ? 'rtl' : 'ltr'}
                 style={{ cursor: 'default', ...dragStyle }}

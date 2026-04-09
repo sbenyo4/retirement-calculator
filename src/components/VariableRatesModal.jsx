@@ -461,7 +461,7 @@ export default function VariableRatesModal({
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999] p-4" onClick={onCancel ?? onClose}>
             <div
-                className={`rounded-2xl w-full max-w-sm h-[640px] shadow-xl flex flex-col relative overflow-hidden ${isLight ? 'bg-white border border-gray-200' : 'border border-white/30'}`}
+                className={`rounded-2xl w-full max-w-sm h-[640px] shadow-xl flex flex-col relative overflow-hidden ${isLight ? 'bg-white ring-1 ring-gray-300' : 'ring-1 ring-white/30'}`}
                 onClick={e => e.stopPropagation()}
                 dir={language === 'he' ? 'rtl' : 'ltr'}
                 style={dragStyle}

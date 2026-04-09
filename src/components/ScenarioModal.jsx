@@ -157,7 +157,7 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
         <>
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999] p-4">
             <div
-                className={`relative w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden ${isLight ? 'bg-white border border-gray-200 text-gray-900' : 'border border-white/30 text-white'}`}
+                className={`relative w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden ${isLight ? 'bg-white ring-1 ring-gray-300 text-gray-900' : 'ring-1 ring-white/30 text-white'}`}
                 dir={he ? 'rtl' : 'ltr'}
                 style={dragStyle}
             >

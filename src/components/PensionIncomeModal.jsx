@@ -376,7 +376,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const [incomeSources, setIncomeSources] = useState(getSafeSources);
     const [showIncomeSources, setShowIncomeSources] = useState(true);
     const [expandedMilestone, setExpandedMilestone] = useState(null);
-    const [pensionInterestRate, setPensionInterestRate] = useState(() => inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : (parseFloat(inputs.annualReturnRate) || 4));
+    const [pensionInterestRate, setPensionInterestRate] = useState(() => inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : 4);
     const [showRateTooltip, setShowRateTooltip] = useState(false);
     const rateTooltipRef = useRef(null);
 
@@ -603,7 +603,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
             const { calculationDetails, ...rest } = s;
             return rest;
         });
-        const initialRate = inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : (parseFloat(inputs.annualReturnRate) || 4);
+        const initialRate = inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : 4;
         return JSON.stringify(clean(incomeSources)) !== JSON.stringify(clean(initialIncomeSources)) || pensionInterestRate !== initialRate;
     }, [incomeSources, initialIncomeSources, pensionInterestRate, inputs]);
 
@@ -644,7 +644,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                 <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
                 {/* Modal */}
-                <div className={`relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl shadow-2xl ${isLight ? 'bg-white' : ''} border ${isLight ? 'border-gray-200' : 'border-white/30'}`} style={{ ...dragStyle, overflow: 'clip', overflowClipMargin: '30px' }}>
+                <div className={`relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl shadow-2xl ${isLight ? 'bg-white' : ''} ring-1 ${isLight ? 'ring-gray-300' : 'ring-white/30'}`} style={{ ...dragStyle, overflow: 'hidden' }}>
                     {!isLight && (
                         <>
                             <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" />
@@ -937,7 +937,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
 
                             {showIncomeSources && (
                                 <div className="p-2 space-y-1 max-h-44 overflow-y-auto custom-scrollbar scrollbar-right animate-in slide-in-from-top-2 fade-in duration-200">
-                                    {incomeSources.map(source => (
+                                    {[...incomeSources].sort((a, b) => (parseFloat(a.startAge) || 0) - (parseFloat(b.startAge) || 0)).map(source => (
                                         <IncomeSourceRow
                                             key={source.id}
                                             source={source}
