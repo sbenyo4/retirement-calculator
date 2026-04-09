@@ -2,8 +2,8 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell, Save, BarChart3 } from 'lucide-react';
 import { Doughnut, Bar } from 'react-chartjs-2';
-import { Chart as ChartJS, ArcElement, CategoryScale, LinearScale, BarElement, Tooltip, Legend } from 'chart.js';
-ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, Tooltip, Legend);
+import { Chart as ChartJS, ArcElement, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend } from 'chart.js';
+ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend);
 import { silenceReminder, syncComponentReminders } from '../hooks/useReminders';
 import { useAuth } from '../contexts/AuthContext';
 import { getBudgetItems, setBudgetItems } from '../utils/db';
@@ -123,38 +123,91 @@ const getNowYM = () => { const d = new Date(); return d.getFullYear() * 12 + d.g
 const CAT_COLORS = ['#3b82f6','#22c55e','#ef4444','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#6b7280'];
 
 // ─── Budget Statistics Modal ─────────────────────────────────────────────────
-function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showInflation, isLight, isHe, currency, t }) {
+function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showInflation: showInflationProp, isLight, isHe, currency, t }) {
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
+    const [localShowInflation, setLocalShowInflation] = useState(showInflationProp);
+    const [selectedYearIdx, setSelectedYearIdx] = useState(null);
+    const barDivRef = useRef(null);
 
-    // ── Pie: category distribution (current monthly) ──
-    const pieData = useMemo(() => {
-        const cats = CATEGORIES.map((cat, i) => {
-            const total = items
-                .filter(it => it.categoryId === cat.id && it.enabled !== false)
-                .reduce((s, it) => s + toMonthly(it), 0);
-            return { cat, total, color: CAT_COLORS[i] };
-        }).filter(c => c.total > 0);
+    // Sync with parent toggle when modal opens
+    useEffect(() => {
+        if (isOpen) { setLocalShowInflation(showInflationProp); setSelectedYearIdx(null); }
+    }, [isOpen, showInflationProp]);
 
-        const grandTotal = cats.reduce((s, c) => s + c.total, 0);
-        return {
-            labels: cats.map(c => `${c.cat.icon} ${isHe ? c.cat.labelHe : c.cat.labelEn}`),
-            datasets: [{ data: cats.map(c => Math.round(c.total)), backgroundColor: cats.map(c => c.color), borderWidth: 0 }],
-            grandTotal,
-            cats,
-        };
-    }, [items, isHe]);
+    // Auto-focus the bar div when modal opens so arrow keys work immediately
+    useEffect(() => {
+        if (isOpen) {
+            const t = setTimeout(() => barDivRef.current?.focus(), 50);
+            return () => clearTimeout(t);
+        }
+    }, [isOpen]);
 
-    // ── Bar: monthly expenses per retirement year, stacked by category ──
-    const barData = useMemo(() => {
-        const retStart = parseFloat(inputs.retirementStartAge) || 67;
-        const retEnd   = parseFloat(inputs.retirementEndAge)   || 90;
-        const curAge   = parseFloat(inputs.currentAge)         || 30;
+    // ── Shared year geometry (used by both pie and bar) ──
+    const yearGeom = useMemo(() => {
+        const retStart   = parseFloat(inputs.retirementStartAge) || 67;
+        const retEnd     = parseFloat(inputs.retirementEndAge)   || 90;
+        const curAge     = parseFloat(inputs.currentAge)         || 30;
         const yearsToRet = Math.max(0, retStart - curAge);
         const retYears   = Math.max(1, Math.round(retEnd - retStart));
         const nowYM      = getNowYM();
         const retYM      = nowYM + Math.round(yearsToRet * 12);
+        const ages       = Array.from({ length: retYears }, (_, yi) => Math.round(retStart) + yi);
+        return { yearsToRet, retYM, ages };
+    }, [inputs]);
 
-        const ages = Array.from({ length: retYears }, (_, yi) => Math.round(retStart) + yi);
+    // ── Helper: compute per-category totals for a given year index ──
+    const computeCatTotals = useCallback((yi) => {
+        const { yearsToRet, retYM } = yearGeom;
+        const yearsFromNow = yearsToRet + yi;
+        const inflFactor   = localShowInflation ? Math.pow(1 + inflationRate, yearsFromNow) : 1;
+        const atYM         = retYM + yi * 12;
+
+        return CATEGORIES.map((cat, i) => {
+            const catItems = items.filter(it => it.categoryId === cat.id && it.enabled !== false);
+            const total = Math.round(catItems.reduce((s, it) => {
+                if (it.type === 'loan') {
+                    return s + (it.tracks || []).reduce((ts, tr) => {
+                        if (!tr.endDate) return ts + (tr.amount || 0);
+                        const [y, m] = tr.endDate.split('-').map(Number);
+                        if (atYM <= y * 12 + (m - 1))
+                            return ts + (tr.amount || 0) * (localShowInflation && tr.inflationAffected ? inflFactor : 1);
+                        return ts;
+                    }, 0);
+                }
+                const monthly = it.frequency === 'annual' ? (it.amount || 0) / 12 : (it.amount || 0);
+                return s + monthly * inflFactor;
+            }, 0));
+            return { cat, total, color: CAT_COLORS[i] };
+        }).filter(c => c.total > 0);
+    }, [items, yearGeom, inflationRate, localShowInflation]);
+
+    // ── Default pie year: current age if already retired, else retirement start ──
+    const defaultYearIdx = useMemo(() => {
+        const retStart = parseFloat(inputs.retirementStartAge) || 67;
+        const curAge   = parseFloat(inputs.currentAge)         || 30;
+        const { ages } = yearGeom;
+        if (curAge <= retStart) return 0;
+        const idx = Math.round(curAge - retStart);
+        return Math.min(idx, ages.length - 1);
+    }, [inputs, yearGeom]);
+
+    // ── Pie: category distribution for the selected year ──
+    const pieData = useMemo(() => {
+        const yi   = selectedYearIdx ?? defaultYearIdx;
+        const cats = computeCatTotals(yi);
+        const grandTotal = cats.reduce((s, c) => s + c.total, 0);
+        return {
+            labels: cats.map(c => `${c.cat.icon} ${isHe ? c.cat.labelHe : c.cat.labelEn}`),
+            datasets: [{ data: cats.map(c => c.total), backgroundColor: cats.map(c => c.color), borderWidth: 0 }],
+            grandTotal,
+            cats,
+        };
+    }, [computeCatTotals, selectedYearIdx, isHe]);
+
+    // ── Bar: monthly expenses per retirement year, stacked by category ──
+    const barData = useMemo(() => {
+        const { ages, yearsToRet, retYM } = yearGeom;
+        const target = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
 
         const datasets = CATEGORIES.map((cat, ci) => {
             const catItems = items.filter(it => it.categoryId === cat.id && it.enabled !== false);
@@ -162,16 +215,15 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
 
             const data = ages.map((_, yi) => {
                 const yearsFromNow = yearsToRet + yi;
-                const inflFactor   = showInflation ? Math.pow(1 + inflationRate, yearsFromNow) : 1;
+                const inflFactor   = localShowInflation ? Math.pow(1 + inflationRate, yearsFromNow) : 1;
                 const atYM         = retYM + yi * 12;
-
                 return Math.round(catItems.reduce((s, it) => {
                     if (it.type === 'loan') {
                         return s + (it.tracks || []).reduce((ts, tr) => {
                             if (!tr.endDate) return ts + (tr.amount || 0);
                             const [y, m] = tr.endDate.split('-').map(Number);
                             if (atYM <= y * 12 + (m - 1))
-                                return ts + (tr.amount || 0) * (showInflation && tr.inflationAffected ? inflFactor : 1);
+                                return ts + (tr.amount || 0) * (localShowInflation && tr.inflationAffected ? inflFactor : 1);
                             return ts;
                         }, 0);
                     }
@@ -181,31 +233,82 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
             });
 
             if (data.every(v => v === 0)) return null;
+            const baseColor = CAT_COLORS[ci];
             return {
                 label: `${cat.icon} ${isHe ? cat.labelHe : cat.labelEn}`,
                 data,
-                backgroundColor: CAT_COLORS[ci],
+                backgroundColor: ages.map((_, yi) => {
+                    const activeIdx = selectedYearIdx ?? defaultYearIdx;
+                    return yi === activeIdx ? baseColor : baseColor + '44';
+                }),
                 stack: 'total',
                 borderRadius: 2,
                 borderSkipped: false,
             };
         }).filter(Boolean);
 
-        return { labels: ages.map(a => `${isHe ? 'גיל' : 'Age'} ${a}`), datasets };
-    }, [items, inputs, inflationRate, showInflation, isHe]);
+        // Target line
+        if (target > 0 && ages.length > 0) {
+            datasets.push({
+                type: 'line',
+                label: isHe ? 'יעד משיכה' : 'Withdrawal target',
+                data: ages.map(() => target),
+                borderColor: '#f59e0b',
+                borderWidth: 2,
+                borderDash: [6, 3],
+                pointRadius: 0,
+                fill: false,
+                order: -1,
+            });
+        }
+
+        const nowYear = new Date().getFullYear();
+        const curAge  = parseFloat(inputs.currentAge) || 30;
+        const years   = ages.map(a => nowYear + Math.round(a - curAge));
+        return { labels: ages.map(a => `${isHe ? 'גיל' : 'Age'} ${a}`), datasets, target, ages, years };
+    }, [items, inputs, yearGeom, inflationRate, localShowInflation, isHe, selectedYearIdx, defaultYearIdx]);
 
     const textColor   = isLight ? '#475569' : '#94a3b8';
     const gridColor   = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)';
 
+    const yearLabelPlugin = useMemo(() => ({
+        id: 'yearLabels',
+        afterRender(chart) {
+            const { ctx, scales: { x }, chartArea } = chart;
+            const years = barData.years;
+            if (!years) return;
+            ctx.font = `9px sans-serif`;
+            ctx.fillStyle = '#60a5fa99';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            const yPos = chart.height - 4;
+            x.ticks.forEach((_, i) => {
+                if (years[i] == null) return;
+                ctx.fillText(String(years[i]), x.getPixelForTick(i), yPos);
+            });
+        },
+    }), [barData.years, textColor]);
+
     const barOptions = useMemo(() => ({
         responsive: true,
         maintainAspectRatio: false,
+        animation: false,
+        layout: { padding: { bottom: 11 } },
+        onClick: (_, elements) => {
+            if (!elements.length) return;
+            const idx = elements.find(el => el.datasetIndex !== undefined && el.index !== undefined)?.index;
+            if (idx == null) return;
+            setSelectedYearIdx(prev => prev === idx ? null : idx);
+        },
         plugins: {
             legend: { display: false },
             tooltip: {
                 callbacks: {
                     label: ctx => ` ${ctx.dataset.label}: ${currency}${ctx.parsed.y.toLocaleString()}`,
-                    footer: items => `${isHe ? 'סה"כ' : 'Total'}: ${currency}${items.reduce((s, i) => s + i.parsed.y, 0).toLocaleString()}`,
+                    footer: items => {
+                        const barTotal = items.filter(i => i.dataset.type !== 'line').reduce((s, i) => s + i.parsed.y, 0);
+                        return barTotal > 0 ? `${isHe ? 'סה"כ' : 'Total'}: ${currency}${barTotal.toLocaleString()}` : '';
+                    },
                 },
             },
         },
@@ -217,6 +320,7 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
             },
             y: {
                 stacked: true,
+                suggestedMax: barData.target > 0 ? barData.target * 1.08 : undefined,
                 ticks: {
                     color: textColor, font: { size: 10 },
                     callback: v => `${currency}${v >= 1000 ? `${(v / 1000).toFixed(0)}K` : v}`,
@@ -224,7 +328,7 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
                 grid: { color: gridColor },
             },
         },
-    }), [currency, textColor, gridColor, isHe]);
+    }), [currency, textColor, gridColor, isHe, barData.target]);
 
     const doughnutOptions = useMemo(() => ({
         responsive: true,
@@ -244,6 +348,12 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
         },
     }), [currency, pieData.grandTotal]);
 
+    const pieAge    = barData.ages?.[selectedYearIdx ?? defaultYearIdx];
+    const pieYear   = barData.years?.[selectedYearIdx ?? defaultYearIdx];
+    const pieLabel  = pieAge != null
+        ? (isHe ? `גיל ${pieAge}${pieYear != null ? ` (${pieYear})` : ''}` : `Age ${pieAge}${pieYear != null ? ` (${pieYear})` : ''}`)
+        : (isHe ? 'גיל פרישה' : 'At retirement');
+
     if (!isOpen) return null;
 
     const hasData = pieData.grandTotal > 0;
@@ -251,7 +361,7 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
     return createPortal(
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
             <div
-                className={`relative w-full max-w-2xl max-h-[88vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden ring-1 ${isLight ? 'bg-white ring-gray-300' : 'ring-white/20'}`}
+                className={`relative w-full max-w-2xl max-h-[94vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden ring-1 ${isLight ? 'bg-white ring-gray-300' : 'ring-white/20'}`}
                 style={dragStyle}
                 dir={isHe ? 'rtl' : 'ltr'}
             >
@@ -270,13 +380,34 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
                             {isHe ? 'סטטיסטיקות תקציב' : 'Budget Statistics'}
                         </span>
                     </div>
-                    <button onClick={onClose} className={`p-1.5 rounded-lg transition-colors ${isLight ? 'hover:bg-slate-100 text-slate-400' : 'hover:bg-white/10 text-gray-400'}`}>
-                        <X size={16} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setLocalShowInflation(v => !v)}
+                            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+                            className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border transition-colors shrink-0 ${localShowInflation
+                                ? (isLight ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-amber-500 bg-amber-900/20 text-amber-400')
+                                : (isLight ? 'border-slate-200 bg-slate-50 text-slate-400' : 'border-white/20 bg-white/5 text-gray-500')}`}
+                            title={isHe ? 'הקרנת אינפלציה' : 'Inflation projection'}
+                        >
+                            {localShowInflation ? <ToggleRight size={13} /> : <ToggleLeft size={13} />}
+                            {isHe ? 'אינפלציה' : 'Inflation'}
+                        </button>
+                        <button onClick={onClose} className={`p-1.5 rounded-lg transition-colors ${isLight ? 'hover:bg-slate-100 text-slate-400' : 'hover:bg-white/10 text-gray-400'}`}>
+                            <X size={16} />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Body */}
-                <div className="relative z-10 overflow-y-auto custom-scrollbar scrollbar-right p-5 space-y-7">
+                <div
+                    className="relative z-10 overflow-y-auto custom-scrollbar scrollbar-right p-5 space-y-7"
+                    onClickCapture={() => {
+                        setTimeout(() => {
+                            const tag = document.activeElement?.tagName;
+                            if (!['INPUT','TEXTAREA','SELECT'].includes(tag)) barDivRef.current?.focus();
+                        }, 0);
+                    }}
+                >
 
                     {!hasData ? (
                         <div className={`text-center py-12 text-sm ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
@@ -288,16 +419,17 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
                     <div>
                         <h3 className={`text-sm font-semibold mb-4 ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
                             {isHe ? 'התפלגות הוצאות לפי קטגוריה' : 'Expenses by Category'}
+                            {' '}<span className={`text-xs font-normal ${localShowInflation ? (isLight ? 'text-amber-600' : 'text-amber-400') : (isLight ? 'text-slate-400' : 'text-gray-500')}`}>— {pieLabel}{localShowInflation ? ` · ${(inflationRate * 100).toFixed(1)}%` : ''}</span>
                         </h3>
                         <div className="flex items-center gap-6">
                             {/* Doughnut */}
                             <div className="relative shrink-0" style={{ width: 170, height: 170 }}>
                                 <Doughnut data={pieData} options={doughnutOptions} />
                                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                    <span className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                    <span className={`text-[10px] ${localShowInflation ? (isLight ? 'text-amber-600' : 'text-amber-400') : (isLight ? 'text-slate-400' : 'text-gray-500')}`}>
                                         {isHe ? 'סה"כ חודשי' : 'Monthly'}
                                     </span>
-                                    <span className={`text-sm font-bold ${isLight ? 'text-slate-700' : 'text-white'}`} dir="ltr">
+                                    <span className={`text-sm font-bold ${localShowInflation ? (isLight ? 'text-amber-600' : 'text-amber-400') : (isLight ? 'text-slate-700' : 'text-white')}`} dir="ltr">
                                         {currency}{Math.round(pieData.grandTotal).toLocaleString()}
                                     </span>
                                 </div>
@@ -329,21 +461,44 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
                                 {isHe ? 'הוצאות חודשיות לפי שנת פרישה' : 'Monthly Expenses by Retirement Year'}
                             </h3>
                             <p className={`text-xs mb-4 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
-                                {isHe ? 'כולל השפעת אינפלציה וסיום הלוואות' : 'Includes inflation and loan payoffs'}
+                                {localShowInflation
+                                    ? (isHe ? 'כולל השפעת אינפלציה וסיום הלוואות' : 'Includes inflation and loan payoffs')
+                                    : (isHe ? 'במחירים של היום, ללא אינפלציה' : 'At today\'s prices, no inflation')}
                             </p>
 
                             {/* Stacked bar legend */}
                             <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3">
-                                {barData.datasets.map(ds => (
-                                    <div key={ds.label} className="flex items-center gap-1.5">
-                                        <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: ds.backgroundColor }} />
-                                        <span className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{ds.label}</span>
-                                    </div>
-                                ))}
+                                {barData.datasets.map(ds => {
+                                    const color = Array.isArray(ds.backgroundColor) ? ds.backgroundColor[selectedYearIdx ?? defaultYearIdx] : ds.backgroundColor;
+                                    return (
+                                        <div key={ds.label} className="flex items-center gap-1.5">
+                                            {ds.type === 'line'
+                                                ? <span className="w-5 h-0 border-t-2 border-dashed shrink-0" style={{ borderColor: ds.borderColor }} />
+                                                : <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: color }} />}
+                                            <span className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{ds.label}</span>
+                                        </div>
+                                    );
+                                })}
                             </div>
 
-                            <div style={{ height: 240 }}>
-                                <Bar data={barData} options={barOptions} />
+                            <div
+                                ref={barDivRef}
+                                style={{ height: 330, cursor: 'pointer', outline: 'none' }}
+                                tabIndex={0}
+                                onKeyDown={e => {
+                                    const len = barData.ages?.length ?? 0;
+                                    if (!len) return;
+                                    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                                        e.preventDefault();
+                                        const dir = e.key === 'ArrowRight' ? 1 : -1;
+                                        setSelectedYearIdx(prev => {
+                                            const cur = prev ?? defaultYearIdx;
+                                            return (cur + dir + len) % len;
+                                        });
+                                    }
+                                }}
+                            >
+                                <Bar data={barData} options={barOptions} plugins={[yearLabelPlugin]} />
                             </div>
                         </div>
                     )}
@@ -974,14 +1129,14 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
                 )}
                 {categoryTotal > 0 && (
                     <span className="flex items-baseline gap-1 shrink-0" dir="ltr">
-                        {totalMonthly > 0 && (
-                            <span className={`text-xs font-medium ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
-                                {Math.round(categoryTotal / totalMonthly * 100)}%
-                            </span>
-                        )}
                         <span className={`text-sm font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
                             {currency}{Math.round(categoryTotal).toLocaleString()}
                         </span>
+                        {totalMonthly > 0 && (
+                            <span className={`text-xs font-medium ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                ({Math.round(categoryTotal / totalMonthly * 100)}%)
+                            </span>
+                        )}
                         {showInflation && (
                             <span className={`text-xs font-normal ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
                                 → {currency}{Math.round(categoryProjected).toLocaleString()}
