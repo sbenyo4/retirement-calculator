@@ -262,38 +262,113 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
             });
         }
 
+        // Add trend arrow to each category dataset
+        datasets.forEach(ds => {
+            if (ds.type === 'line') return;
+            const vals = ds.data.filter(v => typeof v === 'number');
+            const first = vals[0] || 0;
+            const last  = vals[vals.length - 1] || 0;
+            ds.trend = last > first * 1.03 ? '↑' : last < first * 0.97 ? '↓' : '→';
+        });
+
+        // Loan end vertical markers
+        const loanEndMap = new Map(); // yi → [label, ...]
+        items.filter(it => it.enabled !== false && it.type === 'loan').forEach(it => {
+            (it.tracks || []).forEach(tr => {
+                if (!tr.endDate || !(tr.amount > 0)) return;
+                const [y, m] = tr.endDate.split('-').map(Number);
+                const endYM = y * 12 + (m - 1);
+                const yi = ages.findIndex((_, i) => retYM + i * 12 > endYM);
+                if (yi > 0 && yi < ages.length) {
+                    const label = tr.label || it.label || '';
+                    if (!loanEndMap.has(yi)) loanEndMap.set(yi, []);
+                    loanEndMap.get(yi).push(label);
+                }
+            });
+        });
+        const loanEndIndices = [...loanEndMap.entries()].map(([yi, labels]) => ({ yi, label: labels.join(', ') }));
+
         const nowYear = new Date().getFullYear();
         const curAge  = parseFloat(inputs.currentAge) || 30;
         const years   = ages.map(a => nowYear + Math.round(a - curAge));
-        return { labels: ages.map(a => `${isHe ? 'גיל' : 'Age'} ${a}`), datasets, target, ages, years };
+        return { labels: ages.map(a => `${isHe ? 'גיל' : 'Age'} ${a}`), datasets, target, ages, years, loanEndIndices };
     }, [items, inputs, yearGeom, inflationRate, localShowInflation, isHe, selectedYearIdx, defaultYearIdx]);
 
     const textColor   = isLight ? '#475569' : '#94a3b8';
     const gridColor   = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)';
 
+    const pluginStateRef = useRef({});
+    pluginStateRef.current = { barData, selectedYearIdx, defaultYearIdx, currency, textColor, isLight };
+
     const yearLabelPlugin = useMemo(() => ({
         id: 'yearLabels',
         afterRender(chart) {
+            const { barData, selectedYearIdx, defaultYearIdx, currency, textColor, isLight } = pluginStateRef.current;
             const { ctx, scales: { x }, chartArea } = chart;
-            const years = barData.years;
-            if (!years) return;
-            ctx.font = `9px sans-serif`;
-            ctx.fillStyle = '#60a5fa99';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'bottom';
-            const yPos = chart.height - 4;
-            x.ticks.forEach((_, i) => {
-                if (years[i] == null) return;
-                ctx.fillText(String(years[i]), x.getPixelForTick(i), yPos);
+
+            // 1. Year labels at bottom
+            if (barData.years) {
+                ctx.font = `9px sans-serif`;
+                ctx.fillStyle = '#60a5fa99';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                barData.years.forEach((yr, i) => {
+                    if (yr == null) return;
+                    ctx.fillText(String(yr), x.getPixelForTick(i), chart.height - 4);
+                });
+            }
+
+            // 2. Total above selected bar
+            const activeIdx = selectedYearIdx ?? defaultYearIdx;
+            const barDs = chart.data.datasets
+                .map((ds, i) => ({ ds, meta: chart.getDatasetMeta(i) }))
+                .filter(({ ds }) => ds.type !== 'line' && ds.stack === 'total');
+            if (barDs.length > 0) {
+                const total = barDs.reduce((s, { ds }) => s + (ds.data[activeIdx] || 0), 0);
+                const topYs = barDs.map(({ meta }) => meta.data[activeIdx]?.y).filter(v => v != null && isFinite(v));
+                if (total > 0 && topYs.length) {
+                    const topY = Math.min(...topYs);
+                    ctx.font = `bold 9px sans-serif`;
+                    ctx.fillStyle = textColor;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText(`${currency}${total.toLocaleString()}`, x.getPixelForTick(activeIdx), topY - 3);
+                }
+            }
+
+            // 3. Vertical loan-end lines with label
+            (barData.loanEndIndices || []).forEach(({ yi, label }) => {
+                if (yi <= 0 || yi >= (barData.ages?.length ?? 0)) return;
+                const x0 = x.getPixelForTick(yi - 1);
+                const x1 = x.getPixelForTick(yi);
+                const xLine = (x0 + x1) / 2;
+                ctx.save();
+                ctx.setLineDash([4, 3]);
+                ctx.strokeStyle = isLight ? '#f59e0bcc' : '#fbbf24cc';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(xLine, chartArea.top);
+                ctx.lineTo(xLine, chartArea.bottom);
+                ctx.stroke();
+                // Label above the chart, horizontal
+                if (label) {
+                    ctx.setLineDash([]);
+                    ctx.font = `9px sans-serif`;
+                    ctx.fillStyle = isLight ? '#b45309' : '#fbbf24';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText(label.length > 14 ? label.slice(0, 13) + '…' : label, xLine, chartArea.top - 4);
+                }
+                ctx.restore();
             });
         },
-    }), [barData.years, textColor]);
+    }), []);
 
     const barOptions = useMemo(() => ({
         responsive: true,
         maintainAspectRatio: false,
         animation: false,
-        layout: { padding: { bottom: 11 } },
+        layout: { padding: { bottom: 11, top: 22 } },
         onClick: (_, elements) => {
             if (!elements.length) return;
             const idx = elements.find(el => el.datasetIndex !== undefined && el.index !== undefined)?.index;
@@ -417,10 +492,23 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
 
                     {/* ── Pie section ── */}
                     <div>
-                        <h3 className={`text-sm font-semibold mb-4 ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
-                            {isHe ? 'התפלגות הוצאות לפי קטגוריה' : 'Expenses by Category'}
-                            {' '}<span className={`text-xs font-normal ${localShowInflation ? (isLight ? 'text-amber-600' : 'text-amber-400') : (isLight ? 'text-slate-400' : 'text-gray-500')}`}>— {pieLabel}{localShowInflation ? ` · ${(inflationRate * 100).toFixed(1)}%` : ''}</span>
-                        </h3>
+                        <div className="flex items-center justify-between mb-4 gap-2">
+                            <h3 className={`text-sm font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                                {isHe ? 'התפלגות הוצאות לפי קטגוריה' : 'Expenses by Category'}
+                                {' '}<span className={`text-xs font-normal ${localShowInflation ? (isLight ? 'text-amber-600' : 'text-amber-400') : (isLight ? 'text-slate-400' : 'text-gray-500')}`}>— {pieLabel}{localShowInflation ? ` · ${(inflationRate * 100).toFixed(1)}%` : ''}</span>
+                            </h3>
+                            {barData.target > 0 && (() => {
+                                const gap = barData.target - pieData.grandTotal;
+                                const isPos = gap >= 0;
+                                return (
+                                    <span dir="ltr" className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${isPos
+                                        ? (isLight ? 'bg-green-50 text-green-600 border border-green-300' : 'bg-green-900/20 text-green-400 border border-green-700')
+                                        : (isLight ? 'bg-red-50 text-red-600 border border-red-300' : 'bg-red-900/20 text-red-400 border border-red-700')}`}>
+                                        {isPos ? '+' : ''}{currency}{Math.abs(Math.round(gap)).toLocaleString()}
+                                    </span>
+                                );
+                            })()}
+                        </div>
                         <div className="flex items-center gap-6">
                             {/* Doughnut */}
                             <div className="relative shrink-0" style={{ width: 170, height: 170 }}>
@@ -476,6 +564,9 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
                                                 ? <span className="w-5 h-0 border-t-2 border-dashed shrink-0" style={{ borderColor: ds.borderColor }} />
                                                 : <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: color }} />}
                                             <span className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{ds.label}</span>
+                                            {ds.trend && (
+                                                <span className={`text-[11px] font-bold ${ds.trend === '↑' ? (isLight ? 'text-red-500' : 'text-red-400') : ds.trend === '↓' ? (isLight ? 'text-green-600' : 'text-green-400') : (isLight ? 'text-slate-400' : 'text-gray-500')}`}>{ds.trend}</span>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -2007,7 +2098,7 @@ Gap vs target and what can be optimized.`;
                 <button
                     onClick={() => setShowStats(true)}
                     title={isHe ? 'סטטיסטיקות' : 'Statistics'}
-                    className={`shrink-0 p-2 rounded-xl border transition-colors ${isLight ? 'bg-white border-slate-200 text-slate-500 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200' : 'bg-white/10 border-white/20 text-gray-400 hover:bg-blue-500/20 hover:text-blue-400'}`}
+                    className={`shrink-0 p-2 rounded-xl border transition-colors ${isLight ? 'bg-blue-50 border-blue-200 text-blue-600 hover:bg-blue-100 hover:border-blue-300' : 'bg-blue-500/20 border-blue-500/40 text-blue-400 hover:bg-blue-500/30'}`}
                 >
                     <BarChart3 size={14} />
                 </button>
