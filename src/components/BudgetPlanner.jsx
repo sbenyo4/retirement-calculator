@@ -127,11 +127,12 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
     const [localShowInflation, setLocalShowInflation] = useState(showInflationProp);
     const [selectedYearIdx, setSelectedYearIdx] = useState(null);
+    const [showSavings, setShowSavings] = useState(false);
     const barDivRef = useRef(null);
 
     // Sync with parent toggle when modal opens
     useEffect(() => {
-        if (isOpen) { setLocalShowInflation(showInflationProp); setSelectedYearIdx(null); }
+        if (isOpen) { setLocalShowInflation(showInflationProp); setSelectedYearIdx(null); setShowSavings(false); }
     }, [isOpen, showInflationProp]);
 
     // Auto-focus the bar div when modal opens so arrow keys work immediately
@@ -247,20 +248,34 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
             };
         }).filter(Boolean);
 
-        // Target line
-        if (target > 0 && ages.length > 0) {
-            datasets.push({
-                type: 'line',
-                label: isHe ? 'יעד משיכה' : 'Withdrawal target',
-                data: ages.map(() => target),
-                borderColor: '#f59e0b',
-                borderWidth: 2,
-                borderDash: [6, 3],
-                pointRadius: 0,
-                fill: false,
-                order: -1,
-            });
+        // Savings fill above bars up to target
+        let totalSavings = 0;
+        if (showSavings && target > 0) {
+            const barTotals = ages.map((_, yi) =>
+                datasets.filter(ds => ds.stack === 'total').reduce((s, ds) => s + (ds.data[yi] || 0), 0)
+            );
+            const savingsData = barTotals.map(t => Math.max(0, target - t));
+            totalSavings = Math.round(savingsData.reduce((s, v) => s + v * 12, 0));
+            if (savingsData.some(v => v > 0)) {
+                const activeIdx = selectedYearIdx ?? defaultYearIdx;
+                datasets.push({
+                    label: isHe ? 'חיסכון' : 'Savings',
+                    data: savingsData,
+                    backgroundColor: ages.map((_, yi) =>
+                        yi === activeIdx ? 'rgba(34,197,94,0.35)' : 'rgba(34,197,94,0.15)'
+                    ),
+                    borderColor: 'rgba(34,197,94,0.5)',
+                    borderWidth: 1,
+                    stack: 'total',
+                    borderRadius: 2,
+                    borderSkipped: false,
+                    trend: savingsData[savingsData.length - 1] > savingsData[0] * 1.03 ? '↑'
+                         : savingsData[savingsData.length - 1] < savingsData[0] * 0.97 ? '↓' : '→',
+                });
+            }
         }
+
+        // Target line drawn manually in plugin (spans full chart width)
 
         // Add trend arrow to each category dataset
         datasets.forEach(ds => {
@@ -291,20 +306,37 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
         const nowYear = new Date().getFullYear();
         const curAge  = parseFloat(inputs.currentAge) || 30;
         const years   = ages.map(a => nowYear + Math.round(a - curAge));
-        return { labels: ages.map(a => `${isHe ? 'גיל' : 'Age'} ${a}`), datasets, target, ages, years, loanEndIndices };
-    }, [items, inputs, yearGeom, inflationRate, localShowInflation, isHe, selectedYearIdx, defaultYearIdx]);
+        return { labels: ages.map(a => `${isHe ? 'גיל' : 'Age'} ${a}`), datasets, target, ages, years, loanEndIndices, totalSavings };
+    }, [items, inputs, yearGeom, inflationRate, localShowInflation, isHe, selectedYearIdx, defaultYearIdx, showSavings]);
 
     const textColor   = isLight ? '#475569' : '#94a3b8';
     const gridColor   = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)';
 
     const pluginStateRef = useRef({});
-    pluginStateRef.current = { barData, selectedYearIdx, defaultYearIdx, currency, textColor, isLight };
+    pluginStateRef.current = { barData, selectedYearIdx, defaultYearIdx, currency, textColor, isLight, showSavings, isHe };
 
     const yearLabelPlugin = useMemo(() => ({
         id: 'yearLabels',
         afterRender(chart) {
-            const { barData, selectedYearIdx, defaultYearIdx, currency, textColor, isLight } = pluginStateRef.current;
+            const { barData, selectedYearIdx, defaultYearIdx, currency, textColor, isLight, showSavings, isHe } = pluginStateRef.current;
             const { ctx, scales: { x }, chartArea } = chart;
+
+            // 0. Target line — full width
+            const { target } = barData;
+            if (target > 0 && chart.scales.y) {
+                const yPos = chart.scales.y.getPixelForValue(target);
+                if (yPos >= chartArea.top && yPos <= chartArea.bottom) {
+                    ctx.save();
+                    ctx.setLineDash([6, 3]);
+                    ctx.strokeStyle = '#f59e0b';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(chartArea.left, yPos);
+                    ctx.lineTo(chartArea.right, yPos);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
 
             // 1. Year labels at bottom
             if (barData.years) {
@@ -318,21 +350,30 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
                 });
             }
 
-            // 2. Total above selected bar
+            // 2. Value above selected bar
             const activeIdx = selectedYearIdx ?? defaultYearIdx;
-            const barDs = chart.data.datasets
+            const allStackDs = chart.data.datasets
                 .map((ds, i) => ({ ds, meta: chart.getDatasetMeta(i) }))
                 .filter(({ ds }) => ds.type !== 'line' && ds.stack === 'total');
-            if (barDs.length > 0) {
-                const total = barDs.reduce((s, { ds }) => s + (ds.data[activeIdx] || 0), 0);
-                const topYs = barDs.map(({ meta }) => meta.data[activeIdx]?.y).filter(v => v != null && isFinite(v));
-                if (total > 0 && topYs.length) {
+            if (allStackDs.length > 0) {
+                const savingsDs = allStackDs.find(({ ds }) => ds.label === 'חיסכון' || ds.label === 'Savings');
+                const nonSavingsDs = allStackDs.filter(({ ds }) => ds.label !== 'חיסכון' && ds.label !== 'Savings');
+                let displayValue, color;
+                if (showSavings && savingsDs) {
+                    displayValue = Math.round(savingsDs.ds.data[activeIdx] || 0);
+                    color = '#22c55e';
+                } else {
+                    displayValue = nonSavingsDs.reduce((s, { ds }) => s + (ds.data[activeIdx] || 0), 0);
+                    color = textColor;
+                }
+                const topYs = allStackDs.map(({ meta }) => meta.data[activeIdx]?.y).filter(v => v != null && isFinite(v));
+                if (displayValue > 0 && topYs.length) {
                     const topY = Math.min(...topYs);
                     ctx.font = `bold 9px sans-serif`;
-                    ctx.fillStyle = textColor;
+                    ctx.fillStyle = color;
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'bottom';
-                    ctx.fillText(`${currency}${total.toLocaleString()}`, x.getPixelForTick(activeIdx), topY - 3);
+                    ctx.fillText(`${currency}${Math.round(displayValue).toLocaleString()}`, x.getPixelForTick(activeIdx), topY - 3);
                 }
             }
 
@@ -545,9 +586,30 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
                     {/* ── Bar section ── */}
                     {barData.datasets.length > 0 && (
                         <div>
-                            <h3 className={`text-sm font-semibold mb-1 ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
-                                {isHe ? 'הוצאות חודשיות לפי שנת פרישה' : 'Monthly Expenses by Retirement Year'}
-                            </h3>
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                                <h3 className={`text-sm font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                                    {isHe ? 'הוצאות חודשיות לפי שנת פרישה' : 'Monthly Expenses by Retirement Year'}
+                                </h3>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    {showSavings && barData.totalSavings > 0 && (
+                                        <span className={`text-xs font-semibold ${isLight ? 'text-green-700' : 'text-green-400'}`} dir="ltr">
+                                            {currency}{barData.totalSavings.toLocaleString()}
+                                        </span>
+                                    )}
+                                    {barData.target > 0 && (
+                                        <button
+                                            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+                                            onClick={() => setShowSavings(v => !v)}
+                                            className={`flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border transition-colors ${showSavings
+                                                ? (isLight ? 'border-green-400 bg-green-50 text-green-700' : 'border-green-500 bg-green-900/20 text-green-400')
+                                                : (isLight ? 'border-slate-200 bg-slate-50 text-slate-400' : 'border-white/20 bg-white/5 text-gray-500')}`}
+                                        >
+                                            {showSavings ? <ToggleRight size={13} /> : <ToggleLeft size={13} />}
+                                            {isHe ? 'חיסכון' : 'Savings'}
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
                             <p className={`text-xs mb-4 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
                                 {localShowInflation
                                     ? (isHe ? 'כולל השפעת אינפלציה וסיום הלוואות' : 'Includes inflation and loan payoffs')
@@ -556,13 +618,19 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
 
                             {/* Stacked bar legend */}
                             <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3">
+                                {barData.target > 0 && (
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="w-5 h-0 border-t-2 border-dashed shrink-0 border-amber-400" />
+                                        <span className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                            {isHe ? 'יעד משיכה' : 'Withdrawal target'}
+                                        </span>
+                                    </div>
+                                )}
                                 {barData.datasets.map(ds => {
                                     const color = Array.isArray(ds.backgroundColor) ? ds.backgroundColor[selectedYearIdx ?? defaultYearIdx] : ds.backgroundColor;
                                     return (
                                         <div key={ds.label} className="flex items-center gap-1.5">
-                                            {ds.type === 'line'
-                                                ? <span className="w-5 h-0 border-t-2 border-dashed shrink-0" style={{ borderColor: ds.borderColor }} />
-                                                : <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: color }} />}
+                                            <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: color }} />
                                             <span className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{ds.label}</span>
                                             {ds.trend && (
                                                 <span className={`text-[11px] font-bold ${ds.trend === '↑' ? (isLight ? 'text-red-500' : 'text-red-400') : ds.trend === '↓' ? (isLight ? 'text-green-600' : 'text-green-400') : (isLight ? 'text-slate-400' : 'text-gray-500')}`}>{ds.trend}</span>
