@@ -4,6 +4,52 @@ import { getProviderEnvKey } from '../config/ai-models';
 export { getAvailableProviders, getAvailableModels } from '../config/ai-models';
 
 /**
+ * Strips raw API noise (URLs, SDK prefixes) from error messages and attaches
+ * a stable `code` so callers can show localized UI messages.
+ */
+function cleanApiError(err) {
+    let msg = err?.message || String(err);
+    // Remove "Error fetching from https://...:" prefix injected by Google AI SDK
+    msg = msg.replace(/Error fetching from https?:\/\/[^\s:]+[^:]*:\s*/gi, '');
+    // Remove "[GoogleGenerativeAI Error]:" prefix
+    msg = msg.replace(/\[GoogleGenerativeAI Error\]:\s*/gi, '');
+    msg = msg.trim();
+
+    const status = err?.status ?? (msg.match(/\[(\d{3})\]/) ? parseInt(msg.match(/\[(\d{3})\]/)[1]) : null);
+    let code = 'unknown';
+    if (status === 429 || /quota|rate.?limit|429/i.test(msg)) code = 'quota';
+    else if (status === 503 || /high demand|overload|503|unavailable/i.test(msg)) code = 'overload';
+    else if (status === 401 || status === 403 || /api.?key|unauthorized|forbidden/i.test(msg)) code = 'auth';
+    else if (/network|fetch|connect/i.test(msg)) code = 'network';
+
+    const clean = new Error(msg);
+    clean.status = status;
+    clean.code = code;
+    return clean;
+}
+
+/**
+ * Returns a localized, user-friendly error string for AI API errors.
+ */
+export function localizeAiError(err, language) {
+    const isHe = language === 'he';
+    const code = err?.code;
+    if (code === 'quota') return isHe
+        ? 'חריגה ממכסת הבקשות. המתן מספר דקות ונסה שוב.'
+        : 'Request quota exceeded. Please wait a few minutes and try again.';
+    if (code === 'overload') return isHe
+        ? 'השרת עמוס כרגע. נסה שוב בעוד מספר דקות.'
+        : 'The server is currently overloaded. Please try again in a few minutes.';
+    if (code === 'auth') return isHe
+        ? 'מפתח API לא תקין. בדוק את ההגדרות.'
+        : 'Invalid API key. Please check your settings.';
+    if (code === 'network') return isHe
+        ? 'שגיאת רשת. בדוק את החיבור לאינטרנט.'
+        : 'Network error. Please check your internet connection.';
+    return err?.message || (isHe ? 'שגיאה לא צפויה. נסה שוב.' : 'Unexpected error. Please try again.');
+}
+
+/**
  * Retry configuration
  */
 export const RETRY_CONFIG = {
@@ -522,7 +568,19 @@ function isSemanticallyDuplicate(newTitle, newCatId, existingEntries) {
     return false;
 }
 
-function applyChecklistDiff(existingCategories, diff, dismissedItemIds = new Set(), keptItemIds = new Set()) {
+function parseTiming(t) {
+    if (!t || typeof t !== 'object') return undefined;
+    const VALID = new Set(['before', 'after', 'atRet', 'age', 'ongoing']);
+    if (!VALID.has(t.type)) return undefined;
+    if (t.type === 'atRet') return { type: 'range', value: -1, valueTo: 1 };
+    if (t.type === 'ongoing') return { type: 'ongoing' };
+    const val = parseFloat(t.value);
+    if (isNaN(val)) return undefined;
+    if (t.type === 'before') return { type: 'before', value: -val };
+    return { type: t.type, value: val }; // 'after' or 'age'
+}
+
+export function applyChecklistDiff(existingCategories, diff, dismissedItemIds = new Set(), keptItemIds = new Set()) {
     // Build mutable map: itemId → { catId, item }
     const itemMap = {};
     const catMeta = {}; // catId → { id, title, emoji }
@@ -553,7 +611,8 @@ function applyChecklistDiff(existingCategories, diff, dismissedItemIds = new Set
         if (!catMeta[newItem.categoryId]) {
             catMeta[newItem.categoryId] = { id: newItem.categoryId, title: newItem.categoryTitle || newItem.categoryId, emoji: '' };
         }
-        const entry = { catId: newItem.categoryId, item: { id: newItem.id, priority: newItem.priority || 'medium', title: newItem.title || '', description: newItem.description || '', details: newItem.details || '' } };
+        const timing = parseTiming(newItem.timing);
+        const entry = { catId: newItem.categoryId, item: { id: newItem.id, priority: newItem.priority || 'medium', title: newItem.title || '', description: newItem.description || '', details: newItem.details || '', isNew: newItem.isNew === true, ...(timing ? { timing } : {}) } };
         itemMap[newItem.id] = entry;
         existingEntries.push(entry); // block further dupes within the same diff batch
     }
@@ -569,7 +628,7 @@ function applyChecklistDiff(existingCategories, diff, dismissedItemIds = new Set
         .filter(c => c.items.length > 0);
 }
 
-export async function generateRetirementChecklistInsights(inputs, results, provider, model, apiKeyOverride, language, existingCategories, dismissedItemIds = new Set(), keptItemIds = new Set()) {
+export async function generateRetirementChecklistInsights(inputs, results, provider, model, apiKeyOverride, language, existingCategories, dismissedItemIds = new Set(), keptItemIds = new Set(), prevAiCategories = null) {
     const isHe = language === 'he';
     const fmt = (n) => n ? Math.round(n).toLocaleString() : '0';
 
@@ -619,6 +678,13 @@ export async function generateRetirementChecklistInsights(inputs, results, provi
 
     const hasExisting = existingCategories && existingCategories.length > 0;
 
+    // Summarize previously AI-added items (for "isNew" judgment — these are NOT new to the user)
+    const prevAiSummary = prevAiCategories && prevAiCategories.length > 0
+        ? prevAiCategories.flatMap(c => (c.items || []).map(i =>
+            `  - id="${i.id}": ${i.title}` + (i.description ? ` — ${i.description.slice(0, 120)}` : '')
+        )).join('\n')
+        : null;
+
     // Summarize existing items — include description for semantic coverage judgment
     const existingSummary = hasExisting
         ? (() => {
@@ -626,13 +692,27 @@ export async function generateRetirementChecklistInsights(inputs, results, provi
             const body = existingCategories.map(cat =>
                 `[${cat.id}] ${cat.title}:\n` +
                 (cat.items || []).map(i =>
-                    `  - id="${i.id}" priority=${i.priority}: ${i.title}` +
+                    `  - id="${i.id}" priority=${i.priority}${i.timing ? '' : ' [NO TIMING]'}: ${i.title}` +
                     (i.description ? ` — ${i.description.slice(0, 150)}` : '')
                 ).join('\n')
             ).join('\n');
             return `Total existing items: ${totalItems}\n\n${body}`;
         })()
         : null;
+
+    const timingExplanation = isHe
+        ? `שדה timing (חובה לכל פריט חדש): { "type": "before"|"after"|"atRet"|"age"|"ongoing", "value": מספר }
+  - before + value: N שנים לפני הפרישה (לדוגמה: before+3 = 3 שנים לפני)
+  - after + value: N שנים אחרי הפרישה
+  - atRet: סביב תאריך הפרישה (ללא value)
+  - age + value: עד גיל ספציפי (לדוגמה: age+65)
+  - ongoing: שוטף / תמידי (ללא value)`
+        : `timing field (required for every new item): { "type": "before"|"after"|"atRet"|"age"|"ongoing", "value": number }
+  - before + value: N years before retirement (e.g. before+3 = 3 years before)
+  - after + value: N years after retirement
+  - atRet: around the retirement date (no value needed)
+  - age + value: by a specific age (e.g. age+65)
+  - ongoing: recurring / always relevant (no value needed)`;
 
     const jsonSchema = hasExisting ? `{
   "add": [
@@ -643,10 +723,15 @@ export async function generateRetirementChecklistInsights(inputs, results, provi
       "priority": "critical | high | medium | low",
       "title": "${isHe ? 'כותרת פריט' : 'Item title'}",
       "description": "${isHe ? 'תיאור' : 'Description'}",
-      "details": "${isHe ? 'פרטים' : 'Details'}"
+      "details": "${isHe ? 'פרטים' : 'Details'}",
+      "timing": { "type": "before|after|atRet|age|ongoing", "value": 3 },
+      "isNew": true
     }
   ],
-  "remove": ["item-id-that-may-no-longer-be-relevant"]
+  "remove": ["item-id-that-may-no-longer-be-relevant"],
+  "updateTiming": [
+    { "id": "existing-item-id-missing-timing", "timing": { "type": "before|after|atRet|age|ongoing", "value": 3 } }
+  ]
 }` : `{
   "categories": [
     {
@@ -707,6 +792,10 @@ ${jsonSchema}
 - סמן להסרה (remove) פריטים שאינם רלוונטיים — הם לא יימחקו, רק יסומנו
 - אל תשנה פריטים קיימים
 - אם אין שינויים — החזר {"add":[],"remove":[]}
+- כל פריט חדש ב-add חייב לכלול שדה timing: ${timingExplanation}
+- שדה updateTiming: עבור פריטים קיימים המסומנים [NO TIMING] ברשימה — הוסף אותם ל-updateTiming עם ה-timing המתאים להם
+- שדה isNew: הגדר true רק אם הנושא לא היה קיים בשום צורה אצל המשתמש קודם לכן (ראה "פריטים קודמים" למטה). הגדר false אם הנושא כבר נראה למשתמש (גם אם בניסוח שונה)
+${prevAiSummary ? `\nפריטים שכבר קיימים אצל המשתמש (אל תסמן כחדש אם הנושא מכוסה כאן):\n${prevAiSummary}` : ''}
 ${earlyRetirementNote}${sharedGuidelines}`
             : `You are an expert Israeli retirement advisor. The client has a retirement planning checklist. This list is the source of truth — you cannot modify existing items.
 
@@ -731,6 +820,10 @@ Binding rules:
 - Flag for removal (remove) items not relevant to the client's data — they will only be marked, not deleted
 - Do NOT modify existing items
 - If nothing needs to change — return {"add":[],"remove":[]}
+- Every new item in add must include a timing field: ${timingExplanation}
+- updateTiming field: for existing items marked [NO TIMING] in the checklist above — add them to updateTiming with the appropriate timing
+- isNew field: set to true ONLY if this topic did not exist in any form in the user's previous checklist (see "Previously seen items" below). Set false if the topic was already seen by the user (even if worded differently)
+${prevAiSummary ? `\nPreviously seen items by user (do NOT mark isNew=true if topic is covered here):\n${prevAiSummary}` : ''}
 ${earlyRetirementNote}${sharedGuidelines}`)
         : (isHe
             ? `אתה יועץ פרישה ישראלי מומחה. בהתבסס על הנתונים הבאים, צור רשימת תכנון מפורטת ומותאמת אישית.
@@ -827,7 +920,28 @@ ${earlyRetirementNote}
 ;
         diff.remove = diff.remove.filter(id => typeof id === 'string' && id.trim()).map(id => id.trim());
 
-        const mergedCategories = applyChecklistDiff(existingCategories, diff, dismissedItemIds, keptItemIds);
+        let mergedCategories = applyChecklistDiff(existingCategories, diff, dismissedItemIds, keptItemIds);
+
+        // Apply timing updates to existing items that were missing timing
+        const updateTiming = Array.isArray(parsed.updateTiming) ? parsed.updateTiming : [];
+        if (updateTiming.length > 0) {
+            const timingById = {};
+            for (const u of updateTiming) {
+                if (u && u.id && u.timing) {
+                    const t = parseTiming(u.timing);
+                    if (t) timingById[String(u.id).trim()] = t;
+                }
+            }
+            if (Object.keys(timingById).length > 0) {
+                mergedCategories = mergedCategories.map(cat => ({
+                    ...cat,
+                    items: cat.items.map(item =>
+                        (!item.timing && timingById[item.id]) ? { ...item, timing: timingById[item.id] } : item
+                    ),
+                }));
+            }
+        }
+
         return { categories: mergedCategories, diff };
     }
 
@@ -858,4 +972,191 @@ ${earlyRetirementNote}
     }
 
     return { categories: parsed.categories, diff: null };
+}
+
+export async function generateChecklistOverview(checklist, inputs, results, provider, model, apiKeyOverride, language) {
+    const isHe = language === 'he';
+    const fmt = (n) => n ? Math.round(n).toLocaleString() : '0';
+
+    const context = [
+        `Current age: ${inputs?.currentAge}`,
+        `Retirement age: ${inputs?.retirementStartAge}`,
+        `Years to retirement: ${Math.max(0, (parseFloat(inputs?.retirementStartAge) || 67) - (parseFloat(inputs?.currentAge) || 50)).toFixed(1)}`,
+        `Monthly desired income: ${fmt(inputs?.monthlyNetIncomeDesired)} ILS`,
+        `Current savings: ${fmt(inputs?.currentSavings)} ILS`,
+        results?.balanceAtRetirement ? `Projected balance at retirement: ${fmt(results.balanceAtRetirement)} ILS` : null,
+        results?.ranOutAtAge ? `WARNING: funds run out at age ${results.ranOutAtAge}` : null,
+        results?.surplus > 0 ? `Surplus at end of plan: ${fmt(results.surplus)} ILS` : null,
+        results?.surplus < 0 ? `DEFICIT: ${fmt(Math.abs(results.surplus))} ILS shortfall` : null,
+    ].filter(Boolean).join('\n');
+
+    // Send only unchecked items, sorted by priority, capped to keep prompt short
+    const PRIORITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
+    const allItems = checklist.flatMap(cat => (cat.items || []).map(i => ({ ...i, catTitle: cat.title || cat.id })));
+    const topItems = allItems
+        .filter(i => !i.checked && i.relevant !== false)
+        .sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 2) - (PRIORITY_ORDER[b.priority] ?? 2))
+        .slice(0, 30);
+    const checklistSummary = topItems.map(i => `${i.priority?.toUpperCase()} | [${i.catTitle}] ${i.title}`).join('\n');
+
+    const prompt = isHe
+        ? `אתה יועץ פרישה ישראלי מומחה. סקור את רשימת תכנון הפרישה של המשתמש ותן ניתוח קצר וממוקד — מה הדחוף ביותר, מה לשים לב אליו ועל מה הייתה ממליץ להתמקד.
+
+נתוני המשתמש:
+${context}
+
+רשימת הפרישה הנוכחית:
+${checklistSummary}
+
+ענה בעברית בפורמט הבא:
+
+**סיכום מצב**
+[פסקה אחת — תמונת המצב הכוללת בהתאם לנתונים]
+
+**מה דחוף ביותר — עכשיו**
+• [פריט ראשון]
+• [פריט שני]
+• [עד 3 פריטים]
+
+**מה חשוב לטפל בשנה הקרובה**
+• [פריט ראשון]
+• [עד 3 פריטים]
+
+**המלצה כללית**
+[משפט-שניים — מיקוד ומסר ראשי]`
+        : `You are an expert Israeli retirement advisor. Review the user's retirement planning checklist and give a concise, focused analysis — what's most urgent, what to watch out for, and what to prioritize.
+
+User data:
+${context}
+
+Current retirement checklist:
+${checklistSummary}
+
+Reply in English with this format:
+
+**Status Summary**
+[One paragraph — overall picture based on the data]
+
+**Most Urgent — Act Now**
+• [First item]
+• [Second item]
+• [Up to 3 items]
+
+**Important to Address This Year**
+• [First item]
+• [Up to 3 items]
+
+**Key Recommendation**
+[One or two sentences — main focus and message]`;
+
+    const envKey = getProviderEnvKey(provider);
+    const apiKey = apiKeyOverride?.trim() || (envKey ? import.meta.env[envKey]?.trim() : null);
+    if (!apiKey) throw new Error(`Missing API key for provider: ${provider}`);
+
+    try {
+        if (provider === 'gemini') {
+            const { GoogleGenerativeAI } = await import('@google/generative-ai');
+            const genAI = new GoogleGenerativeAI(apiKey);
+            const genModel = genAI.getGenerativeModel({ model, generationConfig: { temperature: 0.4 } });
+            return (await genModel.generateContent(prompt)).response.text();
+        } else if (provider === 'openai') {
+            const { default: OpenAI } = await import('openai');
+            const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+            const res = await openai.chat.completions.create({ messages: [{ role: 'user', content: prompt }], model, temperature: 0.4 });
+            return res.choices[0].message.content;
+        } else if (provider === 'anthropic') {
+            const { default: Anthropic } = await import('@anthropic-ai/sdk');
+            const anthropic = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+            const msg = await anthropic.messages.create({ model, max_tokens: 2048, temperature: 0.4, messages: [{ role: 'user', content: prompt }] });
+            return msg.content[0].text;
+        }
+        throw new Error(`Unsupported provider: ${provider}`);
+    } catch (err) {
+        throw cleanApiError(err);
+    }
+}
+
+export async function explainChecklistItem(item, inputs, results, provider, model, apiKeyOverride, language) {
+    const isHe = language === 'he';
+    const fmt = (n) => n ? Math.round(n).toLocaleString() : '0';
+
+    const context = [
+        `Current age: ${inputs?.currentAge}`,
+        `Retirement age: ${inputs?.retirementStartAge}`,
+        `Years to retirement: ${Math.max(0, (parseFloat(inputs?.retirementStartAge) || 67) - (parseFloat(inputs?.currentAge) || 50)).toFixed(1)}`,
+        `Monthly desired income: ${fmt(inputs?.monthlyNetIncomeDesired)} ILS`,
+        `Current savings: ${fmt(inputs?.currentSavings)} ILS`,
+        results?.balanceAtRetirement ? `Projected balance at retirement: ${fmt(results.balanceAtRetirement)} ILS` : null,
+        results?.ranOutAtAge ? `WARNING: funds run out at age ${results.ranOutAtAge}` : null,
+    ].filter(Boolean).join('\n');
+
+    const itemDetails = [
+        `Topic: ${item.title}`,
+        item.desc || item.description ? `Summary: ${item.desc || item.description}` : null,
+        item.details ? `Details: ${item.details}` : null,
+    ].filter(Boolean).join('\n');
+
+    const prompt = isHe
+        ? `אתה יועץ פרישה ישראלי מומחה. המשתמש מבקש הסבר מפורט ותוכנית פעולה לנושא הבא מרשימת תכנון הפרישה שלו.
+
+נתוני המשתמש:
+${context}
+
+נושא לפירוט:
+${itemDetails}
+
+ענה בעברית בפורמט הבא:
+**הסבר מפורט**
+[2-3 פסקאות המסבירות את הנושא לעומק — מדוע חשוב, מה הסיכון אם לא מטפלים בו, ומה הרלוונטיות לפרופיל הספציפי של המשתמש]
+
+**תוכנית פעולה מעשית**
+1. [צעד ראשון — קונקרטי וברור]
+2. [צעד שני]
+3. [המשך...]
+
+[4-6 צעדים ממוקדים וברורים שניתן לבצע בפועל]`
+        : `You are an expert Israeli retirement advisor. The user wants a detailed explanation and action plan for the following item from their retirement planning checklist.
+
+User data:
+${context}
+
+Item to explain:
+${itemDetails}
+
+Reply in English with this format:
+**Detailed Explanation**
+[2-3 paragraphs explaining the topic in depth — why it matters, the risk of ignoring it, and relevance to this user's specific profile]
+
+**Practical Action Plan**
+1. [First step — concrete and specific]
+2. [Second step]
+3. [Continue...]
+
+[4-6 focused, actionable steps]`;
+
+    const envKey = getProviderEnvKey(provider);
+    const apiKey = apiKeyOverride?.trim() || (envKey ? import.meta.env[envKey]?.trim() : null);
+    if (!apiKey) throw new Error(`Missing API key for provider: ${provider}`);
+
+    try {
+        if (provider === 'gemini') {
+            const { GoogleGenerativeAI } = await import('@google/generative-ai');
+            const genAI = new GoogleGenerativeAI(apiKey);
+            const genModel = genAI.getGenerativeModel({ model, generationConfig: { temperature: 0.4 } });
+            return (await genModel.generateContent(prompt)).response.text();
+        } else if (provider === 'openai') {
+            const { default: OpenAI } = await import('openai');
+            const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+            const res = await openai.chat.completions.create({ messages: [{ role: 'user', content: prompt }], model, temperature: 0.4 });
+            return res.choices[0].message.content;
+        } else if (provider === 'anthropic') {
+            const { default: Anthropic } = await import('@anthropic-ai/sdk');
+            const anthropic = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+            const msg = await anthropic.messages.create({ model, max_tokens: 2048, temperature: 0.4, messages: [{ role: 'user', content: prompt }] });
+            return msg.content[0].text;
+        }
+        throw new Error(`Unsupported provider: ${provider}`);
+    } catch (err) {
+        throw cleanApiError(err);
+    }
 }

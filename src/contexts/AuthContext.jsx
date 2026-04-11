@@ -15,6 +15,7 @@ export function AuthProvider({ children }) {
     const [loading, setLoading] = useState(true);
     const lastAuthUidRef = useRef(undefined);
     const wasAuthenticatedRef = useRef(false);
+    const unsubscribeRef = useRef(null);
 
     async function login() {
         googleProvider.setCustomParameters({
@@ -39,21 +40,31 @@ export function AuthProvider({ children }) {
     }
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
-            const nextUid = user?.uid || null;
-            const becameAuthenticated = !wasAuthenticatedRef.current && !!user;
-            if (lastAuthUidRef.current !== nextUid || becameAuthenticated) {
-                // Reset reminder session when auth identity changes OR when a fresh login occurs.
-                resetReminderSession();
-                lastAuthUidRef.current = nextUid;
-            }
-            wasAuthenticatedRef.current = !!user;
-            setCurrentUser(user);
-            setLoading(false);
-        });
+        // Force login on every page load — no persisted sessions survive a refresh.
+        setPersistence(auth, inMemoryPersistence)
+            .then(() => signOut(auth))
+            .catch(() => {})
+            .finally(() => {
+                const unsubscribe = onAuthStateChanged(auth, (user) => {
+                    const nextUid = user?.uid || null;
+                    const becameAuthenticated = !wasAuthenticatedRef.current && !!user;
+                    if (lastAuthUidRef.current !== nextUid || becameAuthenticated) {
+                        // Reset reminder session when auth identity changes OR when a fresh login occurs.
+                        resetReminderSession();
+                        lastAuthUidRef.current = nextUid;
+                    }
+                    wasAuthenticatedRef.current = !!user;
+                    setCurrentUser(user);
+                    setLoading(false);
+                });
+
+                // Store unsubscribe for cleanup — but since this is inside a promise
+                // chain we can't return it directly, so attach to a ref.
+                unsubscribeRef.current = unsubscribe;
+            });
 
         return () => {
-            unsubscribe();
+            unsubscribeRef.current?.();
         };
     }, []);
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { DEFAULT_INPUTS } from '../constants';
 import { normalizeInputs } from '../utils/profileUtils';
 import { createDefaultIncomeSources } from '../utils/pensionCalculator';
@@ -15,10 +15,15 @@ export function useRetirementData() {
     const uid = currentUser?.uid;
 
     const [inputs, setInputs] = useState(() => normalizeInputs({}));
+    const [inputsLoaded, setInputsLoaded] = useState(false);
 
     // Load data from Firestore on mount / user change
     useEffect(() => {
-        if (!uid) return;
+        if (!uid) {
+            setInputsLoaded(false);
+            return;
+        }
+        setInputsLoaded(false);
 
         let cancelled = false;
 
@@ -83,8 +88,10 @@ export function useRetirementData() {
                 if (cancelled) return;
 
                 setInputs(baseInputs);
+                setInputsLoaded(true);
             } catch (err) {
                 console.error('Error loading retirement data from Firestore:', err);
+                if (!cancelled) setInputsLoaded(true); // unblock alerts even on error
             }
         }
 
@@ -129,5 +136,5 @@ export function useRetirementData() {
         });
     }, []);
 
-    return { inputs, setInputs: safeSetInputs, saveGlobalPension };
+    return { inputs, setInputs: safeSetInputs, saveGlobalPension, inputsLoaded };
 }

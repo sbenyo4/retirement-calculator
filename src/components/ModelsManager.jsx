@@ -1,17 +1,28 @@
 import { useState, useEffect, useRef } from 'react';
-import { RefreshCw, Check, X, AlertCircle, Download, RotateCcw } from 'lucide-react';
+import { RefreshCw, Check, X, AlertCircle, Download, RotateCcw, ChevronDown } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { fetchAllAvailableModels, compareModels } from '../utils/ai-models-fetcher';
 import { AI_MODELS_CONFIG } from '../config/ai-models';
 import { getUserSettings, setUserSettings } from '../utils/db';
 
-export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, uid, idleTimeoutEnabled = true, onIdleTimeoutEnabledChange, idleTimeoutMinutes = 5, onIdleTimeoutChange, fourPercentMode = 'net', onFourPercentModeChange }) {
+const ALL_ALERTS = [
+    { id: 'ran_out',          severity: 'critical', labelHe: 'כסף נגמר לפני סוף התקופה',                  labelEn: 'Funds run out before end of period' },
+    { id: 'capital_deficit',  severity: 'critical', labelHe: 'חסר הון ביום הפרישה',                        labelEn: 'Capital shortfall at retirement' },
+    { id: 'withdrawal_gap',   severity: 'warning',  labelHe: 'משיכה חודשית נמוכה מהיעד',                   labelEn: 'Monthly withdrawal below target' },
+    { id: 'near_retirement',  severity: 'warning',  labelHe: 'פחות מ-5 שנים לפרישה',                       labelEn: 'Less than 5 years to retirement' },
+    { id: 'short_horizon',    severity: 'info',     labelHe: 'גיל סיום תכנון נמוך מ-85',                   labelEn: 'Planning end age below 85' },
+    { id: 'late_retirement',  severity: 'info',     labelHe: 'גיל פרישה מאוחר (מעל 70)',                   labelEn: 'Late retirement age (above 70)' },
+];
+
+export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, uid, idleTimeoutEnabled = true, onIdleTimeoutEnabledChange, idleTimeoutMinutes = 5, onIdleTimeoutChange, fourPercentMode = 'net', onFourPercentModeChange, disabledAlerts = [], onToggleAlert }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
     const [loading, setLoading] = useState(false);
     const [results, setResults] = useState(null);
     const [error, setError] = useState(null);
     const [saveSuccess, setSaveSuccess] = useState(false);
+    const [collapsed, setCollapsed] = useState({});
+    const toggleSection = (id) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
     const [selectedModels, setSelectedModels] = useState({});
 
     const [expandedProvider, setExpandedProvider] = useState(null);
@@ -181,7 +192,7 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
 
     return (
         <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${isLight ? 'bg-black/50' : 'bg-black/70'}`}>
-            <div className={`w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl shadow-2xl ${isLight ? 'bg-white' : 'bg-gray-900 border border-white/20'}`}>
+            <div className={`w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl ${isLight ? 'bg-white' : 'bg-gray-900 border border-white/20'}`}>
                 {/* Header - Fixed */}
                 <div className={`p-4 border-b flex-shrink-0 ${isLight ? 'bg-white border-gray-200' : 'bg-gray-900 border-white/20'}`}>
                     <div className="flex items-center justify-between">
@@ -202,11 +213,14 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
                     <div className="p-4 space-y-4" dir={language === 'he' ? 'rtl' : 'ltr'}>
 
                         {/* General Settings */}
-                        <div className={`rounded-xl p-4 ${isLight ? 'bg-gray-50 border border-gray-200' : 'bg-white/5 border border-white/10'}`}>
-                            <h3 className={`text-sm font-semibold mb-3 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
-                                {language === 'he' ? 'הגדרות כלליות' : 'General Settings'}
-                            </h3>
-                            <div className="space-y-3">
+                        <div className={`rounded-xl overflow-hidden ${isLight ? 'bg-gray-50 border border-gray-200' : 'bg-white/5 border border-white/10'}`}>
+                            <button onClick={() => toggleSection('general')} className={`w-full flex items-center justify-between px-4 py-3 text-start ${isLight ? 'hover:bg-gray-100' : 'hover:bg-white/5'} transition-colors`}>
+                                <h3 className={`text-sm font-semibold ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                                    {language === 'he' ? 'הגדרות כלליות' : 'General Settings'}
+                                </h3>
+                                <ChevronDown size={15} className={`transition-transform ${collapsed['general'] ? '' : 'rotate-180'} ${isLight ? 'text-gray-400' : 'text-gray-500'}`} />
+                            </button>
+                            {!collapsed['general'] && <div className="px-4 pt-2 pb-4 space-y-3">
                                 {/* Idle timeout */}
                                 <div className="flex items-center gap-3">
                                     <span className={`text-sm flex-1 ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
@@ -263,10 +277,47 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
                                             : ((t && t('fourPercentModeGrossDesc')) || (language === 'he' ? 'התיק מושך בדיוק 4% ברוטו/שנה. אחרי מס רווחי הון מקבל פחות.' : 'Portfolio withdraws exactly 4% gross/year. You receive less after capital gains tax.'))}
                                     </p>
                                 </div>
-                            </div>
+                            </div>}
                         </div>
 
-                        <div className="space-y-4">
+                        {/* Alerts Settings */}
+                        <div className={`rounded-xl overflow-hidden ${isLight ? 'bg-gray-50 border border-gray-200' : 'bg-white/5 border border-white/10'}`}>
+                            <button onClick={() => toggleSection('alerts')} className={`w-full flex items-center justify-between px-4 py-3 text-start ${isLight ? 'hover:bg-gray-100' : 'hover:bg-white/5'} transition-colors`}>
+                                <h3 className={`text-sm font-semibold ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                                    {language === 'he' ? 'התראות' : 'Alerts'}
+                                </h3>
+                                <ChevronDown size={15} className={`transition-transform ${collapsed['alerts'] ? '' : 'rotate-180'} ${isLight ? 'text-gray-400' : 'text-gray-500'}`} />
+                            </button>
+                            {!collapsed['alerts'] && <div className="px-4 pt-2 pb-4 space-y-2">
+                                {ALL_ALERTS.map(alert => {
+                                    const isDisabled = disabledAlerts.includes(alert.id);
+                                    const dotColor = alert.severity === 'critical' ? 'bg-red-500' : alert.severity === 'warning' ? 'bg-amber-400' : 'bg-blue-400';
+                                    return (
+                                        <div key={alert.id} className="flex items-center gap-3">
+                                            <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor} ${isDisabled ? 'opacity-30' : ''}`} />
+                                            <span className={`text-sm flex-1 transition-opacity ${isDisabled ? 'opacity-40' : ''} ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
+                                                {language === 'he' ? alert.labelHe : alert.labelEn}
+                                            </span>
+                                            <button
+                                                onClick={() => onToggleAlert?.(alert.id)}
+                                                className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${!isDisabled ? 'bg-blue-600' : (isLight ? 'bg-gray-300' : 'bg-gray-600')}`}
+                                            >
+                                                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${!isDisabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>}
+                        </div>
+
+                        <div className={`rounded-xl overflow-hidden ${isLight ? 'bg-gray-50 border border-gray-200' : 'bg-white/5 border border-white/10'}`}>
+                            <button onClick={() => toggleSection('models')} className={`w-full flex items-center justify-between px-4 py-3 text-start ${isLight ? 'hover:bg-gray-100' : 'hover:bg-white/5'} transition-colors`}>
+                                <h3 className={`text-sm font-semibold ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                                    {language === 'he' ? 'מודלי AI' : 'AI Models'}
+                                </h3>
+                                <ChevronDown size={15} className={`transition-transform ${collapsed['models'] ? '' : 'rotate-180'} ${isLight ? 'text-gray-400' : 'text-gray-500'}`} />
+                            </button>
+                            {!collapsed['models'] && <div className="px-4 pt-2 pb-4 space-y-4">
                             <div className="flex items-center justify-between gap-2">
                                 <p className={`text-sm ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
                                     {(t && t('modelsManagerDesc')) || 'Check for available models from each AI provider and update your list.'}
@@ -338,6 +389,7 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
                                     </div>
                                 </div>
                             )}
+                        </div>}
                         </div>
                     </div>
                 </div>

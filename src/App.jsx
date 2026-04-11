@@ -41,7 +41,7 @@ import { runProjectionWithGoalSeek } from './utils/calculators/goalSeek';
 
 import { WITHDRAWAL_STRATEGIES } from './constants';
 import { getUserSettings } from './utils/db';
-import { Settings } from 'lucide-react';
+import { Settings, AlertTriangle, Info, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { ReminderBell } from './components/ReminderBell';
 import { ReminderAlert } from './components/ReminderAlert';
 import { GlobalRemindersSync } from './components/GlobalRemindersSync';
@@ -71,7 +71,7 @@ function MainApp() {
   , []);
 
   // Use Custom Hooks for Logic
-  const { settings, dispatch: dispatchSettings, SETTINGS_ACTIONS } = useAppSettings();
+  const { settings, dispatch: dispatchSettings, SETTINGS_ACTIONS, settingsLoaded } = useAppSettings();
 
   // Idle auto-logout
   const { warningActive, secondsLeft, resetTimer } = useIdleTimer({
@@ -79,7 +79,7 @@ function MainApp() {
     onLogout: logout,
     enabled: !!currentUser && (settings.idleTimeoutEnabled ?? true),
   });
-  const { inputs, setInputs, saveGlobalPension } = useRetirementData();
+  const { inputs, setInputs, saveGlobalPension, inputsLoaded } = useRetirementData();
 
   // Core calculation pipeline (projection, goal-seek, simulation)
   const {
@@ -288,6 +288,101 @@ function MainApp() {
     setAiInsightsData(null);
   }, [memoizedDebouncedInputs]);
 
+  // ── Alerts ──────────────────────────────────────────────────────────────
+  const disabledAlerts = settings.disabledAlerts || [];
+  const toggleAlert = (id) => {
+    const next = disabledAlerts.includes(id)
+      ? disabledAlerts.filter(a => a !== id)
+      : [...disabledAlerts, id];
+    dispatchSettings({ type: SETTINGS_ACTIONS.SET_DISABLED_ALERTS, payload: next });
+  };
+
+  const alerts = useMemo(() => {
+    if (!results || !memoizedDebouncedInputs) return [];
+    const inp = memoizedDebouncedInputs;
+    const isHe = language === 'he';
+    const cur = inp.currency || '₪';
+    const retAge = parseFloat(inp.retirementStartAge) || 67;
+    const endAge = parseFloat(inp.retirementEndAge) || 85;
+    const curAge = parseFloat(inp.currentAge) || 30;
+    const desired = parseFloat(inp.monthlyNetIncomeDesired) || 0;
+    const list = [];
+
+    // 1. Money runs out before end
+    if (results.ranOutAtAge && results.ranOutAtAge < endAge) {
+      list.push({
+        id: 'ran_out',
+        severity: 'critical',
+        text: isHe
+          ? `הכסף צפוי להיגמר בגיל ${results.ranOutAtAge} — ${Math.round(endAge - results.ranOutAtAge)} שנים לפני סוף התקופה`
+          : `Funds run out at age ${results.ranOutAtAge} — ${Math.round(endAge - results.ranOutAtAge)} yrs before end`,
+      });
+    }
+
+    // 2. Significant capital deficit at retirement
+    if (results.surplus != null && results.surplus < 0) {
+      const deficit = Math.abs(Math.round(results.surplus));
+      list.push({
+        id: 'capital_deficit',
+        severity: 'critical',
+        text: isHe
+          ? `חסר הון של ${cur}${deficit.toLocaleString()} ביום הפרישה`
+          : `Capital shortfall of ${cur}${deficit.toLocaleString()} at retirement`,
+      });
+    }
+
+    // 3. Withdrawal significantly below desired
+    if (desired > 0 && results.initialNetWithdrawal > 0) {
+      const gap = desired - results.initialNetWithdrawal;
+      const pct = gap / desired;
+      if (pct > 0.1) {
+        list.push({
+          id: 'withdrawal_gap',
+          severity: 'warning',
+          text: isHe
+            ? `משיכה חודשית נמוכה ב-${cur}${Math.round(gap).toLocaleString()} מהיעד (${Math.round(pct * 100)}%)`
+            : `Monthly withdrawal ${cur}${Math.round(gap).toLocaleString()} below target (${Math.round(pct * 100)}%)`,
+        });
+      }
+    }
+
+    // 4. Short planning horizon
+    if (endAge < 85) {
+      list.push({
+        id: 'short_horizon',
+        severity: 'info',
+        text: isHe
+          ? `גיל סיום ${endAge} — שקול להאריך לפחות עד גיל 85`
+          : `End age ${endAge} — consider extending to at least 85`,
+      });
+    }
+
+    // 5. Late retirement start
+    if (retAge > 70) {
+      list.push({
+        id: 'late_retirement',
+        severity: 'info',
+        text: isHe
+          ? `גיל פרישה ${retAge} — תקופת הצבירה קצרה משמעותית`
+          : `Retirement at ${retAge} — significantly shorter accumulation period`,
+      });
+    }
+
+    // 6. Very short time to retirement
+    if (retAge - curAge < 5 && retAge > curAge) {
+      list.push({
+        id: 'near_retirement',
+        severity: 'warning',
+        text: isHe
+          ? `${Math.round(retAge - curAge)} שנים בלבד עד הפרישה — בדוק שהחיסכון מספיק`
+          : `Only ${Math.round(retAge - curAge)} years to retirement — verify savings sufficiency`,
+      });
+    }
+
+    return list.filter(a => !disabledAlerts.includes(a.id));
+  }, [results, memoizedDebouncedInputs, language, disabledAlerts]);
+  // ────────────────────────────────────────────────────────────────────────
+
   // Stable reference for selected profiles' calculation data (avoids recalculation on rename)
   const selectedProfilesData = useDeepCompareMemo(
     selectedProfileIds.map(id => {
@@ -360,12 +455,12 @@ function MainApp() {
   return (
     <div className={`min-h-screen ${theme === 'light' ? 'bg-slate-100' : 'bg-gradient-to-br from-gray-900 to-blue-900'} p-2 md:p-4 pb-[18px]`} dir={translations[language].dir}>
       <div className="max-w-7xl mx-auto">
-        <header className="mb-4 flex flex-col md:flex-row justify-between items-center gap-4">
+        <header className="flex flex-col md:flex-row justify-between items-center gap-4">
           <div>
             <h1 className={`text-4xl font-bold mb-2 tracking-tight ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
               {t('appTitle')}
             </h1>
-            <p className={`text-lg ${theme === 'light' ? 'text-blue-600' : 'text-blue-200'}`}>
+            <p className={`text-lg relative -top-[4px] ${theme === 'light' ? 'text-blue-600' : 'text-blue-200'}`}>
               {t('appSubtitle')}
             </p>
           </div>
@@ -390,7 +485,33 @@ function MainApp() {
           </div>
         </header>
 
+        {/* ── Alert bar — replaces mb-4 of header, always same height ── */}
+        <div className="min-h-[16px] flex items-center justify-end gap-2 flex-wrap py-0" dir={language === 'he' ? 'rtl' : 'ltr'}>
+          {settingsLoaded && inputsLoaded && alerts.map(alert => (
+            <div
+              key={alert.id}
+              className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium relative -top-[5px] ${
+                alert.severity === 'critical'
+                  ? (theme === 'light' ? 'bg-red-50 border-red-300 text-red-700' : 'bg-red-900/30 border-red-500/50 text-red-300')
+                  : alert.severity === 'warning'
+                  ? (theme === 'light' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-amber-900/30 border-amber-500/50 text-amber-300')
+                  : (theme === 'light' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-blue-900/30 border-blue-500/50 text-blue-300')
+              }`}
+            >
+              {alert.severity === 'critical' ? <AlertTriangle size={11} /> : alert.severity === 'warning' ? <AlertTriangle size={11} /> : <Info size={11} />}
+              <span>{alert.text}</span>
+              <button
+                onClick={() => toggleAlert(alert.id)}
+                className="opacity-50 hover:opacity-100 transition-opacity ms-0.5"
+              >
+                <X size={10} />
+              </button>
+            </div>
+          ))}
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+
           <div className="lg:col-span-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl pt-4 px-4 pb-0 shadow-xl flex flex-col relative z-20 overflow-hidden min-h-[700px]" onFocus={preloadResultsDashboard} onPointerEnter={preloadResultsDashboard}>
             <ProfileManager
               currentInputs={inputs}
@@ -619,6 +740,8 @@ function MainApp() {
               onIdleTimeoutChange={v => dispatchSettings({ type: SETTINGS_ACTIONS.SET_IDLE_TIMEOUT, payload: v })}
               fourPercentMode={settings.fourPercentMode ?? 'net'}
               onFourPercentModeChange={v => dispatchSettings({ type: SETTINGS_ACTIONS.SET_FOUR_PERCENT_MODE, payload: v })}
+              disabledAlerts={disabledAlerts}
+              onToggleAlert={toggleAlert}
             />
           </Suspense>
         </ErrorBoundary>

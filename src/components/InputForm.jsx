@@ -926,7 +926,7 @@ export default function InputForm({
             {/* Prompt Preview Overlay */}
             {promptText && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setPromptText(null)}>
-                    <div className={`relative w-full max-w-lg mx-4 rounded-xl shadow-2xl border max-h-[70vh] flex flex-col ${isLight ? 'bg-white border-gray-200' : 'bg-gray-900 border-white/20'}`} onClick={e => e.stopPropagation()}>
+                    <div className={`relative w-full max-w-lg mx-4 rounded-xl overflow-hidden shadow-2xl border max-h-[70vh] flex flex-col ${isLight ? 'bg-white border-gray-200' : 'bg-gray-900 border-white/20'}`} onClick={e => e.stopPropagation()}>
                         <div className={`flex items-center justify-between p-3 border-b ${isLight ? 'border-gray-200' : 'border-white/10'}`}>
                             <span className={`text-sm font-bold ${isLight ? 'text-gray-900' : 'text-white'}`}>AI Prompt</span>
                             <button onClick={() => setPromptText(null)} className={`p-1 rounded-lg transition-colors ${isLight ? 'hover:bg-gray-100' : 'hover:bg-white/10'}`}>

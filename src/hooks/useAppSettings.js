@@ -1,4 +1,4 @@
-import { useReducer, useEffect, useRef } from 'react';
+import { useReducer, useEffect, useRef, useState } from 'react';
 import { SIMULATION_TYPES } from '../utils/simulation-calculator';
 import { useAuth } from '../contexts/AuthContext';
 import { getUserSettings, setUserSettings } from '../utils/db';
@@ -16,6 +16,7 @@ const SETTINGS_ACTIONS = {
     SET_IDLE_TIMEOUT_ENABLED: 'SET_IDLE_TIMEOUT_ENABLED',
     SET_FOUR_PERCENT_MODE: 'SET_FOUR_PERCENT_MODE',
     SET_ACTIVE_VIEW: 'SET_ACTIVE_VIEW',
+    SET_DISABLED_ALERTS: 'SET_DISABLED_ALERTS',
     RESET_TO_DEFAULTS: 'RESET_TO_DEFAULTS'
 };
 
@@ -33,7 +34,8 @@ function getDefaultSettings() {
         idleTimeoutMinutes: 5,
         idleTimeoutEnabled: true,
         fourPercentMode: 'net',
-        activeView: 'parameters'
+        activeView: 'parameters',
+        disabledAlerts: []
     };
 }
 
@@ -56,6 +58,7 @@ function settingsReducer(state, action) {
                 idleTimeoutMinutes: db.idleTimeoutMinutes ?? state.idleTimeoutMinutes,
                 idleTimeoutEnabled: db.idleTimeoutEnabled ?? state.idleTimeoutEnabled,
                 fourPercentMode: db.fourPercentMode ?? state.fourPercentMode,
+                disabledAlerts: Array.isArray(db.disabledAlerts) ? db.disabledAlerts : state.disabledAlerts,
             };
         }
 
@@ -117,6 +120,9 @@ function settingsReducer(state, action) {
         case SETTINGS_ACTIONS.SET_ACTIVE_VIEW:
             return { ...state, activeView: action.payload };
 
+        case SETTINGS_ACTIONS.SET_DISABLED_ALERTS:
+            return { ...state, disabledAlerts: action.payload };
+
         default:
             return state;
     }
@@ -128,10 +134,16 @@ export function useAppSettings() {
     const [settings, dispatch] = useReducer(settingsReducer, null, getDefaultSettings);
     const isInitialLoad = useRef(true);
     const loadedRef = useRef(false);
+    const [settingsLoaded, setSettingsLoaded] = useState(false);
 
     // Load settings from Firestore on mount
     useEffect(() => {
-        if (!uid) return;
+        if (!uid) {
+            setSettingsLoaded(false);
+            return;
+        }
+        // Hide alerts immediately while we load the real settings for this uid.
+        setSettingsLoaded(false);
         isInitialLoad.current = true;
 
         getUserSettings(uid).then(dbSettings => {
@@ -145,10 +157,12 @@ export function useAppSettings() {
                 isInitialLoad.current = false;
             }
             loadedRef.current = true;
+            setSettingsLoaded(true);
         }).catch(err => {
             console.error('Error loading settings from Firestore:', err);
             loadedRef.current = true;
             isInitialLoad.current = false;
+            setSettingsLoaded(true);
         });
     }, [uid]);
 
@@ -176,6 +190,7 @@ export function useAppSettings() {
             idleTimeoutMinutes: settings.idleTimeoutMinutes,
             idleTimeoutEnabled: settings.idleTimeoutEnabled,
             fourPercentMode: settings.fourPercentMode,
+            disabledAlerts: settings.disabledAlerts,
         };
 
         if (settings.fiscalParameters) {
@@ -185,7 +200,7 @@ export function useAppSettings() {
         setUserSettings(uid, dataToSave).catch(err => {
             console.error('Error saving settings to Firestore:', err);
         });
-    }, [settings.aiProvider, settings.aiModel, settings.simulationType, settings.familyStatus, settings.fiscalParameters, settings.idleTimeoutMinutes, settings.idleTimeoutEnabled, settings.fourPercentMode, apiKeysStr, uid]);
+    }, [settings.aiProvider, settings.aiModel, settings.simulationType, settings.familyStatus, settings.fiscalParameters, settings.idleTimeoutMinutes, settings.idleTimeoutEnabled, settings.fourPercentMode, settings.disabledAlerts, apiKeysStr, uid]);
 
-    return { settings, dispatch, SETTINGS_ACTIONS };
+    return { settings, dispatch, SETTINGS_ACTIONS, settingsLoaded };
 }

@@ -2,14 +2,14 @@ import React, { useState, useMemo, useCallback, useEffect, useLayoutEffect, useR
 import ReactDOM from 'react-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { formatCurrency } from '../utils/formatters';
-import { generateRetirementChecklistInsights } from '../utils/ai-calculator';
+import { generateRetirementChecklistInsights, applyChecklistDiff, explainChecklistItem, generateChecklistOverview, localizeAiError } from '../utils/ai-calculator';
 import { useAuth } from '../contexts/AuthContext';
 import { getChecklistState, setChecklistState } from '../utils/db';
 import {
     Shield, Heart, Receipt, TrendingUp, Home, Scale, Laptop,
     AlertTriangle, CheckCircle, ChevronDown, ChevronRight,
     Umbrella, Stethoscope, Building2, FileText, Users,
-    Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Flag, Landmark, RotateCcw, Search, X, EyeOff, Undo2, Trash2, MessageSquare, Bell, Save
+    Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Flag, Landmark, RotateCcw, Search, X, EyeOff, Undo2, Trash2, MessageSquare, Bell, Save, Lock, LockOpen
 } from 'lucide-react';
 import { syncComponentReminders, forgetReminderShown, silenceReminder } from '../hooks/useReminders';
 import { undismissReminder } from '../utils/db';
@@ -61,6 +61,13 @@ function buildItems(inputs, results, language) {
     const annualWithdrawal = monthlyIncome * 12;
     const withdrawalRate = balanceAtRetirement > 0 ? (annualWithdrawal / balanceAtRetirement * 100) : 0;
 
+    // Timing shorthands
+    const before = (yrs) => ({ type: 'before', value: -yrs });           // N years before retirement
+    const atRet  = ()     => ({ type: 'range', value: -1, valueTo: 1 }); // around retirement date
+    const after  = (yrs) => ({ type: 'after', value: yrs });             // N years after retirement
+    const byAge  = (age)  => ({ type: 'age', value: age });              // by a specific age
+    const ongoing = ()    => ({ type: 'ongoing' });                       // recurring / always relevant
+
     return [
         // ─── INSURANCE ─────────────────────────────────────────────────────────
         {
@@ -72,6 +79,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'health-private',
                     priority: 'critical',
+                    timing: atRet(),
                     title: txt('Private Health Insurance', 'ביטוח בריאות פרטי'),
                     desc: txt(
                         'Employer-sponsored coverage ends when you retire. You must switch to a private personal health policy immediately — gaps in coverage can mean being uninsurable later.',
@@ -86,6 +94,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'dental',
                     priority: 'high',
+                    timing: before(2),
                     title: txt('Dental Insurance', 'ביטוח שיניים'),
                     desc: txt(
                         'Basic health insurance does not cover most dental treatments. Average retirees spend ₪3,000–8,000/year on dental. Supplemental dental coverage significantly reduces out-of-pocket costs.',
@@ -100,6 +109,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'ltc',
                     priority: currentAge >= 60 ? 'critical' : 'high',
+                    timing: byAge(60),
                     title: txt('Long-Term Care Insurance', 'ביטוח סיעודי'),
                     desc: txt(
                         'Long-term nursing care in Israel costs ₪8,000–20,000/month. This is one of the largest unplanned risks in retirement. The older you are, the harder and more expensive it becomes to obtain coverage.',
@@ -114,6 +124,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'life',
                     priority: 'low',
+                    timing: before(3),
                     title: txt('Life Insurance — Review Need', 'ביטוח חיים — בחינה מחדש'),
                     desc: txt(
                         'Life insurance is designed to replace lost income for dependents. If you have no dependents or your savings cover heirs\' needs, you may be able to cancel premiums and redirect that money.',
@@ -138,6 +149,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'ni-contributions',
                     priority: retirementAge < 67 ? 'high' : 'medium',
+                    timing: ongoing(),
                     title: txt('Ongoing NI Contributions', 'הפקדות ביטוח לאומי שוטפות'),
                     desc: txt(
                         `If you retire before age 67, you are still required to pay National Insurance contributions on passive income (capital gains, rental income). Failure to pay can result in loss of benefits.`,
@@ -152,6 +164,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'ni-old-age',
                     priority: 'high',
+                    timing: before(5),
                     title: txt('Old-Age Allowance Planning', 'קצבת זקנה — תכנון'),
                     desc: txt(
                         'Old-age allowance eligibility starts at age 67 (men) and between 62–67 (women, transitional). Work income above a threshold reduces or eliminates the benefit. Passive income from savings does not affect it.',
@@ -176,6 +189,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'capital-gains',
                     priority: taxRate > 0 ? 'high' : 'medium',
+                    timing: before(1),
                     title: txt('Capital Gains Tax on Withdrawals', 'מס רווחי הון על משיכות'),
                     desc: txt(
                         `Capital gains tax of 25% applies to the profit portion of each withdrawal. With your ${taxRate}% tax rate setting, annual withdrawals of ${fmtC(monthlyIncome * 12)} will generate a meaningful tax bill that must be budgeted for.`,
@@ -190,6 +204,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'tax-return',
                     priority: 'high',
+                    timing: ongoing(),
                     title: txt('Annual Tax Return Obligation', 'חובת הגשת דוח שנתי'),
                     desc: txt(
                         'As a retiree living off investments, you must file an annual tax return. This includes reporting capital gains, interest income, dividends, and rental income. Missing filing leads to penalties.',
@@ -204,6 +219,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'withdrawal-sequence',
                     priority: 'medium',
+                    timing: before(2),
                     title: txt('Tax-Efficient Withdrawal Sequencing', 'סדר משיכות יעיל מבחינת מס'),
                     desc: txt(
                         'The order in which you withdraw from different accounts significantly impacts total tax paid over retirement. Withdrawing from high-basis accounts first, leaving higher-gain accounts to grow longer, reduces total tax.',
@@ -228,6 +244,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'emergency-fund',
                     priority: 'critical',
+                    timing: before(1),
                     title: txt(`Emergency Fund — Target: ${fmtC(emergencyFundTarget)}`, `קרן חירום — יעד: ${fmtC(emergencyFundTarget)}`),
                     desc: txt(
                         `Keep 18–24 months of expenses (${fmtC(emergencyFundTarget)}) in immediately liquid, low-risk accounts. This prevents forced selling of investments during market downturns to cover daily needs.`,
@@ -242,6 +259,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'diversification',
                     priority: 'high',
+                    timing: before(3),
                     title: txt('Diversification — Don\'t Keep All Eggs in One Basket', 'פיזור — אל תשימו כל הביצים בסל אחד'),
                     desc: txt(
                         'Government deposit guarantee covers only ₪250,000 per bank. If your savings exceed this, spread across multiple banks and instruments (bonds, ETFs, real estate, etc.).',
@@ -256,6 +274,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'annual-review',
                     priority: 'high',
+                    timing: ongoing(),
                     title: txt('Annual Retirement Plan Review', 'סקירה שנתית של תוכנית הפרישה'),
                     desc: txt(
                         'At least once a year: compare actual expenses to plan, review portfolio performance vs. assumption, and adjust withdrawal rate if necessary. Market downturns in early retirement are especially dangerous.',
@@ -270,6 +289,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'inflation-risk',
                     priority: inflationRate === 0 ? 'high' : 'medium',
+                    timing: before(5),
                     title: txt(
                         inflationRate === 0 ? '⚠ Inflation NOT Modeled in Your Plan' : 'Inflation Risk Over Retirement',
                         inflationRate === 0 ? '⚠ אינפלציה לא מוסרת בתוכניתך' : 'סיכון אינפלציה לאורך הפרישה'
@@ -291,6 +311,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'withdrawal-risk',
                     priority: isDeficit || ranOutAtAge ? 'critical' : (withdrawalRate > 5 ? 'high' : 'medium'),
+                    timing: ongoing(),
                     title: txt(
                         ranOutAtAge
                             ? `⚠ Funds Run Out at Age ${ranOutAtAge.toFixed(1)} — Urgent Review Needed`
@@ -338,6 +359,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'healthcare-costs',
                     priority: 'high',
+                    timing: before(3),
                     title: txt('Rising Healthcare Costs with Age', 'עלייה בהוצאות בריאות עם הגיל'),
                     desc: txt(
                         'Healthcare expenses increase approximately 5–7% per year as you age — far faster than general inflation. Most people underestimate this cost in retirement planning. At 75, spending is typically 2–3× what it was at 65.',
@@ -352,6 +374,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'supplemental-health',
                     priority: 'high',
+                    timing: atRet(),
                     title: txt('Supplemental Health Fund Plan', 'ביטוח משלים בקופת חולים'),
                     desc: txt(
                         'Your health fund\'s supplemental plan (מכבי זהב, מאוחדת עדיף, כללית מושלם, לאומית שלי) covers drugs not in the basic basket, specialist access, advanced imaging, and some dental. Compare your current plan against others.',
@@ -376,6 +399,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'will',
                     priority: 'critical',
+                    timing: before(5),
                     title: txt('Will (Tzava\'a) — Updated?', 'צוואה — מעודכנת?'),
                     desc: txt(
                         'Without a valid will, your estate is distributed according to the Inheritance Law, which may not match your wishes. Update your will to reflect current assets, new accounts, and any changes in family structure.',
@@ -390,6 +414,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'power-of-attorney',
                     priority: 'critical',
+                    timing: before(3),
                     title: txt('Lasting Power of Attorney', 'ייפוי כוח מתמשך'),
                     desc: txt(
                         'A Lasting Power of Attorney (ייפוי כוח מתמשך) allows a trusted person to manage your financial and personal decisions if you become incapacitated due to illness or cognitive decline. Must be registered with the Guardian General\'s Office before you lose capacity.',
@@ -404,6 +429,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'advance-directive',
                     priority: 'high',
+                    timing: byAge(65),
                     title: txt('Advance Medical Directive', 'הנחיות רפואיות מקדימות'),
                     desc: txt(
                         'Document your medical preferences in advance: resuscitation preferences, artificial ventilation, feeding tubes, and end-of-life care. Without this, medical teams must apply all life-prolonging measures by law.',
@@ -418,6 +444,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'beneficiaries',
                     priority: 'high',
+                    timing: before(2),
                     title: txt('Update Beneficiaries on All Accounts', 'עדכון מוטבים על כל החשבונות'),
                     desc: txt(
                         'Beneficiary designations on insurance policies, pension/provident funds, and bank accounts override your will. If a beneficiary died or circumstances changed, outdated designations can cause assets to go to the wrong person.',
@@ -442,6 +469,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'maintenance',
                     priority: 'medium',
+                    timing: ongoing(),
                     title: txt('Property Maintenance Budget', 'תקציב תחזוקת נכס'),
                     desc: txt(
                         'Budget 1–2% of property value annually for maintenance (plumbing, electrical, roof, appliances, painting). Many retirees are caught off guard by large, sudden maintenance costs.',
@@ -456,6 +484,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'accessibility',
                     priority: currentAge >= 70 ? 'high' : 'medium',
+                    timing: byAge(70),
                     title: txt('Accessibility Planning', 'תכנון נגישות'),
                     desc: txt(
                         'Plan accessibility modifications early — before they become urgent. Grab bars in bathrooms, step-free entrances, wider doorways, and good lighting are significantly cheaper to plan and build during renovations than to retrofit later.',
@@ -470,6 +499,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'downsizing',
                     priority: 'low',
+                    timing: before(5),
                     title: txt('Consider Downsizing', 'שקלו מעבר לנכס קטן יותר'),
                     desc: txt(
                         isDeficit
@@ -498,6 +528,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'two-phases',
                     priority: 'high',
+                    timing: before(5),
                     title: txt('Plan for Two Retirement Phases', 'תכנן לשני שלבי פרישה'),
                     desc: txt(
                         'Retirement is not uniform: Active Phase (65–75) — higher spending on travel, hobbies, dining; Passive Phase (75+) — lower activity costs but significantly higher healthcare and personal care expenses.',
@@ -512,6 +543,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'social',
                     priority: 'medium',
+                    timing: atRet(),
                     title: txt('Maintain Social Connections', 'שמירה על קשרים חברתיים'),
                     desc: txt(
                         'Social isolation is a major health risk for retirees, associated with cognitive decline, depression, and increased mortality. Plan how you will maintain social connections and build new ones after leaving the workplace.',
@@ -526,6 +558,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'part-time',
                     priority: isDeficit ? 'high' : 'low',
+                    timing: atRet(),
                     title: txt('Part-Time Work Option', 'אפשרות תעסוקה חלקית'),
                     desc: txt(
                         isDeficit
@@ -554,6 +587,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'account-documentation',
                     priority: 'high',
+                    timing: before(2),
                     title: txt('Document All Financial Accounts', 'תיעוד כל החשבונות הפיננסיים'),
                     desc: txt(
                         'Create a comprehensive, up-to-date list of all financial accounts — banks, investments, insurance policies, pension/provident funds — with account numbers and contact information. Store in a secure, accessible location known to trusted family members.',
@@ -568,6 +602,7 @@ function buildItems(inputs, results, language) {
                 {
                     id: 'digital-estate',
                     priority: 'medium',
+                    timing: before(3),
                     title: txt('Digital Estate Planning', 'תכנון עיזבון דיגיטלי'),
                     desc: txt(
                         'Online accounts, email, social media, cloud storage, cryptocurrency, and digital subscriptions need to be addressed in your estate plan. Many platforms have inactive account policies or memorial settings.',
@@ -607,6 +642,93 @@ const LIGHT_COLOR_MAP = {
     pink:   { header: 'text-pink-700',   ring: 'ring-pink-200',   bg: 'bg-pink-50',   dot: 'bg-pink-500' },
     slate:  { header: 'text-slate-700',  ring: 'ring-slate-200',  bg: 'bg-slate-50',  dot: 'bg-slate-500' },
 };
+
+// ── Timing helpers ────────────────────────────────────────────────────────
+// timing: { type: 'before'|'after'|'range'|'age'|'ongoing', value: number, valueTo?: number }
+// value for 'before'/'after': years relative to retirement (negative = before)
+// value for 'age': target age
+// value for 'range': start years, valueTo: end years (relative to retirement)
+function getTimingStatus(timing, inputs, checked) {
+    if (!timing) return null;
+    const currentAge = parseFloat(inputs?.currentAge) || 30;
+    const retAge     = parseFloat(inputs?.retirementStartAge) || 67;
+    const isHe       = false; // resolved per caller
+    const yearsToRet = retAge - currentAge;
+
+    let yearsUntilDeadline = null; // positive = still time, negative = overdue
+
+    if (timing.type === 'before') {
+        // e.g. value: -5 means "5 years before retirement" → deadline = yearsToRet - 5
+        const deadlineFromNow = yearsToRet + timing.value; // value is negative
+        yearsUntilDeadline = deadlineFromNow;
+    } else if (timing.type === 'after') {
+        // value: 1 means "do in first year of retirement" → deadline = yearsToRet + value
+        yearsUntilDeadline = yearsToRet + timing.value;
+    } else if (timing.type === 'range') {
+        // value = start (years from ret), valueTo = end (years from ret)
+        const startFromNow = yearsToRet + timing.value;
+        const endFromNow   = yearsToRet + (timing.valueTo ?? 0);
+        if (currentAge >= retAge + (timing.valueTo ?? 0)) {
+            yearsUntilDeadline = -1; // past the window
+        } else if (currentAge < retAge + timing.value) {
+            yearsUntilDeadline = startFromNow; // before window
+        } else {
+            yearsUntilDeadline = endFromNow; // inside window
+        }
+    } else if (timing.type === 'age') {
+        yearsUntilDeadline = timing.value - currentAge;
+    } else if (timing.type === 'ongoing') {
+        return { status: 'ongoing', years: null };
+    }
+
+    if (yearsUntilDeadline === null) return null;
+    if (checked) return { status: 'done', years: yearsUntilDeadline };
+    if (yearsUntilDeadline < 0) return { status: 'overdue', years: yearsUntilDeadline };
+    if (yearsUntilDeadline <= 1) return { status: 'urgent', years: yearsUntilDeadline };
+    if (yearsUntilDeadline <= 3) return { status: 'soon', years: yearsUntilDeadline };
+    return { status: 'ok', years: yearsUntilDeadline };
+}
+
+function TimingBadge({ timing, inputs, checked, isLight, language }) {
+    const isHe = language === 'he';
+    const s = getTimingStatus(timing, inputs, checked);
+    if (!s || s.status === 'done') return null;
+
+    const fmt = (y) => {
+        if (y === null) return '';
+        const abs = Math.abs(y);
+        if (abs < 0.5) return isHe ? 'עכשיו' : 'now';
+        if (abs < 1.5) return isHe ? 'שנה' : '1 yr';
+        return isHe ? `${Math.round(abs)} שנים` : `${Math.round(abs)} yrs`;
+    };
+
+    let label, colorClass;
+
+    if (timing.type === 'ongoing') {
+        label = isHe ? 'שוטף' : 'Ongoing';
+        colorClass = isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-500/15 text-blue-300';
+    } else if (s.status === 'overdue') {
+        const abs = Math.abs(s.years);
+        label = isHe ? `באיחור ${fmt(s.years)}` : `${fmt(s.years)} overdue`;
+        colorClass = isLight ? 'bg-red-100 text-red-700' : 'bg-red-500/20 text-red-300';
+    } else if (s.status === 'urgent') {
+        label = isHe ? `דחוף — ${fmt(s.years)}` : `Urgent — ${fmt(s.years)}`;
+        colorClass = isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-300';
+    } else if (s.status === 'soon') {
+        label = isHe ? `בקרוב — ${fmt(s.years)}` : `Soon — ${fmt(s.years)}`;
+        colorClass = isLight ? 'bg-yellow-100 text-yellow-700' : 'bg-yellow-500/15 text-yellow-300';
+    } else {
+        label = isHe ? `עוד ${fmt(s.years)}` : `In ${fmt(s.years)}`;
+        colorClass = isLight ? 'bg-green-100 text-green-700' : 'bg-green-500/15 text-green-300';
+    }
+
+    return (
+        <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${colorClass}`}>
+            📅 {label}
+        </span>
+    );
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 function PriorityBadge({ priority, isLight, language }) {
     const p = PRIORITIES[priority];
@@ -682,13 +804,66 @@ function PopupPortal({ anchorRect, align = 'right', children }) {
     );
 }
 
-function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem, isNew, onSeen, onKeepNew, onDismissNew, onManualRemove, onChangeItem, uid, categoryTitle, categoryEmoji, categoryIcon: CatIcon }) {
+function AiTextRenderer({ text, isLight }) {
+    return (
+        <div className="space-y-2">
+            {text.split('\n').map((line, i) => {
+                if (!line.trim()) return null;
+                const isBullet = /^[•\-\*]\s/.test(line.trim()) || /^\d+\.\s/.test(line.trim());
+                const isHeading = line.startsWith('**') && line.endsWith('**');
+                if (isHeading) {
+                    return (
+                        <p key={i} className={`font-semibold text-[11px] mt-3 mb-1 ${isLight ? 'text-gray-900' : 'text-white'}`}>
+                            {line.replace(/\*\*/g, '')}
+                        </p>
+                    );
+                }
+                const parts = line.split(/(\*\*[^*]+\*\*)/);
+                const content = parts.map((p, j) =>
+                    p.startsWith('**') && p.endsWith('**')
+                        ? <strong key={j} className={isLight ? 'text-gray-900' : 'text-white'}>{p.slice(2, -2)}</strong>
+                        : <span key={j}>{p}</span>
+                );
+                if (isBullet) {
+                    return (
+                        <div key={i} className={`flex gap-2 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                            <span className="shrink-0 mt-0.5">•</span>
+                            <span>{content}</span>
+                        </div>
+                    );
+                }
+                return <p key={i} className={isLight ? 'text-gray-700' : 'text-gray-300'}>{content}</p>;
+            })}
+        </div>
+    );
+}
+
+function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem, isNew, onSeen, onKeepNew, onDismissNew, onManualRemove, onChangeItem, uid, categoryTitle, categoryEmoji, categoryIcon: CatIcon, inputs, results, aiProvider, aiModel, apiKeyOverride, aiExplanation, onSetAiExplanation, isLocked, onToggleLock }) {
     const p = PRIORITIES[item.priority] || PRIORITIES.medium;
     const isHe = language === 'he';
     const flagged = item.aiSuggestedRemoval;
-    
+
     const [showNote, setShowNote] = useState(false);
     const [noteDraft, setNoteDraft] = useState(item.note || '');
+    const [aiExplainLoading, setAiExplainLoading] = useState(false);
+    const [aiExplainError, setAiExplainError] = useState(null);
+    const [showAiExplain, setShowAiExplain] = useState(false);
+
+    const handleAiExplain = async (e) => {
+        e.stopPropagation();
+        if (aiExplanation) { setShowAiExplain(v => !v); return; }
+        setShowAiExplain(true);
+        setAiExplainLoading(true);
+        setAiExplainError(null);
+        try {
+            const text = await explainChecklistItem(item, inputs, results, aiProvider, aiModel, apiKeyOverride, language);
+            onSetAiExplanation(item.id, text);
+        } catch (err) {
+            setAiExplainError(localizeAiError(err, language));
+        } finally {
+            setAiExplainLoading(false);
+        }
+    };
     
     const [showReminder, setShowReminder] = useState(false);
     const [reminderDate, setReminderDate] = useState(item.reminder?.date || '');
@@ -749,6 +924,7 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                                 {item.title}
                             </span>
                             {!checked && <PriorityBadge priority={item.priority} isLight={isLight} language={language} />}
+                            {!checked && item.timing && <TimingBadge timing={item.timing} inputs={inputs} checked={checked} isLight={isLight} language={language} />}
                             {isNew && !checked && (
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isLight ? 'bg-green-100 text-green-700' : 'bg-green-500/20 text-green-400'}`}>
                                     {isHe ? 'חדש' : 'New'}
@@ -778,6 +954,34 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                     >
                         {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                     </button>
+                    {onToggleLock && (
+                        <button
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onToggleLock(item.id); }}
+                            title={isLocked ? (isHe ? 'נעול — AI לא יסיר סעיף זה (לחץ לביטול)' : 'Locked — AI won\'t remove this item (click to unlock)') : (isHe ? 'לחץ לנעול — מנע מה-AI להסיר' : 'Click to lock — prevent AI from removing')}
+                            className={`p-1 rounded transition-colors ${
+                                isLocked
+                                    ? (isLight ? 'text-amber-600 hover:text-amber-700' : 'text-amber-400 hover:text-amber-300')
+                                    : (isLight ? 'text-gray-300 hover:text-gray-500' : 'text-gray-600 hover:text-gray-400')
+                            }`}
+                        >
+                            {isLocked ? <Lock size={12} /> : <LockOpen size={12} />}
+                        </button>
+                    )}
+                    {aiProvider && aiModel && (
+                        <button
+                            onMouseDown={handleAiExplain}
+                            title={isHe ? 'הסבר AI' : 'AI Explain'}
+                            className={`px-1.5 py-0.5 rounded transition-colors text-[10px] font-bold ${
+                                showAiExplain
+                                    ? (isLight ? 'text-purple-700 bg-purple-200' : 'text-purple-200 bg-purple-500/30')
+                                    : aiExplanation
+                                        ? (isLight ? 'text-purple-600 bg-purple-100 ring-1 ring-purple-300' : 'text-purple-300 bg-purple-500/20 ring-1 ring-purple-500/40')
+                                        : (isLight ? 'text-gray-400 hover:text-purple-600 hover:bg-purple-50' : 'text-gray-500 hover:text-purple-400 hover:bg-purple-500/10')
+                            }`}
+                        >
+                            AI
+                        </button>
+                    )}
                     <button
                         ref={reminderBtnRef}
                         onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); if (!showReminder) { setReminderAnchor(reminderBtnRef.current?.getBoundingClientRect()); } setShowReminder(v => !v); setShowNote(false); setNoteAnchor(null); }}
@@ -986,6 +1190,48 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                     <div className="pt-2">{item.details}</div>
                 </div>
             )}
+            {showAiExplain && (
+                <div className={`mx-3 mb-3 rounded-lg border text-xs ${isLight ? 'bg-purple-50 border-purple-100' : 'bg-purple-500/10 border-purple-500/20'}`}>
+                    <div className={`flex items-center justify-between px-3 py-1.5 border-b ${isLight ? 'border-purple-100' : 'border-purple-500/20'}`}>
+                        <span className={`font-semibold text-[11px] ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>{isHe ? 'הסבר AI' : 'AI Explanation'}</span>
+                        <button
+                            onMouseDown={async (e) => {
+                                e.preventDefault(); e.stopPropagation();
+                                onSetAiExplanation(item.id, null);
+                                setAiExplainLoading(true);
+                                setAiExplainError(null);
+                                try {
+                                    const text = await explainChecklistItem(item, inputs, results, aiProvider, aiModel, apiKeyOverride, language);
+                                    onSetAiExplanation(item.id, text);
+                                } catch (err) {
+                                    setAiExplainError(localizeAiError(err, language));
+                                } finally {
+                                    setAiExplainLoading(false);
+                                }
+                            }}
+                            disabled={aiExplainLoading}
+                            title={isHe ? 'רענן' : 'Refresh'}
+                            className={`p-1 rounded transition-colors disabled:opacity-40 ${isLight ? 'text-purple-400 hover:text-purple-700 hover:bg-purple-100' : 'text-purple-500 hover:text-purple-300 hover:bg-purple-500/20'}`}
+                        >
+                            <RefreshCw size={11} className={aiExplainLoading ? 'animate-spin' : ''} />
+                        </button>
+                    </div>
+                    {aiExplainLoading && (
+                        <div className="flex items-center gap-2 px-3 py-2">
+                            <RefreshCw size={12} className="animate-spin text-purple-400" />
+                            <span className={isLight ? 'text-purple-600' : 'text-purple-300'}>{isHe ? 'מייצר הסבר…' : 'Generating explanation…'}</span>
+                        </div>
+                    )}
+                    {aiExplainError && (
+                        <div className={`px-3 py-2 ${isLight ? 'text-red-600' : 'text-red-400'}`}>{aiExplainError}</div>
+                    )}
+                    {aiExplanation && (
+                        <div className="px-3 py-2 text-xs leading-relaxed">
+                            <AiTextRenderer text={aiExplanation} isLight={isLight} />
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
@@ -1009,9 +1255,22 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     const [aiSilentLoading, setAiSilentLoading] = useState(false);
     const [aiError, setAiError] = useState(null);
     const [filterMode, setFilterMode] = useState(null);
+    const [timingFilter, setTimingFilter] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [overviewOpen, setOverviewOpen] = useState(false);
+    const [overviewText, setOverviewText] = useState(null);
+    const [overviewLoading, setOverviewLoading] = useState(false);
+    const [overviewError, setOverviewError] = useState(null);
+    const [overviewSnapshot, setOverviewSnapshot] = useState(null);
+    const overviewDragRef = useRef(null);
+    const overviewPosRef = useRef({ x: 0, y: 0 });
+    const [overviewPos, setOverviewPos] = useState({ x: 0, y: 0 });
     const [aiTimestamp, setAiTimestamp] = useState(null);
     const [checkedItems, setCheckedItems] = useState(new Set());
+    const [aiExplanations, setAiExplanations] = useState({});
+    const handleSetAiExplanation = useCallback((itemId, text) => {
+        setAiExplanations(prev => ({ ...prev, [itemId]: text }));
+    }, []);
 
     // Load persisted checklist state from Firestore on mount
     useEffect(() => {
@@ -1032,6 +1291,9 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             }
             if (Array.isArray(saved?.keptItemIds)) {
                 setKeptItemIds(new Set(saved.keptItemIds));
+            }
+            if (saved?.aiExplanations && typeof saved.aiExplanations === 'object') {
+                setAiExplanations(saved.aiExplanations);
             }
             setDbLoaded(true);
         }).catch(err => {
@@ -1070,6 +1332,17 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             .then(() => setAiTimestamp(ts))
             .catch(err => console.error('[Checklist save]', err));
     }, [uid]);
+
+    // Persist AI explanations to Firestore whenever they change (after initial load)
+    const aiExplanationsLoadedRef = useRef(false);
+    useEffect(() => {
+        if (!dbLoaded) return; // wait until initial load is done
+        if (!aiExplanationsLoadedRef.current) { aiExplanationsLoadedRef.current = true; return; } // skip the load-triggered render
+        if (!uid || Object.keys(aiExplanations).length === 0) return;
+        setChecklistState(uid, { aiExplanations }).catch(err =>
+            console.error('[Checklist] Failed to save AI explanations:', err)
+        );
+    }, [aiExplanations, uid, dbLoaded]);
 
     // Expose uid to toggleChecked via ref so it doesn't need to be a dep
     const uidRef = useRef(uid);
@@ -1110,20 +1383,50 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         if (silent) setAiSilentLoading(true);
         else { setAiLoading(true); setAiError(null); }
         try {
-            const existingCats = aiDataRef.current?.categories || null;
+            const staticBase = buildItems(latestRef.current.inputs, latestRef.current.results, latestRef.current.language);
+            const staticNormalized = staticBase.map(cat => ({ id: cat.category, title: cat.title, emoji: '', items: cat.items }));
+            // First run: use static as base. Subsequent runs: use previous result for stability.
+            const prevCategories = aiDataRef.current?.categories || null;
+            const existingCats = prevCategories || staticNormalized;
             const data = await generateRetirementChecklistInsights(
-                inputs, results, aiProvider, aiModel, apiKeyOverride, language, existingCats, dismissedItemIdsRef.current, keptItemIdsRef.current
+                inputs, results, aiProvider, aiModel, apiKeyOverride, language, existingCats, dismissedItemIdsRef.current, keptItemIdsRef.current, prevCategories
             );
             if (id !== refreshIdRef.current) return;
             const snapshot = getSnapshot(inputs, results);
-            const newAiData = { categories: data.categories, snapshot };
+
+            // Auto-move AI-suggested removals to dismissedItems instead of showing inline prompts
+            const aiRemovedEntries = [];
+            const cleanedCategories = data.categories.map(cat => ({
+                ...cat,
+                items: cat.items.filter(item => {
+                    if (!item.aiSuggestedRemoval) return true;
+                    // Already in dismissed list — skip
+                    if (dismissedItemIdsRef.current.has(item.id)) return false;
+                    aiRemovedEntries.push({ id: item.id, catId: cat.id, categoryTitle: cat.title, item: { ...item, aiSuggestedRemoval: false } });
+                    return false;
+                }),
+            })).filter(cat => cat.items.length > 0);
+
+            if (aiRemovedEntries.length > 0) {
+                setDismissedItems(prev => {
+                    const existingIds = new Set(prev.map(d => d.id));
+                    const toAdd = aiRemovedEntries.filter(e => !existingIds.has(e.id));
+                    if (!toAdd.length) return prev;
+                    const next = [...prev, ...toAdd];
+                    if (uid) setChecklistState(uid, { dismissedItems: next }).catch(() => {});
+                    return next;
+                });
+            }
+
+            const newAiData = { categories: cleanedCategories, snapshot };
             setAiData(newAiData);
+            setAiTimestamp(Date.now());
             setAiError(null);
-            persistState(data.categories, snapshot);
-            // Compute which IDs were actually inserted (not filtered by dedup)
-            const existingIds = new Set((existingCats || []).flatMap(c => c.items.map(i => i.id)));
-            const actuallyAdded = data.categories.flatMap(c => c.items).filter(i => !existingIds.has(i.id));
-            setNewItemIds(actuallyAdded.length ? new Set(actuallyAdded.map(i => i.id)) : new Set());
+            persistState(cleanedCategories, snapshot);
+            // "New" = IDs that weren't in the previous result (reliable, content-stable)
+            const prevIds = new Set((prevCategories || []).flatMap(c => c.items.map(i => i.id)));
+            const actuallyNew = cleanedCategories.flatMap(c => c.items).filter(i => !prevIds.has(i.id));
+            setNewItemIds(actuallyNew.length ? new Set(actuallyNew.map(i => i.id)) : new Set());
             setSeenNewIds(new Set());
         } catch (err) {
             if (id !== refreshIdRef.current) return;
@@ -1139,6 +1442,44 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     const handleRefresh = useCallback(() => {
         doRefresh(false);
     }, [doRefresh]);
+
+    const fetchOverview = useCallback(async () => {
+        const snap = getSnapshot(latestRef.current.inputs, latestRef.current.results);
+        setOverviewLoading(true);
+        setOverviewError(null);
+        try {
+            const { inputs: inp, results: res, aiProvider: prov, aiModel: mod, apiKeyOverride: key, language: lang } = latestRef.current;
+            const cats = aiDataRef.current?.categories || buildItems(inp, res, lang);
+            const text = await generateChecklistOverview(cats, inp, res, prov, mod, key, lang);
+            setOverviewText(text);
+            setOverviewSnapshot(snap);
+        } catch (err) {
+            setOverviewError(localizeAiError(err, latestRef.current.language));
+        } finally {
+            setOverviewLoading(false);
+        }
+    }, []);
+
+    const handleOpenOverview = useCallback(() => {
+        const snap = getSnapshot(latestRef.current.inputs, latestRef.current.results);
+        setOverviewOpen(true);
+        setOverviewPos({ x: 0, y: 0 });
+        if (!overviewText || overviewSnapshot !== snap) fetchOverview();
+    }, [overviewText, overviewSnapshot, fetchOverview]);
+
+    const startDrag = useCallback((e) => {
+        if (e.button !== 0) return;
+        const startX = e.clientX - overviewPosRef.current.x;
+        const startY = e.clientY - overviewPosRef.current.y;
+        const onMove = (ev) => {
+            const pos = { x: ev.clientX - startX, y: ev.clientY - startY };
+            overviewPosRef.current = pos;
+            setOverviewPos({ ...pos });
+        };
+        const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+    }, []);
 
     useEffect(() => {
         const handleConfirm = (e) => {
@@ -1341,6 +1682,16 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         setSeenNewIds(prev => new Set([...prev, itemId]));
     }, []);
 
+    // Toggle lock on an item — locked items are protected from AI removal
+    const handleToggleLock = useCallback((itemId) => {
+        setKeptItemIds(prev => {
+            const next = new Set(prev);
+            next.has(itemId) ? next.delete(itemId) : next.add(itemId);
+            if (uid) setChecklistState(uid, { keptItemIds: [...next] }).catch(() => {});
+            return next;
+        });
+    }, [uid]);
+
     // Dismiss a new AI item: remove from list + remember forever (with full data for restore)
     const handleDismissNewItem = useCallback((catId, itemId) => {
         const cat = aiDataRef.current?.categories?.find(c => c.id === catId);
@@ -1448,7 +1799,26 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         results?.balanceAtRetirement, results?.ranOutAtAge, results?.surplus,
     ]);
 
-    const activeCategories = aiData?.categories ?? null;
+    const staticTimingById = useMemo(() => {
+        const map = {};
+        for (const cat of staticCategories) {
+            for (const item of cat.items) {
+                if (item.timing) map[item.id] = item.timing;
+            }
+        }
+        return map;
+    }, [staticCategories]);
+
+    const activeCategories = useMemo(() => {
+        if (!aiData?.categories) return null;
+        return aiData.categories.map(cat => ({
+            ...cat,
+            items: (cat.items || []).map(item => ({
+                ...item,
+                timing: item.timing ?? staticTimingById[item.id],
+            })),
+        }));
+    }, [aiData, staticTimingById]);
 
     // Count critical/high/new/flagged items
     const criticalCount = useMemo(() => {
@@ -1473,9 +1843,23 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     [activeCategories]);
     const dismissedCount = dismissedItems.length;
 
+    // Timing counts for filter badges
+    const timingCounts = useMemo(() => {
+        const counts = { overdue: 0, urgent: 0, soon: 0, ongoing: 0 };
+        const allItems = activeCategories
+            ? activeCategories.flatMap(c => c.items)
+            : staticCategories.flatMap(c => c.items.filter(i => i.relevant));
+        for (const item of allItems) {
+            if (!item.timing || checkedItems.has(item.id)) continue;
+            const s = getTimingStatus(item.timing, inputs, false);
+            if (s && counts[s.status] !== undefined) counts[s.status]++;
+        }
+        return counts;
+    }, [activeCategories, staticCategories, inputs, checkedItems]);
+
     // Flat filtered list: [{ categoryTitle, categoryEmoji, item }]
     const filteredItems = useMemo(() => {
-        if (!filterMode) return null;
+        if (!filterMode && !timingFilter) return null;
         const allItems = activeCategories
             ? activeCategories.flatMap(c =>
                 c.items.map(item => ({ categoryTitle: getCategoryTitle(c, language), categoryEmoji: c.emoji, categoryIcon: null, catId: c.id, item }))
@@ -1483,12 +1867,27 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             : staticCategories.flatMap(c =>
                 c.items.filter(i => i.relevant).map(item => ({ categoryTitle: c.title, categoryEmoji: null, categoryIcon: c.icon, catId: c.category, item }))
             );
-        if (filterMode === 'new') return allItems.filter(e => newItemIds.has(e.item.id) && !seenNewIds.has(e.item.id));
-        if (filterMode === 'flagged') return allItems.filter(e => e.item.aiSuggestedRemoval);
-        if (filterMode === 'hasNote') return allItems.filter(e => e.item.note?.trim());
-        if (filterMode === 'hasReminder') return allItems.filter(e => e.item.reminder?.date);
-        return allItems.filter(e => e.item.priority === filterMode);
-    }, [filterMode, activeCategories, staticCategories, newItemIds, seenNewIds, language]);
+        let result = allItems;
+        if (filterMode === 'new') result = result.filter(e => newItemIds.has(e.item.id) && !seenNewIds.has(e.item.id));
+        else if (filterMode === 'flagged') result = result.filter(e => e.item.aiSuggestedRemoval);
+        else if (filterMode === 'hasNote') result = result.filter(e => e.item.note?.trim());
+        else if (filterMode === 'hasReminder') result = result.filter(e => e.item.reminder?.date);
+        else if (filterMode) result = result.filter(e => e.item.priority === filterMode);
+        if (timingFilter) {
+            result = result
+                .filter(e => {
+                    if (!e.item.timing) return false;
+                    const s = getTimingStatus(e.item.timing, inputs, checkedItems.has(e.item.id));
+                    return s && s.status === timingFilter;
+                })
+                .sort((a, b) => {
+                    const sa = getTimingStatus(a.item.timing, inputs, false);
+                    const sb = getTimingStatus(b.item.timing, inputs, false);
+                    return (sa?.years ?? 0) - (sb?.years ?? 0); // most overdue (most negative) first
+                });
+        }
+        return result;
+    }, [filterMode, timingFilter, activeCategories, staticCategories, newItemIds, seenNewIds, language, inputs, checkedItems]);
 
     const searchResults = useMemo(() => {
         const q = searchQuery.trim().toLowerCase();
@@ -1508,10 +1907,13 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
  
     // Auto-reset filter if it becomes empty (e.g. user removed the only note that was being filtered)
     useEffect(() => {
-        if (filterMode && filterMode !== 'dismissed' && filteredItems && filteredItems.length === 0) {
+        if (filterMode && filterMode !== 'dismissed' && filteredItems && filteredItems.length === 0 && !timingFilter) {
             setFilterMode(null);
         }
-    }, [filterMode, filteredItems]);
+        if (timingFilter && filteredItems && filteredItems.length === 0 && !filterMode) {
+            setTimingFilter(null);
+        }
+    }, [filterMode, timingFilter, filteredItems]);
 
     // Also leave "dismissed" mode once the last dismissed item is restored/removed.
     useEffect(() => {
@@ -1534,6 +1936,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
 
     const handleGoToCategory = (catId, itemId) => {
         setSearchQuery('');
+        setTimingFilter(null);
         setExpandedCategories(new Set([catId]));
         if (itemId) {
             setExpandedItems(prev => { const next = new Set(prev); next.add(itemId); return next; });
@@ -1661,7 +2064,13 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                     <span className={`text-sm font-semibold ${isLight ? 'text-gray-900' : 'text-white'}`}>
                         {txt('Retirement Planning Checklist', 'רשימת תכנון לפרישה')}
                     </span>
-                    {aiData && <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-500/20 text-purple-300'}`}>AI</span>}
+                    {aiProvider && aiModel && (
+                        <button
+                            onClick={handleOpenOverview}
+                            title={isRtl ? 'תובנות AI כלליות' : 'AI Overview'}
+                            className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold transition-colors ${isLight ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' : 'bg-purple-500/20 text-purple-300 hover:bg-purple-500/30'}`}
+                        >AI</button>
+                    )}
                     {totalItems > 0 && <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isLight ? 'bg-gray-100 text-gray-500' : 'bg-white/10 text-gray-400'}`}>{totalItems} {txt('items', 'סעיפים')}</span>}
                     {tsLabel && <span className={`text-[10px] ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>{tsLabel}</span>}
                     {aiSilentLoading && <RefreshCw size={11} className="animate-spin text-purple-400" />}
@@ -1720,23 +2129,46 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                 </div>
             </div>
 
-            {/* Search bar */}
-            <div className={`flex-shrink-0 px-4 py-2 border-b ${isLight ? 'bg-white border-gray-100' : 'bg-gray-900/60 border-white/5'}`}>
-                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${isLight ? 'bg-gray-100' : 'bg-white/10'}`}>
-                    <Search size={13} className={isLight ? 'text-gray-400 shrink-0' : 'text-gray-500 shrink-0'} />
+            {/* Search + timing filters */}
+            <div className={`flex-shrink-0 px-3 py-1.5 border-b flex items-center gap-2 ${isLight ? 'bg-white border-gray-100' : 'bg-gray-900/60 border-white/5'}`}>
+                {/* Search input */}
+                <div className={`flex items-center gap-1.5 flex-1 px-2 py-1 rounded-lg ${isLight ? 'bg-gray-100' : 'bg-white/10'}`}>
+                    <Search size={12} className={isLight ? 'text-gray-400 shrink-0' : 'text-gray-500 shrink-0'} />
                     <input
                         type="text"
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
-                        placeholder={txt('Search items… (e.g. inflation, nursing care)', 'חפש סעיף… (למשל: אינפלציה, סיעוד)')}
-                        className={`flex-1 bg-transparent text-xs outline-none placeholder:text-gray-400 ${isLight ? 'text-gray-800' : 'text-white'}`}
+                        placeholder={txt('חיפוש…', 'חיפוש…')}
+                        className={`flex-1 bg-transparent text-xs outline-none placeholder:text-gray-400 min-w-0 ${isLight ? 'text-gray-800' : 'text-white'}`}
                         dir={isRtl ? 'rtl' : 'ltr'}
                     />
                     {searchQuery && (
                         <button onClick={() => setSearchQuery('')} className={isLight ? 'text-gray-400 hover:text-gray-600' : 'text-gray-500 hover:text-gray-300'}>
-                            <X size={13} />
+                            <X size={12} />
                         </button>
                     )}
+                </div>
+                {/* Timing badges */}
+                <div className="flex items-center gap-1 shrink-0">
+                    {[
+                        { key: 'overdue', label: 'באיחור', color: timingFilter === 'overdue' ? 'bg-red-500 text-white' : (isLight ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-red-500/15 text-red-400 hover:bg-red-500/25') },
+                        { key: 'urgent',  label: 'דחוף',   color: timingFilter === 'urgent'  ? 'bg-amber-500 text-white' : (isLight ? 'bg-amber-50 text-amber-600 hover:bg-amber-100' : 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/25') },
+                        { key: 'soon',    label: 'בקרוב',  color: timingFilter === 'soon'    ? 'bg-yellow-500 text-white' : (isLight ? 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100' : 'bg-yellow-500/15 text-yellow-400 hover:bg-yellow-500/25') },
+                        { key: 'ongoing', label: 'שוטף',   color: timingFilter === 'ongoing' ? 'bg-blue-500 text-white' : (isLight ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' : 'bg-blue-500/15 text-blue-400 hover:bg-blue-500/25') },
+                    ].map(({ key, label, color }) => {
+                        const count = timingCounts[key];
+                        if (count === 0 && timingFilter !== key) return null;
+                        return (
+                            <button
+                                key={key}
+                                onClick={() => setTimingFilter(f => f === key ? null : key)}
+                                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-all ${color}`}
+                            >
+                                {label}
+                                {count > 0 && <span className={`text-[9px] font-bold ${timingFilter === key ? 'opacity-75' : ''}`}>{count}</span>}
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 
@@ -1810,32 +2242,40 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                             ? txt(`${searchResults.length} result${searchResults.length !== 1 ? 's' : ''} for "${searchQuery}"`, `${searchResults.length} תוצאות עבור "${searchQuery}"`)
                             : txt(`No results for "${searchQuery}"`, `אין תוצאות עבור "${searchQuery}"`)}
                     </div>
-                    {searchResults.map(({ categoryTitle, categoryEmoji, categoryIcon: CatIcon, catId, item, itemExpandId }, idx) => {
+                    {searchResults.map(({ categoryTitle, categoryEmoji, categoryIcon: CatIcon, catId, item }) => {
                         const key = itemKey(catId || categoryTitle, item);
-                        const p = PRIORITIES[item.priority] || PRIORITIES.low;
-                        const isChecked = checkedItems.has(key);
                         return (
-                            <div key={idx} className={`rounded-xl ring-1 overflow-hidden ${p.border} ${isChecked ? 'opacity-50' : ''} ${isLight ? 'bg-white' : 'bg-white/5'}`}>
-                                <div className="flex items-start">
-                                    <button onClick={() => toggleChecked(key)} className={`shrink-0 m-3 mt-3.5 w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${isChecked ? 'bg-green-500 border-green-500' : isLight ? 'border-gray-300 hover:border-green-400' : 'border-gray-600 hover:border-green-500'}`}>
-                                        {isChecked && <CheckCircle size={10} className="text-white" />}
-                                    </button>
-                                    <button onClick={() => handleGoToCategory(catId, itemExpandId)} className={`flex-1 flex items-start gap-3 p-3 ps-0 text-start transition-colors ${isLight ? 'hover:bg-gray-50' : 'hover:bg-white/5'}`}>
-                                        <div className={`mt-0.5 shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold text-white ${p.color}`}>
-                                            {(PRIORITIES[item.priority] || PRIORITIES.low)[isRtl ? 'he' : 'en'].toUpperCase()}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className={`text-xs font-semibold ${isChecked ? 'line-through' : ''} ${isLight ? 'text-gray-900' : 'text-white'}`}>{item.title}</div>
-                                            <div className={`text-[11px] mt-0.5 flex items-center gap-1 ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
-                                                {categoryEmoji ? <span>{categoryEmoji}</span> : CatIcon ? <CatIcon size={10} /> : null}
-                                                {categoryTitle}
-                                                <ChevronRight size={10} className="opacity-50" />
-                                            </div>
-                                        </div>
-                                        <ChevronRight size={13} className="shrink-0 mt-0.5 text-gray-400" />
-                                    </button>
-                                </div>
-                            </div>
+                            <ChecklistItem
+                                key={key}
+                                item={item}
+                                uid={uid}
+                                isLight={isLight}
+                                language={language}
+                                inputs={inputs}
+                                isExpanded={expandedItems.has(key)}
+                                onToggle={() => toggleItem(key)}
+                                checked={checkedItems.has(key)}
+                                onCheck={() => toggleChecked(key)}
+                                onConfirmRemove={() => handleConfirmRemove(catId, item.id)}
+                                onKeepItem={() => handleKeepItem(catId, item.id)}
+                                isNew={newItemIds.has(item.id) && !seenNewIds.has(item.id)}
+                                onSeen={() => setSeenNewIds(prev => new Set([...prev, item.id]))}
+                                onKeepNew={() => handleKeepNewItem(item.id)}
+                                onDismissNew={() => handleDismissNewItem(catId, item.id)}
+                                onManualRemove={() => handleManualRemove(catId, item.id)}
+                                onChangeItem={(updated, options) => handleChangeItem(catId, updated, options)}
+                                categoryTitle={categoryTitle}
+                                categoryEmoji={categoryEmoji}
+                                categoryIcon={CatIcon}
+                                results={results}
+                                aiProvider={aiProvider}
+                                aiModel={aiModel}
+                                apiKeyOverride={apiKeyOverride}
+                                aiExplanation={aiExplanations[item.id]}
+                                onSetAiExplanation={handleSetAiExplanation}
+                                isLocked={keptItemIds.has(item.id)}
+                                onToggleLock={handleToggleLock}
+                            />
                         );
                     })}
                 </div>
@@ -1865,18 +2305,18 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                          filterMode === 'hasReminder' ? txt(`${filteredItems.length} Items with Reminders`, `${filteredItems.length} פריטים עם תזכורות`) :
                          txt(`${filteredItems.length} Items for Review`, `${filteredItems.length} פריטים לבדיקה`)}
                     </div>
-                    {filteredItems.map(({ categoryTitle, categoryEmoji, categoryIcon: CatIcon, catId, item }, idx) => {
-                        const itemId = `filter-${idx}`;
+                    {filteredItems.map(({ categoryTitle, categoryEmoji, categoryIcon: CatIcon, catId, item }) => {
                         const key = itemKey(catId || categoryTitle, item);
                         return (
                                                     <ChecklistItem
-                                                        key={itemId}
+                                                        key={key}
                                                         item={item}
                                                         uid={uid}
                                                         isLight={isLight}
                                                         language={language}
-                                                        isExpanded={expandedItems.has(itemId)}
-                                                        onToggle={() => toggleItem(itemId)}
+                                                        inputs={inputs}
+                                                        isExpanded={expandedItems.has(key)}
+                                                        onToggle={() => toggleItem(key)}
                                 checked={checkedItems.has(key)}
                                 onCheck={() => toggleChecked(key)}
                                 onConfirmRemove={() => handleConfirmRemove(catId, item.id)}
@@ -1890,6 +2330,14 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                 categoryTitle={categoryTitle}
                                 categoryEmoji={categoryEmoji}
                                 categoryIcon={CatIcon}
+                                results={results}
+                                aiProvider={aiProvider}
+                                aiModel={aiModel}
+                                apiKeyOverride={apiKeyOverride}
+                                aiExplanation={aiExplanations[item.id]}
+                                onSetAiExplanation={handleSetAiExplanation}
+                                isLocked={keptItemIds.has(item.id)}
+                                onToggleLock={handleToggleLock}
                             />
                         );
                     })}
@@ -1990,13 +2438,14 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                                 const key = itemKey(cat.id, normalizedItem);
                                                 return (
                                                     <ChecklistItem
-                                                        key={idx}
+                                                        key={normalizedItem.id}
                                                         item={normalizedItem}
                                                         uid={uid}
                                                         isLight={isLight}
                                                         language={language}
-                                                        isExpanded={expandedItems.has(`${cat.id}-${idx}`)}
-                                                        onToggle={() => toggleItem(`${cat.id}-${idx}`)}
+                                                        inputs={inputs}
+                                                        isExpanded={expandedItems.has(normalizedItem.id)}
+                                                        onToggle={() => toggleItem(normalizedItem.id)}
                                                         checked={checkedItems.has(key)}
                                                         onCheck={() => toggleChecked(key)}
                                                         onConfirmRemove={() => handleConfirmRemove(cat.id, normalizedItem.id)}
@@ -2007,6 +2456,14 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                                         onDismissNew={() => handleDismissNewItem(cat.id, normalizedItem.id)}
                                                         onManualRemove={() => handleManualRemove(cat.id, normalizedItem.id)}
                                                         onChangeItem={(updated, options) => handleChangeItem(cat.id, updated, options)}
+                                                        results={results}
+                                                        aiProvider={aiProvider}
+                                                        aiModel={aiModel}
+                                                        apiKeyOverride={apiKeyOverride}
+                                                        aiExplanation={aiExplanations[normalizedItem.id]}
+                                                        onSetAiExplanation={handleSetAiExplanation}
+                                                        isLocked={keptItemIds.has(normalizedItem.id)}
+                                                        onToggleLock={handleToggleLock}
                                                     />
                                                 );
                                             })}
@@ -2074,11 +2531,20 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                                         uid={uid}
                                                         isLight={isLight}
                                                         language={language}
+                                                        inputs={inputs}
                                                         isExpanded={expandedItems.has(item.id)}
                                                         onToggle={() => toggleItem(item.id)}
                                                         checked={checkedItems.has(key)}
                                                         onCheck={() => toggleChecked(key)}
                                                         onChangeItem={(updated, options) => handleChangeItem(cat.category, updated, options)}
+                                                        results={results}
+                                                        aiProvider={aiProvider}
+                                                        aiModel={aiModel}
+                                                        apiKeyOverride={apiKeyOverride}
+                                                        aiExplanation={aiExplanations[item.id]}
+                                                        onSetAiExplanation={handleSetAiExplanation}
+                                                        isLocked={keptItemIds.has(item.id)}
+                                                        onToggleLock={handleToggleLock}
                                                     />
                                                 );
                                             })}
@@ -2091,6 +2557,59 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             </div>}
             </div>{/* end inner dir wrapper */}
             </div>{/* end scrollable content */}
+
+            {/* AI Overview draggable modal */}
+            {overviewOpen && ReactDOM.createPortal(
+                <div
+                    className="fixed z-[9999] pointer-events-none"
+                    style={{ inset: 0 }}
+                >
+                    <div
+                        ref={overviewDragRef}
+                        className={`pointer-events-auto absolute w-[360px] max-h-[70vh] flex flex-col rounded-xl shadow-2xl border overflow-hidden ${isLight ? 'bg-white border-gray-200' : 'bg-gray-900 border-white/15'}`}
+                        style={{ top: `calc(50% + ${overviewPos.y}px)`, left: `calc(50% + ${overviewPos.x}px)`, transform: 'translate(-50%, -50%)' }}
+                        dir={isRtl ? 'rtl' : 'ltr'}
+                    >
+                        {/* Header — drag handle */}
+                        <div
+                            onMouseDown={startDrag}
+                            className={`flex items-center gap-2 px-3 py-2 border-b cursor-grab active:cursor-grabbing select-none shrink-0 ${isLight ? 'bg-purple-50 border-purple-100' : 'bg-purple-500/10 border-purple-500/20'}`}
+                        >
+                            <span className={`text-xs font-semibold flex-1 ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>
+                                {isRtl ? '✦ תובנות AI — מה חשוב לי לשים לב' : '✦ AI Overview — Key Priorities'}
+                            </span>
+                            <button
+                                onClick={() => { setOverviewText(null); setOverviewSnapshot(null); setOverviewError(null); setOverviewLoading(true); fetchOverview(); }}
+                                disabled={overviewLoading}
+                                title={isRtl ? 'רענן' : 'Refresh'}
+                                className={`p-1 rounded transition-colors disabled:opacity-40 ${isLight ? 'text-purple-400 hover:text-purple-700 hover:bg-purple-100' : 'text-purple-500 hover:text-purple-300 hover:bg-purple-500/20'}`}
+                            >
+                                <RefreshCw size={12} className={overviewLoading ? 'animate-spin' : ''} />
+                            </button>
+                            <button
+                                onClick={() => setOverviewOpen(false)}
+                                className={`p-1 rounded transition-colors ${isLight ? 'text-gray-400 hover:text-gray-700 hover:bg-gray-100' : 'text-gray-500 hover:text-gray-300 hover:bg-white/10'}`}
+                            >
+                                <X size={13} />
+                            </button>
+                        </div>
+                        {/* Content */}
+                        <div className="overflow-y-auto custom-scrollbar scrollbar-right flex-1 p-3 text-xs leading-relaxed">
+                            {overviewLoading && (
+                                <div className="flex items-center gap-2 py-4 justify-center">
+                                    <RefreshCw size={14} className="animate-spin text-purple-400" />
+                                    <span className={isLight ? 'text-purple-600' : 'text-purple-300'}>{isRtl ? 'מנתח את הרשימה…' : 'Analysing checklist…'}</span>
+                                </div>
+                            )}
+                            {overviewError && <div className={isLight ? 'text-red-600' : 'text-red-400'}>{overviewError}</div>}
+                            {overviewText && !overviewLoading && (
+                                <AiTextRenderer text={overviewText} isLight={isLight} />
+                            )}
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
         </div>
     );
 }
