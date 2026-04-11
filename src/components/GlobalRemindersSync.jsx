@@ -62,6 +62,7 @@ export function GlobalRemindersSync({ uid, lifeEvents = [], currentProfileId, pr
                                         if (i.reminder?.date) checklistReminders.push({
                                             id: String(i.id),
                                             label: i.label || i.title,
+                                            note: i.note || '',
                                             reminder: { date: i.reminder.date, text: i.reminder.text || '' }
                                         });
                                     });

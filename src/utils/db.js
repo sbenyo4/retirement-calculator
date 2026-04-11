@@ -215,7 +215,7 @@ export async function getChecklistState(uid) {
 }
 
 export async function setChecklistState(uid, state) {
-    await setDoc(checklistStateRef(uid), { ...state, updatedAt: Date.now() }, { merge: true });
+    await setDoc(checklistStateRef(uid), stripUndefinedDeep({ ...state, updatedAt: Date.now() }), { merge: true });
 }
 
 // ─── General Reminders ─────────────────────────────────────────────

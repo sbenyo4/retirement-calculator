@@ -9,7 +9,7 @@ import {
     Shield, Heart, Receipt, TrendingUp, Home, Scale, Laptop,
     AlertTriangle, CheckCircle, ChevronDown, ChevronRight,
     Umbrella, Stethoscope, Building2, FileText, Users,
-    Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Flag, Landmark, RotateCcw, Search, X, EyeOff, Undo2, Trash2, MessageSquare, Bell, Save, Lock, LockOpen
+    Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Landmark, RotateCcw, Search, X, EyeOff, Undo2, Trash2, MessageSquare, Bell, Save, Lock, LockOpen
 } from 'lucide-react';
 import { syncComponentReminders, forgetReminderShown, silenceReminder } from '../hooks/useReminders';
 import { undismissReminder } from '../utils/db';
@@ -841,7 +841,6 @@ function AiTextRenderer({ text, isLight }) {
 function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem, isNew, onSeen, onKeepNew, onDismissNew, onManualRemove, onChangeItem, uid, categoryTitle, categoryEmoji, categoryIcon: CatIcon, inputs, results, aiProvider, aiModel, apiKeyOverride, aiExplanation, onSetAiExplanation, isLocked, onToggleLock }) {
     const p = PRIORITIES[item.priority] || PRIORITIES.medium;
     const isHe = language === 'he';
-    const flagged = item.aiSuggestedRemoval;
 
     const [showNote, setShowNote] = useState(false);
     const [noteDraft, setNoteDraft] = useState(item.note || '');
@@ -897,9 +896,7 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
 
 
     return (
-        <div id={`checklist-item-${item.id}`} className={`group rounded-lg border transition-all ${flagged
-            ? (isLight ? 'border-amber-300 bg-amber-50' : 'border-amber-500/40 bg-amber-500/5')
-            : checked
+        <div id={`checklist-item-${item.id}`} className={`group rounded-lg border transition-all ${checked
                 ? (isLight ? 'border-gray-200 bg-gray-50 opacity-60' : 'border-white/5 bg-white/2 opacity-50')
                 : isLight
                     ? `border-gray-200 ${item.priority === 'critical' ? 'bg-red-50' : item.priority === 'high' ? 'bg-orange-50/50' : 'bg-white'}`
@@ -928,11 +925,6 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                             {isNew && !checked && (
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isLight ? 'bg-green-100 text-green-700' : 'bg-green-500/20 text-green-400'}`}>
                                     {isHe ? 'חדש' : 'New'}
-                                </span>
-                            )}
-                            {flagged && (
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isLight ? 'bg-amber-200 text-amber-800' : 'bg-amber-500/30 text-amber-300'}`}>
-                                    {isHe ? 'AI: אולי לא רלוונטי?' : 'AI: maybe irrelevant?'}
                                 </span>
                             )}
                         </div>
@@ -1021,7 +1013,8 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
             {showReminder && reminderAnchor && (
                 <PopupPortal anchorRect={reminderAnchor} align={isHe ? 'left' : 'right'}>
                     <div
-                        className={`w-52 rounded-lg border shadow-xl overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-white/20'}`}
+                        className={`w-68 rounded-lg border shadow-xl overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-white/20'}`}
+                        style={{ width: '272px' }}
                         dir={isHe ? 'rtl' : 'ltr'}
                     >
                         <div className={`flex items-center justify-between px-2.5 py-2 border-b ${isLight ? 'bg-blue-50 border-blue-100' : 'bg-blue-500/10 border-white/10'}`}>
@@ -1030,6 +1023,12 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                                 <span className={`text-[11px] font-semibold ${isLight ? 'text-blue-700' : 'text-blue-300'}`}>
                                     {isHe ? 'תזכורת' : 'Reminder'}
                                 </span>
+                                {item.note && (
+                                    <span className={`flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-400'}`} title={item.note}>
+                                        <MessageSquare size={9} />
+                                        {isHe ? 'יש הערה' : 'Has note'}
+                                    </span>
+                                )}
                             </div>
                             {item.reminder?.date && (
                                 <button
@@ -1049,6 +1048,15 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                             )}
                         </div>
                         <div className="p-2.5 space-y-2">
+                            {item.note && (
+                                <div className={`rounded text-[11px] border ${isLight ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'}`}>
+                                    <div className={`flex items-center gap-1 px-2 py-1 border-b text-[10px] font-semibold ${isLight ? 'border-amber-200 text-amber-600' : 'border-amber-500/20 text-amber-400'}`}>
+                                        <MessageSquare size={9} />
+                                        {isHe ? 'הערה לסעיף' : 'Item note'}
+                                    </div>
+                                    <div className="px-2 py-1.5 leading-snug">{item.note}</div>
+                                </div>
+                            )}
                             <div>
                                 <label className={`text-[10px] font-medium ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'תאריך תזכורת' : 'Reminder date'}</label>
                                 <input
@@ -1146,25 +1154,6 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                         />
                     </div>
                 </PopupPortal>
-            )}
-            {flagged && (
-                <div className={`flex items-center gap-2 px-3 pb-2 ms-10 text-xs`}>
-                    <span className={isLight ? 'text-amber-700' : 'text-amber-400'}>
-                        {isHe ? 'ה-AI הציע להסיר. מה תרצה לעשות?' : 'AI suggested removing this. What would you like to do?'}
-                    </span>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onConfirmRemove?.(); }}
-                        className={`px-2 py-0.5 rounded text-[11px] font-medium ${isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'}`}
-                    >
-                        {isHe ? 'הסר' : 'Remove'}
-                    </button>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onKeepItem?.(); }}
-                        className={`px-2 py-0.5 rounded text-[11px] font-medium ${isLight ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}
-                    >
-                        {isHe ? 'השאר' : 'Keep'}
-                    </button>
-                </div>
             )}
             {isNew && !checked && (onKeepNew || onDismissNew) && (
                 <div className={`flex items-center gap-2 px-3 pb-2 ms-10 text-xs`}>
@@ -1546,6 +1535,13 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         }
 
         if (!changed) {
+            // Build existing item data map so we preserve note/reminder on other items
+            const existingItemData = {};
+            for (const cat of (aiDataRef.current?.categories || [])) {
+                for (const it of (cat.items || [])) {
+                    existingItemData[it.id] = it;
+                }
+            }
             const base = staticCategories
                 .map(cat => ({
                     id: cat.category,
@@ -1554,33 +1550,29 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                     items: cat.items
                         .filter(i => i.relevant)
                         .map(i => {
-                            const mapped = {
+                            if (i.id === updatedItem.id && cat.category === catId) return updatedItem;
+                            const existing = existingItemData[i.id] || {};
+                            return {
                                 id: i.id,
                                 priority: i.priority,
                                 title: i.title,
                                 description: i.desc || '',
                                 details: i.details || '',
+                                ...(existing.note ? { note: existing.note } : {}),
+                                ...(existing.reminder ? { reminder: existing.reminder } : {}),
+                                ...(existing.timing ? { timing: existing.timing } : {}),
                             };
-                            return (i.id === updatedItem.id && cat.category === catId) ? updatedItem : mapped;
                         }),
                 }))
                 .filter(cat => cat.items.length > 0);
             
             changed = true;
             newAiData = { categories: base, snapshot: getSnapshot(latestRef.current.inputs, latestRef.current.results) };
-            if (uid) {
-               const ts = Date.now();
-               setAiTimestamp(ts);
-               setChecklistState(uid, { categories: base, snapshot: newAiData.snapshot, updatedAt: ts }).catch(() => {});
-            }
         }
 
         if (changed && newAiData) {
             setAiData(newAiData);
-            if (aiDataRef.current?.categories) {
-                persistState(newAiData.categories, newAiData.snapshot);
-            }
-            
+            persistState(newAiData.categories, newAiData.snapshot);
             const allFlatItems = newAiData.categories.flatMap(c => c.items);
             const reminderChanged = reminderTouched || JSON.stringify(previousReminder || null) !== JSON.stringify(updatedItem.reminder || null);
             if (reminderChanged && updatedItem?.id) {
@@ -1832,9 +1824,6 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     const newCount = useMemo(() =>
         activeCategories ? activeCategories.flatMap(c => c.items).filter(i => newItemIds.has(i.id) && !seenNewIds.has(i.id)).length : 0,
     [activeCategories, newItemIds, seenNewIds]);
-    const flaggedCount = useMemo(() =>
-        activeCategories ? activeCategories.flatMap(c => c.items).filter(i => i.aiSuggestedRemoval).length : 0,
-    [activeCategories]);
     const hasNoteCount = useMemo(() =>
         activeCategories ? activeCategories.flatMap(c => c.items).filter(i => i.note?.trim()).length : 0,
     [activeCategories]);
@@ -1869,7 +1858,6 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             );
         let result = allItems;
         if (filterMode === 'new') result = result.filter(e => newItemIds.has(e.item.id) && !seenNewIds.has(e.item.id));
-        else if (filterMode === 'flagged') result = result.filter(e => e.item.aiSuggestedRemoval);
         else if (filterMode === 'hasNote') result = result.filter(e => e.item.note?.trim());
         else if (filterMode === 'hasReminder') result = result.filter(e => e.item.reminder?.date);
         else if (filterMode) result = result.filter(e => e.item.priority === filterMode);
@@ -2106,7 +2094,6 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                         { mode: 'critical', icon: AlertTriangle, count: criticalCount, active: 'bg-red-500 text-white ring-1 ring-red-400', inactive: 'text-red-400 hover:bg-red-500/30', badge: 'bg-red-500', tip: txt('Critical', 'קריטי') },
                         { mode: 'high',     icon: BadgeAlert,    count: highCount,     active: 'bg-orange-500 text-white ring-1 ring-orange-400', inactive: 'text-orange-400 hover:bg-orange-500/30', badge: 'bg-orange-500', tip: txt('High', 'גבוה') },
                         { mode: 'new',      icon: Zap,           count: newCount,      active: 'bg-green-500 text-white ring-1 ring-green-400',  inactive: 'text-green-400 hover:bg-green-500/30',  badge: 'bg-green-500',  tip: txt('New', 'חדש') },
-                        { mode: 'flagged',  icon: Flag,          count: flaggedCount,  active: 'bg-amber-500 text-white ring-1 ring-amber-400',  inactive: 'text-amber-400 hover:bg-amber-500/30',  badge: 'bg-amber-500',  tip: txt('Needs review', 'לבדיקה') },
                         { mode: 'hasNote',  icon: MessageSquare, count: hasNoteCount,  active: 'bg-amber-600 text-white ring-1 ring-amber-500',  inactive: 'text-amber-500 hover:bg-amber-500/30',  badge: 'bg-amber-600',  tip: txt('Notes', 'הערות') },
                         { mode: 'hasReminder', icon: Bell,       count: hasReminderCount, active: 'bg-blue-600 text-white ring-1 ring-blue-500', inactive: 'text-blue-500 hover:bg-blue-500/30',    badge: 'bg-blue-600',   tip: txt('Reminders', 'תזכורות') },
                         { mode: 'dismissed',icon: EyeOff,        count: dismissedCount,active: 'bg-gray-500 text-white ring-1 ring-gray-400',    inactive: 'text-gray-400 hover:bg-gray-500/30',    badge: 'bg-gray-500',   tip: txt('Dismissed', 'נדחו') },

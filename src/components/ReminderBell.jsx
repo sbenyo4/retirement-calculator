@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
-import { Bell, BellRing, X, Clock, Trash2, FileText, Plus, Pencil, Save } from 'lucide-react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { Bell, BellRing, X, Clock, Trash2, FileText, Plus, Pencil, Save, MessageSquare } from 'lucide-react';
 import { useReminders, syncComponentReminders, silenceReminder, updateReminderInSession } from '../hooks/useReminders';
 import { useAuth } from '../contexts/AuthContext';
 import { setGeneralReminders } from '../utils/db';
@@ -361,6 +361,7 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
 
 function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onDismiss, onEdit, onSaveEdit, onCancelEdit, isEditing, editForm, setEditForm, due, tone }) {
     const isTomorrow = tone === 'tomorrow';
+    const [showNote, setShowNote] = useState(false);
     return (
         <>
         <div className={`flex items-start gap-2 px-3 py-2.5 ${due ? (isLight ? 'bg-red-50/50' : 'bg-red-500/5') : isTomorrow ? (isLight ? 'bg-yellow-50/70' : 'bg-yellow-500/5') : ''}`}>
@@ -383,6 +384,15 @@ function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onD
                 {r.text && <div className={`text-[11px] mt-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{r.text}</div>}
             </div>
             <div className="flex items-center gap-0.5 shrink-0">
+                {r.note && (
+                    <button
+                        onClick={() => setShowNote(v => !v)}
+                        title={r.note}
+                        className={`p-0.5 rounded transition-colors ${showNote ? (isLight ? 'text-amber-600 bg-amber-100' : 'text-amber-400 bg-amber-500/20') : (isLight ? 'text-amber-400 hover:text-amber-600' : 'text-amber-500 hover:text-amber-300')}`}
+                    >
+                        <MessageSquare size={12} />
+                    </button>
+                )}
                 <button
                     onClick={() => onEdit?.(r)}
                     title={isHe ? 'ערוך תזכורת' : 'Edit reminder'}
@@ -395,6 +405,11 @@ function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onD
                 </button>
             </div>
         </div>
+        {showNote && r.note && (
+            <div className={`px-3 pb-2 text-[11px] leading-snug ${isLight ? 'text-amber-800 bg-amber-50' : 'text-amber-300 bg-amber-500/10'}`}>
+                {r.note}
+            </div>
+        )}
         {isEditing && (
             <div className={`px-3 pb-3 ${isLight ? 'border-t border-slate-100' : 'border-t border-white/10'}`}>
                 <div className="grid gap-2 pt-2" style={{ gridTemplateColumns: '1fr auto' }}>

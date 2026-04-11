@@ -289,6 +289,7 @@ export function syncMultipleSources(syncConfigs) {
                     source: source,
                     date: normalizeDate(i.reminder?.date || i.date),
                     text: i.reminder?.text || i.text || '',
+                    note: i.note || '',
                 }));
             nextState = [...nextState, ...newOnes];
         });

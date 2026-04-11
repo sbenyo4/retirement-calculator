@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bell, CheckCircle, Clock, ArrowUpRight } from 'lucide-react';
+import { Bell, CheckCircle, Clock, ArrowUpRight, MessageSquare } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { markLoginReminderHandled, useReminders } from '../hooks/useReminders';
 
@@ -97,6 +97,15 @@ export function ReminderAlert({ language, isLight, sessionKey }) {
                                         {r.text && (
                                             <div className={`text-sm mt-2 font-medium ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
                                                 {r.text}
+                                            </div>
+                                        )}
+                                        {r.note && (
+                                            <div className={`mt-2 rounded-lg text-sm border ${isLight ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'}`}>
+                                                <div className={`flex items-center gap-1.5 px-2.5 py-1.5 border-b text-xs font-semibold ${isLight ? 'border-amber-200 text-amber-600' : 'border-amber-500/20 text-amber-400'}`}>
+                                                    <MessageSquare size={12} />
+                                                    {isHe ? 'הערה' : 'Note'}
+                                                </div>
+                                                <div className="px-2.5 py-2 leading-snug">{r.note}</div>
                                             </div>
                                         )}
                                         <div className={`flex items-center gap-1.5 mt-3 text-xs font-semibold ${isLight ? 'text-slate-400 border-t border-slate-50 pt-2' : 'text-gray-500 border-t border-white/5 pt-2'}`}>
