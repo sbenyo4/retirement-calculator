@@ -259,6 +259,21 @@ export async function undismissReminder(uid, id) {
     }
 }
 
+// ─── Smart Alerts ──────────────────────────────────────────────────
+
+function smartAlertsRef(uid) {
+    return userDoc(uid, 'data', 'smartAlerts');
+}
+
+export async function getSmartAlerts(uid) {
+    const snap = await getDoc(smartAlertsRef(uid));
+    return snap.exists() ? (snap.data().alerts || []) : [];
+}
+
+export async function setSmartAlerts(uid, alerts) {
+    await setDoc(smartAlertsRef(uid), { alerts, updatedAt: Date.now() });
+}
+
 // ─── Rate Limit ────────────────────────────────────────────────────
 
 export async function getRateLimitData(uid) {

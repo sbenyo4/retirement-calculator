@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { RefreshCw, Check, X, AlertCircle, Download, RotateCcw, ChevronDown } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { fetchAllAvailableModels, compareModels } from '../utils/ai-models-fetcher';
 import { AI_MODELS_CONFIG } from '../config/ai-models';
 import { getUserSettings, setUserSettings } from '../utils/db';
+import { SmartAlertsPanel } from './SmartAlertsPanel';
 
 const ALL_ALERTS = [
     { id: 'ran_out',          severity: 'critical', labelHe: 'כסף נגמר לפני סוף התקופה',                  labelEn: 'Funds run out before end of period' },
@@ -14,7 +15,37 @@ const ALL_ALERTS = [
     { id: 'late_retirement',  severity: 'info',     labelHe: 'גיל פרישה מאוחר (מעל 70)',                   labelEn: 'Late retirement age (above 70)' },
 ];
 
-export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, uid, idleTimeoutEnabled = true, onIdleTimeoutEnabledChange, idleTimeoutMinutes = 5, onIdleTimeoutChange, fourPercentMode = 'net', onFourPercentModeChange, disabledAlerts = [], onToggleAlert }) {
+function readAppState() {
+    try {
+        const budget = JSON.parse(sessionStorage.getItem('rc-budget-summary') || '{}');
+        const calc = JSON.parse(sessionStorage.getItem('rc-calc-summary') || '{}');
+        const categoryTotals = {};
+        (budget.categories || []).forEach(c => {
+            if (c.labelHe) categoryTotals[c.labelHe] = c.total;
+            if (c.labelEn) categoryTotals[c.labelEn] = c.total;
+        });
+        return {
+            totalMonthly: budget.totalMonthly || 0,
+            target: budget.incomeTarget || 0,
+            categoryTotals,
+            loanTracks: budget.loanTracks || [],
+            balanceAtRetirement: calc.balanceAtRetirement ?? null,
+            surplus: calc.surplus ?? null,
+            ranOutAtAge: calc.ranOutAtAge ?? null,
+            requiredCapitalAtRetirement: calc.requiredCapitalAtRetirement ?? null,
+            initialNetWithdrawal: calc.initialNetWithdrawal ?? null,
+            maxSustainableNetWithdrawal: calc.maxSustainableNetWithdrawal ?? null,
+            monthlyNetIncomeDesired: calc.monthlyNetIncomeDesired || 0,
+            retirementStartAge: calc.retirementStartAge || null,
+            retirementEndAge: calc.retirementEndAge || null,
+            currentAge: calc.currentAge || null,
+            monthlyContribution: calc.monthlyContribution || 0,
+            retirementDate: null,
+        };
+    } catch { return { totalMonthly: 0, target: 0, categoryTotals: {}, loanTracks: [] }; }
+}
+
+export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, uid, idleTimeoutEnabled = true, onIdleTimeoutEnabledChange, idleTimeoutMinutes = 5, onIdleTimeoutChange, fourPercentMode = 'net', onFourPercentModeChange, disabledAlerts = [], onToggleAlert, aiProvider, aiModel, apiKeyOverride }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
     const [loading, setLoading] = useState(false);
@@ -27,6 +58,37 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
 
     const [expandedProvider, setExpandedProvider] = useState(null);
     const abortRef = useRef(null);
+    const modalRef = useRef(null);
+    const [dragPos, setDragPos] = useState(null); // null = CSS-centered
+    const dragOrigin = useRef(null);
+
+    const handleDragStart = useCallback((e) => {
+        if (e.button !== 0) return;
+        const rect = modalRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        dragOrigin.current = { startX: e.clientX - rect.left, startY: e.clientY - rect.top };
+        const onMove = (e) => {
+            setDragPos({ x: e.clientX - dragOrigin.current.startX, y: e.clientY - dragOrigin.current.startY });
+        };
+        const onUp = () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            dragOrigin.current = null;
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        e.preventDefault();
+    }, []);
+    const [appState, setAppState] = useState(readAppState);
+    useEffect(() => {
+        const update = () => setAppState(readAppState());
+        window.addEventListener('rc-budget-updated', update);
+        window.addEventListener('rc-calc-updated', update);
+        return () => {
+            window.removeEventListener('rc-budget-updated', update);
+            window.removeEventListener('rc-calc-updated', update);
+        };
+    }, []);
 
     useEffect(() => {
         return () => { abortRef.current?.abort(); };
@@ -190,17 +252,30 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
         setExpandedProvider(prev => prev === providerId ? null : providerId);
     };
 
+    const modalStyle = dragPos
+        ? { position: 'fixed', left: dragPos.x, top: dragPos.y, transform: 'none', zIndex: 50 }
+        : { position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: 50 };
+
     return (
-        <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${isLight ? 'bg-black/50' : 'bg-black/70'}`}>
-            <div className={`w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl ${isLight ? 'bg-white' : 'bg-gray-900 border border-white/20'}`}>
-                {/* Header - Fixed */}
-                <div className={`p-4 border-b flex-shrink-0 ${isLight ? 'bg-white border-gray-200' : 'bg-gray-900 border-white/20'}`}>
+        <>
+        <div className={`fixed inset-0 z-40 ${isLight ? 'bg-black/50' : 'bg-black/70'}`} onClick={onClose} />
+        <div
+            ref={modalRef}
+            style={modalStyle}
+            className={`w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl ${isLight ? 'bg-white' : 'bg-gray-900 border border-white/20'}`}
+        >
+                {/* Header - draggable */}
+                <div
+                    onMouseDown={handleDragStart}
+                    className={`p-4 border-b flex-shrink-0 cursor-grab active:cursor-grabbing select-none ${isLight ? 'bg-white border-gray-200' : 'bg-gray-900 border-white/20'}`}
+                >
                     <div className="flex items-center justify-between">
                         <h2 className={`text-xl font-bold ${isLight ? 'text-gray-900' : 'text-white'}`}>
-                            {(t && t('manageModels')) || 'AI Models Manager'}
+                            {language === 'he' ? 'הגדרות' : 'Settings'}
                         </h2>
                         <button
                             onClick={onClose}
+                            onMouseDown={e => e.stopPropagation()}
                             className={`p-2 rounded-lg ${isLight ? 'hover:bg-gray-100' : 'hover:bg-white/10'}`}
                         >
                             <X size={20} className={isLight ? 'text-gray-600' : 'text-gray-400'} />
@@ -288,7 +363,8 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
                                 </h3>
                                 <ChevronDown size={15} className={`transition-transform ${collapsed['alerts'] ? '' : 'rotate-180'} ${isLight ? 'text-gray-400' : 'text-gray-500'}`} />
                             </button>
-                            {!collapsed['alerts'] && <div className="px-4 pt-2 pb-4 space-y-2">
+                            {!collapsed['alerts'] && <div className="pt-2 pb-4 space-y-3">
+                                <div className="px-4 space-y-2">
                                 {ALL_ALERTS.map(alert => {
                                     const isDisabled = disabledAlerts.includes(alert.id);
                                     const dotColor = alert.severity === 'critical' ? 'bg-red-500' : alert.severity === 'warning' ? 'bg-amber-400' : 'bg-blue-400';
@@ -307,6 +383,17 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
                                         </div>
                                     );
                                 })}
+                                </div>
+                                <div className="px-4">
+                                    <SmartAlertsPanel
+                                        isHe={language === 'he'}
+                                        isLight={isLight}
+                                        appState={appState}
+                                        aiProvider={aiProvider}
+                                        aiModel={aiModel}
+                                        apiKeyOverride={apiKeyOverride}
+                                    />
+                                </div>
                             </div>}
                         </div>
 
@@ -394,7 +481,7 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
                     </div>
                 </div>
             </div>
-        </div>
+        </>
     );
 }
 

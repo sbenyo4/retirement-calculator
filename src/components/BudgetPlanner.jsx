@@ -1765,6 +1765,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                     projectedAnnual: Math.round(projectedMonthly * 12),
                 } : undefined,
             }));
+            window.dispatchEvent(new Event('rc-budget-updated'));
         } catch {}
     }, [items, loaded, inputs.monthlyNetIncomeDesired, results, householdSize, showInflation, inflationRate, projFactor, projYears]);
 

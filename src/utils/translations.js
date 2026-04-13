@@ -314,7 +314,7 @@ export const translations = {
         usageStats: 'AI Usage: {today}/{dailyLimit} today',
 
         // Models Manager
-        manageModels: 'AI Models Manager',
+        manageModels: 'Settings',
         modelsManagerDesc: 'Check for available models from each AI provider and update your list.',
         checkModels: 'Check Models',
         checking: 'Checking...',
@@ -709,7 +709,7 @@ export const translations = {
         usageStats: 'שימוש AI: {today}/{dailyLimit} היום',
 
         // Models Manager
-        manageModels: 'ניהול מודלים',
+        manageModels: 'הגדרות',
         modelsManagerDesc: 'בדוק אילו מודלים זמינים מכל ספק AI ועדכן את הרשימה.',
         checkModels: 'בדוק מודלים',
         checking: 'בודק...',

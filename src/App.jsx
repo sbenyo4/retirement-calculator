@@ -73,6 +73,13 @@ function MainApp() {
   // Use Custom Hooks for Logic
   const { settings, dispatch: dispatchSettings, SETTINGS_ACTIONS, settingsLoaded } = useAppSettings();
 
+  const [triggeredSmartAlerts, setTriggeredSmartAlerts] = useState([]);
+  useEffect(() => {
+    const handle = (e) => setTriggeredSmartAlerts(e.detail?.triggered || []);
+    window.addEventListener('rc-smart-alerts-triggered', handle);
+    return () => window.removeEventListener('rc-smart-alerts-triggered', handle);
+  }, []);
+
   // Idle auto-logout
   const { warningActive, secondsLeft, resetTimer } = useIdleTimer({
     timeoutMinutes: settings.idleTimeoutMinutes ?? 5,
@@ -91,6 +98,28 @@ function MainApp() {
     goalSeekWithdrawal,
     memoizedDebouncedInputs
   } = useCalculation(React.useMemo(() => ({ ...inputs, language, fourPercentMode: settings.fourPercentMode }), [inputs, language, settings.fourPercentMode]), settings);
+
+  // Sync calculation results to sessionStorage so smart alerts can read them
+  useEffect(() => {
+    if (!results) return;
+    try {
+      const inp = memoizedDebouncedInputs || {};
+      sessionStorage.setItem('rc-calc-summary', JSON.stringify({
+        balanceAtRetirement: results.balanceAtRetirement ?? null,
+        surplus: results.surplus ?? null,
+        ranOutAtAge: results.ranOutAtAge ?? null,
+        requiredCapitalAtRetirement: results.requiredCapitalAtRetirement ?? null,
+        initialNetWithdrawal: results.initialNetWithdrawal ?? null,
+        maxSustainableNetWithdrawal: results.maxSustainableNetWithdrawal ?? null,
+        monthlyNetIncomeDesired: parseFloat(inp.monthlyNetIncomeDesired) || 0,
+        retirementStartAge: parseFloat(inp.retirementStartAge) || null,
+        retirementEndAge: parseFloat(inp.retirementEndAge) || null,
+        currentAge: parseFloat(inp.currentAge) || null,
+        monthlyContribution: parseFloat(inp.monthlyContribution) || 0,
+      }));
+      window.dispatchEvent(new Event('rc-calc-updated'));
+    } catch {}
+  }, [results, memoizedDebouncedInputs]);
 
   const [aiResults, setAiResults] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -508,6 +537,23 @@ function MainApp() {
               </button>
             </div>
           ))}
+          {settingsLoaded && triggeredSmartAlerts.map(alert => (
+            <div
+              key={`smart-${alert.id}`}
+              className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium relative -top-[5px] ${
+                theme === 'light' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-amber-900/30 border-amber-500/50 text-amber-300'
+              }`}
+            >
+              <AlertTriangle size={11} />
+              <span>{alert.label}</span>
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('rc-smart-alert-disable', { detail: { id: alert.id } }))}
+                className="opacity-50 hover:opacity-100 transition-opacity ms-0.5"
+              >
+                <X size={10} />
+              </button>
+            </div>
+          ))}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
@@ -742,6 +788,9 @@ function MainApp() {
               onFourPercentModeChange={v => dispatchSettings({ type: SETTINGS_ACTIONS.SET_FOUR_PERCENT_MODE, payload: v })}
               disabledAlerts={disabledAlerts}
               onToggleAlert={toggleAlert}
+              aiProvider={settings.aiProvider}
+              aiModel={settings.aiModel}
+              apiKeyOverride={settings.apiKeyOverride}
             />
           </Suspense>
         </ErrorBoundary>

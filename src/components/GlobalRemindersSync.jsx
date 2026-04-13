@@ -1,12 +1,50 @@
 import { useEffect, useRef } from 'react';
-import { getBudgetItems, getChecklistState, getGeneralReminders, setBudgetItems, setChecklistState, setGeneralReminders, getDismissedReminders, dismissReminder } from '../utils/db';
+import { getBudgetItems, getChecklistState, getGeneralReminders, setBudgetItems, setChecklistState, setGeneralReminders, getDismissedReminders, dismissReminder, getSmartAlerts, setSmartAlerts } from '../utils/db';
 import { syncComponentReminders, syncMultipleSources, markInitialSyncDone } from '../hooks/useReminders';
+import { evaluateSmartAlerts } from '../utils/smartAlerts';
+
+function dispatchTriggered(triggered) {
+    window.dispatchEvent(new CustomEvent('rc-smart-alerts-triggered', { detail: { triggered } }));
+}
 
 const LIFE_EVENT_SOURCE_PREFIX = 'lifeEvents:';
 const LEGACY_LIFE_EVENT_SOURCE = 'lifeEvents';
 
 function isLifeEventSource(source) {
     return typeof source === 'string' && (source === LEGACY_LIFE_EVENT_SOURCE || source.startsWith(LIFE_EVENT_SOURCE_PREFIX));
+}
+
+function readAppState() {
+    try {
+        const budget = JSON.parse(sessionStorage.getItem('rc-budget-summary') || '{}');
+        const calc = JSON.parse(sessionStorage.getItem('rc-calc-summary') || '{}');
+        const categoryTotals = {};
+        (budget.categories || []).forEach(c => {
+            // Match by labelHe — use as key since categoryId isn't stored in summary
+            if (c.labelHe) categoryTotals[c.labelHe] = c.total;
+            if (c.labelEn) categoryTotals[c.labelEn] = c.total;
+        });
+        return {
+            // Budget
+            totalMonthly: budget.totalMonthly || 0,
+            target: budget.incomeTarget || 0,
+            categoryTotals,
+            loanTracks: budget.loanTracks || [],
+            // Calculation results
+            balanceAtRetirement: calc.balanceAtRetirement ?? null,
+            surplus: calc.surplus ?? null,
+            ranOutAtAge: calc.ranOutAtAge ?? null,
+            requiredCapitalAtRetirement: calc.requiredCapitalAtRetirement ?? null,
+            initialNetWithdrawal: calc.initialNetWithdrawal ?? null,
+            maxSustainableNetWithdrawal: calc.maxSustainableNetWithdrawal ?? null,
+            monthlyNetIncomeDesired: calc.monthlyNetIncomeDesired || 0,
+            retirementStartAge: calc.retirementStartAge || null,
+            retirementEndAge: calc.retirementEndAge || null,
+            currentAge: calc.currentAge || null,
+            monthlyContribution: calc.monthlyContribution || 0,
+            retirementDate: null,
+        };
+    } catch { return { totalMonthly: 0, target: 0, categoryTotals: {}, loanTracks: [] }; }
 }
 
 export function GlobalRemindersSync({ uid, lifeEvents = [], currentProfileId, profiles = [], updateProfile }) {
@@ -326,6 +364,43 @@ export function GlobalRemindersSync({ uid, lifeEvents = [], currentProfileId, pr
         window.addEventListener('rc-reminder-edited', handleEdit);
         return () => window.removeEventListener('rc-reminder-edited', handleEdit);
     }, [uid, profiles, updateProfile]);
+
+    // Smart alerts: re-evaluate whenever budget sessionStorage changes
+    useEffect(() => {
+        if (!uid) return;
+
+        const evaluate = () => {
+            const appState = readAppState();
+            getSmartAlerts(uid).then(alerts => {
+                const triggered = evaluateSmartAlerts(alerts, appState);
+                dispatchTriggered(triggered);
+            }).catch(() => {});
+        };
+
+        const disable = async (e) => {
+            const { id } = e.detail || {};
+            if (!id) return;
+            const current = await getSmartAlerts(uid).catch(() => []);
+            const next = current.map(a => a.id === id ? { ...a, enabled: false } : a);
+            await setSmartAlerts(uid, next).catch(() => {});
+            // notify SmartAlertsPanel to refresh its state
+            window.dispatchEvent(new CustomEvent('rc-smart-alerts-updated', { detail: { alerts: next } }));
+            dispatchTriggered(evaluateSmartAlerts(next, readAppState()));
+        };
+
+        evaluate(); // run immediately on mount / uid change
+        window.addEventListener('rc-budget-updated', evaluate);
+        window.addEventListener('rc-calc-updated', evaluate);
+        window.addEventListener('rc-smart-alerts-changed', evaluate);
+        window.addEventListener('rc-smart-alert-disable', disable);
+        return () => {
+            window.removeEventListener('rc-budget-updated', evaluate);
+            window.removeEventListener('rc-calc-updated', evaluate);
+            window.removeEventListener('rc-smart-alerts-changed', evaluate);
+            window.removeEventListener('rc-smart-alert-disable', disable);
+        };
+    }, [uid]);
+
 
     return null;
 }
