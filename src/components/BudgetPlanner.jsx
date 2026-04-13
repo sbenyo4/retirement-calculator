@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell, Save, BarChart3 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell, Save, BarChart3, Calculator } from 'lucide-react';
+import { MaintenanceCalcPanel } from './MaintenanceCalcPanel';
 import { Doughnut, Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend } from 'chart.js';
 ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend);
@@ -96,6 +97,7 @@ const DEFAULT_ITEMS = [
     { id: 'h-gas',         categoryId: 'housing',       label: 'גז',                   amount: 0, frequency: 'monthly', enabled: true },
     { id: 'h-internet',    categoryId: 'housing',       label: 'אינטרנט + סלולר',      amount: 0, frequency: 'monthly', enabled: true },
     { id: 'h-insurance',   categoryId: 'housing',       label: 'ביטוח דירה',           amount: 0, frequency: 'annual',  enabled: true },
+    { id: 'h-maintenance', categoryId: 'housing',       label: 'תחזוקת דירה',          amount: 0, frequency: 'annual',  enabled: true, type: 'maintenance-calc' },
     { id: 'f-grocery',     categoryId: 'food',          label: 'קניות וסופר',          amount: 0, frequency: 'monthly', enabled: true },
     { id: 'f-restaurants', categoryId: 'food',          label: 'מסעדות ובתי קפה',      amount: 0, frequency: 'monthly', enabled: true },
     { id: 'hlth-ins',      categoryId: 'health',        label: 'ביטוח בריאות משלים',   amount: 0, frequency: 'monthly', enabled: true },
@@ -542,10 +544,14 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
                                 const gap = barData.target - pieData.grandTotal;
                                 const isPos = gap >= 0;
                                 return (
-                                    <span dir="ltr" className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${isPos
+                                    <span dir="ltr" className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full flex items-baseline gap-1.5 ${isPos
                                         ? (isLight ? 'bg-green-50 text-green-600 border border-green-300' : 'bg-green-900/20 text-green-400 border border-green-700')
                                         : (isLight ? 'bg-red-50 text-red-600 border border-red-300' : 'bg-red-900/20 text-red-400 border border-red-700')}`}>
-                                        {isPos ? '+' : ''}{currency}{Math.abs(Math.round(gap)).toLocaleString()}
+                                        <span>{isPos ? '+' : ''}{currency}{Math.abs(Math.round(gap)).toLocaleString()}</span>
+                                        <span className="font-normal opacity-70">/ {isHe ? 'חו׳' : 'mo'}</span>
+                                        <span className="opacity-40">·</span>
+                                        <span>{isPos ? '+' : ''}{currency}{Math.abs(Math.round(gap * 12)).toLocaleString()}</span>
+                                        <span className="font-normal opacity-70">/ {isHe ? 'שנה' : 'yr'}</span>
                                     </span>
                                 );
                             })()}
@@ -591,11 +597,18 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
                                     {isHe ? 'הוצאות חודשיות לפי שנת פרישה' : 'Monthly Expenses by Retirement Year'}
                                 </h3>
                                 <div className="flex items-center gap-2 shrink-0">
-                                    {showSavings && barData.totalSavings > 0 && (
-                                        <span className={`text-xs font-semibold ${isLight ? 'text-green-700' : 'text-green-400'}`} dir="ltr">
-                                            {currency}{barData.totalSavings.toLocaleString()}
-                                        </span>
-                                    )}
+                                    {showSavings && barData.totalSavings > 0 && (() => {
+                                        const monthlySavings = barData.target - pieData.grandTotal;
+                                        return (
+                                            <span dir="ltr" className={`text-xs font-semibold flex items-baseline gap-1 ${isLight ? 'text-green-700' : 'text-green-400'}`}>
+                                                <span>+{currency}{Math.round(monthlySavings).toLocaleString()}</span>
+                                                <span className="font-normal opacity-60">/ {isHe ? 'חו׳' : 'mo'}</span>
+                                                <span className="opacity-40">·</span>
+                                                <span>+{currency}{Math.round(monthlySavings * 12).toLocaleString()}</span>
+                                                <span className="font-normal opacity-60">/ {isHe ? 'שנה' : 'yr'}</span>
+                                            </span>
+                                        );
+                                    })()}
                                     {barData.target > 0 && (
                                         <button
                                             onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
@@ -786,10 +799,16 @@ function genId() {
 }
 
 // ─── Single item row ──────────────────────────────────────────────────────────
-function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, onToggleEnabled, projFactor, showInflation }) {
+function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, onToggleEnabled, projFactor, showInflation, extraActionButton, labelAdornment }) {
     const [editingLabel, setEditingLabel] = useState(false);
     const [labelDraft, setLabelDraft] = useState(item.label);
     const [amountDraft, setAmountDraft] = useState(item.amount === 0 ? '' : String(item.amount));
+    const amountFocusedRef = useRef(false);
+    useEffect(() => {
+        if (!amountFocusedRef.current) {
+            setAmountDraft(item.amount === 0 ? '' : String(item.amount));
+        }
+    }, [item.amount]);
     const [showNote, setShowNote] = useState(false);
     const [noteDraft, setNoteDraft] = useState(item.note || '');
     const [showReminder, setShowReminder] = useState(false);
@@ -854,30 +873,30 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, o
                     {item.label}
                 </span>
             )}
+            {labelAdornment}
 
             {/* Amount + annual hint + inflation projection */}
-            <div className="flex flex-col items-end shrink-0">
-                <div className="flex items-center gap-1" dir="ltr">
-                    <span className={`text-xs ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{currency}</span>
-                    <input
-                        type="number"
-                        min="0"
-                        value={amountDraft}
-                        placeholder="0"
-                        onChange={e => setAmountDraft(e.target.value)}
-                        onBlur={commitAmount}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.target.blur(); } }}
-                        className={`w-24 text-sm text-end px-1.5 py-0.5 rounded border ${isLight ? 'border-slate-200 bg-white text-slate-800' : 'border-white/20 bg-white/10 text-white'} outline-none focus:border-blue-400`}
-                    />
-                    {showInflation && monthly > 0 && (
-                        <span className={`text-xs ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
-                            → {Math.round(monthly * projFactor)}
-                        </span>
-                    )}
-                </div>
+            <div className="flex items-center gap-1 shrink-0" dir="ltr">
+                <span className={`text-xs ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{currency}</span>
+                <input
+                    type="number"
+                    min="0"
+                    value={amountDraft}
+                    placeholder="0"
+                    onChange={e => setAmountDraft(e.target.value)}
+                    onFocus={() => { amountFocusedRef.current = true; }}
+                    onBlur={() => { amountFocusedRef.current = false; commitAmount(); }}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.target.blur(); } }}
+                    className={`w-24 text-sm text-end px-1.5 py-0.5 rounded border ${isLight ? 'border-slate-200 bg-white text-slate-800' : 'border-white/20 bg-white/10 text-white'} outline-none focus:border-blue-400`}
+                />
+                {showInflation && monthly > 0 && (
+                    <span className={`text-xs ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
+                        → {Math.round(monthly * projFactor)}
+                    </span>
+                )}
                 {showMonthlyHint && (
-                    <span className={`text-xs mt-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
-                        ≈ {currency}{Math.round(monthly)}/{t('budgetMonthly')}
+                    <span className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                        ≈{Math.round(monthly)}/{t('budgetMonthly')}
                     </span>
                 )}
             </div>
@@ -1246,8 +1265,63 @@ function LoanItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, onT
     );
 }
 
+// ─── Housing Maintenance Calculator item ─────────────────────────────────────
+function MaintenanceCalcItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, onToggleEnabled, projFactor, showInflation, householdSize, aiProvider, aiModel, apiKeyOverride }) {
+    const [showCalc, setShowCalc] = useState(false);
+
+    const calcButton = (
+        <button
+            onMouseDown={e => { e.preventDefault(); setShowCalc(v => !v); }}
+            className={`shrink-0 p-0.5 rounded transition-colors ${
+                showCalc
+                    ? (isLight ? 'text-teal-600 bg-teal-100' : 'text-teal-400 bg-teal-500/20')
+                    : item.calcInputs?.sqm
+                        ? (isLight ? 'text-teal-500 hover:text-teal-600' : 'text-teal-400 hover:text-teal-300')
+                        : (isLight ? 'text-slate-300 hover:text-teal-500' : 'text-gray-600 hover:text-teal-400')
+            }`}
+            title={isHe ? 'מחשבון תחזוקה' : 'Maintenance calculator'}
+        >
+            <Calculator size={13} />
+        </button>
+    );
+
+    return (
+        <div>
+            <BudgetItemRow
+                item={item}
+                isHe={isHe}
+                isLight={isLight}
+                currency={currency}
+                t={t}
+                onChange={onChange}
+                onDelete={onDelete}
+                onToggleEnabled={onToggleEnabled}
+                projFactor={projFactor}
+                showInflation={showInflation}
+                labelAdornment={calcButton}
+            />
+            {showCalc && (
+                <MaintenanceCalcPanel
+                    item={item}
+                    isHe={isHe}
+                    isLight={isLight}
+                    currency={currency}
+                    householdSize={householdSize}
+                    aiProvider={aiProvider}
+                    aiModel={aiModel}
+                    apiKeyOverride={apiKeyOverride}
+                    onApply={({ amount, calcInputs }) => {
+                        onChange({ ...item, amount, frequency: 'annual', calcInputs });
+                        setShowCalc(false);
+                    }}
+                />
+            )}
+        </div>
+    );
+}
+
 // ─── Category accordion ───────────────────────────────────────────────────────
-function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onToggleItemEnabled, onAddItem, onAddLoanItem, onToggleAll, projFactor, projYears, showInflation, totalMonthly }) {
+function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onToggleItemEnabled, onAddItem, onAddLoanItem, onAddMaintenanceItem, onToggleAll, projFactor, projYears, showInflation, totalMonthly, householdSize, aiProvider, aiModel, apiKeyOverride }) {
     const label = isHe ? category.labelHe : category.labelEn;
     const enabledItems = items.filter(i => i.enabled !== false);
     const categoryTotal = enabledItems.reduce((s, i) => s + toMonthly(i), 0);
@@ -1319,36 +1393,56 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
 
             {open && (
                 <div className="px-2 pb-2 space-y-0.5">
-                    {items.map(item => item.type === 'loan' ? (
-                        <LoanItemRow
-                            key={item.id}
-                            item={item}
-                            isHe={isHe}
-                            isLight={isLight}
-                            currency={currency}
-                            t={t}
-                            onChange={onChangeItem}
-                            onDelete={() => onDeleteItem(item.id)}
-                            onToggleEnabled={onToggleItemEnabled}
-                            projFactor={projFactor}
-                            projYears={projYears}
-                            showInflation={showInflation}
-                        />
-                    ) : (
-                        <BudgetItemRow
-                            key={item.id}
-                            item={item}
-                            isHe={isHe}
-                            isLight={isLight}
-                            currency={currency}
-                            t={t}
-                            onChange={onChangeItem}
-                            onDelete={() => onDeleteItem(item.id)}
-                            onToggleEnabled={onToggleItemEnabled}
-                            projFactor={projFactor}
-                            showInflation={showInflation}
-                        />
-                    ))}
+                    {items.map(item =>
+                        item.type === 'loan' ? (
+                            <LoanItemRow
+                                key={item.id}
+                                item={item}
+                                isHe={isHe}
+                                isLight={isLight}
+                                currency={currency}
+                                t={t}
+                                onChange={onChangeItem}
+                                onDelete={() => onDeleteItem(item.id)}
+                                onToggleEnabled={onToggleItemEnabled}
+                                projFactor={projFactor}
+                                projYears={projYears}
+                                showInflation={showInflation}
+                            />
+                        ) : item.type === 'maintenance-calc' ? (
+                            <MaintenanceCalcItemRow
+                                key={item.id}
+                                item={item}
+                                isHe={isHe}
+                                isLight={isLight}
+                                currency={currency}
+                                t={t}
+                                onChange={onChangeItem}
+                                onDelete={() => onDeleteItem(item.id)}
+                                onToggleEnabled={onToggleItemEnabled}
+                                projFactor={projFactor}
+                                showInflation={showInflation}
+                                householdSize={householdSize}
+                                aiProvider={aiProvider}
+                                aiModel={aiModel}
+                                apiKeyOverride={apiKeyOverride}
+                            />
+                        ) : (
+                            <BudgetItemRow
+                                key={item.id}
+                                item={item}
+                                isHe={isHe}
+                                isLight={isLight}
+                                currency={currency}
+                                t={t}
+                                onChange={onChangeItem}
+                                onDelete={() => onDeleteItem(item.id)}
+                                onToggleEnabled={onToggleItemEnabled}
+                                projFactor={projFactor}
+                                showInflation={showInflation}
+                            />
+                        )
+                    )}
                     <div className="flex items-center gap-2 mt-1 flex-wrap" dir={isHe ? 'rtl' : 'ltr'}>
                         <button
                             onClick={onAddItem}
@@ -1364,6 +1458,16 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
                             <Plus size={12} />
                             {t('budgetAddLoan')}
                         </button>
+                        {category.id === 'housing' && onAddMaintenanceItem && (
+                            <button
+                                onClick={onAddMaintenanceItem}
+                                className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-lg transition-colors ${isLight ? 'text-teal-600 hover:bg-teal-50' : 'text-teal-400 hover:bg-teal-900/20'}`}
+                            >
+                                <Plus size={12} />
+                                <Calculator size={11} />
+                                {isHe ? 'תחזוקת דירה' : 'Maintenance'}
+                            </button>
+                        )}
                     </div>
                 </div>
             )}
@@ -1544,17 +1648,37 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                 }
             }
             if (loadedItems) {
-                const normalizedLoadedItems = loadedItems.map(normalizeBudgetItem);
-                setItems(normalizedLoadedItems);
-                setHouseholdSize(loadedHouseholdSize);
-                confirmedRef.current = { items: normalizedLoadedItems, householdSize: loadedHouseholdSize, savedAt: Date.now() };
+                let normalizedLoadedItems = loadedItems.map(normalizeBudgetItem);
                 const slots = Array.isArray(saved?.backupSlots) ? saved.backupSlots : [];
-                backupSlotsRef.current = slots;
-                setBackups(slots);
-                if (JSON.stringify(normalizedLoadedItems) !== JSON.stringify(loadedItems)) {
+
+                // Inject any DEFAULT_ITEMS missing from saved data (e.g. newly added defaults).
+                // Each missing item is inserted after the last existing item of the same category.
+                const loadedIds = new Set(normalizedLoadedItems.map(i => i.id));
+                const missingDefaults = DEFAULT_ITEMS
+                    .filter(d => !loadedIds.has(d.id))
+                    .map(normalizeBudgetItem);
+                if (missingDefaults.length > 0) {
+                    const merged = [...normalizedLoadedItems];
+                    missingDefaults.forEach(missing => {
+                        let insertAt = merged.length;
+                        for (let i = merged.length - 1; i >= 0; i--) {
+                            if (merged[i].categoryId === missing.categoryId) { insertAt = i + 1; break; }
+                        }
+                        merged.splice(insertAt, 0, missing);
+                    });
+                    normalizedLoadedItems = merged;
+                    setBudgetItems(uid, normalizedLoadedItems, loadedHouseholdSize, slots)
+                        .catch(err => console.error('[Budget defaults injection]', err));
+                } else if (JSON.stringify(normalizedLoadedItems) !== JSON.stringify(loadedItems)) {
                     setBudgetItems(uid, normalizedLoadedItems, loadedHouseholdSize, slots)
                         .catch(err => console.error('[Budget status migration]', err));
                 }
+
+                setItems(normalizedLoadedItems);
+                setHouseholdSize(loadedHouseholdSize);
+                confirmedRef.current = { items: normalizedLoadedItems, householdSize: loadedHouseholdSize, savedAt: Date.now() };
+                backupSlotsRef.current = slots;
+                setBackups(slots);
             }
             saveAllowedRef.current = true;
             setLoaded(true);
@@ -1594,27 +1718,44 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         if (!loaded) return;
         try {
             const monthly = items.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0);
+            const incomeTarget = Math.round(results?.initialNetWithdrawal ?? parseFloat(inputs.monthlyNetIncomeDesired) ?? 0);
+            const perPerson = householdSize > 0 ? Math.round(monthly / householdSize) : 0;
+
+            const SCALABLE_CATS = new Set(['food', 'health', 'personal', 'family', 'entertainment']);
             const categories = CATEGORIES.map(cat => {
                 const catItems = items.filter(i => i.categoryId === cat.id && i.enabled !== false && toMonthly(i) > 0);
-                if (!catItems.length) return null;
+                const catTotal = Math.round(catItems.reduce((s, i) => s + toMonthly(i), 0));
                 return {
                     labelHe: cat.labelHe,
                     labelEn: cat.labelEn,
-                    total: Math.round(catItems.reduce((s, i) => s + toMonthly(i), 0)),
-                    items: catItems.map(i => ({ label: i.label, amount: Math.round(toMonthly(i)) })),
+                    total: catTotal,
+                    perPerson: householdSize > 0 ? Math.round(catTotal / householdSize) : null,
+                    scalesWithPeople: SCALABLE_CATS.has(cat.id),
+                    empty: catItems.length === 0,
+                    items: catItems.map(i => ({
+                        label: i.label,
+                        amount: Math.round(toMonthly(i)),
+                        ...(i.type === 'maintenance-calc' && i.calcInputs ? { note: 'חושב ממחשבון תחזוקה', calcInputs: i.calcInputs } : {}),
+                    })),
                 };
-            }).filter(Boolean);
+            });
+
             const loanTracks = items.filter(i => i.type === 'loan' && i.enabled !== false)
                 .flatMap(i => (i.tracks || []).filter(tr => tr.endDate && tr.amount > 0).map(tr => {
                     const [y, m] = tr.endDate.split('-').map(Number);
                     const ml = y * 12 + (m - 1) - getNowYM();
                     return { loan: i.label, track: tr.label, amount: tr.amount, endDate: tr.endDate, monthsLeft: ml, active: ml >= 0 };
                 }));
+
             const projectedMonthly = items.filter(i => i.enabled !== false).reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0);
+
             sessionStorage.setItem('rc-budget-summary', JSON.stringify({
                 totalMonthly: Math.round(monthly),
                 totalAnnual: Math.round(monthly * 12),
-                gap: Math.round((parseFloat(inputs.monthlyNetIncomeDesired) || 0) - monthly),
+                incomeTarget,
+                gap: Math.round(incomeTarget - monthly),
+                householdSize,
+                perPerson,
                 categories,
                 loanTracks: loanTracks.length ? loanTracks : undefined,
                 inflation: showInflation ? {
@@ -1625,7 +1766,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                 } : undefined,
             }));
         } catch {}
-    }, [items, loaded, inputs.monthlyNetIncomeDesired, showInflation, inflationRate, projFactor, projYears]);
+    }, [items, loaded, inputs.monthlyNetIncomeDesired, results, householdSize, showInflation, inflationRate, projFactor, projYears]);
 
     // Keep budget reminders in sync immediately from local state (before DB debounce/save).
     useEffect(() => {
@@ -1759,6 +1900,12 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         setOpenCategoryId(categoryId);
     }, [updateItems, t]);
 
+    const handleAddMaintenanceItem = useCallback((categoryId) => {
+        const newItem = { id: genId(), categoryId, label: isHe ? 'תחזוקת דירה' : 'Home Maintenance', type: 'maintenance-calc', amount: 0, frequency: 'annual', enabled: true };
+        updateItems(prev => [...prev, newItem]);
+        setOpenCategoryId(categoryId);
+    }, [updateItems, isHe]);
+
     const handleRestore = useCallback((backup) => {
         setPendingConfirm({ type: 'restore', backup });
     }, []);
@@ -1860,7 +2007,10 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                         }).join('\n');
                         return `  - ${i.label} (loan) ${cur}${Math.round(toMonthly(i))}/mo:\n${trackLines}`;
                     }
-                    return `  - ${i.label}: ${cur}${Math.round(toMonthly(i))}/mo`;
+                    const suffix = i.type === 'maintenance-calc' && i.calcInputs
+                        ? (isHe ? ' [חושב ממחשבון תחזוקה]' : ' [from maintenance calculator]')
+                        : '';
+                    return `  - ${i.label}: ${cur}${Math.round(toMonthly(i))}/mo${suffix}`;
                 }).join('\n');
                 return `${catLabels[cat.id] || cat.id} (${cur}${Math.round(catTotal)}/mo${scaleTag}):\n${itemLines}`;
             }).filter(Boolean).join('\n');
@@ -2221,11 +2371,16 @@ Gap vs target and what can be optimized.`;
                         onToggleItemEnabled={handleToggleItemEnabled}
                         onAddItem={() => handleAddItem(cat.id)}
                         onAddLoanItem={() => handleAddLoanItem(cat.id)}
+                        onAddMaintenanceItem={() => handleAddMaintenanceItem(cat.id)}
                         onToggleAll={() => handleToggleCategoryItems(cat.id)}
                         projFactor={projFactor}
                         projYears={projYears}
                         showInflation={showInflation}
                         totalMonthly={totalMonthly}
+                        householdSize={householdSize}
+                        aiProvider={aiProvider}
+                        aiModel={aiModel}
+                        apiKeyOverride={apiKeyOverride}
                     />
                 );
             })}
@@ -2339,7 +2494,7 @@ Gap vs target and what can be optimized.`;
             {/* ── AI Insight modal ── */}
             {aiModalOpen && (
                 <div
-                    className={`fixed z-[9999] w-80 rounded-2xl shadow-2xl border overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-white/20'}`}
+                    className={`fixed z-[9999] w-[480px] rounded-2xl shadow-2xl border overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-white/20'}`}
                     style={{ top: 72, right: 16, ...aiDragStyle }}
                 >
                     {/* Header — draggable */}
@@ -2359,7 +2514,7 @@ Gap vs target and what can be optimized.`;
                         >✕</button>
                     </div>
                     {/* Body */}
-                    <div className="px-4 py-4 max-h-[70vh] overflow-y-auto custom-scrollbar scrollbar-right" dir={isHe ? 'rtl' : 'ltr'}>
+                    <div className="px-4 py-4 max-h-[80vh] overflow-y-auto custom-scrollbar scrollbar-right" dir={isHe ? 'rtl' : 'ltr'}>
                         {aiLoading ? (
                             <div className={`flex items-center gap-2 text-sm ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                                 <Loader2 size={15} className="animate-spin text-purple-400" />

@@ -2,13 +2,13 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 
 const SESSION_KEY = 'rc-reminders';
 
-// In-memory set of reminders shown in CURRENT browser session life
+// In-memory state for the current browser session
 const shownThisSession = new Set();
 const forcedPopupUntil = new Map();
-const loginTargetReminderIds = new Set();
 const loginHandledReminderIds = new Set();
-let loginPopupMode = true;
-let loginPopupGraceUntil = 0;
+// Set to true only after the first DB sync completes (via markInitialSyncDone).
+// Prevents any alert from flashing before we know what is actually due.
+let syncReady = false;
 
 function toGlobalId(id, source) {
     return source ? `${source}-${id}` : String(id);
@@ -24,19 +24,19 @@ function isForced(globalId) {
     return true;
 }
 
-function resetLoginPopupModeState() {
-    loginPopupMode = true;
-    loginPopupGraceUntil = Date.now() + 2500;
-    loginTargetReminderIds.clear();
-    loginHandledReminderIds.clear();
-}
-
 export function resetReminderSession() {
-    console.log("%c[Reminders] Resetting session shown-state", "color: #ef4444; font-weight: bold");
     shownThisSession.clear();
     forcedPopupUntil.clear();
-    resetLoginPopupModeState();
+    loginHandledReminderIds.clear();
+    syncReady = false;
     try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+    window.dispatchEvent(new Event('rc-reminders-updated'));
+}
+
+// Called by GlobalRemindersSync once the first DB load is complete.
+// Only after this point will alert popups be allowed to appear.
+export function markInitialSyncDone() {
+    syncReady = true;
     window.dispatchEvent(new Event('rc-reminders-updated'));
 }
 
@@ -131,16 +131,6 @@ export function useReminders() {
         catch { return []; }
     });
     const [tick, setTick] = useState(0);
-    const [systemReady, setSystemReady] = useState(false);
-    const [forceShowTill, setForceShowTill] = useState(0);
-
-    useEffect(() => {
-        const t = setTimeout(() => {
-            setSystemReady(true);
-            setForceShowTill(Date.now() + 15000);
-        }, 800);
-        return () => clearTimeout(t);
-    }, []);
 
     useEffect(() => {
         const update = () => {
@@ -176,32 +166,11 @@ export function useReminders() {
         };
     }, [normalizedReminders]);
 
-    useEffect(() => {
-        if (!loginPopupMode) return;
-
-        const now = Date.now();
-        if (now <= loginPopupGraceUntil) {
-            dueNow.forEach(r => loginTargetReminderIds.add(toGlobalId(r.id, r.source)));
-            const wait = Math.max(0, loginPopupGraceUntil - now);
-            const timeoutId = setTimeout(() => {
-                window.dispatchEvent(new Event('rc-reminders-updated'));
-            }, wait + 5);
-            return () => clearTimeout(timeoutId);
-        }
-
-        const allHandled = Array.from(loginTargetReminderIds).every(id => loginHandledReminderIds.has(id));
-        if (allHandled) {
-            loginPopupMode = false;
-            window.dispatchEvent(new Event('rc-reminders-updated'));
-        }
-    }, [dueNow, tick]);
-
     const alertDueNow = useMemo(() => {
-        if (!loginPopupMode) return [];
+        if (!syncReady) return [];
         return dueNow.filter(r => {
             const globalId = toGlobalId(r.id, r.source);
             if (isForced(globalId)) return true;
-            if (!loginTargetReminderIds.has(globalId)) return false;
             return !loginHandledReminderIds.has(globalId);
         });
     }, [dueNow, tick]);

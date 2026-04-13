@@ -1860,6 +1860,10 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         if (filterMode === 'new') result = result.filter(e => newItemIds.has(e.item.id) && !seenNewIds.has(e.item.id));
         else if (filterMode === 'hasNote') result = result.filter(e => e.item.note?.trim());
         else if (filterMode === 'hasReminder') result = result.filter(e => e.item.reminder?.date);
+        else if (filterMode === 'done') result = result.filter(e => {
+            const k = (e.item.id && typeof e.item.id === 'string' && e.item.id.trim()) ? e.item.id.trim() : `${e.catId}-${(e.item.title || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9א-ת-]/g, '')}`;
+            return checkedItems.has(k);
+        });
         else if (filterMode) result = result.filter(e => e.item.priority === filterMode);
         if (timingFilter) {
             result = result
@@ -2169,9 +2173,12 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                 style={{ width: `${totalItems ? (doneItems / totalItems) * 100 : 0}%` }}
                             />
                         </div>
-                        <span className={`text-[11px] font-medium shrink-0 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                        <button
+                            onClick={() => setFilterMode(f => f === 'done' ? null : 'done')}
+                            className={`text-[11px] font-medium shrink-0 rounded px-1 -mx-1 transition-colors ${filterMode === 'done' ? (isLight ? 'bg-green-100 text-green-700' : 'bg-green-500/20 text-green-400') : (isLight ? 'text-gray-500 hover:text-green-600' : 'text-gray-400 hover:text-green-400')}`}
+                        >
                             {doneItems}/{totalItems} {txt('done', 'טופל')}
-                        </span>
+                        </button>
                     </div>
                 </div>
             )}
@@ -2274,22 +2281,25 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                     <div className={`text-xs font-semibold mb-3 flex items-center gap-2 ${
                         filterMode === 'critical' ? 'text-red-400' :
                         filterMode === 'high' ? 'text-orange-400' :
-                        filterMode === 'new' ? 'text-green-400' : 
+                        filterMode === 'new' ? 'text-green-400' :
                         filterMode === 'hasNote' ? 'text-amber-500' :
                         filterMode === 'hasReminder' ? 'text-blue-500' :
+                        filterMode === 'done' ? 'text-green-500' :
                         'text-amber-400'
                     }`}>
                         {filterMode === 'critical' ? <AlertTriangle size={13} /> :
                          filterMode === 'high' ? <BadgeAlert size={13} /> :
-                         filterMode === 'new' ? <Zap size={13} /> : 
+                         filterMode === 'new' ? <Zap size={13} /> :
                          filterMode === 'hasNote' ? <MessageSquare size={13} /> :
                          filterMode === 'hasReminder' ? <Bell size={13} /> :
+                         filterMode === 'done' ? <CheckCircle size={13} /> :
                          <AlertTriangle size={13} />}
                         {filterMode === 'critical' ? txt(`${filteredItems.length} Critical Items`, `${filteredItems.length} פריטים קריטיים`) :
                          filterMode === 'high' ? txt(`${filteredItems.length} High Priority Items`, `${filteredItems.length} פריטים בעדיפות גבוהה`) :
                          filterMode === 'new' ? txt(`${filteredItems.length} New Items`, `${filteredItems.length} פריטים חדשים`) :
                          filterMode === 'hasNote' ? txt(`${filteredItems.length} Items with Notes`, `${filteredItems.length} פריטים עם הערות`) :
                          filterMode === 'hasReminder' ? txt(`${filteredItems.length} Items with Reminders`, `${filteredItems.length} פריטים עם תזכורות`) :
+                         filterMode === 'done' ? txt(`${filteredItems.length} Handled Items`, `${filteredItems.length} פריטים טופלו`) :
                          txt(`${filteredItems.length} Items for Review`, `${filteredItems.length} פריטים לבדיקה`)}
                     </div>
                     {filteredItems.map(({ categoryTitle, categoryEmoji, categoryIcon: CatIcon, catId, item }) => {

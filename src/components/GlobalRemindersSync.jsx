@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { getBudgetItems, getChecklistState, getGeneralReminders, setBudgetItems, setChecklistState, setGeneralReminders, getDismissedReminders, dismissReminder } from '../utils/db';
-import { syncComponentReminders, syncMultipleSources } from '../hooks/useReminders';
+import { syncComponentReminders, syncMultipleSources, markInitialSyncDone } from '../hooks/useReminders';
 
 const LIFE_EVENT_SOURCE_PREFIX = 'lifeEvents:';
 const LEGACY_LIFE_EVENT_SOURCE = 'lifeEvents';
@@ -82,10 +82,13 @@ export function GlobalRemindersSync({ uid, lifeEvents = [], currentProfileId, pr
                         configs.push({ source: 'general', items: generalReminders });
 
                         syncMultipleSources(configs);
+                        markInitialSyncDone();
                     });
                 })
                 .catch(err => {
                     console.error("[GlobalRemindersSync] Atomic sync failed:", err);
+                    // Even on failure, unblock alerts so the user isn't stuck with nothing.
+                    markInitialSyncDone();
                 });
         }, 100);
     }, [uid]);
