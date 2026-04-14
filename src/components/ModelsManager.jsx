@@ -26,21 +26,36 @@ function readAppState() {
         });
         return {
             totalMonthly: budget.totalMonthly || 0,
+            totalAnnual: budget.totalAnnual || 0,
             target: budget.incomeTarget || 0,
+            budgetGap: budget.gap ?? null,
+            householdSize: budget.householdSize ?? null,
+            perPerson: budget.perPerson ?? null,
+            inflationRate: budget.inflation?.rate ?? null,
+            inflationProjectedMonthly: budget.inflation?.projectedMonthly ?? null,
             categoryTotals,
             loanTracks: budget.loanTracks || [],
             balanceAtRetirement: calc.balanceAtRetirement ?? null,
+            balanceAtEnd: calc.balanceAtEnd ?? null,
             surplus: calc.surplus ?? null,
+            pvOfDeficit: calc.pvOfDeficit ?? null,
+            pvOfCapitalPreservation: calc.pvOfCapitalPreservation ?? null,
             ranOutAtAge: calc.ranOutAtAge ?? null,
             requiredCapitalAtRetirement: calc.requiredCapitalAtRetirement ?? null,
+            requiredCapitalForPerpetuity: calc.requiredCapitalForPerpetuity ?? null,
             initialNetWithdrawal: calc.initialNetWithdrawal ?? null,
+            averageNetWithdrawal: calc.averageNetWithdrawal ?? null,
             maxSustainableNetWithdrawal: calc.maxSustainableNetWithdrawal ?? null,
+            pensionGrossAtNI: calc.pensionGrossAtNI ?? null,
+            pensionNetAtNI: calc.pensionNetAtNI ?? null,
+            pensionNonWorkAtNI: calc.pensionNonWorkAtNI ?? null,
+            niThreshold: calc.niThreshold ?? null,
             monthlyNetIncomeDesired: calc.monthlyNetIncomeDesired || 0,
             retirementStartAge: calc.retirementStartAge || null,
             retirementEndAge: calc.retirementEndAge || null,
             currentAge: calc.currentAge || null,
             monthlyContribution: calc.monthlyContribution || 0,
-            retirementDate: null,
+            retirementDate: calc.retirementDate || null,
         };
     } catch { return { totalMonthly: 0, target: 0, categoryTotals: {}, loanTracks: [] }; }
 }
@@ -399,10 +414,17 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
 
                         <div className={`rounded-xl overflow-hidden ${isLight ? 'bg-gray-50 border border-gray-200' : 'bg-white/5 border border-white/10'}`}>
                             <button onClick={() => toggleSection('models')} className={`w-full flex items-center justify-between px-4 py-3 text-start ${isLight ? 'hover:bg-gray-100' : 'hover:bg-white/5'} transition-colors`}>
-                                <h3 className={`text-sm font-semibold ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
-                                    {language === 'he' ? 'מודלי AI' : 'AI Models'}
-                                </h3>
-                                <ChevronDown size={15} className={`transition-transform ${collapsed['models'] ? '' : 'rotate-180'} ${isLight ? 'text-gray-400' : 'text-gray-500'}`} />
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <h3 className={`text-sm font-semibold shrink-0 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                                        {language === 'he' ? 'מודלי AI' : 'AI Models'}
+                                    </h3>
+                                    {aiModel && (
+                                        <span className={`text-xs px-2 py-0.5 rounded-full truncate max-w-[180px] ${isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-500/20 text-blue-300'}`}>
+                                            {aiModel}
+                                        </span>
+                                    )}
+                                </div>
+                                <ChevronDown size={15} className={`shrink-0 transition-transform ${collapsed['models'] ? '' : 'rotate-180'} ${isLight ? 'text-gray-400' : 'text-gray-500'}`} />
                             </button>
                             {!collapsed['models'] && <div className="px-4 pt-2 pb-4 space-y-4">
                             <div className="flex items-center justify-between gap-2">

@@ -5,7 +5,6 @@ import { useDraggable } from '../hooks/useDraggable';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { getChatResponse, buildChatSystemPrompt } from '../utils/ai-chat';
 
-const STORAGE_KEY = 'chatButtonPos';
 const MAX_DISPLAY_MESSAGES = 20; // keep last N messages in state (DOM + context bound)
 
 const SUGGESTIONS = {
@@ -31,82 +30,17 @@ const SUGGESTIONS = {
     ],
 };
 
-const DEFAULT_BTN_POS = { bottom: 24, right: 24 };
-const BTN_SIZE = 40;
-
-function clampPos(pos) {
-    const maxRight = Math.max(8, window.innerWidth - BTN_SIZE - 8);
-    const maxBottom = Math.max(8, window.innerHeight - BTN_SIZE - 8);
-    return {
-        right: Math.max(8, Math.min(maxRight, pos.right ?? 24)),
-        bottom: Math.max(8, Math.min(maxBottom, pos.bottom ?? 24)),
-    };
-}
-
-function loadBtnPos() {
-    try {
-        const saved = sessionStorage.getItem(STORAGE_KEY);
-        return saved ? clampPos(JSON.parse(saved)) : null;
-    } catch { return null; }
-}
-
-export function ChatWidget({ inputs, results, language, aiProvider, aiModel, apiKeyOverride, resetKey }) {
+export function ChatWidget({ inputs, results, language, aiProvider, aiModel, apiKeyOverride, open, setOpen }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
     const isHe = language === 'he';
 
-    const [open, setOpen] = useState(false);
     useBodyScrollLock(open);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [copiedIdx, setCopiedIdx] = useState(null);
-
-    // Button drag state
-    const [btnPos, setBtnPos] = useState(() => loadBtnPos() || DEFAULT_BTN_POS);
-    const btnDragging = useRef(false);
-    const btnOrigin = useRef({ x: 0, y: 0 });
-
-    // Re-clamp button position on mount and on resize
-    useEffect(() => {
-        setBtnPos(prev => clampPos(prev));
-        const onResize = () => setBtnPos(prev => clampPos(prev));
-        window.addEventListener('resize', onResize);
-        return () => window.removeEventListener('resize', onResize);
-    }, []);
-
-    // Snap to reminders position on resetKey (login) or mount
-    useEffect(() => {
-        const handleAutoPos = () => {
-            const bell = document.getElementById('reminder-bell');
-            if (bell) {
-                const rect = bell.getBoundingClientRect();
-                const vw = window.innerWidth;
-                const vh = window.innerHeight;
-                const btnSize = 40;
-                // Align with the top of the bell (nudged 2px up for total precision)
-                const btnTop = rect.top - 2;
-                const nextBottom = vh - (btnTop + btnSize);
-                
-                // Position to the right of the bell (approaching the right edge)
-                // rect.right is the distance from left edge to bell's right edge.
-                // vw - rect.right is the distance from right edge to bell's right edge.
-                let nextRight = (vw - rect.right) - btnSize - 8;
-                if (nextRight < 8) nextRight = 8; // clamp to edge
-                
-                const next = clampPos({ right: nextRight, bottom: nextBottom });
-                setBtnPos(next);
-                sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-            }
-        };
-        // Small timeout to ensure header is rendered and layout is stable
-        const timer = setTimeout(handleAutoPos, 300);
-        return () => clearTimeout(timer);
-    }, [resetKey]);
-
-    const btnMoved = useRef(false);
-    const btnRef = useRef(null);
 
     // Panel drag
     const { dragStyle: panelDragStyle, onDragMouseDown: onPanelDragMouseDown } = useDraggable(open);
@@ -203,46 +137,6 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
         if (open) setTimeout(() => inputRef.current?.focus(), 100);
     }, [open]);
 
-    // Button drag handlers
-    const onBtnMouseDown = useCallback((e) => {
-        if (e.button !== 0) return;
-        btnDragging.current = true;
-        btnMoved.current = false;
-        btnOrigin.current = { x: e.clientX, y: e.clientY };
-        e.preventDefault();
-    }, []);
-
-    useEffect(() => {
-        const onMove = (e) => {
-            if (!btnDragging.current) return;
-            const dx = e.clientX - btnOrigin.current.x;
-            const dy = e.clientY - btnOrigin.current.y;
-            if (Math.abs(dx) > 4 || Math.abs(dy) > 4) btnMoved.current = true;
-            if (!btnMoved.current) return;
-
-            setBtnPos(prev => {
-                const btnW = 56, btnH = 56;
-                const newRight = Math.max(8, Math.min(window.innerWidth - btnW - 8, (prev.right || 24) - dx));
-                const newBottom = Math.max(8, Math.min(window.innerHeight - btnH - 8, (prev.bottom || 24) - dy));
-                btnOrigin.current = { x: e.clientX, y: e.clientY };
-                const next = { right: newRight, bottom: newBottom };
-                sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-                return next;
-            });
-        };
-        const onUp = () => {
-            if (btnDragging.current && !btnMoved.current) {
-                setOpen(v => !v);
-            }
-            btnDragging.current = false;
-        };
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
-        return () => {
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onUp);
-        };
-    }, []);
 
     const sendMessage = useCallback(async (text) => {
         const trimmed = (text ?? input).trim();
@@ -292,32 +186,16 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
 
     const suggestions = SUGGESTIONS[language] || SUGGESTIONS.en;
 
-    // Panel anchors near button
-    // Compute panel position so it always stays inside the viewport
     const PANEL_W = 360;
     const PANEL_MIN_H = 300;
-    const BTN_W = 56, BTN_H = 56, GAP = 8;
-    const vw = window.innerWidth, vh = window.innerHeight;
-
-    // Button top-left in viewport coords
-    const btnX = vw - (btnPos.right || 24) - BTN_W;
-    const btnY = vh - (btnPos.bottom || 24) - BTN_H;
-
-    // Horizontal: align right edges, clamp inside viewport
-    const panelLeft = Math.max(GAP, Math.min(btnX + BTN_W - PANEL_W, vw - PANEL_W - GAP));
-
-    // Vertical: open above if enough room, otherwise below
-    const spaceAbove = btnY - GAP;
-    const spaceBelow = vh - (btnY + BTN_H) - GAP;
-    const openAbove = spaceAbove >= PANEL_MIN_H || spaceAbove >= spaceBelow;
-    const panelMaxH = Math.max(PANEL_MIN_H, openAbove ? spaceAbove - GAP : spaceBelow - GAP);
+    const GAP = 24;
+    const vh = window.innerHeight;
+    const panelMaxH = Math.max(PANEL_MIN_H, vh - 120);
 
     const panelStyle = {
         position: 'fixed',
-        left: panelLeft,
-        ...(openAbove
-            ? { bottom: vh - btnY + GAP }
-            : { top: btnY + BTN_H + GAP }),
+        bottom: GAP,
+        right: GAP,
         width: PANEL_W,
         maxHeight: panelMaxH,
         zIndex: 150,
@@ -543,20 +421,6 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
                 </div>
             )}
 
-            {/* Floating Button */}
-            <button
-                ref={btnRef}
-                onMouseDown={onBtnMouseDown}
-                className={`fixed z-[149] w-10 h-10 rounded-full shadow-xl flex items-center justify-center transition-colors select-none ${
-                    open
-                        ? 'bg-gray-700 text-white'
-                        : 'bg-blue-600 hover:bg-blue-700 text-white'
-                }`}
-                style={{ bottom: btnPos.bottom, right: btnPos.right, cursor: 'grab' }}
-                title={isHe ? 'שאל את היועץ' : 'Ask your advisor'}
-            >
-                {open ? <X size={18} /> : <MessageCircle size={18} />}
-            </button>
         </>
     );
 }

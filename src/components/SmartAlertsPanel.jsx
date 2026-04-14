@@ -119,9 +119,50 @@ function buildTestRows(alert, appState, isHe) {
             ? appState.initialNetWithdrawal / appState.monthlyNetIncomeDesired : null;
         rows.push([txt('Current ratio', 'יחס נוכחי'), ratio != null ? pct(ratio) : '—']);
         rows.push([txt('Threshold', 'סף'), `${c.operator}${pct(c.threshold)}`]);
+    } else if (c.type === 'withdrawal_rate_from_portfolio') {
+        rows.push([txt('Initial net withdrawal (monthly)', 'משיכה נטו חודשית'), fmt(appState.initialNetWithdrawal)]);
+        rows.push([txt('Portfolio at retirement', 'תיק בגיל פרישה'), fmt(appState.balanceAtRetirement)]);
+        const rate = appState.balanceAtRetirement && appState.initialNetWithdrawal != null
+            ? (appState.initialNetWithdrawal * 12) / appState.balanceAtRetirement : null;
+        rows.push([txt('Withdrawal rate (annual)', 'שיעור משיכה (שנתי)'), rate != null ? pct(rate) : '—']);
+        rows.push([txt('Threshold', 'סף'), `${c.operator}${pct(c.threshold)}`]);
     } else if (c.type === 'ran_out_before_age') {
         rows.push([txt('Funds run out at age', 'הכסף נגמר בגיל'), appState.ranOutAtAge != null ? String(appState.ranOutAtAge) : txt('Never', 'לא נגמר')]);
         rows.push([txt('Threshold age', 'גיל סף'), String(c.age)]);
+    } else if (c.type === 'balance_at_end') {
+        rows.push([txt('Balance at end of period', 'יתרה בסוף התקופה'), fmt(appState.balanceAtEnd)]);
+        rows.push([txt('Threshold', 'סף'), `${c.operator}${fmt(c.amount)}`]);
+    } else if (c.type === 'perpetuity_capital') {
+        rows.push([txt('Capital for perpetuity', 'הון לנצחיות'), fmt(appState.requiredCapitalForPerpetuity)]);
+        rows.push([txt('Threshold', 'סף'), `${c.operator}${fmt(c.amount)}`]);
+    } else if (c.type === 'pv_of_deficit') {
+        rows.push([txt('PV of deficit (save today)', 'PV גירעון (לחסוך היום)'), fmt(appState.pvOfDeficit)]);
+        rows.push([txt('Threshold', 'סף'), `${c.operator}${fmt(c.amount)}`]);
+    } else if (c.type === 'budget_gap') {
+        rows.push([txt('Income target', 'יעד הכנסה'), fmt(appState.target)]);
+        rows.push([txt('Monthly expenses', 'הוצאות חודשיות'), fmt(appState.totalMonthly)]);
+        rows.push([txt('Gap', 'פער'), appState.budgetGap != null ? fmt(appState.budgetGap) : fmt((appState.target || 0) - appState.totalMonthly)]);
+        rows.push([txt('Threshold', 'סף'), `${c.operator}${fmt(c.amount)}`]);
+    } else if (c.type === 'average_net_withdrawal') {
+        rows.push([txt('Average net withdrawal', 'ממוצע משיכה נטו'), fmt(appState.averageNetWithdrawal)]);
+        rows.push([txt('Initial net withdrawal', 'משיכה נטו ראשונית'), fmt(appState.initialNetWithdrawal)]);
+        rows.push([txt('Threshold', 'סף'), `${c.operator}${fmt(c.amount)}`]);
+    } else if (c.type === 'pension_income_at_ni') {
+        rows.push([txt('Gross pension at 67', 'פנסיה ברוטו בגיל 67'), fmt(appState.pensionGrossAtNI)]);
+        rows.push([txt('Net pension at 67', 'פנסיה נטו בגיל 67'), fmt(appState.pensionNetAtNI)]);
+        rows.push([txt('Threshold', 'סף'), `${c.operator}${fmt(c.amount)}`]);
+    } else if (c.type === 'ni_income_test') {
+        rows.push([txt('Non-work income at 67', 'הכנסה שאינה עבודה בגיל 67'), fmt(appState.pensionNonWorkAtNI)]);
+        rows.push([txt('NI threshold', 'סף ביטוח לאומי'), fmt(appState.niThreshold)]);
+        const ratio = appState.niThreshold && appState.pensionNonWorkAtNI != null
+            ? appState.pensionNonWorkAtNI / appState.niThreshold : null;
+        rows.push([txt('Ratio', 'יחס'), ratio != null ? pct(ratio) : '—']);
+        rows.push([txt('Threshold', 'סף'), `${c.operator}${pct(c.threshold)}`]);
+    } else if (c.type === 'inflation_adjusted_budget') {
+        rows.push([txt('Inflation rate', 'שיעור אינפלציה'), appState.inflationRate != null ? `${appState.inflationRate}%` : '—']);
+        rows.push([txt('Current monthly', 'הוצאה חודשית כיום'), fmt(appState.totalMonthly)]);
+        rows.push([txt('Projected monthly', 'הוצאה מוקרנת'), fmt(appState.inflationProjectedMonthly)]);
+        rows.push([txt('Threshold', 'סף'), `${c.operator}${fmt(c.amount)}`]);
     }
     return rows;
 }

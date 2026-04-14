@@ -221,6 +221,7 @@ function AIInsightsView({ inputs, results, aiProvider, aiModel, apiKeyOverride, 
                         )}
 
                         {/* Analysis Grid */}
+                        {insights.analysis && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {/* Strengths */}
                             <div className={`${cardClass} rounded-xl p-4 border-l-4 border-l-green-500`}>
@@ -229,7 +230,7 @@ function AIInsightsView({ inputs, results, aiProvider, aiModel, apiKeyOverride, 
                                     {safeT('strengths', 'Strengths')}
                                 </h3>
                                 <ul className="space-y-2">
-                                    {insights.analysis.strengths.map((str, i) => (
+                                    {(insights.analysis.strengths || []).map((str, i) => (
                                         <li key={i} className={`text-sm ${textSecondary} flex items-start gap-2`}>
                                             <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />
                                             {str}
@@ -245,7 +246,7 @@ function AIInsightsView({ inputs, results, aiProvider, aiModel, apiKeyOverride, 
                                     {safeT('attentionNeeded', 'Attention Needed')}
                                 </h3>
                                 <ul className="space-y-2">
-                                    {insights.analysis.weaknesses.map((weak, i) => (
+                                    {(insights.analysis.weaknesses || []).map((weak, i) => (
                                         <li key={i} className={`text-sm ${textSecondary} flex items-start gap-2`}>
                                             <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
                                             {weak}
@@ -254,10 +255,10 @@ function AIInsightsView({ inputs, results, aiProvider, aiModel, apiKeyOverride, 
                                 </ul>
                             </div>
                         </div>
-
+                        )}
 
                         {/* Sensitivity Analysis (New) */}
-                        {insights.analysis.sensitivityAnalysis && (
+                        {insights.analysis?.sensitivityAnalysis && (
                             <div className={`${cardClass} rounded-xl p-4 border-l-4 border-l-purple-500`}>
                                 <div className="flex items-center gap-2 mb-2">
                                     <Sparkles size={18} className="text-purple-500" />
@@ -272,6 +273,7 @@ function AIInsightsView({ inputs, results, aiProvider, aiModel, apiKeyOverride, 
                         )}
 
                         {/* Market Dependency */}
+                        {insights.analysis?.marketDependency && (
                         <div className={`${cardClass} rounded-xl p-4`}>
                             <div className="flex items-center gap-2 mb-2">
                                 <TrendingUp size={18} className="text-blue-500" />
@@ -283,8 +285,10 @@ function AIInsightsView({ inputs, results, aiProvider, aiModel, apiKeyOverride, 
                                 {insights.analysis.marketDependency}
                             </p>
                         </div>
+                        )}
 
                         {/* Recommendations */}
+                        {(insights.recommendations?.length > 0) && (
                         <div>
                             <h3 className={`text-lg font-bold ${textPrimary} mb-4 flex items-center gap-2`}>
                                 <Target size={20} className="text-purple-500" />
@@ -308,13 +312,16 @@ function AIInsightsView({ inputs, results, aiProvider, aiModel, apiKeyOverride, 
                                 ))}
                             </div>
                         </div>
+                        )}
 
                         {/* Conclusion */}
+                        {insights.conclusion && (
                         <div className={`p-4 rounded-xl bg-gradient-to-r from-blue-600/10 to-purple-600/10 border border-blue-200/20`}>
                             <p className={`text-sm font-medium ${isLight ? 'text-blue-900' : 'text-blue-100'} text-center italic`}>
                                 "{insights.conclusion}"
                             </p>
                         </div>
+                        )}
 
                         <div className="text-center pt-4">
                             <button

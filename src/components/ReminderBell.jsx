@@ -17,7 +17,7 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
     const [isSaving, setIsSaving] = useState(false);
     const [form, setForm] = useState({ label: '', date: '', text: '' });
     const [editingReminder, setEditingReminder] = useState(null);
-    const [editForm, setEditForm] = useState({ date: '', text: '' });
+    const [editForm, setEditForm] = useState({ date: '', text: '', note: '' });
     
     const isHe = language === 'he';
     const activeLifeEventSource = activeProfileId ? `lifeEvents:${activeProfileId}` : null;
@@ -113,7 +113,8 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
         setEditingReminder(reminder);
         setEditForm({
             date: reminder?.date || '',
-            text: reminder?.label || reminder?.description || reminder?.text || '',
+            text: reminder?.label || reminder?.description || '',
+            note: reminder?.text || '',
         });
     };
 
@@ -137,9 +138,9 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
         const nextText = editForm.text.trim();
         const { id: reminderId, source } = editingReminder;
         silenceReminder(reminderId, source);
-        updateReminderInSession(source, reminderId, { date: editForm.date, label: nextText });
+        updateReminderInSession(source, reminderId, { date: editForm.date, label: nextText, text: editForm.note });
         window.dispatchEvent(new CustomEvent('rc-reminder-edited', {
-            detail: { id: reminderId, source, date: editForm.date, label: nextText }
+            detail: { id: reminderId, source, date: editForm.date, label: nextText, text: editForm.note }
         }));
         setEditingReminder(null);
     };
@@ -317,6 +318,16 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
                                         />
                                     </div>
                                 </div>
+                                <div className="space-y-1">
+                                    <label className={`text-[10px] font-bold uppercase tracking-wider ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'הערה (אופציונלי)' : 'Note (optional)'}</label>
+                                    <textarea
+                                        rows={2}
+                                        className={`w-full px-3 py-2 text-xs rounded-lg border outline-none resize-none leading-relaxed ${isLight ? 'bg-white border-slate-200 focus:border-blue-500' : 'bg-slate-800 border-white/10 focus:border-blue-500 text-white'}`}
+                                        placeholder={isHe ? 'פרטים נוספים...' : 'Additional details...'}
+                                        value={form.text}
+                                        onChange={e => setForm(f => ({ ...f, text: e.target.value }))}
+                                    />
+                                </div>
                                 <div className="grid gap-2" style={{ gridTemplateColumns: '1fr auto' }}>
                                     <div className="space-y-1">
                                         <label className={`text-[10px] font-bold uppercase tracking-wider ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'מתי?' : 'When?'}</label>
@@ -428,6 +439,14 @@ function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onD
                             onChange={e => setEditForm(prev => ({ ...prev, text: e.target.value }))}
                             placeholder={isHe ? 'הטקסט של התזכורת' : 'Reminder text'}
                             className={`w-full px-2 py-2 text-xs rounded-lg border outline-none ${isLight ? 'bg-white border-slate-200 text-slate-700 placeholder-slate-300' : 'bg-slate-800 border-white/10 text-white placeholder-gray-500'}`}
+                        />
+                        <label className={`text-[10px] font-bold uppercase tracking-wider ${isLight ? 'text-slate-400' : 'text-gray-500'} pt-1`}>{isHe ? 'הערה' : 'Note'}</label>
+                        <textarea
+                            rows={2}
+                            value={editForm.note}
+                            onChange={e => setEditForm(prev => ({ ...prev, note: e.target.value }))}
+                            placeholder={isHe ? 'פרטים נוספים...' : 'Additional details...'}
+                            className={`w-full px-2 py-2 text-xs rounded-lg border outline-none resize-none leading-relaxed ${isLight ? 'bg-white border-slate-200 text-slate-700 placeholder-slate-300' : 'bg-slate-800 border-white/10 text-white placeholder-gray-500'}`}
                         />
                     </div>
                     <div className="flex items-end gap-1">

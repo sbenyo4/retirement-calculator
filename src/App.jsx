@@ -41,7 +41,7 @@ import { runProjectionWithGoalSeek } from './utils/calculators/goalSeek';
 
 import { WITHDRAWAL_STRATEGIES } from './constants';
 import { getUserSettings } from './utils/db';
-import { Settings, AlertTriangle, Info, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Settings, AlertTriangle, Info, X, ChevronDown, ChevronUp, MessageCircle } from 'lucide-react';
 import { ReminderBell } from './components/ReminderBell';
 import { ReminderAlert } from './components/ReminderAlert';
 import { GlobalRemindersSync } from './components/GlobalRemindersSync';
@@ -73,6 +73,7 @@ function MainApp() {
   // Use Custom Hooks for Logic
   const { settings, dispatch: dispatchSettings, SETTINGS_ACTIONS, settingsLoaded } = useAppSettings();
 
+  const [chatOpen, setChatOpen] = useState(false);
   const [triggeredSmartAlerts, setTriggeredSmartAlerts] = useState([]);
   useEffect(() => {
     const handle = (e) => setTriggeredSmartAlerts(e.detail?.triggered || []);
@@ -104,18 +105,37 @@ function MainApp() {
     if (!results) return;
     try {
       const inp = memoizedDebouncedInputs || {};
+      const currentAge = parseFloat(inp.currentAge) || null;
+      const retirementStartAge = parseFloat(inp.retirementStartAge) || null;
+      const yearsToRetirement = (currentAge && retirementStartAge && retirementStartAge > currentAge)
+        ? retirementStartAge - currentAge : null;
+      const retirementDate = yearsToRetirement
+        ? new Date(Date.now() + yearsToRetirement * 365.25 * 24 * 3600 * 1000).toISOString()
+        : null;
       sessionStorage.setItem('rc-calc-summary', JSON.stringify({
         balanceAtRetirement: results.balanceAtRetirement ?? null,
+        balanceAtEnd: results.balanceAtEnd ?? null,
         surplus: results.surplus ?? null,
+        pvOfDeficit: results.pvOfDeficit ?? null,
+        pvOfCapitalPreservation: results.pvOfCapitalPreservation ?? null,
         ranOutAtAge: results.ranOutAtAge ?? null,
         requiredCapitalAtRetirement: results.requiredCapitalAtRetirement ?? null,
+        requiredCapitalForPerpetuity: results.requiredCapitalForPerpetuity ?? null,
         initialNetWithdrawal: results.initialNetWithdrawal ?? null,
+        averageNetWithdrawal: results.averageNetWithdrawal ?? null,
         maxSustainableNetWithdrawal: results.maxSustainableNetWithdrawal ?? null,
+        // Pension income at NI start age (67)
+        pensionGrossAtNI: results.incomeAtNIStart?.totalGross ?? null,
+        pensionNetAtNI: results.incomeAtNIStart?.totalNet ?? null,
+        pensionNonWorkAtNI: results.incomeAtNIStart?.nonWorkIncome ?? null,
+        niThreshold: results.niThreshold ?? null,
+        // Inputs
         monthlyNetIncomeDesired: parseFloat(inp.monthlyNetIncomeDesired) || 0,
-        retirementStartAge: parseFloat(inp.retirementStartAge) || null,
+        retirementStartAge,
         retirementEndAge: parseFloat(inp.retirementEndAge) || null,
-        currentAge: parseFloat(inp.currentAge) || null,
+        currentAge,
         monthlyContribution: parseFloat(inp.monthlyContribution) || 0,
+        retirementDate,
       }));
       window.dispatchEvent(new Event('rc-calc-updated'));
     } catch {}
@@ -375,15 +395,24 @@ function MainApp() {
       }
     }
 
-    // 4. Short planning horizon
+    // 4. Short planning horizon — suppress if there's a continuous pension income beyond end age
     if (endAge < 85) {
-      list.push({
-        id: 'short_horizon',
-        severity: 'info',
-        text: isHe
-          ? `גיל סיום ${endAge} — שקול להאריך לפחות עד גיל 85`
-          : `End age ${endAge} — consider extending to at least 85`,
-      });
+      const pensionSources = inp.pensionIncomeSources || [];
+      const hasContinuousIncomeAtEnd = pensionSources.some(s =>
+        s.enabled !== false &&
+        !s.isLumpSum &&
+        (s.startAge == null || s.startAge <= endAge) &&
+        (s.endAge == null || s.endAge > endAge)
+      );
+      if (!hasContinuousIncomeAtEnd) {
+        list.push({
+          id: 'short_horizon',
+          severity: 'info',
+          text: isHe
+            ? `גיל סיום ${endAge} — שקול להאריך לפחות עד גיל 85`
+            : `End age ${endAge} — consider extending to at least 85`,
+        });
+      }
     }
 
     // 5. Late retirement start
@@ -495,6 +524,15 @@ function MainApp() {
           </div>
           <div className="flex items-center gap-3">
             <ReminderBell id="reminder-bell" t={t} language={language} isLight={theme === 'light'} activeProfileId={activeProfileId} />
+            {settings.aiProvider && (
+              <button
+                onClick={() => setChatOpen(v => !v)}
+                className={`px-3 py-2 rounded-lg backdrop-blur-sm transition-colors text-sm h-10 ${chatOpen ? (theme === 'light' ? 'bg-blue-100 border border-blue-300 text-blue-700 shadow-sm' : 'bg-blue-600/30 text-blue-300') : (theme === 'light' ? 'bg-white border border-gray-200 text-slate-700 hover:bg-gray-50 shadow-sm' : 'bg-white/10 hover:bg-white/20 text-white')}`}
+                title={language === 'he' ? 'שאל את היועץ' : 'Ask your advisor'}
+              >
+                <MessageCircle size={18} />
+              </button>
+            )}
             <UserMenu t={t} />
             <ThemeToggle t={t} />
             <ZoomToggle />
@@ -729,7 +767,8 @@ function MainApp() {
         aiProvider={settings.aiProvider}
         aiModel={settings.aiModel}
         apiKeyOverride={settings.apiKeyOverride}
-        resetKey={currentUser?.uid}
+        open={chatOpen}
+        setOpen={setChatOpen}
       />
 
       {/* Global Reminder Sync — loads reminders on login and syncs confirmation to db */}

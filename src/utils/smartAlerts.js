@@ -160,6 +160,27 @@ export const CONDITION_TYPES = {
         },
     },
 
+    // Annual withdrawal as % of portfolio at retirement (safe withdrawal rate)
+    withdrawal_rate_from_portfolio: {
+        labelHe: 'שיעור משיכה מהתיק',
+        labelEn: 'Withdrawal rate from portfolio',
+        check({ threshold, operator }, { initialNetWithdrawal, balanceAtRetirement }) {
+            if (!balanceAtRetirement || initialNetWithdrawal == null) return false;
+            const annualRate = (initialNetWithdrawal * 12) / balanceAtRetirement;
+            return compare(annualRate, operator, threshold);
+        },
+        statusHe({ threshold, operator }, { initialNetWithdrawal, balanceAtRetirement }) {
+            if (!balanceAtRetirement || initialNetWithdrawal == null) return 'אין נתוני חישוב';
+            const pct = Math.round(((initialNetWithdrawal * 12) / balanceAtRetirement) * 100);
+            return `שיעור משיכה: ${pct}% מהתיק (סף: ${operator}${Math.round(threshold * 100)}%)`;
+        },
+        statusEn({ threshold, operator }, { initialNetWithdrawal, balanceAtRetirement }) {
+            if (!balanceAtRetirement || initialNetWithdrawal == null) return 'No calculation data';
+            const pct = Math.round(((initialNetWithdrawal * 12) / balanceAtRetirement) * 100);
+            return `Withdrawal rate: ${pct}% of portfolio (threshold: ${operator}${Math.round(threshold * 100)}%)`;
+        },
+    },
+
     // Money runs out before a given age
     ran_out_before_age: {
         labelHe: 'כסף נגמר לפני גיל',
@@ -175,6 +196,152 @@ export const CONDITION_TYPES = {
         statusEn({ age }, { ranOutAtAge }) {
             if (!ranOutAtAge) return 'Funds do not run out';
             return `Funds run out at age ${ranOutAtAge} (threshold: before age ${age})`;
+        },
+    },
+
+    // Final balance at end of retirement period
+    balance_at_end: {
+        labelHe: 'יתרה בסוף התקופה',
+        labelEn: 'Balance at end of period',
+        check({ amount, operator }, { balanceAtEnd }) {
+            if (balanceAtEnd == null) return false;
+            return compare(balanceAtEnd, operator, amount);
+        },
+        statusHe({ amount, operator }, { balanceAtEnd }) {
+            if (balanceAtEnd == null) return 'אין נתוני חישוב';
+            return `יתרה בסוף: ₪${Math.round(balanceAtEnd).toLocaleString()} (סף: ${operator}₪${Math.round(amount).toLocaleString()})`;
+        },
+        statusEn({ amount, operator }, { balanceAtEnd }) {
+            if (balanceAtEnd == null) return 'No calculation data';
+            return `Balance at end: ₪${Math.round(balanceAtEnd).toLocaleString()} (threshold: ${operator}₪${Math.round(amount).toLocaleString()})`;
+        },
+    },
+
+    // Capital needed for infinite withdrawals (perpetuity)
+    perpetuity_capital: {
+        labelHe: 'הון לנצחיות',
+        labelEn: 'Capital for perpetuity',
+        check({ amount, operator }, { requiredCapitalForPerpetuity }) {
+            if (requiredCapitalForPerpetuity == null) return false;
+            return compare(requiredCapitalForPerpetuity, operator, amount);
+        },
+        statusHe({ amount, operator }, { requiredCapitalForPerpetuity }) {
+            if (requiredCapitalForPerpetuity == null) return 'אין נתוני חישוב';
+            return `הון לנצחיות: ₪${Math.round(requiredCapitalForPerpetuity).toLocaleString()} (סף: ${operator}₪${Math.round(amount).toLocaleString()})`;
+        },
+        statusEn({ amount, operator }, { requiredCapitalForPerpetuity }) {
+            if (requiredCapitalForPerpetuity == null) return 'No calculation data';
+            return `Perpetuity capital: ₪${Math.round(requiredCapitalForPerpetuity).toLocaleString()} (threshold: ${operator}₪${Math.round(amount).toLocaleString()})`;
+        },
+    },
+
+    // PV of deficit — how much more you need to save today to cover the shortfall
+    pv_of_deficit: {
+        labelHe: 'ערך נוכחי של גירעון',
+        labelEn: 'PV of deficit',
+        check({ amount, operator }, { pvOfDeficit }) {
+            if (pvOfDeficit == null) return false;
+            return compare(pvOfDeficit, operator, amount);
+        },
+        statusHe({ amount, operator }, { pvOfDeficit }) {
+            if (pvOfDeficit == null) return 'אין נתוני חישוב';
+            return `PV גירעון: ₪${Math.round(pvOfDeficit).toLocaleString()} (סף: ${operator}₪${Math.round(amount).toLocaleString()})`;
+        },
+        statusEn({ amount, operator }, { pvOfDeficit }) {
+            if (pvOfDeficit == null) return 'No calculation data';
+            return `PV of deficit: ₪${Math.round(pvOfDeficit).toLocaleString()} (threshold: ${operator}₪${Math.round(amount).toLocaleString()})`;
+        },
+    },
+
+    // Monthly budget gap (income target minus expenses)
+    budget_gap: {
+        labelHe: 'פער תקציבי חודשי',
+        labelEn: 'Monthly budget gap',
+        check({ amount, operator }, { budgetGap }) {
+            if (budgetGap == null) return false;
+            return compare(budgetGap, operator, amount);
+        },
+        statusHe({ amount, operator }, { budgetGap }) {
+            if (budgetGap == null) return 'אין נתוני תקציב';
+            return `פער: ₪${Math.round(budgetGap).toLocaleString()} (סף: ${operator}₪${Math.round(amount).toLocaleString()})`;
+        },
+        statusEn({ amount, operator }, { budgetGap }) {
+            if (budgetGap == null) return 'No budget data';
+            return `Gap: ₪${Math.round(budgetGap).toLocaleString()} (threshold: ${operator}₪${Math.round(amount).toLocaleString()})`;
+        },
+    },
+
+    // Average monthly net withdrawal over the full retirement period
+    average_net_withdrawal: {
+        labelHe: 'ממוצע משיכה חודשית',
+        labelEn: 'Average monthly withdrawal',
+        check({ amount, operator }, { averageNetWithdrawal }) {
+            if (averageNetWithdrawal == null) return false;
+            return compare(averageNetWithdrawal, operator, amount);
+        },
+        statusHe({ amount, operator }, { averageNetWithdrawal }) {
+            if (averageNetWithdrawal == null) return 'אין נתוני חישוב';
+            return `ממוצע משיכה: ₪${Math.round(averageNetWithdrawal).toLocaleString()} (סף: ${operator}₪${Math.round(amount).toLocaleString()})`;
+        },
+        statusEn({ amount, operator }, { averageNetWithdrawal }) {
+            if (averageNetWithdrawal == null) return 'No calculation data';
+            return `Avg withdrawal: ₪${Math.round(averageNetWithdrawal).toLocaleString()} (threshold: ${operator}₪${Math.round(amount).toLocaleString()})`;
+        },
+    },
+
+    // Total gross pension income at NI age (67)
+    pension_income_at_ni: {
+        labelHe: 'הכנסת פנסיה בגיל ביטוח לאומי',
+        labelEn: 'Pension income at NI age',
+        check({ amount, operator }, { pensionGrossAtNI }) {
+            if (pensionGrossAtNI == null) return false;
+            return compare(pensionGrossAtNI, operator, amount);
+        },
+        statusHe({ amount, operator }, { pensionGrossAtNI }) {
+            if (pensionGrossAtNI == null) return 'אין נתוני פנסיה';
+            return `פנסיה ברוטו בגיל 67: ₪${Math.round(pensionGrossAtNI).toLocaleString()} (סף: ${operator}₪${Math.round(amount).toLocaleString()})`;
+        },
+        statusEn({ amount, operator }, { pensionGrossAtNI }) {
+            if (pensionGrossAtNI == null) return 'No pension data';
+            return `Pension gross at 67: ₪${Math.round(pensionGrossAtNI).toLocaleString()} (threshold: ${operator}₪${Math.round(amount).toLocaleString()})`;
+        },
+    },
+
+    // Non-work income vs NI threshold — checks if work income may be reduced
+    ni_income_test: {
+        labelHe: 'הכנסה שלא מעבודה מול סף ביטוח לאומי',
+        labelEn: 'Non-work income vs NI threshold',
+        check({ threshold: pctThreshold, operator }, { pensionNonWorkAtNI, niThreshold }) {
+            if (pensionNonWorkAtNI == null || !niThreshold) return false;
+            return compare(pensionNonWorkAtNI / niThreshold, operator, pctThreshold);
+        },
+        statusHe({ threshold: pctThreshold, operator }, { pensionNonWorkAtNI, niThreshold }) {
+            if (pensionNonWorkAtNI == null || !niThreshold) return 'אין נתוני ביטוח לאומי';
+            const pct = Math.round((pensionNonWorkAtNI / niThreshold) * 100);
+            return `הכנסה שאינה עבודה: ${pct}% מסף ביטוח לאומי (סף: ${operator}${Math.round(pctThreshold * 100)}%)`;
+        },
+        statusEn({ threshold: pctThreshold, operator }, { pensionNonWorkAtNI, niThreshold }) {
+            if (pensionNonWorkAtNI == null || !niThreshold) return 'No NI data';
+            const pct = Math.round((pensionNonWorkAtNI / niThreshold) * 100);
+            return `Non-work income: ${pct}% of NI threshold (threshold: ${operator}${Math.round(pctThreshold * 100)}%)`;
+        },
+    },
+
+    // Inflation-projected monthly budget vs a threshold
+    inflation_adjusted_budget: {
+        labelHe: 'תקציב מוקרן לאינפלציה',
+        labelEn: 'Inflation-adjusted budget',
+        check({ amount, operator }, { inflationProjectedMonthly }) {
+            if (inflationProjectedMonthly == null) return false;
+            return compare(inflationProjectedMonthly, operator, amount);
+        },
+        statusHe({ amount, operator }, { inflationProjectedMonthly }) {
+            if (inflationProjectedMonthly == null) return 'אין נתוני אינפלציה בתקציב';
+            return `תקציב מוקרן: ₪${Math.round(inflationProjectedMonthly).toLocaleString()} (סף: ${operator}₪${Math.round(amount).toLocaleString()})`;
+        },
+        statusEn({ amount, operator }, { inflationProjectedMonthly }) {
+            if (inflationProjectedMonthly == null) return 'No inflation data in budget';
+            return `Projected budget: ₪${Math.round(inflationProjectedMonthly).toLocaleString()} (threshold: ${operator}₪${Math.round(amount).toLocaleString()})`;
         },
     },
 
@@ -293,8 +460,13 @@ RETIREMENT CALCULATION CONDITIONS (based on projected retirement results):
   Parameters: { type, amount (₪ number), operator }
 
 - withdrawal_vs_target — checks: (projected initial monthly net withdrawal) ÷ (desired monthly income).
-  Use for: "actual withdrawal is less than X% of desired income".
+  Use for: "actual withdrawal is less than X% of desired income target".
   Example: "תתריע אם המשיכה בפועל נמוכה מ-80% מהיעד".
+  Parameters: { type, threshold (0–1 fraction), operator }
+
+- withdrawal_rate_from_portfolio — checks: (initial annual net withdrawal) ÷ (portfolio balance at retirement) = the safe withdrawal rate.
+  Use for: "withdrawal rate from portfolio / total assets is above/below X%" — the classic "4% rule" check.
+  Example: "תתריע אם שיעור המשיכה מהתיק עולה על 5%".
   Parameters: { type, threshold (0–1 fraction), operator }
 
 - ran_out_before_age — checks: whether projected funds run out before a given age.
@@ -302,6 +474,48 @@ RETIREMENT CALCULATION CONDITIONS (based on projected retirement results):
   Example: "תתריע אם הכסף נגמר לפני גיל 90".
   Parameters: { type, age (number) }
   Note: no operator field — the condition is always "runs out before age".
+
+- balance_at_end — checks: the remaining balance at the END of the full retirement period (after all withdrawals).
+  Use for: "how much is left at end of retirement / at planning end age".
+  Example: "תתריע אם לא נשארת יתרה בסוף תקופת הפרישה" → operator "<", amount 1.
+  Parameters: { type, amount (₪ number), operator }
+
+- perpetuity_capital — checks: the capital needed to sustain withdrawals forever (infinite horizon).
+  Use for: "capital needed for perpetuity / infinite withdrawal / preserve principal forever".
+  Example: "תתריע אם ההון הנדרש לנצחיות עולה על 5 מיליון".
+  Parameters: { type, amount (₪ number), operator }
+
+- pv_of_deficit — checks: the present value of the shortfall discounted to today (how much more you need to save NOW).
+  Use for: "how much more do I need to save today / PV of deficit".
+  Example: "תתריע אם הגירעון בערך נוכחי עולה על 500,000".
+  Parameters: { type, amount (₪ number), operator }
+
+BUDGET CONDITIONS (continued):
+- budget_gap — checks: the monthly gap between income target and actual expenses (positive = saving, negative = overspending).
+  Use for: "monthly gap / shortfall between target and expenses is below X".
+  Example: "תתריע אם הפער החודשי יורד מתחת ל-₪1000".
+  Parameters: { type, amount (₪ number), operator }
+
+- inflation_adjusted_budget — checks: the inflation-projected monthly budget (as computed in the budget planner).
+  Use for: "if inflation-adjusted budget exceeds ₪X / projected future expenses exceed X".
+  Example: "תתריע אם ההוצאות המוקרנות יעלו על ₪20,000".
+  Parameters: { type, amount (₪ number), operator }
+
+PENSION / INCOME CONDITIONS:
+- pension_income_at_ni — checks: total gross pension income from all sources at age 67 (NI start age).
+  Use for: "total pension income at 67 / pension income at NI age is below/above ₪X".
+  Example: "תתריע אם הכנסת הפנסיה בגיל 67 נמוכה מ-₪8,000".
+  Parameters: { type, amount (₪ number), operator }
+
+- ni_income_test — checks: (non-work income at 67) ÷ (NI income test threshold) as a percentage.
+  Use for: "non-work income exceeds X% of NI threshold" — i.e., will NI benefits be reduced.
+  Example: "תתריע אם הכנסה שאינה מעבודה עולה על 100% מסף ביטוח לאומי" (NI will be reduced).
+  Parameters: { type, threshold (0–1 fraction), operator }
+
+- average_net_withdrawal — checks: average monthly net withdrawal over the full retirement period.
+  Use for: "average monthly withdrawal is below ₪X".
+  Example: "תתריע אם ממוצע המשיכה החודשית נמוך מ-₪10,000".
+  Parameters: { type, amount (₪ number), operator }
 
 TIME / LOAN CONDITIONS:
 - days_to_retirement — checks: days remaining until the saved retirement date.
@@ -312,12 +526,22 @@ TIME / LOAN CONDITIONS:
   Use for: "a loan is ending within X months".
   Parameters: { type, months (number) }
 
+MAPPING HINTS for "compare two metrics" patterns — DO NOT return an error for these, map them instead:
+- "הון נדרש גדול מהיתרה" / "יש גירעון" / "balance < required capital" / "deficit" → surplus_amount with operator "<", amount 0
+- "יש עודף" / "surplus exists" / "balance > required capital" → surplus_amount with operator ">", amount 0
+- "כסף נגמר" / "money runs out" → ran_out_before_age with age 120 (effectively "ever")
+- "משיכה נמוכה מהיעד" (without a specific %) → withdrawal_vs_target with operator "<", threshold 1.0
+- "X% מהיעד" where X is not specified → use threshold 1.0
+Any comparison between two dynamic metrics should be approximated using the closest available condition type above.
+
 IMPORTANT RULES:
 - Do NOT use budget_pct_of_target for accumulated capital, net worth, total savings, or portfolio value — use balance_at_retirement or required_capital_at_retirement instead.
 - Do NOT use balance_at_retirement for monthly expense ratios — use budget_pct_of_target instead.
 - Do NOT confuse balance_at_retirement (what you have) with required_capital_at_retirement (what you need). "הון נדרש" = required_capital_at_retirement. "יתרה בפרישה" or "הון שנצבר" = balance_at_retirement.
-- Do NOT guess — if the user's intent does not clearly match one of the ten types above, return an error.
-- The error message must be in Hebrew and list which types ARE available.
+- NEVER return an error just because the user compared two metrics — always try to map to the closest condition type using the hints above.
+- "אחוז משיכה מהתיק" / "שיעור משיכה" / "withdrawal rate from portfolio/assets" → withdrawal_rate_from_portfolio (NOT withdrawal_vs_target).
+- Do NOT guess — if after applying the mapping hints the intent still does not match any type, return an error listing which types ARE available.
+- The error message must be in Hebrew.
 
 Return JSON:
 {
