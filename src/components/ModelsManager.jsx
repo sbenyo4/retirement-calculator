@@ -5,6 +5,7 @@ import { fetchAllAvailableModels, compareModels } from '../utils/ai-models-fetch
 import { AI_MODELS_CONFIG } from '../config/ai-models';
 import { getUserSettings, setUserSettings } from '../utils/db';
 import { SmartAlertsPanel } from './SmartAlertsPanel';
+import { readAppState } from '../utils/appState';
 
 const ALL_ALERTS = [
     { id: 'ran_out',          severity: 'critical', labelHe: 'כסף נגמר לפני סוף התקופה',                  labelEn: 'Funds run out before end of period' },
@@ -14,51 +15,6 @@ const ALL_ALERTS = [
     { id: 'short_horizon',    severity: 'info',     labelHe: 'גיל סיום תכנון נמוך מ-85',                   labelEn: 'Planning end age below 85' },
     { id: 'late_retirement',  severity: 'info',     labelHe: 'גיל פרישה מאוחר (מעל 70)',                   labelEn: 'Late retirement age (above 70)' },
 ];
-
-function readAppState() {
-    try {
-        const budget = JSON.parse(sessionStorage.getItem('rc-budget-summary') || '{}');
-        const calc = JSON.parse(sessionStorage.getItem('rc-calc-summary') || '{}');
-        const categoryTotals = {};
-        (budget.categories || []).forEach(c => {
-            if (c.labelHe) categoryTotals[c.labelHe] = c.total;
-            if (c.labelEn) categoryTotals[c.labelEn] = c.total;
-        });
-        return {
-            totalMonthly: budget.totalMonthly || 0,
-            totalAnnual: budget.totalAnnual || 0,
-            target: budget.incomeTarget || 0,
-            budgetGap: budget.gap ?? null,
-            householdSize: budget.householdSize ?? null,
-            perPerson: budget.perPerson ?? null,
-            inflationRate: budget.inflation?.rate ?? null,
-            inflationProjectedMonthly: budget.inflation?.projectedMonthly ?? null,
-            categoryTotals,
-            loanTracks: budget.loanTracks || [],
-            balanceAtRetirement: calc.balanceAtRetirement ?? null,
-            balanceAtEnd: calc.balanceAtEnd ?? null,
-            surplus: calc.surplus ?? null,
-            pvOfDeficit: calc.pvOfDeficit ?? null,
-            pvOfCapitalPreservation: calc.pvOfCapitalPreservation ?? null,
-            ranOutAtAge: calc.ranOutAtAge ?? null,
-            requiredCapitalAtRetirement: calc.requiredCapitalAtRetirement ?? null,
-            requiredCapitalForPerpetuity: calc.requiredCapitalForPerpetuity ?? null,
-            initialNetWithdrawal: calc.initialNetWithdrawal ?? null,
-            averageNetWithdrawal: calc.averageNetWithdrawal ?? null,
-            maxSustainableNetWithdrawal: calc.maxSustainableNetWithdrawal ?? null,
-            pensionGrossAtNI: calc.pensionGrossAtNI ?? null,
-            pensionNetAtNI: calc.pensionNetAtNI ?? null,
-            pensionNonWorkAtNI: calc.pensionNonWorkAtNI ?? null,
-            niThreshold: calc.niThreshold ?? null,
-            monthlyNetIncomeDesired: calc.monthlyNetIncomeDesired || 0,
-            retirementStartAge: calc.retirementStartAge || null,
-            retirementEndAge: calc.retirementEndAge || null,
-            currentAge: calc.currentAge || null,
-            monthlyContribution: calc.monthlyContribution || 0,
-            retirementDate: calc.retirementDate || null,
-        };
-    } catch { return { totalMonthly: 0, target: 0, categoryTotals: {}, loanTracks: [] }; }
-}
 
 export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, uid, idleTimeoutEnabled = true, onIdleTimeoutEnabledChange, idleTimeoutMinutes = 5, onIdleTimeoutChange, fourPercentMode = 'net', onFourPercentModeChange, disabledAlerts = [], onToggleAlert, aiProvider, aiModel, apiKeyOverride }) {
     const { theme } = useTheme();
@@ -83,6 +39,7 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
         if (!rect) return;
         dragOrigin.current = { startX: e.clientX - rect.left, startY: e.clientY - rect.top };
         const onMove = (e) => {
+            if (!dragOrigin.current) return;
             setDragPos({ x: e.clientX - dragOrigin.current.startX, y: e.clientY - dragOrigin.current.startY });
         };
         const onUp = () => {
@@ -419,7 +376,7 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
                                         {language === 'he' ? 'מודלי AI' : 'AI Models'}
                                     </h3>
                                     {aiModel && (
-                                        <span className={`text-xs px-2 py-0.5 rounded-full truncate max-w-[180px] ${isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-500/20 text-blue-300'}`}>
+                                        <span className={`text-sm font-medium px-2.5 py-0.5 rounded-full truncate max-w-[220px] ${isLight ? 'bg-blue-100 text-blue-800' : 'bg-blue-500/25 text-blue-200'}`}>
                                             {aiModel}
                                         </span>
                                     )}

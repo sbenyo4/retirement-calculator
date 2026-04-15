@@ -172,6 +172,8 @@ function MainApp() {
 
   // UI State
   const [showModelsManager, setShowModelsManager] = useState(false);
+  // Close settings when user session changes (login/logout)
+  useEffect(() => { setShowModelsManager(false); }, [currentUser?.uid]);
 
   // Helper to format rate limit messages
   const formatLimitMessage = useCallback((limitCheck) => {
@@ -363,8 +365,8 @@ function MainApp() {
         id: 'ran_out',
         severity: 'critical',
         text: isHe
-          ? `הכסף צפוי להיגמר בגיל ${results.ranOutAtAge} — ${Math.round(endAge - results.ranOutAtAge)} שנים לפני סוף התקופה`
-          : `Funds run out at age ${results.ranOutAtAge} — ${Math.round(endAge - results.ranOutAtAge)} yrs before end`,
+          ? `הכסף צפוי להיגמר בגיל ${+results.ranOutAtAge.toFixed(2)} — ${Math.round(endAge - results.ranOutAtAge)} שנים לפני סוף התקופה`
+          : `Funds run out at age ${+results.ranOutAtAge.toFixed(2)} — ${Math.round(endAge - results.ranOutAtAge)} yrs before end`,
       });
     }
 

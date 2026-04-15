@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { getBudgetItems, getChecklistState, getGeneralReminders, setBudgetItems, setChecklistState, setGeneralReminders, getDismissedReminders, dismissReminder, getSmartAlerts, setSmartAlerts } from '../utils/db';
 import { syncComponentReminders, syncMultipleSources, markInitialSyncDone } from '../hooks/useReminders';
 import { evaluateSmartAlerts } from '../utils/smartAlerts';
+import { readAppState } from '../utils/appState';
 
 function dispatchTriggered(triggered) {
     window.dispatchEvent(new CustomEvent('rc-smart-alerts-triggered', { detail: { triggered } }));
@@ -14,55 +15,7 @@ function isLifeEventSource(source) {
     return typeof source === 'string' && (source === LEGACY_LIFE_EVENT_SOURCE || source.startsWith(LIFE_EVENT_SOURCE_PREFIX));
 }
 
-function readAppState() {
-    try {
-        const budget = JSON.parse(sessionStorage.getItem('rc-budget-summary') || '{}');
-        const calc = JSON.parse(sessionStorage.getItem('rc-calc-summary') || '{}');
-        const categoryTotals = {};
-        (budget.categories || []).forEach(c => {
-            // Match by labelHe — use as key since categoryId isn't stored in summary
-            if (c.labelHe) categoryTotals[c.labelHe] = c.total;
-            if (c.labelEn) categoryTotals[c.labelEn] = c.total;
-        });
-        return {
-            // Budget
-            totalMonthly: budget.totalMonthly || 0,
-            totalAnnual: budget.totalAnnual || 0,
-            target: budget.incomeTarget || 0,
-            budgetGap: budget.gap ?? null,
-            householdSize: budget.householdSize ?? null,
-            perPerson: budget.perPerson ?? null,
-            inflationRate: budget.inflation?.rate ?? null,
-            inflationProjectedMonthly: budget.inflation?.projectedMonthly ?? null,
-            categoryTotals,
-            loanTracks: budget.loanTracks || [],
-            // Calculation results
-            balanceAtRetirement: calc.balanceAtRetirement ?? null,
-            balanceAtEnd: calc.balanceAtEnd ?? null,
-            surplus: calc.surplus ?? null,
-            pvOfDeficit: calc.pvOfDeficit ?? null,
-            pvOfCapitalPreservation: calc.pvOfCapitalPreservation ?? null,
-            ranOutAtAge: calc.ranOutAtAge ?? null,
-            requiredCapitalAtRetirement: calc.requiredCapitalAtRetirement ?? null,
-            requiredCapitalForPerpetuity: calc.requiredCapitalForPerpetuity ?? null,
-            initialNetWithdrawal: calc.initialNetWithdrawal ?? null,
-            averageNetWithdrawal: calc.averageNetWithdrawal ?? null,
-            maxSustainableNetWithdrawal: calc.maxSustainableNetWithdrawal ?? null,
-            // Pension
-            pensionGrossAtNI: calc.pensionGrossAtNI ?? null,
-            pensionNetAtNI: calc.pensionNetAtNI ?? null,
-            pensionNonWorkAtNI: calc.pensionNonWorkAtNI ?? null,
-            niThreshold: calc.niThreshold ?? null,
-            // Inputs
-            monthlyNetIncomeDesired: calc.monthlyNetIncomeDesired || 0,
-            retirementStartAge: calc.retirementStartAge || null,
-            retirementEndAge: calc.retirementEndAge || null,
-            currentAge: calc.currentAge || null,
-            monthlyContribution: calc.monthlyContribution || 0,
-            retirementDate: calc.retirementDate || null,
-        };
-    } catch { return { totalMonthly: 0, target: 0, categoryTotals: {}, loanTracks: [] }; }
-}
+
 
 export function GlobalRemindersSync({ uid, lifeEvents = [], currentProfileId, profiles = [], updateProfile }) {
     const lastSyncedUidRef = useRef(null);
@@ -347,7 +300,9 @@ export function GlobalRemindersSync({ uid, lifeEvents = [], currentProfileId, pr
                         if (nextText !== undefined) nextRem.text = nextText || '';
                         return nextRem;
                     });
-                    if (JSON.stringify(next) !== JSON.stringify(gRems)) {
+                    const changed = next.length !== gRems.length ||
+                        next.some((r, i) => r.id !== gRems[i]?.id || r.date !== gRems[i]?.date || r.label !== gRems[i]?.label);
+                    if (changed) {
                         await setGeneralReminders(uid, next);
                     }
                 }

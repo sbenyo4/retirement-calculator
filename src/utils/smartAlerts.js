@@ -165,17 +165,17 @@ export const CONDITION_TYPES = {
         labelHe: 'שיעור משיכה מהתיק',
         labelEn: 'Withdrawal rate from portfolio',
         check({ threshold, operator }, { initialNetWithdrawal, balanceAtRetirement }) {
-            if (!balanceAtRetirement || initialNetWithdrawal == null) return false;
+            if (balanceAtRetirement == null || balanceAtRetirement === 0 || initialNetWithdrawal == null) return false;
             const annualRate = (initialNetWithdrawal * 12) / balanceAtRetirement;
             return compare(annualRate, operator, threshold);
         },
         statusHe({ threshold, operator }, { initialNetWithdrawal, balanceAtRetirement }) {
-            if (!balanceAtRetirement || initialNetWithdrawal == null) return 'אין נתוני חישוב';
+            if (balanceAtRetirement == null || balanceAtRetirement === 0 || initialNetWithdrawal == null) return 'אין נתוני חישוב';
             const pct = Math.round(((initialNetWithdrawal * 12) / balanceAtRetirement) * 100);
             return `שיעור משיכה: ${pct}% מהתיק (סף: ${operator}${Math.round(threshold * 100)}%)`;
         },
         statusEn({ threshold, operator }, { initialNetWithdrawal, balanceAtRetirement }) {
-            if (!balanceAtRetirement || initialNetWithdrawal == null) return 'No calculation data';
+            if (balanceAtRetirement == null || balanceAtRetirement === 0 || initialNetWithdrawal == null) return 'No calculation data';
             const pct = Math.round(((initialNetWithdrawal * 12) / balanceAtRetirement) * 100);
             return `Withdrawal rate: ${pct}% of portfolio (threshold: ${operator}${Math.round(threshold * 100)}%)`;
         },
@@ -186,16 +186,16 @@ export const CONDITION_TYPES = {
         labelHe: 'כסף נגמר לפני גיל',
         labelEn: 'Funds run out before age',
         check({ age }, { ranOutAtAge }) {
-            if (!ranOutAtAge) return false; // null = money doesn't run out
+            if (ranOutAtAge == null) return false; // null = money doesn't run out
             return ranOutAtAge < age;
         },
         statusHe({ age }, { ranOutAtAge }) {
-            if (!ranOutAtAge) return 'הכסף לא נגמר';
-            return `הכסף נגמר בגיל ${ranOutAtAge} (סף: לפני גיל ${age})`;
+            if (ranOutAtAge == null) return 'הכסף לא נגמר';
+            return `הכסף נגמר בגיל ${+ranOutAtAge.toFixed(2)} (סף: לפני גיל ${age})`;
         },
         statusEn({ age }, { ranOutAtAge }) {
-            if (!ranOutAtAge) return 'Funds do not run out';
-            return `Funds run out at age ${ranOutAtAge} (threshold: before age ${age})`;
+            if (ranOutAtAge == null) return 'Funds do not run out';
+            return `Funds run out at age ${+ranOutAtAge.toFixed(2)} (threshold: before age ${age})`;
         },
     },
 
@@ -560,10 +560,25 @@ export async function parseAlertWithAI(userText, provider, model, apiKeyOverride
     );
     // Strip markdown code fences if present
     const clean = reply.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-    const parsed = JSON.parse(clean);
-    if (parsed.error) throw new Error(parsed.error);
-    if (!parsed.condition?.type || !CONDITION_TYPES[parsed.condition.type]) {
-        throw new Error('Unknown condition type: ' + parsed.condition?.type);
+
+    let parsed;
+    try {
+        parsed = JSON.parse(clean);
+    } catch (e) {
+        throw new Error('לא ניתן לפרש את תגובת ה-AI. נסה לנסח מחדש.');
     }
+
+    if (parsed.error) throw new Error(parsed.error);
+
+    if (!parsed.condition || typeof parsed.condition !== 'object') {
+        throw new Error('תגובת ה-AI חסרה את שדה ה-condition.');
+    }
+    if (!parsed.condition.type || typeof parsed.condition.type !== 'string') {
+        throw new Error('תגובת ה-AI חסרה את סוג ההתראה.');
+    }
+    if (!CONDITION_TYPES[parsed.condition.type]) {
+        throw new Error('סוג התראה לא מוכר: ' + parsed.condition.type);
+    }
+
     return parsed; // { condition, label, summary }
 }

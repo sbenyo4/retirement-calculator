@@ -1835,7 +1835,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                 return s + toMonthly(i) * (showInflation ? Math.pow(1 + inflationRate, yearsAway) : 1);
             }, 0);
             return { date, tracks, saving, monthsLeft: ml, newTotal };
-        });
+        }).filter(ms => ms.monthsLeft > 0);
     }, [items, totalMonthly, showInflation, inflationRate]);
 
     const allCategoryIds = CATEGORIES.map(c => c.id);
@@ -2273,8 +2273,13 @@ Gap vs target and what can be optimized.`;
                                         </div>
                                     </div>
                                     {target > 0 && (
-                                        <div className={`h-1.5 rounded-full overflow-hidden ${isLight ? 'bg-slate-100' : 'bg-white/10'}`}>
-                                            <div className={`h-full rounded-full ${futureBarColor}`} style={{ width: `${Math.min(futurePct * 100, 100)}%` }} />
+                                        <div className="flex items-center gap-2">
+                                            <div className={`flex-1 h-1.5 rounded-full overflow-hidden ${isLight ? 'bg-slate-100' : 'bg-white/10'}`}>
+                                                <div className={`h-full rounded-full ${futureBarColor}`} style={{ width: `${Math.min(futurePct * 100, 100)}%` }} />
+                                            </div>
+                                            <span dir="ltr" className={`text-[11px] font-medium shrink-0 ${futurePct > 1 ? 'text-red-500' : futurePct > 0.9 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                                                {Math.round(futurePct * 100)}% {t('budgetOfTarget')}
+                                            </span>
                                         </div>
                                     )}
                                 </div>

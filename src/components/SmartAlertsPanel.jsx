@@ -122,7 +122,7 @@ function buildTestRows(alert, appState, isHe) {
     } else if (c.type === 'withdrawal_rate_from_portfolio') {
         rows.push([txt('Initial net withdrawal (monthly)', 'משיכה נטו חודשית'), fmt(appState.initialNetWithdrawal)]);
         rows.push([txt('Portfolio at retirement', 'תיק בגיל פרישה'), fmt(appState.balanceAtRetirement)]);
-        const rate = appState.balanceAtRetirement && appState.initialNetWithdrawal != null
+        const rate = appState.balanceAtRetirement != null && appState.balanceAtRetirement !== 0 && appState.initialNetWithdrawal != null
             ? (appState.initialNetWithdrawal * 12) / appState.balanceAtRetirement : null;
         rows.push([txt('Withdrawal rate (annual)', 'שיעור משיכה (שנתי)'), rate != null ? pct(rate) : '—']);
         rows.push([txt('Threshold', 'סף'), `${c.operator}${pct(c.threshold)}`]);
@@ -154,7 +154,7 @@ function buildTestRows(alert, appState, isHe) {
     } else if (c.type === 'ni_income_test') {
         rows.push([txt('Non-work income at 67', 'הכנסה שאינה עבודה בגיל 67'), fmt(appState.pensionNonWorkAtNI)]);
         rows.push([txt('NI threshold', 'סף ביטוח לאומי'), fmt(appState.niThreshold)]);
-        const ratio = appState.niThreshold && appState.pensionNonWorkAtNI != null
+        const ratio = appState.niThreshold != null && appState.niThreshold !== 0 && appState.pensionNonWorkAtNI != null
             ? appState.pensionNonWorkAtNI / appState.niThreshold : null;
         rows.push([txt('Ratio', 'יחס'), ratio != null ? pct(ratio) : '—']);
         rows.push([txt('Threshold', 'סף'), `${c.operator}${pct(c.threshold)}`]);
@@ -196,6 +196,9 @@ export function SmartAlertsPanel({ isHe, isLight, appState, aiProvider, aiModel,
     // Collapse state
     const [collapsed, setCollapsed] = useState(false);
 
+    // Save error state
+    const [saveError, setSaveError] = useState(null);
+
     const txt = (en, he) => isHe ? he : en;
     const canAsk = !!(aiProvider && aiModel);
 
@@ -213,12 +216,20 @@ export function SmartAlertsPanel({ isHe, isLight, appState, aiProvider, aiModel,
     }, []);
 
     const persist = useCallback(async (next) => {
+        const prev = alerts;
         setAlerts(next);
+        setSaveError(null);
         if (uid) {
-            await setSmartAlerts(uid, next).catch(() => {});
-            window.dispatchEvent(new Event('rc-smart-alerts-changed'));
+            try {
+                await setSmartAlerts(uid, next);
+                window.dispatchEvent(new Event('rc-smart-alerts-changed'));
+            } catch (err) {
+                console.error('[SmartAlerts] Save failed:', err);
+                setAlerts(prev); // rollback optimistic update
+                setSaveError(txt('Failed to save. Please try again.', 'שמירה נכשלה. נסה שוב.'));
+            }
         }
-    }, [uid]);
+    }, [uid, alerts, txt]);
 
     // ── Add ────────────────────────────────────────────────────────────────
     const handleParse = async () => {
@@ -308,6 +319,17 @@ export function SmartAlertsPanel({ isHe, isLight, appState, aiProvider, aiModel,
                 </div>
             </button>
 
+            {/* Save error banner */}
+            {saveError && (
+                <div className={`flex items-center gap-2 px-4 py-2 text-xs border-b ${isLight ? 'bg-red-50 border-red-100 text-red-600' : 'bg-red-900/20 border-red-500/20 text-red-400'}`}>
+                    <AlertTriangle size={12} className="shrink-0" />
+                    <span className="flex-1">{saveError}</span>
+                    <button onClick={() => setSaveError(null)} className="shrink-0 opacity-60 hover:opacity-100">
+                        <X size={12} />
+                    </button>
+                </div>
+            )}
+
             {/* Body — hidden when collapsed */}
             {!collapsed && showAdd && (
                 <div className={`px-4 py-3 border-b space-y-2.5 ${isLight ? 'bg-amber-50/50 border-amber-100' : 'bg-amber-900/10 border-amber-500/20'}`}>
@@ -338,7 +360,9 @@ export function SmartAlertsPanel({ isHe, isLight, appState, aiProvider, aiModel,
             {/* Alerts list */}
             {!collapsed && (alerts.length === 0 ? (
                 <div className={`px-4 py-6 text-center text-xs ${isLight ? 'text-slate-400' : 'text-gray-600'}`}>
-                    {txt('No smart alerts yet. Add one above.', 'אין התראות חכמות. הוסף אחת למעלה.')}
+                    {canAsk
+                        ? txt('No smart alerts yet. Add one above.', 'אין התראות חכמות. הוסף אחת למעלה.')
+                        : txt('Configure an AI provider in Settings to create smart alerts.', 'הגדר ספק AI בהגדרות כדי ליצור התראות חכמות.')}
                 </div>
             ) : (
                 <div className="divide-y divide-white/5">
@@ -370,19 +394,27 @@ export function SmartAlertsPanel({ isHe, isLight, appState, aiProvider, aiModel,
                                         <div className="flex items-center gap-1 shrink-0">
                                             <button onClick={() => setTestingId(testOpen ? null : alert.id)}
                                                 title={txt('Test', 'בדיקה')}
+                                                aria-label={txt('Test alert', 'בדוק התראה')}
                                                 className={`p-0.5 transition-colors ${testOpen ? (isLight ? 'text-blue-500' : 'text-blue-400') : (isLight ? 'text-slate-300 hover:text-blue-500' : 'text-gray-600 hover:text-blue-400')}`}>
                                                 <FlaskConical size={13} />
                                             </button>
                                             <button onClick={() => isEditing ? cancelEdit() : beginEdit(alert)}
+                                                title={isEditing ? txt('Cancel edit', 'בטל עריכה') : txt('Edit alert', 'ערוך התראה')}
+                                                aria-label={isEditing ? txt('Cancel edit', 'בטל עריכה') : txt('Edit alert', 'ערוך התראה')}
                                                 className={`p-0.5 transition-colors ${isEditing ? (isLight ? 'text-amber-500' : 'text-amber-400') : (isLight ? 'text-slate-300 hover:text-slate-600' : 'text-gray-600 hover:text-gray-300')}`}>
                                                 {isEditing ? <X size={13} /> : <Pencil size={13} />}
                                             </button>
-                                            <button onClick={() => handleToggle(alert.id)} className="p-0.5">
+                                            <button onClick={() => handleToggle(alert.id)}
+                                                title={alert.enabled ? txt('Disable alert', 'בטל התראה') : txt('Enable alert', 'הפעל התראה')}
+                                                aria-label={alert.enabled ? txt('Disable alert', 'בטל התראה') : txt('Enable alert', 'הפעל התראה')}
+                                                className="p-0.5">
                                                 {alert.enabled
                                                     ? <ToggleRight size={16} className="text-blue-500" />
                                                     : <ToggleLeft size={16} className={isLight ? 'text-slate-400' : 'text-gray-500'} />}
                                             </button>
                                             <button onClick={() => handleDelete(alert.id)}
+                                                title={txt('Delete alert', 'מחק התראה')}
+                                                aria-label={txt('Delete alert', 'מחק התראה')}
                                                 className={`p-0.5 transition-colors ${isLight ? 'text-slate-300 hover:text-red-500' : 'text-gray-600 hover:text-red-400'}`}>
                                                 <Trash2 size={13} />
                                             </button>

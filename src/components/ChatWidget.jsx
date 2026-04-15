@@ -169,7 +169,7 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
         } finally {
             setLoading(false);
         }
-    }, [input, messages, loading, inputs, results, language, aiProvider, aiModel, apiKeyOverride, isHe]);
+    }, [input, messages, loading, inputs, results, language, aiProvider, aiModel, apiKeyOverride]);
 
     sendMessageRef.current = sendMessage;
 
@@ -340,22 +340,21 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
 
                             {error && (() => {
                                 const cfg = {
-                                    balance: { Icon: CreditCard,   color: 'amber',  title: isHe ? 'אין קרדיט API'       : 'Insufficient API Credits',  body: isHe ? 'יש להוסיף קרדיט לחשבון ספק ה-AI'            : 'Add credits to your AI provider account' },
-                                    quota:   { Icon: WifiOff,      color: 'orange', title: isHe ? 'חריגה ממכסת API'     : 'API Quota Exceeded',         body: isHe ? 'הגעת למגבלת הבקשות — נסה שוב בעוד כמה דקות' : 'Rate limit reached — try again in a few minutes' },
-                                    auth:    { Icon: KeyRound,     color: 'red',    title: isHe ? 'מפתח API שגוי'       : 'Invalid API Key',            body: isHe ? 'בדוק את מפתח ה-API בהגדרות'                  : 'Check your API key in Settings' },
-                                    context: { Icon: FileX,        color: 'purple', title: isHe ? 'ההודעה ארוכה מדי'    : 'Message Too Long',           body: isHe ? 'נסה לנקות את הצ\'אט ולשאול מחדש'             : "Try clearing the chat and asking again" },
-                                    network: { Icon: WifiOff,      color: 'red',    title: isHe ? 'שגיאת תקשורת'        : 'Network Error',              body: isHe ? 'בדוק את החיבור לאינטרנט'                     : 'Check your internet connection' },
-                                    unknown: { Icon: AlertCircle,  color: 'red',    title: isHe ? 'שגיאה'               : 'Error',                      body: error.raw },
-                                }[error.type] || { Icon: AlertCircle, color: 'red', title: 'Error', body: error.raw };
-                                const c = cfg.color;
+                                    balance: { Icon: CreditCard,  cls: 'bg-amber-500/10 border-amber-500/30 text-amber-400',  titleCls: 'text-amber-300', title: isHe ? 'אין קרדיט API'       : 'Insufficient API Credits',  body: isHe ? 'יש להוסיף קרדיט לחשבון ספק ה-AI'            : 'Add credits to your AI provider account' },
+                                    quota:   { Icon: WifiOff,     cls: 'bg-orange-500/10 border-orange-500/30 text-orange-400', titleCls: 'text-orange-300', title: isHe ? 'חריגה ממכסת API'     : 'API Quota Exceeded',         body: isHe ? 'הגעת למגבלת הבקשות — נסה שוב בעוד כמה דקות' : 'Rate limit reached — try again in a few minutes' },
+                                    auth:    { Icon: KeyRound,    cls: 'bg-red-500/10 border-red-500/30 text-red-400',         titleCls: 'text-red-300',    title: isHe ? 'מפתח API שגוי'       : 'Invalid API Key',            body: isHe ? 'בדוק את מפתח ה-API בהגדרות'                  : 'Check your API key in Settings' },
+                                    context: { Icon: FileX,       cls: 'bg-purple-500/10 border-purple-500/30 text-purple-400', titleCls: 'text-purple-300', title: isHe ? 'ההודעה ארוכה מדי'    : 'Message Too Long',           body: isHe ? 'נסה לנקות את הצ\'אט ולשאול מחדש'             : "Try clearing the chat and asking again" },
+                                    network: { Icon: WifiOff,     cls: 'bg-red-500/10 border-red-500/30 text-red-400',         titleCls: 'text-red-300',    title: isHe ? 'שגיאת תקשורת'        : 'Network Error',              body: isHe ? 'בדוק את החיבור לאינטרנט'                     : 'Check your internet connection' },
+                                    unknown: { Icon: AlertCircle, cls: 'bg-red-500/10 border-red-500/30 text-red-400',         titleCls: 'text-red-300',    title: isHe ? 'שגיאה'               : 'Error',                      body: error.raw },
+                                }[error.type] || { Icon: AlertCircle, cls: 'bg-red-500/10 border-red-500/30 text-red-400', titleCls: 'text-red-300', title: 'Error', body: error.raw };
                                 return (
-                                    <div className={`mx-1 mb-1 rounded-lg border px-3 py-2 flex items-start gap-2 bg-${c}-500/10 border-${c}-500/30`}>
-                                        <cfg.Icon size={14} className={`mt-0.5 shrink-0 text-${c}-400`} />
+                                    <div className={`mx-1 mb-1 rounded-lg border px-3 py-2 flex items-start gap-2 ${cfg.cls}`}>
+                                        <cfg.Icon size={14} className="mt-0.5 shrink-0" />
                                         <div className="min-w-0">
-                                            <p className={`text-xs font-semibold text-${c}-300`}>{cfg.title}</p>
-                                            <p className={`text-[11px] text-${c}-400 mt-0.5 break-words`}>{cfg.body}</p>
+                                            <p className={`text-xs font-semibold ${cfg.titleCls}`}>{cfg.title}</p>
+                                            <p className="text-[11px] mt-0.5 break-words opacity-80">{cfg.body}</p>
                                         </div>
-                                        <button onClick={() => setError(null)} className={`shrink-0 text-${c}-500 hover:text-${c}-300 mt-0.5`}><X size={12} /></button>
+                                        <button onClick={() => setError(null)} className="shrink-0 mt-0.5 opacity-60 hover:opacity-100"><X size={12} /></button>
                                     </div>
                                 );
                             })()}

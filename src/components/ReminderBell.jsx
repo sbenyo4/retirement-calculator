@@ -182,7 +182,7 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
                                 {isHe ? 'תזכורות' : 'Reminders'}
                             </span>
                         </div>
-                        <button onClick={() => setOpen(false)} className={`p-0.5 rounded transition-colors ${isLight ? 'text-slate-400 hover:text-slate-600' : 'text-gray-500 hover:text-gray-300'}`}>
+                        <button onClick={() => setOpen(false)} title={isHe ? 'סגור' : 'Close'} aria-label={isHe ? 'סגור תזכורות' : 'Close reminders'} className={`p-0.5 rounded transition-colors ${isLight ? 'text-slate-400 hover:text-slate-600' : 'text-gray-500 hover:text-gray-300'}`}>
                             <X size={14} />
                         </button>
                     </div>
@@ -398,7 +398,8 @@ function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onD
                 {r.note && (
                     <button
                         onClick={() => setShowNote(v => !v)}
-                        title={r.note}
+                        title={isHe ? 'הצג הערה' : 'Show note'}
+                        aria-label={isHe ? 'הצג הערה' : 'Show note'}
                         className={`p-0.5 rounded transition-colors ${showNote ? (isLight ? 'text-amber-600 bg-amber-100' : 'text-amber-400 bg-amber-500/20') : (isLight ? 'text-amber-400 hover:text-amber-600' : 'text-amber-500 hover:text-amber-300')}`}
                     >
                         <MessageSquare size={12} />
@@ -407,11 +408,12 @@ function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onD
                 <button
                     onClick={() => onEdit?.(r)}
                     title={isHe ? 'ערוך תזכורת' : 'Edit reminder'}
+                    aria-label={isHe ? 'ערוך תזכורת' : 'Edit reminder'}
                     className={`p-0.5 rounded transition-colors ${isLight ? 'text-slate-300 hover:text-slate-500' : 'text-gray-600 hover:text-gray-400'}`}
                 >
                     <Pencil size={12} />
                 </button>
-                <button onClick={() => onConfirm(r.id, r.source)} title={isHe ? 'מחק תזכורת' : 'Delete reminder'} className={`p-0.5 rounded transition-colors ${isLight ? 'text-slate-300 hover:text-red-500' : 'text-gray-600 hover:text-red-400'}`}>
+                <button onClick={() => onConfirm(r.id, r.source)} title={isHe ? 'מחק תזכורת' : 'Delete reminder'} aria-label={isHe ? 'מחק תזכורת' : 'Delete reminder'} className={`p-0.5 rounded transition-colors ${isLight ? 'text-slate-300 hover:text-red-500' : 'text-gray-600 hover:text-red-400'}`}>
                     <Trash2 size={12} />
                 </button>
             </div>
