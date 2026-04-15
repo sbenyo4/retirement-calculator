@@ -539,6 +539,19 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                 >
                     <BrainCircuit size={16} />
                     {t('aiInsights') || 'AI Insights'}
+                    {aiInsightsData?.readinessScore != null && (
+                        <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full leading-none ${
+                            activeTab === 'insights'
+                                ? 'bg-white/20 text-white'
+                                : aiInsightsData.readinessScore > 75
+                                    ? (isLight ? 'bg-green-100 text-green-700' : 'bg-green-500/20 text-green-400')
+                                    : aiInsightsData.readinessScore > 50
+                                        ? (isLight ? 'bg-yellow-100 text-yellow-700' : 'bg-yellow-500/20 text-yellow-400')
+                                        : (isLight ? 'bg-red-100 text-red-700' : 'bg-red-500/20 text-red-400')
+                        }`}>
+                            {aiInsightsData.readinessScore}
+                        </span>
+                    )}
                 </button>
                 <button
                     onClick={() => setActiveTab('budget')}
