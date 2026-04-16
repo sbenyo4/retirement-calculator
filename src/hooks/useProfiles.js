@@ -137,7 +137,15 @@ export function useProfiles() {
         setUserSettings(uid, { lastLoadedProfileId: id }).catch(console.error);
     }, [uid]);
 
+    const updateProfileInsights = useCallback((id, insights) => {
+        if (!uid || !id) return;
+        setProfiles(prev => prev.map(p => p.id === id ? { ...p, aiInsights: insights } : p));
+        dbUpdateProfile(uid, id, { aiInsights: insights }).catch(err => {
+            console.error('Error saving profile insights:', err);
+        });
+    }, [uid]);
+
     const clearSaveError = () => setSaveError(null);
 
-    return { profiles, saveProfile, updateProfile, renameProfile, deleteProfile, lastLoadedProfileId, markProfileAsLoaded, profilesLoaded, saveError, clearSaveError };
+    return { profiles, saveProfile, updateProfile, renameProfile, deleteProfile, lastLoadedProfileId, markProfileAsLoaded, updateProfileInsights, profilesLoaded, saveError, clearSaveError };
 }

@@ -139,7 +139,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                 onLoad({
                     ...currentDbData,
                     pensionIncomeSources: globalPension.length > 0 ? globalPension : (currentInputs?.pensionIncomeSources || [])
-                });
+                }, dbProfile?.aiInsights ?? null);
                 
                 // Update our tracker so we don't loop
                 setLastKnownDbSnapshot({ id: selectedProfileId, data: currentDbData });
@@ -224,7 +224,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
             if (currentInputs?.pensionInterestRate !== undefined) {
                 payload.pensionInterestRate = currentInputs.pensionInterestRate;
             }
-            onLoad(payload);
+            onLoad(payload, profile.aiInsights ?? null);
             showMessage(language === 'he' ? 'פרופיל נטען מחדש!' : 'Profile reloaded!');
         }
     };
@@ -257,7 +257,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
             if (currentInputs?.pensionInterestRate !== undefined) {
                 payload.pensionInterestRate = currentInputs.pensionInterestRate;
             }
-            onLoad(payload);
+            onLoad(payload, profile.aiInsights ?? null);
             setSelectedProfileId(id);
             if (onActiveProfileChange) {
                 onActiveProfileChange(id);

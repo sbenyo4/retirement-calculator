@@ -37,6 +37,7 @@ import { useAppSettings } from './hooks/useAppSettings';
 import { useRetirementData } from './hooks/useRetirementData';
 import { useCalculation } from './hooks/useCalculation';
 import { useDeepCompareMemo } from './hooks/useDeepCompare';
+import { normalizeInputs } from './utils/profileUtils';
 import { runProjectionWithGoalSeek } from './utils/calculators/goalSeek';
 
 import { WITHDRAWAL_STRATEGIES } from './constants';
@@ -154,7 +155,7 @@ function MainApp() {
 
   // Custom hooks (must be called unconditionally at top level)
   // Note: profilesLoaded is available but not currently used
-  const { profiles, saveProfile, updateProfile, renameProfile, deleteProfile, lastLoadedProfileId, markProfileAsLoaded } = useProfiles();
+  const { profiles, saveProfile, updateProfile, renameProfile, deleteProfile, lastLoadedProfileId, markProfileAsLoaded, updateProfileInsights } = useProfiles();
   const [activeProfileId, setActiveProfileId] = useState(lastLoadedProfileId || null);
 
   useEffect(() => {
@@ -331,13 +332,62 @@ function MainApp() {
     setSelectedProfileIds(prev => prev.filter(id => profiles.some(p => p.id === id)));
   }, [profiles]);
 
-  // AI Insights Persistence (Lifted State)
+  // AI Insights — hash-based cache so insights survive input changes and restores.
+  // The cache maps computeInsightsHash(inputs) → insights object.
+  // Using a ref (not state) so cache mutations don't trigger re-renders.
   const [aiInsightsData, setAiInsightsData] = useState(null);
+  const insightsCacheRef = useRef({});
 
-  // Clear AI Insights when inputs change
+  // Normalize inputs before hashing so that string/number type differences
+  // (e.g. form stores "500000" but profile loads 500000) produce the same hash.
+  const computeInsightsHash = useCallback((debouncedInputs) => {
+    if (!debouncedInputs) return '';
+    const { language: lang, fourPercentMode: fpm, ...formData } = debouncedInputs;
+    return JSON.stringify({ ...normalizeInputs(formData), language: lang, fourPercentMode: fpm });
+  }, []);
+
+  // When debounced inputs change: look up the cache and restore or clear.
+  // Idempotent → safe in React StrictMode (running twice gives the same result).
   useEffect(() => {
-    setAiInsightsData(null);
-  }, [memoizedDebouncedInputs]);
+    const hash = computeInsightsHash(memoizedDebouncedInputs);
+    setAiInsightsData(insightsCacheRef.current[hash] ?? null);
+  }, [memoizedDebouncedInputs, computeInsightsHash]);
+
+  // One-time startup: seed the cache from the active profile's saved insights.
+  // Runs after Firestore data is loaded; guarded so it never fires more than once.
+  const startupInsightsCachedRef = useRef(false);
+  useEffect(() => {
+    if (startupInsightsCachedRef.current) return;
+    if (!inputsLoaded || !activeProfileId) return;
+    const profile = profiles.find(p => p.id === activeProfileId);
+    if (!profile) return;
+    startupInsightsCachedRef.current = true;
+    if (profile.aiInsights) {
+      const hash = computeInsightsHash(memoizedDebouncedInputs);
+      insightsCacheRef.current[hash] = profile.aiInsights;
+      setAiInsightsData(profile.aiInsights);
+    }
+  }, [inputsLoaded, activeProfileId, profiles, memoizedDebouncedInputs, computeInsightsHash]);
+
+  // Called by ProfileManager when loading/reloading a profile.
+  // Pre-populates the cache under the hash the inputs will produce after debounce.
+  const handleLoad = useCallback((profileInputs, profileInsights) => {
+    if (profileInsights) {
+      const expectedHash = computeInsightsHash({ ...profileInputs, language, fourPercentMode: settings.fourPercentMode });
+      insightsCacheRef.current[expectedHash] = profileInsights;
+    }
+    setInputs(profileInputs);
+  }, [setInputs, language, settings.fourPercentMode, computeInsightsHash]);
+
+  // Save insights to the active profile, update state, and populate the cache.
+  const handleSetAiInsights = useCallback((data) => {
+    const hash = computeInsightsHash(memoizedDebouncedInputs);
+    if (data) insightsCacheRef.current[hash] = data;
+    setAiInsightsData(data);
+    if (data && activeProfileId) {
+      updateProfileInsights(activeProfileId, data);
+    }
+  }, [memoizedDebouncedInputs, activeProfileId, updateProfileInsights, computeInsightsHash]);
 
   // ── Alerts ──────────────────────────────────────────────────────────────
   const disabledAlerts = settings.disabledAlerts || [];
@@ -601,7 +651,7 @@ function MainApp() {
           <div className="lg:col-span-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl pt-4 px-4 pb-0 shadow-xl flex flex-col relative z-20 overflow-hidden min-h-[700px]" onFocus={preloadResultsDashboard} onPointerEnter={preloadResultsDashboard}>
             <ProfileManager
               currentInputs={inputs}
-              onLoad={setInputs}
+              onLoad={handleLoad}
               t={t}
               language={language}
               profiles={profiles}
@@ -752,7 +802,7 @@ function MainApp() {
 
                     // AI Insights Props (Lifted State)
                     aiInsightsData={aiInsightsData}
-                    setAiInsightsData={setAiInsightsData}
+                    setAiInsightsData={handleSetAiInsights}
                   />
                 </Suspense>
               )}
