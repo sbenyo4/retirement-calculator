@@ -30,8 +30,24 @@ export function calculateDecumulation({
         bucketSafeRate = 0,
         bucketSurplusRate = 0,
         safeVariableRates = {},
-        surplusVariableRates = {}
+        surplusVariableRates = {},
+        additionalYearlyIncome = []
     } = inputs;
+
+    // Pre-build calendar-year → monthly income map for O(1) lookup in the hot loop
+    const additionalIncomeByYear = {};
+    (Array.isArray(additionalYearlyIncome) ? additionalYearlyIncome : []).forEach(e => {
+        const from = parseInt(e.startYear);
+        const to = e.endYear ? parseInt(e.endYear) : from;
+        const amount = parseFloat(e.monthlyAmount) || 0;
+        if (e.enabled === false) return;
+        if (amount > 0 && from > 0 && to >= from) {
+            for (let y = from; y <= to; y++) {
+                additionalIncomeByYear[y] = (additionalIncomeByYear[y] || 0) + amount;
+            }
+        }
+    });
+    const hasAdditionalIncome = Object.keys(additionalIncomeByYear).length > 0;
 
     let history = [];
     let currentMonth = startMonthIndex;
@@ -321,6 +337,11 @@ export function calculateDecumulation({
 
         netWithdrawal += activeExpenseAdjustment;
         netWithdrawal -= activeIncomeAdjustment;
+
+        if (hasAdditionalIncome) {
+            const calYear = startYear + Math.floor(currentMonth / 12);
+            netWithdrawal -= (additionalIncomeByYear[calYear] || 0);
+        }
 
         if (netWithdrawal < 0) {
             const surplusIncome = Math.abs(netWithdrawal);

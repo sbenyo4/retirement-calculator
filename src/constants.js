@@ -31,6 +31,7 @@ export const DEFAULT_INPUTS = {
     targetEndBalance: '',
     withdrawalStrategy: 'fixed',
     withdrawalPercentage: 4,
+    additionalYearlyIncome: [],
     scenarioEnabled: false,
     scenario: {
         type: 'crash',

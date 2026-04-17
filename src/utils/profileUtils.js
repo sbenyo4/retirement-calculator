@@ -125,6 +125,23 @@ export const normalizeInputs = (data) => {
         normalized.lifeEvents = [];
     }
 
+    // 7. Normalize Additional Yearly Income
+    if (Array.isArray(normalized.additionalYearlyIncome)) {
+        normalized.additionalYearlyIncome = normalized.additionalYearlyIncome
+            .filter(e => e && e.id)
+            .map(e => ({
+                id: String(e.id),
+                startYear: parseInt(e.startYear) || new Date().getFullYear(),
+                endYear: e.endYear ? parseInt(e.endYear) : null,
+                monthlyAmount: parseFloat(e.monthlyAmount) || 0,
+                enabled: e.enabled !== false
+            }))
+            .filter(e => e.monthlyAmount > 0)
+            .sort((a, b) => a.startYear - b.startYear);
+    } else {
+        normalized.additionalYearlyIncome = [];
+    }
+
     return normalized;
 };
 

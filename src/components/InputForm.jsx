@@ -5,11 +5,12 @@ import { calculateAgeFromDate, getProjectedYear as getProjectedYearUtil } from '
 import { generateBalancedVariableRates, computeAverageRate } from '../utils/variableRatesUtils';
 import { SIMULATION_TYPES } from '../utils/simulation-calculator';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
-import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, TrendingDown, Coins, BarChart3, Landmark, PiggyBank, Wallet, Activity, Layers, ShieldCheck, Gem, Target, ClipboardList } from 'lucide-react';
+import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, TrendingDown, Coins, BarChart3, Landmark, PiggyBank, Wallet, Activity, Layers, ShieldCheck, Gem, Target, ClipboardList, PlusCircle } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 import LifeEventsManager from './LifeEventsManager';
 import VariableRatesModal from './VariableRatesModal';
 import ScenarioModal from './ScenarioModal';
+import { AdditionalIncomeModal } from './AdditionalIncomeModal';
 
 export default function InputForm({
     inputs,
@@ -62,6 +63,7 @@ export default function InputForm({
     const [showCapitalPreservationBtn, setShowCapitalPreservationBtn] = useState(false);
     const [showApiKey, setShowApiKey] = useState(false);
     const [promptText, setPromptText] = useState(null);
+    const [showAdditionalIncome, setShowAdditionalIncome] = useState(false);
     const [showVariableRates, setShowVariableRates] = useState(false);
     const [activeVRType, setActiveVRType] = useState('accumulation'); // 'accumulation' | 'safe' | 'surplus'
     const [showScenario, setShowScenario] = useState(false);
@@ -620,6 +622,21 @@ export default function InputForm({
                         <InputGroup language={language}
                             label={t('monthlyNetIncomeDesired')}
                             name="monthlyNetIncomeDesired"
+                            endAction={
+                                <div className="flex h-full">
+                                    <button
+                                        onClick={() => setShowAdditionalIncome(true)}
+                                        title={t('additionalIncome')}
+                                        className={`p-1 h-full flex items-center justify-center transition-colors ${
+                                            (inputs.additionalYearlyIncome?.length > 0)
+                                                ? 'text-green-400 hover:text-green-300'
+                                                : (isLight ? 'text-gray-400 hover:text-gray-600' : 'text-gray-500 hover:text-gray-300')
+                                        }`}
+                                    >
+                                        <PlusCircle size={14} />
+                                    </button>
+                                </div>
+                            }
                             value={
                                 goalSeekWithdrawal != null
                                     ? ''
@@ -921,6 +938,16 @@ export default function InputForm({
                 aiProvider={aiProvider}
                 aiModel={aiModel}
                 apiKeyOverride={apiKeyOverride}
+            />
+
+            <AdditionalIncomeModal
+                isOpen={showAdditionalIncome}
+                onClose={() => setShowAdditionalIncome(false)}
+                inputs={inputs}
+                setInputs={setInputs}
+                t={t}
+                language={language}
+                currency={currency}
             />
 
             {/* Prompt Preview Overlay */}
