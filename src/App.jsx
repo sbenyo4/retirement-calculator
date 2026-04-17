@@ -39,18 +39,25 @@ import { useCalculation } from './hooks/useCalculation';
 import { useDeepCompareMemo } from './hooks/useDeepCompare';
 import { normalizeInputs } from './utils/profileUtils';
 import { runProjectionWithGoalSeek } from './utils/calculators/goalSeek';
-
 import { WITHDRAWAL_STRATEGIES } from './constants';
 import { getUserSettings } from './utils/db';
-import { Settings, AlertTriangle, Info, X, ChevronDown, ChevronUp, MessageCircle } from 'lucide-react';
+import { Settings, AlertTriangle, Info, X, MessageCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { ReminderBell } from './components/ReminderBell';
 import { ReminderAlert } from './components/ReminderAlert';
 import { GlobalRemindersSync } from './components/GlobalRemindersSync';
 import { BudgetRemindersSync } from './components/BudgetRemindersSync';
-import { resetReminderSession } from './hooks/useReminders';
 
 const isLifeEventSource = (source) =>
   typeof source === 'string' && (source === 'lifeEvents' || source.startsWith('lifeEvents:'));
+
+// Pure function — no closure over component state.
+// Strips pension sources (global, not per-profile) and pensionInterestRate so the hash
+// matches between profile-load (profile.data has no pension) and live form data (has pension).
+function computeInsightsHash(inputs) {
+  if (!inputs) return '';
+  const { language, fourPercentMode, pensionIncomeSources, pensionInterestRate, ...formData } = inputs;
+  return JSON.stringify({ ...normalizeInputs(formData), language, fourPercentMode });
+}
 
 function App() {
   return (
@@ -76,6 +83,31 @@ function MainApp() {
 
   const [chatOpen, setChatOpen] = useState(false);
   const [triggeredSmartAlerts, setTriggeredSmartAlerts] = useState([]);
+
+  // Alert bar carousel
+  const alertsScrollRef = useRef(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateAlertArrows = useCallback(() => {
+    const el = alertsScrollRef.current;
+    if (!el) return;
+    const sl = el.scrollLeft;
+    const max = el.scrollWidth - el.clientWidth;
+    if (language === 'he') {
+      // RTL: scrollLeft=0 at right (start), goes negative toward left
+      setCanScrollLeft(sl > -(max - 1));  // more content hidden to the left
+      setCanScrollRight(sl < -1);          // scrolled left, can return right
+    } else {
+      setCanScrollLeft(sl > 1);
+      setCanScrollRight(sl < max - 1);
+    }
+  }, [language]);
+
+  const scrollAlerts = useCallback((dir) => {
+    alertsScrollRef.current?.scrollBy({ left: dir * 160, behavior: 'smooth' });
+  }, []);
+
   useEffect(() => {
     const handle = (e) => setTriggeredSmartAlerts(e.detail?.triggered || []);
     window.addEventListener('rc-smart-alerts-triggered', handle);
@@ -332,29 +364,19 @@ function MainApp() {
     setSelectedProfileIds(prev => prev.filter(id => profiles.some(p => p.id === id)));
   }, [profiles]);
 
-  // AI Insights — hash-based cache so insights survive input changes and restores.
-  // The cache maps computeInsightsHash(inputs) → insights object.
-  // Using a ref (not state) so cache mutations don't trigger re-renders.
+  // AI Insights — hash-based session cache: computeInsightsHash(inputs) → insights object.
+  // The cache ref never triggers re-renders; React state (aiInsightsData) drives the UI.
   const [aiInsightsData, setAiInsightsData] = useState(null);
   const insightsCacheRef = useRef({});
 
-  // Normalize inputs before hashing so that string/number type differences
-  // (e.g. form stores "500000" but profile loads 500000) produce the same hash.
-  const computeInsightsHash = useCallback((debouncedInputs) => {
-    if (!debouncedInputs) return '';
-    const { language: lang, fourPercentMode: fpm, ...formData } = debouncedInputs;
-    return JSON.stringify({ ...normalizeInputs(formData), language: lang, fourPercentMode: fpm });
-  }, []);
-
-  // When debounced inputs change: look up the cache and restore or clear.
-  // Idempotent → safe in React StrictMode (running twice gives the same result).
+  // When debounced inputs change: restore cached insights or clear.
+  // Idempotent (pure lookup) → safe in React StrictMode.
   useEffect(() => {
-    const hash = computeInsightsHash(memoizedDebouncedInputs);
-    setAiInsightsData(insightsCacheRef.current[hash] ?? null);
-  }, [memoizedDebouncedInputs, computeInsightsHash]);
+    setAiInsightsData(insightsCacheRef.current[computeInsightsHash(memoizedDebouncedInputs)] ?? null);
+  }, [memoizedDebouncedInputs]);
 
-  // One-time startup: seed the cache from the active profile's saved insights.
-  // Runs after Firestore data is loaded; guarded so it never fires more than once.
+  // One-time startup: seed cache from the active profile's saved insights.
+  // Uses profile.data (not memoizedDebouncedInputs) to avoid the 300ms debounce timing gap.
   const startupInsightsCachedRef = useRef(false);
   useEffect(() => {
     if (startupInsightsCachedRef.current) return;
@@ -362,32 +384,34 @@ function MainApp() {
     const profile = profiles.find(p => p.id === activeProfileId);
     if (!profile) return;
     startupInsightsCachedRef.current = true;
-    if (profile.aiInsights) {
-      const hash = computeInsightsHash(memoizedDebouncedInputs);
+    if (profile.aiInsights && profile.data) {
+      const hash = computeInsightsHash({ ...profile.data, language, fourPercentMode: settings.fourPercentMode });
       insightsCacheRef.current[hash] = profile.aiInsights;
       setAiInsightsData(profile.aiInsights);
     }
-  }, [inputsLoaded, activeProfileId, profiles, memoizedDebouncedInputs, computeInsightsHash]);
+  }, [inputsLoaded, activeProfileId, profiles, language, settings.fourPercentMode]);
 
   // Called by ProfileManager when loading/reloading a profile.
-  // Pre-populates the cache under the hash the inputs will produce after debounce.
+  // Seeds the cache immediately (no debounce wait) and shows insights right away.
   const handleLoad = useCallback((profileInputs, profileInsights) => {
     if (profileInsights) {
-      const expectedHash = computeInsightsHash({ ...profileInputs, language, fourPercentMode: settings.fourPercentMode });
-      insightsCacheRef.current[expectedHash] = profileInsights;
+      const hash = computeInsightsHash({ ...profileInputs, language, fourPercentMode: settings.fourPercentMode });
+      insightsCacheRef.current[hash] = profileInsights;
+      setAiInsightsData(profileInsights);
+    } else {
+      setAiInsightsData(null);
     }
     setInputs(profileInputs);
-  }, [setInputs, language, settings.fourPercentMode, computeInsightsHash]);
+  }, [setInputs, language, settings.fourPercentMode]);
 
   // Save insights to the active profile, update state, and populate the cache.
   const handleSetAiInsights = useCallback((data) => {
-    const hash = computeInsightsHash(memoizedDebouncedInputs);
-    if (data) insightsCacheRef.current[hash] = data;
+    if (data) insightsCacheRef.current[computeInsightsHash(memoizedDebouncedInputs)] = data;
     setAiInsightsData(data);
     if (data && activeProfileId) {
       updateProfileInsights(activeProfileId, data);
     }
-  }, [memoizedDebouncedInputs, activeProfileId, updateProfileInsights, computeInsightsHash]);
+  }, [memoizedDebouncedInputs, activeProfileId, updateProfileInsights]);
 
   // ── Alerts ──────────────────────────────────────────────────────────────
   const disabledAlerts = settings.disabledAlerts || [];
@@ -491,6 +515,12 @@ function MainApp() {
 
     return list.filter(a => !disabledAlerts.includes(a.id));
   }, [results, memoizedDebouncedInputs, language, disabledAlerts]);
+
+  // Recheck scroll arrows whenever the alert list changes
+  useEffect(() => {
+    const id = setTimeout(updateAlertArrows, 50);
+    return () => clearTimeout(id);
+  }, [alerts, triggeredSmartAlerts, updateAlertArrows]);
   // ────────────────────────────────────────────────────────────────────────
 
   // Stable reference for selected profiles' calculation data (avoids recalculation on rename)
@@ -604,46 +634,73 @@ function MainApp() {
           </div>
         </header>
 
-        {/* ── Alert bar — replaces mb-4 of header, always same height ── */}
-        <div className="min-h-[16px] flex items-center justify-end gap-2 flex-wrap py-0" dir={language === 'he' ? 'rtl' : 'ltr'}>
-          {settingsLoaded && inputsLoaded && alerts.map(alert => (
-            <div
-              key={alert.id}
-              className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium relative -top-[5px] ${
-                alert.severity === 'critical'
-                  ? (theme === 'light' ? 'bg-red-50 border-red-300 text-red-700' : 'bg-red-900/30 border-red-500/50 text-red-300')
-                  : alert.severity === 'warning'
-                  ? (theme === 'light' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-amber-900/30 border-amber-500/50 text-amber-300')
-                  : (theme === 'light' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-blue-900/30 border-blue-500/50 text-blue-300')
-              }`}
-            >
-              {alert.severity === 'critical' ? <AlertTriangle size={11} /> : alert.severity === 'warning' ? <AlertTriangle size={11} /> : <Info size={11} />}
-              <span>{alert.text}</span>
-              <button
-                onClick={() => toggleAlert(alert.id)}
-                className="opacity-50 hover:opacity-100 transition-opacity ms-0.5"
+        {/* ── Alert bar — always LTR internally so arrows/scroll are predictable ── */}
+        <div className="flex items-center gap-1 py-1" dir="ltr">
+          {/* Left arrow */}
+          <button
+            onClick={() => scrollAlerts(-1)}
+            className={`shrink-0 transition-opacity ${canScrollLeft ? 'opacity-60 hover:opacity-100' : 'opacity-0 pointer-events-none'} ${theme === 'light' ? 'text-slate-500' : 'text-white/60'}`}
+            aria-hidden={!canScrollLeft}
+          >
+            <ChevronLeft size={14} />
+          </button>
+
+          {/* Scrollable badges — dir switches for RTL so first item is on the right in Hebrew */}
+          <div
+            ref={alertsScrollRef}
+            onScroll={updateAlertArrows}
+            dir={language === 'he' ? 'rtl' : 'ltr'}
+            className="flex items-center gap-2 flex-1 min-w-0 py-1"
+            style={{ overflowX: 'scroll', scrollbarWidth: 'none' }}
+          >
+            {settingsLoaded && inputsLoaded && alerts.map(alert => (
+              <div
+                key={alert.id}
+                className={`shrink-0 flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium ${
+                  alert.severity === 'critical'
+                    ? (theme === 'light' ? 'bg-red-50 border-red-300 text-red-700' : 'bg-red-900/30 border-red-500/50 text-red-300')
+                    : alert.severity === 'warning'
+                    ? (theme === 'light' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-amber-900/30 border-amber-500/50 text-amber-300')
+                    : (theme === 'light' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-blue-900/30 border-blue-500/50 text-blue-300')
+                }`}
               >
-                <X size={10} />
-              </button>
-            </div>
-          ))}
-          {settingsLoaded && triggeredSmartAlerts.map(alert => (
-            <div
-              key={`smart-${alert.id}`}
-              className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium relative -top-[5px] ${
-                theme === 'light' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-amber-900/30 border-amber-500/50 text-amber-300'
-              }`}
-            >
-              <AlertTriangle size={11} />
-              <span>{alert.label}</span>
-              <button
-                onClick={() => window.dispatchEvent(new CustomEvent('rc-smart-alert-disable', { detail: { id: alert.id } }))}
-                className="opacity-50 hover:opacity-100 transition-opacity ms-0.5"
+                {alert.severity === 'critical' ? <AlertTriangle size={11} /> : alert.severity === 'warning' ? <AlertTriangle size={11} /> : <Info size={11} />}
+                <span className="whitespace-nowrap">{alert.text}</span>
+                <button
+                  onClick={() => toggleAlert(alert.id)}
+                  className="opacity-50 hover:opacity-100 transition-opacity ms-0.5"
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            ))}
+            {settingsLoaded && triggeredSmartAlerts.map(alert => (
+              <div
+                key={`smart-${alert.id}`}
+                className={`shrink-0 flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium ${
+                  theme === 'light' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-amber-900/30 border-amber-500/50 text-amber-300'
+                }`}
               >
-                <X size={10} />
-              </button>
-            </div>
-          ))}
+                <AlertTriangle size={11} />
+                <span className="whitespace-nowrap">{alert.label}</span>
+                <button
+                  onClick={() => window.dispatchEvent(new CustomEvent('rc-smart-alert-disable', { detail: { id: alert.id } }))}
+                  className="opacity-50 hover:opacity-100 transition-opacity ms-0.5"
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Right arrow (scroll toward end) */}
+          <button
+            onClick={() => scrollAlerts(1)}
+            className={`shrink-0 transition-opacity ${canScrollRight ? 'opacity-60 hover:opacity-100' : 'opacity-0 pointer-events-none'} ${theme === 'light' ? 'text-slate-500' : 'text-white/60'}`}
+            aria-hidden={!canScrollRight}
+          >
+            <ChevronRight size={14} />
+          </button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
