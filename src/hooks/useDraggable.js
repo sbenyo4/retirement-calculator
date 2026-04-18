@@ -1,27 +1,34 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
+let topZ = 1000;
+
 /**
  * Makes a modal draggable from its header.
  *
  * Usage:
- *   const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
- *   // Apply dragStyle to the modal container (the box)
+ *   const { dragStyle, overlayStyle, onDragMouseDown, bringToFront } = useDraggable(isOpen);
+ *   // Apply overlayStyle to the fixed overlay (provides z-index)
+ *   // Apply dragStyle to the modal container (provides transform)
  *   // Apply onDragMouseDown + cursor-grab class to the header div
+ *   // Call bringToFront() on overlay mousedown to promote this window
  *
  * Position resets to center whenever isOpen changes to true.
  */
 export function useDraggable(isOpen) {
     const [pos, setPos] = useState({ x: 0, y: 0 });
+    const [zIndex, setZIndex] = useState(topZ);
     const posRef    = useRef({ x: 0, y: 0 });
     const dragging  = useRef(false);
     const origin    = useRef({ x: 0, y: 0 });
 
-    // Reset to center every time the modal opens
+    // Reset to center and claim top z-index every time the modal opens
     useEffect(() => {
         if (isOpen) {
             const zero = { x: 0, y: 0 };
             setPos(zero);
             posRef.current = zero;
+            topZ += 1;
+            setZIndex(topZ);
         }
     }, [isOpen]);
 
@@ -45,21 +52,29 @@ export function useDraggable(isOpen) {
         };
     }, []);
 
+    const bringToFront = useCallback(() => {
+        topZ += 1;
+        setZIndex(topZ);
+    }, []);
+
     const onDragMouseDown = useCallback((e) => {
         // Don't hijack clicks on interactive elements inside the header
         if (e.target.closest(
             'button, input, select, textarea, a, label, [role="switch"], [role="slider"]'
         )) return;
         e.preventDefault();
+        bringToFront();
         dragging.current = true;
         origin.current = {
             x: e.clientX - posRef.current.x,
             y: e.clientY - posRef.current.y,
         };
-    }, []);
+    }, [bringToFront]);
 
     return {
-        dragStyle:      { transform: `translate(${pos.x}px, ${pos.y}px)` },
+        dragStyle:    { transform: `translate(${pos.x}px, ${pos.y}px)` },
+        overlayStyle: { zIndex },
+        bringToFront,
         onDragMouseDown,
     };
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, TrendingDown, BarChart2, Zap } from 'lucide-react';
 import { useDraggable } from '../hooks/useDraggable';
 import { useTheme } from '../contexts/ThemeContext';
@@ -147,15 +148,15 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
         scenario: { type: 'crash', startYear, crashDepth, recoveryYears, recoveryShape, recoveryMode, targetAvgRate, affectsSafeBucket }
     }), [inputs, startYear, crashDepth, recoveryYears, recoveryShape, recoveryMode, targetAvgRate, affectsSafeBucket]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
+    const { dragStyle, overlayStyle, onDragMouseDown, bringToFront } = useDraggable(isOpen);
 
     if (!isOpen) return null;
 
     const he = language === 'he';
 
-    return (
+    return createPortal(
         <>
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999] p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4" style={overlayStyle} onMouseDown={bringToFront}>
             <div
                 className={`relative w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden ${isLight ? 'bg-white ring-1 ring-gray-300 text-gray-900' : 'ring-1 ring-white/30 text-white'}`}
                 dir={he ? 'rtl' : 'ltr'}
@@ -399,6 +400,7 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
             apiKeyOverride={apiKeyOverride}
             presetLabel={selectedPresetId ? (PRESETS.find(p => p.id === selectedPresetId)?.[language] ?? null) : null}
         />
-        </>
+        </>,
+        document.body
     );
 }

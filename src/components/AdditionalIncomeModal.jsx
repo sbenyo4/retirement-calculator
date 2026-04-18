@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Plus, Trash2, TrendingUp, ToggleLeft, ToggleRight } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
@@ -11,7 +12,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
     const isLight = theme === 'light';
     const isRTL = language === 'he';
     useBodyScrollLock(isOpen);
-    const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
+    const { dragStyle, overlayStyle, onDragMouseDown, bringToFront } = useDraggable(isOpen);
 
     const [entries, setEntries] = useState([]);
     const syncedRef = useRef(false);
@@ -117,8 +118,8 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
             : 'bg-black/20 border border-white/30 text-white focus:outline-none focus:ring-2 focus:ring-blue-500'
     }`;
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+    return createPortal(
+        <div className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" style={overlayStyle} onClick={onClose} onMouseDown={bringToFront}>
             <div
                 className={`w-full max-w-md rounded-2xl shadow-2xl ${isLight ? 'bg-white' : 'bg-gray-900 border border-white/10'}`}
                 style={dragStyle}
@@ -266,6 +267,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                     </div>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }
