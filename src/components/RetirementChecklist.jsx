@@ -4,7 +4,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { formatCurrency } from '../utils/formatters';
 import { generateRetirementChecklistInsights, applyChecklistDiff, explainChecklistItem, generateChecklistOverview, localizeAiError } from '../utils/ai-calculator';
 import { useAuth } from '../contexts/AuthContext';
-import { getChecklistState, setChecklistState } from '../utils/db';
+import { getChecklistState, setChecklistState, getChecklistOverview, setChecklistOverview } from '../utils/db';
 import {
     Shield, Heart, Receipt, TrendingUp, Home, Scale, Laptop,
     AlertTriangle, CheckCircle, ChevronDown, ChevronRight,
@@ -1249,9 +1249,10 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     const [searchQuery, setSearchQuery] = useState('');
     const [overviewOpen, setOverviewOpen] = useState(false);
     const [overviewText, setOverviewText] = useState(null);
+    const [overviewStale, setOverviewStale] = useState(false);
     const [overviewLoading, setOverviewLoading] = useState(false);
     const [overviewError, setOverviewError] = useState(null);
-    const [overviewSnapshot, setOverviewSnapshot] = useState(null);
+    const overviewStaleInitRef = useRef(false);
     const overviewDragRef = useRef(null);
     const overviewPosRef = useRef({ x: 0, y: 0 });
     const [overviewPos, setOverviewPos] = useState({ x: 0, y: 0 });
@@ -1262,8 +1263,9 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         setAiExplanations(prev => ({ ...prev, [itemId]: text }));
     }, []);
 
+    const handleOpenOverviewRef = useRef(null);
     useEffect(() => {
-        const handler = () => setOverviewOpen(true);
+        const handler = () => handleOpenOverviewRef.current?.();
         window.addEventListener('app:openChecklistOverview', handler);
         return () => window.removeEventListener('app:openChecklistOverview', handler);
     }, []);
@@ -1291,14 +1293,27 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             if (saved?.aiExplanations && typeof saved.aiExplanations === 'object') {
                 setAiExplanations(saved.aiExplanations);
             }
-            if (saved?.overviewText && saved?.overviewSnapshot) {
-                setOverviewText(saved.overviewText);
-                setOverviewSnapshot(saved.overviewSnapshot);
-            }
             setDbLoaded(true);
         }).catch(err => {
             console.error('[RetirementChecklist] Failed to load checklist state from Firestore:', err);
             setDbLoaded(true);
+        });
+    }, [uid]);
+
+    // Load overview from its own dedicated Firestore document — isolated from checklist state saves
+    const overviewDbLoadedRef = useRef(false);
+    useEffect(() => {
+        if (!uid) { overviewDbLoadedRef.current = true; return; }
+        overviewStaleInitRef.current = false;
+        getChecklistOverview(uid).then(saved => {
+            if (saved?.overviewText) {
+                setOverviewText(saved.overviewText);
+                setOverviewStale(false);
+            }
+            overviewDbLoadedRef.current = true;
+        }).catch(err => {
+            console.error('[Checklist overview load error]', err);
+            overviewDbLoadedRef.current = true;
         });
     }, [uid]);
 
@@ -1320,7 +1335,9 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         a: inp?.currentAge, b: inp?.retirementStartAge, c: inp?.retirementEndAge,
         d: inp?.currentSavings, e: inp?.monthlyContribution, f: inp?.monthlyNetIncomeDesired,
         g: inp?.annualReturnRate, h: inp?.inflationRate,
-        i: res?.balanceAtRetirement, j: res?.ranOutAtAge, k: res?.surplus,
+        i: res?.balanceAtRetirement != null ? Math.round(res.balanceAtRetirement) : null,
+        j: res?.ranOutAtAge ?? null,
+        k: res?.surplus != null ? Math.round(res.surplus) : null,
         l: inp?.taxRate, m: inp?.withdrawalStrategy, n: inp?.enableBuckets,
         o: inp?.pensionIncomeSources?.length,
     });
@@ -1332,6 +1349,15 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             .then(() => setAiTimestamp(ts))
             .catch(err => console.error('[Checklist save]', err));
     }, [uid]);
+
+    // Mark overview stale when checklist data changes after initial load
+    const overviewTextRef = useRef(null);
+    overviewTextRef.current = overviewText;
+    useEffect(() => {
+        if (!dbLoaded || !overviewDbLoadedRef.current) return;
+        if (!overviewStaleInitRef.current) { overviewStaleInitRef.current = true; return; }
+        if (overviewTextRef.current) setOverviewStale(true);
+    }, [aiData, dbLoaded]);
 
     // Persist AI explanations to Firestore whenever they change (after initial load)
     const aiExplanationsLoadedRef = useRef(false);
@@ -1452,9 +1478,9 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             const cats = aiDataRef.current?.categories || buildItems(inp, res, lang);
             const text = await generateChecklistOverview(cats, inp, res, prov, mod, key, lang);
             setOverviewText(text);
-            setOverviewSnapshot(snap);
+            setOverviewStale(false);
             if (uidRef.current) {
-                setChecklistState(uidRef.current, { overviewText: text, overviewSnapshot: snap }).catch(() => {});
+                setChecklistOverview(uidRef.current, text).catch(err => console.error('[Checklist overview save error]', err));
             }
         } catch (err) {
             setOverviewError(localizeAiError(err, latestRef.current.language));
@@ -1464,11 +1490,12 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     }, []);
 
     const handleOpenOverview = useCallback(() => {
-        const snap = getSnapshot(latestRef.current.inputs, latestRef.current.results);
         setOverviewOpen(true);
         setOverviewPos({ x: 0, y: 0 });
-        if (!overviewText || overviewSnapshot !== snap) fetchOverview();
-    }, [overviewText, overviewSnapshot, fetchOverview]);
+        if (!dbLoaded || !overviewDbLoadedRef.current) return;
+        if (!overviewText || overviewStale) fetchOverview();
+    }, [overviewText, overviewStale, fetchOverview, dbLoaded]);
+    handleOpenOverviewRef.current = handleOpenOverview;
 
     const startDrag = useCallback((e) => {
         if (e.button !== 0) return;
@@ -2591,8 +2618,13 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                             <span className={`text-xs font-semibold flex-1 ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>
                                 {isRtl ? '✦ תובנות AI — מה חשוב לי לשים לב' : '✦ AI Overview — Key Priorities'}
                             </span>
+                            {overviewStale && !overviewLoading && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isLight ? 'bg-amber-100 text-amber-600' : 'bg-amber-500/20 text-amber-400'}`}>
+                                    {isRtl ? 'לא עדכני' : 'stale'}
+                                </span>
+                            )}
                             <button
-                                onClick={() => { setOverviewText(null); setOverviewSnapshot(null); setOverviewError(null); setOverviewLoading(true); fetchOverview(); }}
+                                onClick={() => { setOverviewError(null); fetchOverview(); }}
                                 disabled={overviewLoading}
                                 title={isRtl ? 'רענן' : 'Refresh'}
                                 className={`p-1 rounded transition-colors disabled:opacity-40 ${isLight ? 'text-purple-400 hover:text-purple-700 hover:bg-purple-100' : 'text-purple-500 hover:text-purple-300 hover:bg-purple-500/20'}`}
@@ -2609,13 +2641,13 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                         {/* Content */}
                         <div className="overflow-y-auto custom-scrollbar scrollbar-right flex-1 p-3 text-xs leading-relaxed">
                             {overviewLoading && (
-                                <div className="flex items-center gap-2 py-4 justify-center">
+                                <div className="flex items-center gap-2 py-2 justify-center">
                                     <RefreshCw size={14} className="animate-spin text-purple-400" />
-                                    <span className={isLight ? 'text-purple-600' : 'text-purple-300'}>{isRtl ? 'מנתח את הרשימה…' : 'Analysing checklist…'}</span>
+                                    <span className={isLight ? 'text-purple-600' : 'text-purple-300'}>{isRtl ? 'מעדכן ניתוח…' : 'Updating analysis…'}</span>
                                 </div>
                             )}
-                            {overviewError && <div className={isLight ? 'text-red-600' : 'text-red-400'}>{overviewError}</div>}
-                            {overviewText && !overviewLoading && (
+                            {overviewError && !overviewLoading && <div className={isLight ? 'text-red-600' : 'text-red-400'}>{overviewError}</div>}
+                            {overviewText && (
                                 <AiTextRenderer text={overviewText} isLight={isLight} />
                             )}
                         </div>

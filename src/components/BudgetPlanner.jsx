@@ -7,7 +7,7 @@ import { Chart as ChartJS, ArcElement, CategoryScale, LinearScale, BarElement, L
 ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend);
 import { silenceReminder, syncComponentReminders } from '../hooks/useReminders';
 import { useAuth } from '../contexts/AuthContext';
-import { getBudgetItems, setBudgetItems, setBudgetAiInsight } from '../utils/db';
+import { getBudgetItems, setBudgetItems, getBudgetAiInsight, setBudgetAiInsight } from '../utils/db';
 import { getChatResponse } from '../utils/ai-chat';
 import { useDraggable } from '../hooks/useDraggable';
 
@@ -1510,11 +1510,12 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const [pendingConfirm, setPendingConfirm] = useState(null); // { type: 'restore'|'reset', backup? }
     const [openCategoryId, setOpenCategoryId] = useState(null);
     const [aiInsight, setAiInsight] = useState(null);
+    const [aiInsightStale, setAiInsightStale] = useState(false);
     const [aiModalOpen, setAiModalOpen] = useState(false);
     const [aiLoading, setAiLoading] = useState(false);
     const [aiError, setAiError] = useState(null);
-    const aiSnapshotRef = useRef(null); // fingerprint of data when insight was last generated
-    const aiInsightRef = useRef(null);  // cached insight text (survives modal close)
+    const aiInsightRef = useRef(null);    // cached insight text (survives modal close)
+    const aiStaleInitRef = useRef(false); // true after the first post-load render
     const { dragStyle: aiDragStyle, onDragMouseDown: onAiDragMouseDown } = useDraggable(aiModalOpen);
     const [showFuture, setShowFuture] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -1695,12 +1696,6 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                 backupSlotsRef.current = slots;
                 setBackups(slots);
             }
-            // Restore cached AI insight
-            if (saved?.aiInsight && saved?.aiSnapshot) {
-                aiInsightRef.current = saved.aiInsight;
-                aiSnapshotRef.current = saved.aiSnapshot;
-                setAiInsight(saved.aiInsight);
-            }
             saveAllowedRef.current = true;
             setLoaded(true);
         }).catch(err => {
@@ -1708,6 +1703,19 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             // Do NOT allow saves if load failed — prevents overwriting Firestore with DEFAULT_ITEMS
             setLoaded(true);
         });
+    }, [uid]);
+
+    // Load AI insight from its own dedicated Firestore document — completely isolated from budget items
+    useEffect(() => {
+        if (!uid) return;
+        aiStaleInitRef.current = false; // reset so the stale effect skips the first post-load fire
+        getBudgetAiInsight(uid).then(saved => {
+            if (saved?.insight) {
+                aiInsightRef.current = saved.insight;
+                setAiInsight(saved.insight);
+                setAiInsightStale(false);
+            }
+        }).catch(err => console.error('[Budget AI insight load error]', err));
     }, [uid]);
 
     // Persist pause/unpause state immediately so it survives quick logout/login cycles.
@@ -1733,6 +1741,13 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         }, SAVE_DEBOUNCE_MS);
         return () => clearTimeout(saveTimerRef.current);
     }, [uid, items, householdSize, loaded, persistBudgetSnapshot]);
+
+    // Mark AI insight as stale when items/householdSize change after initial load
+    useEffect(() => {
+        if (!loaded) return;
+        if (!aiStaleInitRef.current) { aiStaleInitRef.current = true; return; } // skip the load-triggered fire
+        if (aiInsightRef.current) setAiInsightStale(true);
+    }, [items, householdSize, loaded]);
 
     // Keep sessionStorage in sync so AI chat and AI insights can read the budget
     useEffect(() => {
@@ -1943,8 +1958,8 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             updateItems(DEFAULT_ITEMS);
             setAiInsight(null);
             aiInsightRef.current = null;
-            aiSnapshotRef.current = null;
-            if (uid) setBudgetAiInsight(uid, null, null).catch(() => {});
+            setAiInsightStale(false);
+            if (uid) setBudgetAiInsight(uid, null).catch(err => console.error('[Budget AI insight reset error]', err));
         }
         setPendingConfirm(null);
     }, [pendingConfirm, updateItems, uid]);
@@ -1977,24 +1992,11 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const handleAiInsight = useCallback(async () => {
         if (!aiProvider || !aiModel) return;
 
-        // Fingerprint: enabled items with non-zero amounts + target + household
-        const snapshot = JSON.stringify({
-            target,
-            householdSize,
-            items: items
-                .filter(i => i.enabled !== false && toMonthly(i) > 0)
-                .map(i => i.type === 'loan'
-                    ? { id: i.id, tracks: i.tracks }
-                    : { id: i.id, amount: i.amount, frequency: i.frequency })
-                .sort((a, b) => a.id.localeCompare(b.id)),
-        });
         setAiModalOpen(true);
-        if (aiSnapshotRef.current === snapshot && aiInsightRef.current) return; // data unchanged — reuse cached
+        if (aiInsightRef.current && !aiInsightStale) return; // cached and data unchanged — show as-is
 
         setAiLoading(true);
         setAiError(null);
-        setAiInsight(null);
-        aiInsightRef.current = null;
         try {
             const cur = isHe ? '₪' : '$';
             // Categories whose total scales with number of people
@@ -2102,16 +2104,16 @@ Gap vs target and what can be optimized.`;
                 systemPrompt,
                 aiProvider, aiModel, apiKeyOverride
             );
-            aiSnapshotRef.current = snapshot;
             aiInsightRef.current = reply;
             setAiInsight(reply);
-            if (uid) setBudgetAiInsight(uid, reply, snapshot).catch(() => {});
+            setAiInsightStale(false);
+            if (uid) setBudgetAiInsight(uid, reply).catch(err => console.error('[Budget AI insight save error]', err));
         } catch (err) {
             if (err.name !== 'AbortError') setAiError(err.message || 'Error');
         } finally {
             setAiLoading(false);
         }
-    }, [aiProvider, aiModel, apiKeyOverride, items, target, totalMonthly, householdSize, isHe, uid]);
+    }, [aiProvider, aiModel, apiKeyOverride, items, target, totalMonthly, householdSize, isHe, uid, aiInsightStale]);
 
     const pct = target > 0 ? Math.min(totalMonthly / target, 1.5) : 0;
     const projectedPct = target > 0 ? Math.min(totalProjectedMonthly / target, 1.5) : 0;
@@ -2537,22 +2539,45 @@ Gap vs target and what can be optimized.`;
                                 {isHe ? 'תובנות AI על התקציב' : 'AI Budget Insights'}
                             </span>
                         </div>
-                        <button
-                            onClick={() => setAiModalOpen(false)}
-                            className={`text-lg leading-none opacity-40 hover:opacity-80 transition-opacity ${isLight ? 'text-slate-600' : 'text-gray-300'}`}
-                        >✕</button>
+                        <div className="flex items-center gap-2">
+                            {aiInsightStale && !aiLoading && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isLight ? 'bg-amber-100 text-amber-600' : 'bg-amber-500/20 text-amber-400'}`}>
+                                    {isHe ? 'לא עדכני' : 'stale'}
+                                </span>
+                            )}
+                            {aiInsight && !aiLoading && (
+                                <button
+                                    onClick={() => { aiInsightRef.current = null; setAiInsight(null); setAiInsightStale(false); handleAiInsight(); }}
+                                    title={isHe ? 'רענן ניתוח' : 'Refresh analysis'}
+                                    className={`p-1 rounded transition-colors ${isLight ? 'text-purple-400 hover:text-purple-700 hover:bg-purple-100' : 'text-purple-500 hover:text-purple-300 hover:bg-purple-500/20'}`}
+                                >
+                                    <RotateCcw size={13} />
+                                </button>
+                            )}
+                            <button
+                                onClick={() => setAiModalOpen(false)}
+                                className={`text-lg leading-none opacity-40 hover:opacity-80 transition-opacity ${isLight ? 'text-slate-600' : 'text-gray-300'}`}
+                            >✕</button>
+                        </div>
                     </div>
                     {/* Body */}
                     <div className="px-4 py-4 max-h-[80vh] overflow-y-auto custom-scrollbar scrollbar-right" dir={isHe ? 'rtl' : 'ltr'}>
-                        {aiLoading ? (
-                            <div className={`flex items-center gap-2 text-sm ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                        {aiLoading && (
+                            <div className={`flex items-center gap-2 text-sm mb-3 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                                 <Loader2 size={15} className="animate-spin text-purple-400" />
-                                {isHe ? 'מנתח תקציב...' : 'Analyzing budget...'}
+                                {isHe ? 'מעדכן ניתוח...' : 'Updating analysis...'}
                             </div>
-                        ) : aiError ? (
+                        )}
+                        {aiError && !aiLoading && (
                             <p className="text-sm text-red-500">{aiError}</p>
-                        ) : (
+                        )}
+                        {aiInsight && (
                             <InsightRenderer text={aiInsight} isLight={isLight} />
+                        )}
+                        {!aiLoading && !aiError && !aiInsight && (
+                            <p className={`text-sm ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                {isHe ? 'לחץ על הכפתור למעלה להפעלת הניתוח' : 'Click the button above to generate analysis'}
+                            </p>
                         )}
                     </div>
                 </div>

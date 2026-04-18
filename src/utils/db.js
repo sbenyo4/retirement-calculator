@@ -40,6 +40,14 @@ function budgetItemsRef(uid) {
     return userDoc(uid, 'data', 'budgetItems');
 }
 
+function budgetAiInsightRef(uid) {
+    return userDoc(uid, 'data', 'budgetAiInsight');
+}
+
+function checklistOverviewRef(uid) {
+    return userDoc(uid, 'data', 'checklistOverview');
+}
+
 function normalizeBudgetItemStatus(item) {
     if (!item || typeof item !== 'object') return item;
     const paused = item.status === 'paused' || item.enabled === false;
@@ -187,13 +195,19 @@ export async function getBudgetItems(uid) {
                 items: normalizeBudgetItemsStatus(slot?.items)
             }))
             : [],
-        aiInsight: data.aiInsight ?? null,
-        aiSnapshot: data.aiSnapshot ?? null,
     };
 }
 
-export async function setBudgetAiInsight(uid, insight, snapshot) {
-    await setDoc(budgetItemsRef(uid), { aiInsight: insight, aiSnapshot: snapshot }, { merge: true });
+// Dedicated isolated document — never touched by setBudgetItems
+export async function getBudgetAiInsight(uid) {
+    const snap = await getDoc(budgetAiInsightRef(uid));
+    if (!snap.exists()) return null;
+    const d = snap.data();
+    return d.insight ? { insight: d.insight } : null;
+}
+
+export async function setBudgetAiInsight(uid, insight) {
+    await setDoc(budgetAiInsightRef(uid), { insight: insight ?? null, updatedAt: Date.now() });
 }
 
 export async function setBudgetItems(uid, items, householdSize, backupSlots) {
@@ -211,6 +225,18 @@ export async function setBudgetItems(uid, items, householdSize, backupSlots) {
             : []);
     }
     await setDoc(budgetItemsRef(uid), payload, { merge: true });
+}
+
+// Dedicated isolated document for checklist overview
+export async function getChecklistOverview(uid) {
+    const snap = await getDoc(checklistOverviewRef(uid));
+    if (!snap.exists()) return null;
+    const d = snap.data();
+    return d.overviewText ? { overviewText: d.overviewText } : null;
+}
+
+export async function setChecklistOverview(uid, overviewText) {
+    await setDoc(checklistOverviewRef(uid), { overviewText: overviewText ?? null, updatedAt: Date.now() });
 }
 
 // ─── Checklist State ───────────────────────────────────────────────
