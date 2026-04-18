@@ -534,7 +534,9 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                     onClick={() => setActiveTab('insights')}
                     className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'insights'
                         ? 'bg-purple-600 text-white shadow-md'
-                        : (isLight ? 'text-slate-500 hover:bg-slate-100' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200')
+                        : aiInsightsData?.readinessScore != null
+                            ? (isLight ? 'text-slate-500 bg-purple-50 hover:bg-purple-100' : 'text-gray-400 bg-purple-500/10 hover:bg-purple-500/20 hover:text-gray-200')
+                            : (isLight ? 'text-slate-500 hover:bg-slate-100' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200')
                         }`}
                 >
                     <BrainCircuit size={16} />
