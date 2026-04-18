@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-let topZ = 1000;
+let topZ = 10000;
 
 /**
  * Makes a modal draggable from its header.
@@ -34,6 +34,7 @@ export function useDraggable(isOpen) {
 
     // Attach mousemove / mouseup to document once — never recreated
     useEffect(() => {
+        let rafId = null;
         const onMove = (e) => {
             if (!dragging.current) return;
             const p = {
@@ -41,14 +42,22 @@ export function useDraggable(isOpen) {
                 y: e.clientY - origin.current.y,
             };
             posRef.current = p;
-            setPos({ ...p });
+            if (rafId) return;
+            rafId = requestAnimationFrame(() => {
+                rafId = null;
+                setPos({ ...posRef.current });
+            });
         };
-        const onUp = () => { dragging.current = false; };
+        const onUp = () => {
+            dragging.current = false;
+            if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+        };
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup',   onUp);
         return () => {
             document.removeEventListener('mousemove', onMove);
             document.removeEventListener('mouseup',   onUp);
+            if (rafId) cancelAnimationFrame(rafId);
         };
     }, []);
 

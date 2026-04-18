@@ -1339,7 +1339,9 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
             >
                 <button onClick={onToggle} className="flex items-center gap-2 flex-1 min-w-0 text-start">
                     <span className="text-base shrink-0">{category.icon}</span>
-                    <span className="flex-1 min-w-0 truncate">{label}</span>
+                    <span className="flex-1 min-w-0 truncate">
+                        {label} <span className="font-normal opacity-60">({items.length})</span>
+                    </span>
                     <div className="flex items-center gap-1 shrink-0">
                         {notesCount > 0 && (
                             <span className={`flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-400'}`} title={isHe ? 'הערות' : 'Notes'}>

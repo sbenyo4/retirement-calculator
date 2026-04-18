@@ -2408,7 +2408,9 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                                     <div className={`p-1.5 rounded-lg ${isLight ? 'bg-blue-50' : 'bg-blue-500/10'}`}>
                                         {categoryIcon(cat)}
                                     </div>
-                                    <span className={`text-sm font-semibold flex-1 ${isLight ? 'text-gray-900' : 'text-white'}`}>{getCategoryTitle(cat, language)}</span>
+                                    <span className={`text-sm font-semibold flex-1 ${isLight ? 'text-gray-900' : 'text-white'}`}>
+                                        {getCategoryTitle(cat, language)} <span className="font-normal opacity-60">({cat.items.length})</span>
+                                    </span>
                                     <div className="flex items-center gap-1.5">
                                         {notes > 0 && (
                                             <span className={`flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-400'}`} title={language === 'he' ? 'הערות' : 'Notes'}>

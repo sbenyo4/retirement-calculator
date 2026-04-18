@@ -156,11 +156,12 @@ export default function ScenarioModal({ isOpen, onClose, onSave, onPreview, onCa
 
     return createPortal(
         <>
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4" style={overlayStyle} onMouseDown={bringToFront}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4" style={overlayStyle}>
             <div
                 className={`relative w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden ${isLight ? 'bg-white ring-1 ring-gray-300 text-gray-900' : 'ring-1 ring-white/30 text-white'}`}
                 dir={he ? 'rtl' : 'ltr'}
                 style={dragStyle}
+                onMouseDown={bringToFront}
             >
                 {!isLight && (
                     <>

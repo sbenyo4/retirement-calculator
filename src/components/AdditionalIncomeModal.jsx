@@ -55,7 +55,13 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
         return new Date().getFullYear() + Math.max(0, Math.round(yearsLeft));
     })();
 
-    const allEntriesValid = entries.every(e => e.startYear && parseFloat(e.monthlyAmount) > 0);
+    const allEntriesValid = entries.every(e => {
+        const yr = parseInt(e.startYear);
+        const endYr = e.endYear ? parseInt(e.endYear) : null;
+        return yr >= 2000 && yr <= 2100
+            && (endYr === null || (endYr >= yr && endYr <= 2100))
+            && parseFloat(e.monthlyAmount) > 0;
+    });
     const hasChanges = JSON.stringify(entries.map(e => ({
         id: e.id, startYear: String(e.startYear), endYear: e.endYear ?? null,
         monthlyAmount: String(e.monthlyAmount), enabled: e.enabled !== false
@@ -64,6 +70,13 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
         monthlyAmount: String(e.monthlyAmount), enabled: e.enabled !== false
     })));
     const canSave = allEntriesValid && hasChanges;
+
+    // Stable fingerprint of inputs excluding additionalYearlyIncome — changes to that field
+    // come from our own real-time sync and don't affect the baseline calculation.
+    const inputsFingerprint = useMemo(() => {
+        const { additionalYearlyIncome: _, ...rest } = inputs;
+        return JSON.stringify(rest);
+    }, [inputs]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Compute isolated impact per entry: run with only that entry vs. baseline (no entries)
     const balanceImpacts = useMemo(() => {
@@ -90,7 +103,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
             });
             return impacts;
         } catch { return {}; }
-    }, [entries, inputs]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [entries, inputsFingerprint]); // eslint-disable-line react-hooks/exhaustive-deps
 
     if (!isOpen) return null;
 
@@ -132,12 +145,12 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
     }`;
 
     return createPortal(
-        <div className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" style={overlayStyle} onMouseDown={bringToFront}>
+        <div className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" style={overlayStyle}>
             <div
                 className={`w-full max-w-md rounded-2xl shadow-2xl ${isLight ? 'bg-white' : 'bg-gray-900 border border-white/10'}`}
                 style={dragStyle}
                 dir={isRTL ? 'rtl' : 'ltr'}
-                onClick={e => e.stopPropagation()}
+                onMouseDown={bringToFront}
             >
                 {/* Header — drag handle */}
                 <div
