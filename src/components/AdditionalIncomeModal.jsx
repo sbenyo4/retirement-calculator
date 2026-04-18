@@ -16,12 +16,15 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
 
     const [entries, setEntries] = useState([]);
     const syncedRef = useRef(false);
+    const initialEntriesRef = useRef([]);
 
     // Initialize entries from inputs when modal opens (one-time)
     useEffect(() => {
         if (isOpen) {
             syncedRef.current = false;
-            setEntries((inputs.additionalYearlyIncome || []).map(e => ({ ...e })));
+            const initial = (inputs.additionalYearlyIncome || []).map(e => ({ ...e }));
+            initialEntriesRef.current = initial;
+            setEntries(initial);
         }
     }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -51,6 +54,16 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
         const yearsLeft = retAge - (parseFloat(inputs.currentAge) || 30);
         return new Date().getFullYear() + Math.max(0, Math.round(yearsLeft));
     })();
+
+    const allEntriesValid = entries.every(e => e.startYear && parseFloat(e.monthlyAmount) > 0);
+    const hasChanges = JSON.stringify(entries.map(e => ({
+        id: e.id, startYear: String(e.startYear), endYear: e.endYear ?? null,
+        monthlyAmount: String(e.monthlyAmount), enabled: e.enabled !== false
+    }))) !== JSON.stringify(initialEntriesRef.current.map(e => ({
+        id: e.id, startYear: String(e.startYear), endYear: e.endYear ?? null,
+        monthlyAmount: String(e.monthlyAmount), enabled: e.enabled !== false
+    })));
+    const canSave = allEntriesValid && hasChanges;
 
     // Compute isolated impact per entry: run with only that entry vs. baseline (no entries)
     const balanceImpacts = useMemo(() => {
@@ -119,7 +132,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
     }`;
 
     return createPortal(
-        <div className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" style={overlayStyle} onClick={onClose} onMouseDown={bringToFront}>
+        <div className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" style={overlayStyle} onMouseDown={bringToFront}>
             <div
                 className={`w-full max-w-md rounded-2xl shadow-2xl ${isLight ? 'bg-white' : 'bg-gray-900 border border-white/10'}`}
                 style={dragStyle}
@@ -169,6 +182,13 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                                         min={2000}
                                         max={2100}
                                         onChange={e => updateEntry(entry.id, 'startYear', e.target.value)}
+                                        onKeyDown={e => {
+                                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                                e.preventDefault();
+                                                const cur = parseInt(entry.startYear) || retirementYear;
+                                                updateEntry(entry.id, 'startYear', e.key === 'ArrowUp' ? cur + 1 : Math.max(2000, cur - 1));
+                                            }
+                                        }}
                                     />
                                 </div>
 
@@ -183,6 +203,13 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                                         placeholder={String(entry.startYear || '')}
                                         value={entry.endYear ?? ''}
                                         onChange={e => updateEntry(entry.id, 'endYear', e.target.value === '' ? null : e.target.value)}
+                                        onKeyDown={e => {
+                                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                                e.preventDefault();
+                                                const cur = parseInt(entry.endYear) || parseInt(entry.startYear) || retirementYear;
+                                                updateEntry(entry.id, 'endYear', e.key === 'ArrowUp' ? cur + 1 : Math.max(2000, cur - 1));
+                                            }
+                                        }}
                                     />
                                 </div>
 
@@ -260,7 +287,8 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                         </button>
                         <button
                             onClick={handleSave}
-                            className="text-xs px-4 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors font-medium"
+                            disabled={!canSave}
+                            className={`text-xs px-4 py-1.5 rounded-lg transition-colors font-medium ${canSave ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-blue-600/30 text-white/40 cursor-not-allowed'}`}
                         >
                             {t('save')}
                         </button>
