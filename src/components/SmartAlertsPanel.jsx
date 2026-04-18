@@ -11,7 +11,7 @@ function ParseForm({ inputVal, onInputChange, onParse, parsing, parseError, pars
     const placeholder = isHe
         ? 'לדוג׳: תתריע לי אם התקציב עולה על 85% מיעד המשיכה'
         : 'e.g. Alert me if budget exceeds 85% of withdrawal target';
-    const txt = (en, he) => isHe ? he : en;
+    const txt = useCallback((en, he) => isHe ? he : en, [isHe]);
 
     return (
         <div className="space-y-2.5">
@@ -199,7 +199,7 @@ export function SmartAlertsPanel({ isHe, isLight, appState, aiProvider, aiModel,
     // Save error state
     const [saveError, setSaveError] = useState(null);
 
-    const txt = (en, he) => isHe ? he : en;
+    const txt = useCallback((en, he) => isHe ? he : en, [isHe]);
     const canAsk = !!(aiProvider && aiModel);
 
     // Load from DB

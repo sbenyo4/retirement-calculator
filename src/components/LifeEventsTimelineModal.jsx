@@ -7,6 +7,7 @@ import { useThemeClasses } from '../hooks/useThemeClasses';
 import { X, Calendar, TrendingUp, TrendingDown, DollarSign, ArrowRight, ArrowLeft, Eye, EyeOff, ToggleLeft, ToggleRight, Filter, FilterX, Plus, Undo2, Redo2, AlertTriangle, Trash2, Copy } from 'lucide-react';
 import { EVENT_TYPES } from '../constants';
 import { calculateTimelineLayout } from '../utils/timelineLayout';
+import { useDeepCompareMemo } from '../hooks/useDeepCompare';
 import AddEventModal from './AddEventModal';
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -104,15 +105,6 @@ export default function LifeEventsTimelineModal({
             setFuture([]);
         }
     }, [isOpen]);
-
-    const handleEventsChange = (newEvents) => {
-        // Push current state to history
-        setHistory(prev => [...prev, events]);
-        // Clear future
-        setFuture([]);
-        // Update actual state
-        onChange(newEvents);
-    };
 
     const handleDeleteAll = () => {
         if (events.length === 0) return;
@@ -230,7 +222,7 @@ export default function LifeEventsTimelineModal({
     const totalYears = Math.max(5, endYear - startYear);
 
     // Stable reference for events using deep compare
-    const stableEvents = useMemo(() => events, [JSON.stringify(events)]);
+    const stableEvents = useDeepCompareMemo(events);
 
     // Process events for timeline
     const { layoutEvents, totalHeight, outOfBoundsCount } = useMemo(() => {
@@ -305,7 +297,7 @@ export default function LifeEventsTimelineModal({
                 };
             });
 
-        const { layoutEvents, incomeTracks, expenseTracks } = calculateTimelineLayout(processedEvents, { minSpacingYears: 1.0 });
+        const { layoutEvents } = calculateTimelineLayout(processedEvents, { minSpacingYears: 1.0 });
 
         // Calculate positions
         const eventsWithPos = layoutEvents.map(e => {
@@ -315,9 +307,6 @@ export default function LifeEventsTimelineModal({
 
             // Custom POST-LAYOUT tweak for Electricity - REMOVED
             // Logic is now handled correctly in processedEvents with retirementEndAge
-            const nameStr = (e.name || e.label || e.description || '').toLowerCase();
-            const isElectricity = nameStr.includes('electricity') || nameStr.includes('חשמל');
-
             let finalEndDate = e.endDate;
             /* Conflicting override removed */
 
@@ -383,7 +372,7 @@ export default function LifeEventsTimelineModal({
         const outOfBoundsCount = processedEvents.filter(e => e.startYear > endYear).length;
 
         return { layoutEvents: eventsWithPos, totalHeight: totalH, outOfBoundsCount };
-    }, [stableEvents, startYear, totalYears, endYear, isLight, retirementEndAge, baseCurrentAge, currentAge, birthDate, birthMonth]);
+    }, [stableEvents, startYear, totalYears, endYear, isLight, retirementEndAge, currentAge, birthDate, birthMonth]);
 
     const getSmartMarkerPos = (targetAge, forcedMonth = null) => {
         // Calculate birth year accurately
@@ -620,23 +609,26 @@ export default function LifeEventsTimelineModal({
                                         { color: 'red', label: language === 'he' ? 'הוצאה חד-פעמית' : 'One-Time Expense', bgClass: 'bg-red-500', symbol: language === 'he' ? '₪' : '$' },
                                         { color: 'blue', label: language === 'he' ? 'שינוי בהכנסה' : 'Income Change', bgClass: 'bg-blue-500', icon: TrendingUp },
                                         { color: 'orange', label: language === 'he' ? 'שינוי בהוצאה' : 'Expense Change', bgClass: 'bg-orange-500', icon: TrendingDown }
-                                    ].map(({ color, label, bgClass, icon: Icon, symbol }) => (
-                                        <button
-                                            key={color}
-                                            onClick={() => setVisibleColors(prev => ({ ...prev, [color]: !prev[color] }))}
-                                            title={label}
-                                            className={`p-1 w-6 h-6 rounded-lg transition-all flex items-center justify-center ${visibleColors[color]
-                                                ? `${bgClass} text-white shadow-md`
-                                                : `${isLight ? 'bg-gray-100 text-gray-400 border border-gray-300' : 'bg-white/5 text-gray-500 border border-white/20'}`
-                                                }`}
-                                        >
-                                            {symbol ? (
-                                                <span className="text-sm font-bold leading-none">{symbol}</span>
-                                            ) : (
-                                                <Icon className="w-3.5 h-3.5" />
-                                            )}
-                                        </button>
-                                    ))}
+                                    ].map((item) => {
+                                        const IconComponent = item.icon;
+                                        return (
+                                            <button
+                                                key={item.color}
+                                                onClick={() => setVisibleColors(prev => ({ ...prev, [item.color]: !prev[item.color] }))}
+                                                title={item.label}
+                                                className={`p-1 w-6 h-6 rounded-lg transition-all flex items-center justify-center ${visibleColors[item.color]
+                                                    ? `${item.bgClass} text-white shadow-md`
+                                                    : `${isLight ? 'bg-gray-100 text-gray-400 border border-gray-300' : 'bg-white/5 text-gray-500 border border-white/20'}`
+                                                    }`}
+                                            >
+                                                {item.symbol ? (
+                                                    <span className="text-sm font-bold leading-none">{item.symbol}</span>
+                                                ) : (
+                                                    <IconComponent className="w-3.5 h-3.5" />
+                                                )}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>

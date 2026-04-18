@@ -54,6 +54,27 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
         return () => window.removeEventListener('rc-open-budget-tab', handler);
     }, []);
 
+    useEffect(() => {
+        const handler = (e) => {
+            const id = e.detail;
+            if (id === 'tab:budget')            setActiveTab('budget');
+            if (id === 'tab:insights')          setActiveTab('insights');
+            if (id === 'tab:results')           setActiveTab('numerical');
+            if (id === 'open:pension')          setShowPensionModal(true);
+            if (id === 'open:sensitivityRange') setShowSensitivityModal(true);
+            if (id === 'open:heatmap')          setShowHeatmapModal(true);
+            if (id === 'open:amortization')     setShowAmortizationModal(true);
+            if (id === 'open:inflationCheck')   setShowInflationModal(true);
+            if (id === 'open:budgetAI' || id === 'open:budgetStats') {
+                setActiveTab('budget');
+                // BudgetPlanner may not be mounted yet — re-fire after it renders
+                setTimeout(() => window.dispatchEvent(new CustomEvent('app:budgetCommand', { detail: id })), 350);
+            }
+        };
+        window.addEventListener('app:command', handler);
+        return () => window.removeEventListener('app:command', handler);
+    }, []);
+
     // Note: showInterestSensitivity and showIncomeSensitivity are now received as props
 
     // Keep profile selections in UI order synchronized with parent state so

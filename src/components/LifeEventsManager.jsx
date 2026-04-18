@@ -47,6 +47,12 @@ export default function LifeEventsManager({
     const GAP    = 2;  // space-y-0.5
     const NAV_H  = 26; // h-6 (24px) + mb-0.5 (2px)
 
+    useEffect(() => {
+        const handler = () => setShowTimelineModal(true);
+        window.addEventListener('app:openLifeEvents', handler);
+        return () => window.removeEventListener('app:openLifeEvents', handler);
+    }, []);
+
     // N items take: N*ITEM_H + (N-1)*GAP = 50N - 2
     // Max N: 50N - 2 <= available  =>  N = floor((available + 2) / 50)
     const calculateItems = () => {

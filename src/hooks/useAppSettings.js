@@ -166,10 +166,6 @@ export function useAppSettings() {
         });
     }, [uid]);
 
-    // Stable string representation of apiKeys for dependency tracking
-    // (objects are compared by reference in useEffect dependencies)
-    const apiKeysStr = JSON.stringify(settings.apiKeys);
-
     // Persist settings to Firestore when they change
     useEffect(() => {
         if (!uid || !loadedRef.current) return;
@@ -187,6 +183,7 @@ export function useAppSettings() {
             simulationType: settings.simulationType,
             familyStatus: settings.familyStatus,
             apiKeys: settings.apiKeys,
+            aiModelsOverride: settings.aiModelsOverride,
             idleTimeoutMinutes: settings.idleTimeoutMinutes,
             idleTimeoutEnabled: settings.idleTimeoutEnabled,
             fourPercentMode: settings.fourPercentMode,
@@ -200,7 +197,20 @@ export function useAppSettings() {
         setUserSettings(uid, dataToSave).catch(err => {
             console.error('Error saving settings to Firestore:', err);
         });
-    }, [settings.aiProvider, settings.aiModel, settings.simulationType, settings.familyStatus, settings.fiscalParameters, settings.idleTimeoutMinutes, settings.idleTimeoutEnabled, settings.fourPercentMode, settings.disabledAlerts, apiKeysStr, uid]);
+    }, [
+        settings.aiProvider,
+        settings.aiModel,
+        settings.simulationType,
+        settings.familyStatus,
+        settings.fiscalParameters,
+        settings.apiKeys,
+        settings.aiModelsOverride,
+        settings.idleTimeoutMinutes,
+        settings.idleTimeoutEnabled,
+        settings.fourPercentMode,
+        settings.disabledAlerts,
+        uid,
+    ]);
 
     return { settings, dispatch, SETTINGS_ACTIONS, settingsLoaded };
 }

@@ -1,6 +1,6 @@
 
 import { WITHDRAWAL_STRATEGIES, EVENT_TYPES } from '../../constants.js';
-import { getMonthFromDate, getMonthlyAmount, getMonthlyRateForMonth } from './helpers.js';
+import { getCalendarYearForMonth, getMonthFromDate, getMonthlyAmount, getMonthlyRateForMonth } from './helpers.js';
 import { calculatePrePassRequiredCapital } from './buckets.js';
 
 /**
@@ -11,13 +11,13 @@ export function calculateDecumulation({
     monthsInRetirement,
     balanceAtRetirement,
     totalPrincipal, // At retirement
-    currentAge,
     retirementStartAge,
     inputs,
     annualReturnRate,
     taxRateDecimal,
-    startYear
-}, t = null) {
+    startYear,
+    startMonth
+}) {
     const {
         monthlyNetIncomeDesired,
         withdrawalStrategy = WITHDRAWAL_STRATEGIES.FIXED,
@@ -102,7 +102,8 @@ export function calculateDecumulation({
             profitRatioAtRetirement,
             safeVariableRates,
             variableRatesEnabled,
-            startYear
+            startYear,
+            startMonth
         });
 
         if (balanceAtRetirement >= prePassRequiredCapital) {
@@ -128,7 +129,7 @@ export function calculateDecumulation({
 
     for (let i = 1; i <= monthsInRetirement; i++) {
         currentMonth++;
-        const monthlyRate = getMonthlyRateForMonth(currentMonth, startYear, variableRatesEnabled, variableRates, annualReturnRate);
+        const monthlyRate = getMonthlyRateForMonth(currentMonth, startYear, variableRatesEnabled, variableRates, annualReturnRate, startMonth);
 
         // Apply life events for this month during retirement
         lifeEvents.forEach((event, idx) => {
@@ -204,17 +205,10 @@ export function calculateDecumulation({
 
         // Buckets Interest
         let pvSafeAnnualRate = bucketSafeRate; // used below for requiredCapitalPV discount
-        let pvSurplusAnnualRate = bucketSurplusRate; // used below for blended PV discount
         let safeInterest = 0;   // exposed for INTEREST_ONLY bucket gross-up
         let surplusInterest = 0;
         if (enableBuckets) {
-            // Use the same shifted-year system as getMonthlyRateForMonth:
-            // year = startYear + floor(currentMonth / 12), where currentMonth = startMonthIndex + i.
-            // The old formula (retirementStartYear + floor((i-1)/12)) used anniversary-based
-            // year boundaries from retirement start, which diverges from calendar years when
-            // startMonthIndex is not a multiple of 12, causing scenario rates to apply to the
-            // wrong 12-month windows and producing non-monotonic results as crash year changes.
-            const monthYear = startYear + Math.floor(currentMonth / 12);
+            const monthYear = getCalendarYearForMonth(currentMonth, startYear, startMonth);
 
             // Use variable rates if enabled, otherwise use fixed rates.
             // Guard against non-numeric strings (same pattern as getMonthlyRateForMonth).
@@ -227,7 +221,6 @@ export function calculateDecumulation({
                 ? parseFloat(surplusVariableRates[monthYear])
                 : NaN;
             const surplusAnnualRate = !isNaN(parsedSurplusRate) ? parsedSurplusRate : bucketSurplusRate;
-            pvSurplusAnnualRate = surplusAnnualRate;
 
             const safeMonthlyRate = Math.pow(1 + safeAnnualRate / 100, 1 / 12) - 1;
             const surplusMonthlyRate = Math.pow(1 + surplusAnnualRate / 100, 1 / 12) - 1;
@@ -339,7 +332,7 @@ export function calculateDecumulation({
         netWithdrawal -= activeIncomeAdjustment;
 
         if (hasAdditionalIncome) {
-            const calYear = startYear + Math.floor(currentMonth / 12);
+            const calYear = getCalendarYearForMonth(currentMonth, startYear, startMonth);
             netWithdrawal -= (additionalIncomeByYear[calYear] || 0);
         }
 
@@ -363,7 +356,6 @@ export function calculateDecumulation({
         const preWithdrawalBalance = retirementBalance + effectiveInterest;
 
         let grossWithdrawal;
-        let tax;
 
         if (withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY && enableBuckets) {
             // Interest-only in bucket mode: draw exactly the interest earned in each bucket.
@@ -372,18 +364,15 @@ export function calculateDecumulation({
             // profit ratios. Instead we set gross = effectiveInterest directly and tax each bucket
             // at its own per-bucket rate.
             grossWithdrawal = effectiveInterest;
-            tax = safeInterest * safeEffTaxRate + surplusInterest * surplusEffTaxRate;
         } else if (enableBuckets) {
             // Gross-up drawing from safe first, then surplus
             const maxNetFromSafe = safeBalance * (1 - safeEffTaxRate);
             if (netWithdrawal <= maxNetFromSafe) {
                 grossWithdrawal = safeEffTaxRate < 1 ? netWithdrawal / (1 - safeEffTaxRate) : netWithdrawal;
-                tax = grossWithdrawal * safeEffTaxRate;
             } else {
                 const remainingNet = netWithdrawal - maxNetFromSafe;
                 const grossFromSurplus = surplusEffTaxRate < 1 ? remainingNet / (1 - surplusEffTaxRate) : remainingNet;
                 grossWithdrawal = safeBalance + grossFromSurplus;
-                tax = safeBalance * safeEffTaxRate + grossFromSurplus * surplusEffTaxRate;
             }
         } else {
             // Non-bucket: combined portfolio profit ratio
@@ -392,7 +381,6 @@ export function calculateDecumulation({
                 : 0;
             const effectiveTaxRate = profitRatio * taxRateDecimal;
             grossWithdrawal = effectiveTaxRate < 1 ? netWithdrawal / (1 - effectiveTaxRate) : netWithdrawal;
-            tax = grossWithdrawal * effectiveTaxRate;
         }
 
         if (i === 1) {
@@ -403,16 +391,6 @@ export function calculateDecumulation({
         // Check availability
         if (preWithdrawalBalance < grossWithdrawal) {
             grossWithdrawal = preWithdrawalBalance;
-            if (enableBuckets) {
-                const capFromSafe = Math.min(safeBalance, grossWithdrawal);
-                const capFromSurplus = grossWithdrawal - capFromSafe;
-                tax = capFromSafe * safeEffTaxRate + capFromSurplus * surplusEffTaxRate;
-            } else {
-                const profitRatio = preWithdrawalBalance > 0
-                    ? Math.max(0, Math.min(1, (preWithdrawalBalance - currentPrincipal) / preWithdrawalBalance))
-                    : 0;
-                tax = grossWithdrawal * profitRatio * taxRateDecimal;
-            }
             if (ranOutAtAge === null) {
                 ranOutAtAge = retirementStartAge + (i / 12);
             }
@@ -474,15 +452,11 @@ export function calculateDecumulation({
 
         // Advance the cumulative discount factor by the actual rate for this month.
         // Non-bucket: uses the variable-rate-aware monthlyRate so step-mode rates are reflected.
-        // Bucket: uses a balance-weighted blended rate so both buckets' returns are reflected.
-        // Previously only the safe rate was used, which over-discounts when the surplus bucket
-        // has a meaningfully higher return (e.g. safe 3% / surplus 7% with equal balances → 5%).
+        // Bucket: uses the safe-bucket rate because requiredCapitalPV represents the
+        // liability reserve needed to fund withdrawals, not the expected surplus growth.
         const pvMonthlyRate = enableBuckets
             ? (() => {
-                const totalBal = safeBalance + surplusBalance;
-                const safeWeight = totalBal > 0 ? safeBalance / totalBal : 0.5;
-                const blendedAnnual = safeWeight * pvSafeAnnualRate + (1 - safeWeight) * pvSurplusAnnualRate;
-                return (Math.pow(1 + blendedAnnual / 100, 1 / 12) - 1) * (1 - taxRateDecimal);
+                return (Math.pow(1 + pvSafeAnnualRate / 100, 1 / 12) - 1) * (1 - taxRateDecimal);
             })()
             : monthlyRate * (1 - taxRateDecimal);
         requiredCapitalCumulativeFactor *= (1 + pvMonthlyRate);

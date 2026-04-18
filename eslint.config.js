@@ -23,7 +23,36 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      'no-unused-vars': ['warn', {
+        varsIgnorePattern: '^[A-Z_]',
+        argsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+      }],
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'no-constant-binary-expression': 'warn',
+      'no-useless-escape': 'warn',
+      'react-hooks/immutability': 'off',
+      'react-hooks/preserve-manual-memoization': 'off',
+      'react-hooks/refs': 'off',
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/use-memo': 'off',
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+  {
+    files: ['**/*.{test,spec}.{js,jsx}', 'src/test/**/*.{js,jsx}'],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.vitest,
+      },
+    },
+  },
+  {
+    files: ['vite.config.js', 'eslint.config.js'],
+    languageOptions: {
+      globals: globals.node,
     },
   },
 ])

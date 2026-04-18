@@ -262,7 +262,7 @@ function SensitivityHeatmapGrid({ inputs, originalInputs, activeRateType = 'annu
         });
 
         return { xValues, yValues, grid };
-    }, [inputs, xSteps, ySteps, xStepSize, yStepSize, xOffsetState, yOffsetState, activeRateType]);
+    }, [inputs, xSteps, ySteps, xStepSize, yStepSize, xOffsetState, yOffsetState, activeRateType, t]);
 
     // Memoized formatters for performance
     const currencyFormatter = useMemo(() => new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {

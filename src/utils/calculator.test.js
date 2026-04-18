@@ -333,6 +333,27 @@ describe('calculateRetirementProjection', () => {
             expect(stepResult.requiredCapitalForPerpetuity).toBeCloseTo(directResult.requiredCapitalForPerpetuity, 0);
             expect(stepResult.maxSustainableNetWithdrawal).toBeCloseTo(directResult.maxSustainableNetWithdrawal, 0);
         });
+
+        it('scenario rates affect retirement statistics even when variable rates toggle is off', () => {
+            const retirementYear = startYear + Math.floor(baseInputs.retirementStartAge - baseInputs.currentAge);
+            const baseResult = calculateRetirementProjection(baseInputs);
+            const scenarioResult = calculateRetirementProjection({
+                ...baseInputs,
+                variableRatesEnabled: false,
+                scenarioEnabled: true,
+                scenario: {
+                    type: 'crash',
+                    startYear: retirementYear,
+                    crashDepth: -50,
+                    recoveryYears: 1,
+                    recoveryShape: 'linear',
+                    recoveryMode: 'rate',
+                },
+            });
+
+            expect(scenarioResult.effectiveRetirementRate).toBeLessThan(baseResult.effectiveRetirementRate);
+            expect(scenarioResult.requiredCapitalForPerpetuity).toBeGreaterThan(baseResult.requiredCapitalForPerpetuity);
+        });
     });
 
     describe('bankruptcy detection', () => {
@@ -453,8 +474,13 @@ describe('calculateRetirementProjection', () => {
 
     describe('one-time income during retirement and principal tracking', () => {
         it('one-time income event increases balanceAtEnd by the event amount (minus growth/tax effects)', () => {
+            const surplusInputs = {
+                ...baseInputs,
+                currentSavings: 1000000,
+                monthlyNetIncomeDesired: 2000,
+            };
             const now = new Date();
-            const retirementYear = now.getFullYear() + (baseInputs.retirementStartAge - baseInputs.currentAge);
+            const retirementYear = now.getFullYear() + (surplusInputs.retirementStartAge - surplusInputs.currentAge);
             const midRetirementEvent = {
                 id: '1',
                 enabled: true,
@@ -463,10 +489,10 @@ describe('calculateRetirementProjection', () => {
                 amount: 100000,
             };
             const withIncome = calculateRetirementProjection({
-                ...baseInputs,
+                ...surplusInputs,
                 lifeEvents: [midRetirementEvent],
             });
-            const withoutIncome = calculateRetirementProjection(baseInputs);
+            const withoutIncome = calculateRetirementProjection(surplusInputs);
             // The one-time income should increase balanceAtEnd by at least the event amount
             // (it also earns some return between the event and retirement end).
             expect(withIncome.balanceAtEnd).toBeGreaterThan(withoutIncome.balanceAtEnd + 90000);

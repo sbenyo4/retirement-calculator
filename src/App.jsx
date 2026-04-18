@@ -15,6 +15,7 @@ import { ZoomToggle } from './components/ZoomToggle';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import { IdleWarningModal } from './components/IdleWarningModal';
 import { ChatWidget } from './components/ChatWidget';
+import CommandPalette from './components/CommandPalette';
 import { useIdleTimer } from './hooks/useIdleTimer';
 
 // Lazy-loaded components (loaded only when needed)
@@ -55,7 +56,13 @@ const isLifeEventSource = (source) =>
 // matches between profile-load (profile.data has no pension) and live form data (has pension).
 function computeInsightsHash(inputs) {
   if (!inputs) return '';
-  const { language, fourPercentMode, pensionIncomeSources, pensionInterestRate, ...formData } = inputs;
+  const {
+    language,
+    fourPercentMode,
+    pensionIncomeSources: _pensionIncomeSources,
+    pensionInterestRate: _pensionInterestRate,
+    ...formData
+  } = inputs;
   return JSON.stringify({ ...normalizeInputs(formData), language, fourPercentMode });
 }
 
@@ -200,13 +207,87 @@ function MainApp() {
     recordCall,
   } = useRateLimit(currentUser?.uid || 'guest');
 
-  const handleUpdateFiscalData = useCallback((data) => dispatchSettings({ type: SETTINGS_ACTIONS.SET_FISCAL_DATA, payload: data }), [dispatchSettings]);
+  const handleUpdateFiscalData = useCallback((data) => {
+    dispatchSettings({ type: SETTINGS_ACTIONS.SET_FISCAL_DATA, payload: data });
+  }, [dispatchSettings, SETTINGS_ACTIONS.SET_FISCAL_DATA]);
   const aiAbortRef = useRef(null);
 
   // UI State
   const [showModelsManager, setShowModelsManager] = useState(false);
   // Close settings when user session changes (login/logout)
   useEffect(() => { setShowModelsManager(false); }, [currentUser?.uid]);
+
+  // Ref to read current mode without stale closure in the command handler
+  const calculationModeRef = useRef(settings.calculationMode);
+  useEffect(() => { calculationModeRef.current = settings.calculationMode; }, [settings.calculationMode]);
+
+  // Command palette handler (Ctrl+/)
+  useEffect(() => {
+    const handler = (e) => {
+      const id = e.detail;
+      const inPlanning = calculationModeRef.current === 'planning';
+
+      // Helper: if currently in planning mode, switch to mathematical then re-fire the command
+      const ensureResultsMode = (targetId) => {
+        if (inPlanning) {
+          dispatchSettings({ type: SETTINGS_ACTIONS.SET_CALCULATION_MODE, payload: 'mathematical' });
+          setTimeout(() => window.dispatchEvent(new CustomEvent('app:command', { detail: targetId })), 350);
+          return true; // handled via re-fire
+        }
+        return false;
+      };
+
+      // Calculation modes
+      if (id === 'mode:mathematical') dispatchSettings({ type: SETTINGS_ACTIONS.SET_CALCULATION_MODE, payload: 'mathematical' });
+      if (id === 'mode:planning')     dispatchSettings({ type: SETTINGS_ACTIONS.SET_CALCULATION_MODE, payload: 'planning' });
+      if (id === 'mode:simulations')  dispatchSettings({ type: SETTINGS_ACTIONS.SET_CALCULATION_MODE, payload: 'simulations' });
+      if (id === 'mode:compare')      dispatchSettings({ type: SETTINGS_ACTIONS.SET_CALCULATION_MODE, payload: 'compare' });
+      // mode:ai — switch mode then also select the insights tab
+      if (id === 'mode:ai') {
+        dispatchSettings({ type: SETTINGS_ACTIONS.SET_CALCULATION_MODE, payload: 'ai' });
+        setTimeout(() => window.dispatchEvent(new CustomEvent('app:command', { detail: 'tab:insights' })), 350);
+      }
+
+      // Input-side
+      if (id === 'open:lifeEvents')   dispatchSettings({ type: SETTINGS_ACTIONS.SET_ACTIVE_VIEW, payload: 'events' });
+
+      // Tab commands — ResultsDashboard handles these, but only when mounted (not in planning mode)
+      if (id === 'tab:results' || id === 'tab:insights' || id === 'tab:budget') {
+        ensureResultsMode(id);
+        // If NOT in planning mode, ResultsDashboard's own listener handles it
+      }
+
+      // Results-side modals — need ResultsDashboard mounted
+      if (['open:pension', 'open:amortization', 'open:inflationCheck',
+           'open:sensitivityRange', 'open:heatmap',
+           'open:budgetAI', 'open:budgetStats'].includes(id)) {
+        ensureResultsMode(id);
+        // ResultsDashboard's own app:command listener handles the actual modal
+      }
+
+      // Sensitivity — set flag directly; but ResultsDashboard must be mounted to show it
+      if (id === 'open:sensitivity:interest') {
+        if (!ensureResultsMode(id)) setShowInterestSensitivity(true);
+      }
+      if (id === 'open:sensitivity:income') {
+        if (!ensureResultsMode(id)) setShowIncomeSensitivity(true);
+      }
+      if (id === 'open:sensitivity:age') {
+        if (!ensureResultsMode(id)) setShowAgeSensitivity(true);
+      }
+
+      // Checklist overview — switch to planning mode first, then signal once component mounts
+      if (id === 'open:checklistOverview') {
+        dispatchSettings({ type: SETTINGS_ACTIONS.SET_CALCULATION_MODE, payload: 'planning' });
+        setTimeout(() => window.dispatchEvent(new CustomEvent('app:openChecklistOverview')), 400);
+      }
+      // App-level
+      if (id === 'open:models')       setShowModelsManager(true);
+      if (id === 'open:chat')         setChatOpen(true);
+    };
+    window.addEventListener('app:command', handler);
+    return () => window.removeEventListener('app:command', handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Helper to format rate limit messages
   const formatLimitMessage = useCallback((limitCheck) => {
@@ -233,7 +314,13 @@ function MainApp() {
 
       dispatchSettings({ type: SETTINGS_ACTIONS.SET_AI_MODEL, payload: availableModels[0].id });
     }
-  }, [settings.aiProvider, settings.aiModel, settings.aiModelsOverride]);
+  }, [
+    settings.aiProvider,
+    settings.aiModel,
+    settings.aiModelsOverride,
+    dispatchSettings,
+    SETTINGS_ACTIONS.SET_AI_MODEL,
+  ]);
 
   // Clear AI error when switching calculation modes
   useEffect(() => {
@@ -414,7 +501,7 @@ function MainApp() {
   }, [memoizedDebouncedInputs, activeProfileId, updateProfileInsights]);
 
   // ── Alerts ──────────────────────────────────────────────────────────────
-  const disabledAlerts = settings.disabledAlerts || [];
+  const disabledAlerts = useMemo(() => settings.disabledAlerts || [], [settings.disabledAlerts]);
   const toggleAlert = (id) => {
     const next = disabledAlerts.includes(id)
       ? disabledAlerts.filter(a => a !== id)
@@ -867,6 +954,9 @@ function MainApp() {
           </div>
         </div>
       </div>
+
+      {/* Command Palette (Ctrl+K) */}
+      <CommandPalette language={language} />
 
       {/* Chat Widget */}
       <ChatWidget

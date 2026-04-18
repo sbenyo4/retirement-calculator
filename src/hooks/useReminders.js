@@ -130,7 +130,7 @@ export function useReminders() {
         try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || '[]'); }
         catch { return []; }
     });
-    const [tick, setTick] = useState(0);
+    const [, setTick] = useState(0);
 
     useEffect(() => {
         const update = () => {
@@ -173,7 +173,7 @@ export function useReminders() {
             if (isForced(globalId)) return true;
             return !loginHandledReminderIds.has(globalId);
         });
-    }, [dueNow, tick]);
+    }, [dueNow]);
 
     const pendingAlert = useMemo(() => {
         return alertDueNow[0] || null;
@@ -248,7 +248,7 @@ export function syncMultipleSources(syncConfigs) {
     try {
         const existing = readReminders();
         let nextState = [...existing];
-        syncConfigs.forEach(({ source, items, silent }) => {
+        syncConfigs.forEach(({ source, items }) => {
             nextState = nextState.filter(r => r.source !== source);
             const newOnes = items
                 .filter(i => !!(i.reminder?.date || i.date))

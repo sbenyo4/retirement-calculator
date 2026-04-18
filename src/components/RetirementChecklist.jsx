@@ -745,11 +745,10 @@ function PriorityBadge({ priority, isLight, language }) {
 
 /** Renders children into document.body anchored at a given DOMRect */
 function PopupPortal({ anchorRect, align = 'right', children }) {
-    if (!anchorRect) return null;
     const popupRef = useRef(null);
     const [style, setStyle] = useState({
         position: 'fixed',
-        top: anchorRect.bottom + 4,
+        top: anchorRect ? anchorRect.bottom + 4 : 0,
         zIndex: 9999,
         visibility: 'hidden',
     });
@@ -797,6 +796,8 @@ function PopupPortal({ anchorRect, align = 'right', children }) {
             return nextStyle;
         });
     }, [anchorRect, align, children]);
+
+    if (!anchorRect) return null;
 
     return ReactDOM.createPortal(
         <div ref={popupRef} style={style}>{children}</div>,
@@ -1261,6 +1262,12 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
         setAiExplanations(prev => ({ ...prev, [itemId]: text }));
     }, []);
 
+    useEffect(() => {
+        const handler = () => setOverviewOpen(true);
+        window.addEventListener('app:openChecklistOverview', handler);
+        return () => window.removeEventListener('app:openChecklistOverview', handler);
+    }, []);
+
     // Load persisted checklist state from Firestore on mount
     useEffect(() => {
         if (!uid) { setDbLoaded(true); return; }
@@ -1283,6 +1290,10 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             }
             if (saved?.aiExplanations && typeof saved.aiExplanations === 'object') {
                 setAiExplanations(saved.aiExplanations);
+            }
+            if (saved?.overviewText && saved?.overviewSnapshot) {
+                setOverviewText(saved.overviewText);
+                setOverviewSnapshot(saved.overviewSnapshot);
             }
             setDbLoaded(true);
         }).catch(err => {
@@ -1426,7 +1437,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                 else setAiLoading(false);
             }
         }
-    }, [persistState]);
+    }, [persistState, uid]);
 
     const handleRefresh = useCallback(() => {
         doRefresh(false);
@@ -1442,6 +1453,9 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             const text = await generateChecklistOverview(cats, inp, res, prov, mod, key, lang);
             setOverviewText(text);
             setOverviewSnapshot(snap);
+            if (uidRef.current) {
+                setChecklistState(uidRef.current, { overviewText: text, overviewSnapshot: snap }).catch(() => {});
+            }
         } catch (err) {
             setOverviewError(localizeAiError(err, latestRef.current.language));
         } finally {
@@ -1584,7 +1598,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             }
             syncComponentReminders('checklist', allFlatItems, !reminderChanged);
         }
-    }, [staticCategories, persistState, uid]);
+    }, [staticCategories, persistState]);
 
 
     // Clear list only (no AI call) — next auto or manual refresh starts fresh

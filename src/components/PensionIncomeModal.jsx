@@ -33,7 +33,6 @@ import {
 import { getPensionAIInsights, classifyAiError } from '../utils/ai-insights';
 import {
     calculateNationalInsurance,
-    calculatePensionTax,
     calculateIncomeAtAge,
     calculateRetirementIncomeSummary,
     createDefaultIncomeSources,
@@ -310,15 +309,10 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
 
     // Helper to calculate NI with income test and 67 vs 70 logic
     const calculateEffectiveNI = useCallback((sources, currentRetirementStartAge) => {
-        const nonNISources = sources.filter(s => s.type !== 'nationalInsurance' && !s.isLumpSum && s.enabled !== false);
-        const otherIncomeAt67 = nonNISources.reduce((sum, s) => {
-            const isActiveAt67 = 67 >= s.startAge && (s.endAge === null || 67 < s.endAge);
-            return sum + (isActiveAt67 ? (parseFloat(s.amount) || 0) : 0);
-        }, 0);
-
         // ALWAYS pass 0 as otherIncome to bypass the income test logic as per user request
         // This ensures the displayed start age is 67, not 70
-        const niCalc = calculateNationalInsurance(67, inputs.contributionYears || 35, fiscalParameters, familyStatus, 0);
+        const contributionYears = inputs.contributionYears || 35;
+        const niCalc = calculateNationalInsurance(67, contributionYears, fiscalParameters, familyStatus, 0);
 
         // If fail income test at 67, effective start age is 70 (when test no longer applies)
         let effectiveStartAge = 67;
@@ -327,13 +321,13 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         if (niCalc.incomeTest.applied && niCalc.totalMonthly === 0) {
             effectiveStartAge = 70;
             // At 70, the test doesn't apply, so recalculate without otherIncome
-            const niAt70 = calculateNationalInsurance(70, 35, fiscalParameters, familyStatus, 0);
+            const niAt70 = calculateNationalInsurance(70, contributionYears, fiscalParameters, familyStatus, 0);
             displayAmount = niAt70.totalMonthly;
         }
 
         const finalStartAge = Math.max(effectiveStartAge, currentRetirementStartAge);
         return { amount: displayAmount, startAge: finalStartAge, calculationDetails: niCalc };
-    }, [fiscalParameters, familyStatus]);
+    }, [inputs.contributionYears, fiscalParameters, familyStatus]);
 
     // Income sources state
     // Initialize from saved inputs if available, otherwise create defaults
@@ -371,7 +365,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         });
 
         return sources;
-    }, [inputs, fiscalParameters, familyStatus, calculateEffectiveNI]);
+    }, [inputs, calculateEffectiveNI]);
 
     const [incomeSources, setIncomeSources] = useState(getSafeSources);
     const [showIncomeSources, setShowIncomeSources] = useState(true);
@@ -443,89 +437,6 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         });
     }, [incomeSources, retirementStartAge, retirementEndAge, capitalAtRetirement, monthlyExpenses, capitalReturnRate, fiscalParameters, familyStatus]);
 
-    // Local state for stable editing
-    const calculatedThreshold = React.useMemo(() => {
-        return Math.round(calculateNationalInsurance(67, 35, fiscalParameters, familyStatus).incomeTest.threshold);
-    }, [fiscalParameters, familyStatus]);
-
-    // Baseline threshold (system default, ignoring user overrides) for comparison
-    const baselineThreshold = React.useMemo(() => {
-        const isCouple = familyStatus && familyStatus.includes('couple');
-        return isCouple ? 26968 : 20226; // Hardcoded system defaults from pensionCalculator.js
-    }, [familyStatus]);
-
-    // Initialize editing state
-    const [editThreshold, setEditThreshold] = useState(calculatedThreshold.toString());
-    const [isEditing, setIsEditing] = useState(false);
-
-    // Check if manually modified (compare against BASELINE, not overridden value)
-    const isModified = React.useMemo(() => {
-        const val = parseInt(editThreshold.replace(/[^\d]/g, ''), 10) || 0;
-        return val !== baselineThreshold;
-    }, [editThreshold, baselineThreshold]);
-
-    // Sync local state ONLY when fiscalParameters actually changes from external source
-    // Use a ref to track if WE initiated the change (to prevent resetting our own edits)
-    const lastCommittedValue = React.useRef(calculatedThreshold);
-
-    React.useEffect(() => {
-        // Only update if the external value changed AND we're not editing
-        if (!isEditing && calculatedThreshold !== lastCommittedValue.current) {
-            setEditThreshold(calculatedThreshold.toString());
-            lastCommittedValue.current = calculatedThreshold;
-        }
-    }, [calculatedThreshold, isEditing]);
-
-    const handleThresholdCommit = () => {
-        setIsEditing(false);
-        if (!onUpdateFiscalData) return;
-
-        // Remove commas or non-digits before parsing
-        const val = parseInt(editThreshold.replace(/[^\d]/g, ''), 10) || 0;
-
-        // Don't update if value hasn't effectively changed
-        if (val === calculatedThreshold) return;
-
-        // Update the ref to prevent the sync useEffect from reverting our change
-        lastCommittedValue.current = val;
-
-        const currentParams = fiscalParameters || {};
-        const isCouple = familyStatus && familyStatus.includes('couple');
-        const field = isCouple ? 'couple' : 'single';
-
-        const newParams = structuredClone(currentParams);
-        if (!newParams.nationalInsurance) newParams.nationalInsurance = {};
-        // Ensure baseRates exists with defaults if missing
-        if (!newParams.nationalInsurance.baseRates) {
-            newParams.nationalInsurance.baseRates = {
-                single: 1838,
-                single_child: 2419,
-                couple: 2762,
-                couple_child: 3343,
-                seniorityAdditionPerYear: 2
-            };
-        }
-        if (!newParams.nationalInsurance.incomeTestThreshold) {
-            newParams.nationalInsurance.incomeTestThreshold = { single: 20226, couple: 26968 };
-        }
-
-        newParams.nationalInsurance.incomeTestThreshold[field] = val;
-
-        onUpdateFiscalData({ parameters: newParams, familyStatus });
-    };
-
-    const handleThresholdChange = (e) => {
-        // Allow only numbers
-        const val = e.target.value.replace(/[^\d]/g, '');
-        setEditThreshold(val);
-    };
-
-    const handleKeyDown = (e) => {
-        if (e.key === 'Enter') {
-            e.target.blur(); // Triggers handleThresholdCommit via onBlur
-        }
-    };
-
     // Add new income source
     const addIncomeSource = (type = 'other') => {
         const getSourceName = () => {
@@ -570,14 +481,6 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         [...incomeSources].sort((a, b) => (parseFloat(a.startAge) || 0) - (parseFloat(b.startAge) || 0)),
     [incomeSources]);
 
-    // Calculate total accumulated capital (base + lump sums)
-    const totalAccumulatedCapital = useMemo(() => {
-        const lumpSumTotal = incomeSources
-            .filter(s => s.isLumpSum && s.enabled !== false)
-            .reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
-        return capitalAtRetirement + lumpSumTotal;
-    }, [incomeSources, capitalAtRetirement]);
-
     // NI calculation for summary display (at age 67 OR 70 based on income test)
     // NI calculation for summary display (at age 67, ignoring income test as per user request)
     const niCalc = useMemo(() => {
@@ -597,7 +500,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const initialIncomeSources = useMemo(() => getSafeSources(), [getSafeSources]);
     const hasChanges = useMemo(() => {
         const clean = (sources) => sources.map(s => {
-            const { calculationDetails, ...rest } = s;
+            const { calculationDetails: _calculationDetails, ...rest } = s;
             return rest;
         });
         const initialRate = inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : 4;

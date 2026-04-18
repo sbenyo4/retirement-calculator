@@ -29,7 +29,8 @@ export function calculatePrePassRequiredCapital({
     // Variable rate support — must mirror the actual safe bucket simulation exactly
     safeVariableRates = {},
     variableRatesEnabled = false,
-    startYear = new Date().getFullYear()
+    startYear = new Date().getFullYear(),
+    startMonth = new Date().getMonth() + 1
 }) {
     let prePassRequiredCapital = 0;
 
@@ -57,7 +58,7 @@ export function calculatePrePassRequiredCapital({
         const currentSimMonth = monthsToRetirement + j;
 
         // Per-month safe rate using the same lookup as decumulation.js (supports variable rates)
-        const monthlyRate = getMonthlyRateForMonth(currentSimMonth, startYear, variableRatesEnabled, safeVariableRates, bucketSafeRate);
+        const monthlyRate = getMonthlyRateForMonth(currentSimMonth, startYear, variableRatesEnabled, safeVariableRates, bucketSafeRate, startMonth);
 
         // Advance cumulative growth by this month's actual safe rate
         cumulativeGrowthFactor *= (1 + monthlyRate);

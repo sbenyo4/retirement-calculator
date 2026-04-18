@@ -159,7 +159,11 @@ describe('calculateSimulation', () => {
             // Before the fix, all 500 iterations used the same fixed rate for accumulation,
             // so balanceAtRetirement was identical across all iterations — p25 === p75.
             // Now accumulation is randomized, so percentiles must differ.
-            const result = calculateSimulation(baseInputs, SIMULATION_TYPES.MONTE_CARLO);
+            const result = calculateSimulation({
+                ...baseInputs,
+                currentSavings: 1000000,
+                monthlyNetIncomeDesired: 2000,
+            }, SIMULATION_TYPES.MONTE_CARLO);
             expect(result.simulationRange.p25Balance).toBeLessThan(result.simulationRange.p75Balance);
         });
 

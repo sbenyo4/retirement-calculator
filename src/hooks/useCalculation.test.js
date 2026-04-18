@@ -133,6 +133,32 @@ describe('useCalculation', () => {
             expect(result.current.results).toEqual(fakeProjection);
             expect(result.current.results.balanceAtRetirement).toBe(500000); // NOT 1
         });
+
+        it('discards a projection result that arrives after inputs become invalid', () => {
+            vi.useFakeTimers();
+
+            let firstResolve;
+            mockRunProjection.mockImplementationOnce((inputs, onResult) => {
+                firstResolve = () => onResult({ projection: fakeProjection, goalSeekWithdrawal: null });
+            });
+
+            const { result, rerender } = renderHook(
+                ({ inputs }) => useCalculation(inputs, mathSettings),
+                { initialProps: { inputs: validInputs } }
+            );
+
+            expect(mockRunProjection).toHaveBeenCalledTimes(1);
+
+            rerender({ inputs: { ...validInputs, currentAge: 60, retirementStartAge: 50 } });
+            act(() => { vi.advanceTimersByTime(350); });
+
+            expect(mockRunProjection).toHaveBeenCalledTimes(1);
+            expect(result.current.results).toBeNull();
+
+            act(() => { firstResolve(); });
+
+            expect(result.current.results).toBeNull();
+        });
     });
 
     describe('simulation', () => {

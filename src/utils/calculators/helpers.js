@@ -47,17 +47,31 @@ export const getMonthlyAmount = (event) => {
 };
 
 /**
+ * Gets the calendar year for a month index relative to the calculation start.
+ * Month 0 is the current/start month; month 1 is the following month.
+ *
+ * @param {number} monthIndex
+ * @param {number} startYear
+ * @param {number} startMonth 1-based month number (1 = January)
+ * @returns {number}
+ */
+export const getCalendarYearForMonth = (monthIndex, startYear, startMonth = new Date().getMonth() + 1) => {
+    const safeStartMonth = Math.min(12, Math.max(1, parseInt(startMonth) || 1));
+    return startYear + Math.floor((safeStartMonth - 1 + monthIndex) / 12);
+};
+
+/**
  * Gets the applicable monthly interest rate for a specific month, accounting for variable rates.
  * @param {number} monthIndex 
  * @param {number} startYear 
+ * @param {number} startMonth
  * @param {boolean} variableRatesEnabled 
  * @param {Object} variableRates 
  * @param {number} defaultAnnualRate 
  * @returns {number} Monthly rate (decimal)
  */
-export const getMonthlyRateForMonth = (monthIndex, startYear, variableRatesEnabled, variableRates, defaultAnnualRate) => {
-    const yearOffset = Math.floor(monthIndex / 12);
-    const currentCalcYear = startYear + yearOffset;
+export const getMonthlyRateForMonth = (monthIndex, startYear, variableRatesEnabled, variableRates, defaultAnnualRate, startMonth = new Date().getMonth() + 1) => {
+    const currentCalcYear = getCalendarYearForMonth(monthIndex, startYear, startMonth);
     let yearRate = defaultAnnualRate;
     if (variableRatesEnabled && variableRates && variableRates[currentCalcYear] !== undefined) {
         const parsed = parseFloat(variableRates[currentCalcYear]);

@@ -15,6 +15,7 @@ import { getMonthFromDate, getMonthlyAmount, getMonthlyRateForMonth } from './he
  * @param {boolean} params.variableRatesEnabled
  * @param {Array} params.lifeEvents
  * @param {number} params.startYear
+ * @param {number} params.startMonth
  * 
  * @returns {Object} { history, balanceAtRetirement, totalPrincipal }
  */
@@ -27,7 +28,8 @@ export function calculateAccumulation({
     variableRates,
     variableRatesEnabled,
     lifeEvents,
-    startYear
+    startYear,
+    startMonth
 }) {
     const monthsToRetirement = (retirementStartAge - currentAge) * 12;
 
@@ -92,7 +94,7 @@ export function calculateAccumulation({
 
     for (let i = 1; i <= monthsToRetirement; i++) {
         currentMonth++;
-        const monthlyRate = getMonthlyRateForMonth(currentMonth, startYear, variableRatesEnabled, variableRates, annualReturnRate);
+        const monthlyRate = getMonthlyRateForMonth(currentMonth, startYear, variableRatesEnabled, variableRates, annualReturnRate, startMonth);
 
         // Apply life events for this month
         lifeEvents.forEach((event, idx) => {

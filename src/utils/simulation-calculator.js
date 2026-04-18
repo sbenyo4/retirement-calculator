@@ -1,4 +1,5 @@
 import { calculateRetirementProjection } from './calculator';
+import { getCalendarYearForMonth } from './calculators/helpers';
 
 export const SIMULATION_TYPES = {
     MONTE_CARLO: 'monte_carlo',
@@ -88,27 +89,38 @@ export function calculateSimulation(inputs, type) {
         const currentAge = parseFloat(inputs.currentAge);
         const retirementStartAge = parseFloat(inputs.retirementStartAge);
         const retirementEndAge = parseFloat(inputs.retirementEndAge);
-        const yearsInAccumulation = Math.ceil(retirementStartAge - currentAge);
-        const yearsInRetirement = Math.ceil(retirementEndAge - retirementStartAge);
-
-        // Calculate the calendar year when retirement starts.
-        // Uses Math.floor to match getMonthlyRateForMonth's yearOffset = Math.floor(monthIndex / 12).
+        const monthsToRetirement = Math.floor((retirementStartAge - currentAge) * 12);
+        const monthsInRetirement = Math.floor((retirementEndAge - retirementStartAge) * 12);
         const startYear = new Date().getFullYear();
-        const retirementStartCalendarYear = startYear + Math.floor(retirementStartAge - currentAge);
+        const startMonth = new Date().getMonth() + 1;
+        const uniqueYearsForRange = (fromMonth, toMonth) => {
+            const years = [];
+            const seen = new Set();
+            for (let m = fromMonth; m <= toMonth; m++) {
+                const year = getCalendarYearForMonth(m, startYear, startMonth);
+                if (!seen.has(year)) {
+                    seen.add(year);
+                    years.push(year);
+                }
+            }
+            return years;
+        };
+        const accumulationYears = uniqueYearsForRange(1, monthsToRetirement);
+        const retirementYears = uniqueYearsForRange(monthsToRetirement + 1, monthsToRetirement + monthsInRetirement);
 
         for (let i = 0; i < iterations; i++) {
             // Generate year-by-year returns for accumulation and retirement phases
-            const accumReturns = generateYearlyReturns(meanReturn, volatility, yearsInAccumulation);
-            const yearlyReturns = generateYearlyReturns(meanReturn, volatility, yearsInRetirement);
+            const accumReturns = generateYearlyReturns(meanReturn, volatility, accumulationYears.length);
+            const yearlyReturns = generateYearlyReturns(meanReturn, volatility, retirementYears.length);
 
             // Convert random returns to variableRates format (calendar-year keyed)
             const simVariableRates = {};
-            for (let y = 0; y < yearsInAccumulation; y++) {
-                simVariableRates[startYear + y] = accumReturns[y];
-            }
-            for (let y = 0; y < yearsInRetirement; y++) {
-                simVariableRates[retirementStartCalendarYear + y] = yearlyReturns[y];
-            }
+            accumulationYears.forEach((year, idx) => {
+                simVariableRates[year] = accumReturns[idx];
+            });
+            retirementYears.forEach((year, idx) => {
+                simVariableRates[year] = yearlyReturns[idx];
+            });
 
             const simInputs = {
                 ...baseInputs,
@@ -119,15 +131,15 @@ export function calculateSimulation(inputs, type) {
             // When buckets are enabled, also randomize bucket-specific rates
             // Without this, decumulation uses fixed safe/surplus rates and all iterations are identical
             if (useBuckets) {
-                const safeReturns = generateYearlyReturns(safeMeanReturn, safeVolatility, yearsInRetirement);
-                const surplusReturns = generateYearlyReturns(surplusMeanReturn, surplusVolatility, yearsInRetirement);
+                const safeReturns = generateYearlyReturns(safeMeanReturn, safeVolatility, retirementYears.length);
+                const surplusReturns = generateYearlyReturns(surplusMeanReturn, surplusVolatility, retirementYears.length);
 
                 const simSafeRates = {};
                 const simSurplusRates = {};
-                for (let y = 0; y < yearsInRetirement; y++) {
-                    simSafeRates[retirementStartCalendarYear + y] = safeReturns[y];
-                    simSurplusRates[retirementStartCalendarYear + y] = surplusReturns[y];
-                }
+                retirementYears.forEach((year, idx) => {
+                    simSafeRates[year] = safeReturns[idx];
+                    simSurplusRates[year] = surplusReturns[idx];
+                });
 
                 simInputs.safeVariableRates = simSafeRates;
                 simInputs.surplusVariableRates = simSurplusRates;

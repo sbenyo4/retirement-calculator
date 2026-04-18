@@ -7,7 +7,7 @@ import { Chart as ChartJS, ArcElement, CategoryScale, LinearScale, BarElement, L
 ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend);
 import { silenceReminder, syncComponentReminders } from '../hooks/useReminders';
 import { useAuth } from '../contexts/AuthContext';
-import { getBudgetItems, setBudgetItems } from '../utils/db';
+import { getBudgetItems, setBudgetItems, setBudgetAiInsight } from '../utils/db';
 import { getChatResponse } from '../utils/ai-chat';
 import { useDraggable } from '../hooks/useDraggable';
 
@@ -125,7 +125,7 @@ const getNowYM = () => { const d = new Date(); return d.getFullYear() * 12 + d.g
 const CAT_COLORS = ['#3b82f6','#22c55e','#ef4444','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#6b7280'];
 
 // ─── Budget Statistics Modal ─────────────────────────────────────────────────
-function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showInflation: showInflationProp, isLight, isHe, currency, t }) {
+function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showInflation: showInflationProp, isLight, isHe, currency, t: _t }) {
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
     const [localShowInflation, setLocalShowInflation] = useState(showInflationProp);
     const [selectedYearIdx, setSelectedYearIdx] = useState(null);
@@ -205,7 +205,7 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
             grandTotal,
             cats,
         };
-    }, [computeCatTotals, selectedYearIdx, isHe]);
+    }, [computeCatTotals, selectedYearIdx, defaultYearIdx, isHe]);
 
     // ── Bar: monthly expenses per retirement year, stacked by category ──
     const barData = useMemo(() => {
@@ -315,12 +315,12 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
     const gridColor   = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)';
 
     const pluginStateRef = useRef({});
-    pluginStateRef.current = { barData, selectedYearIdx, defaultYearIdx, currency, textColor, isLight, showSavings, isHe };
+    pluginStateRef.current = { barData, selectedYearIdx, defaultYearIdx, currency, textColor, isLight, showSavings };
 
     const yearLabelPlugin = useMemo(() => ({
         id: 'yearLabels',
         afterRender(chart) {
-            const { barData, selectedYearIdx, defaultYearIdx, currency, textColor, isLight, showSavings, isHe } = pluginStateRef.current;
+            const { barData, selectedYearIdx, defaultYearIdx, currency, textColor, isLight, showSavings } = pluginStateRef.current;
             const { ctx, scales: { x }, chartArea } = chart;
 
             // 0. Target line — full width
@@ -741,7 +741,7 @@ function withReminderPausedState(item, enabled) {
         return { ...rest, status: 'active', enabled: true, reminder: { ...pausedReminder } };
     }
 
-    const { pausedReminder, ...rest } = item;
+    const { pausedReminder: _pausedReminder, ...rest } = item;
     return { ...rest, status: 'active', enabled: true };
 }
 
@@ -799,7 +799,7 @@ function genId() {
 }
 
 // ─── Single item row ──────────────────────────────────────────────────────────
-function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, onToggleEnabled, projFactor, showInflation, extraActionButton, labelAdornment }) {
+function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, onToggleEnabled, projFactor, showInflation, extraActionButton: _extraActionButton, labelAdornment }) {
     const [editingLabel, setEditingLabel] = useState(false);
     const [labelDraft, setLabelDraft] = useState(item.label);
     const [amountDraft, setAmountDraft] = useState(item.amount === 0 ? '' : String(item.amount));
@@ -1520,6 +1520,19 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const [searchQuery, setSearchQuery] = useState('');
     const [showStats, setShowStats] = useState(false);
 
+    useEffect(() => {
+        const handler = (e) => {
+            if (e.detail === 'open:budgetAI')    setAiModalOpen(true);
+            if (e.detail === 'open:budgetStats') setShowStats(true);
+        };
+        window.addEventListener('app:command', handler);
+        window.addEventListener('app:budgetCommand', handler);
+        return () => {
+            window.removeEventListener('app:command', handler);
+            window.removeEventListener('app:budgetCommand', handler);
+        };
+    }, []);
+
     // Always-current ref so closures (setTimeout, beforeunload) always see latest state
     latestStateRef.current = { items, householdSize };
 
@@ -1682,6 +1695,12 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                 backupSlotsRef.current = slots;
                 setBackups(slots);
             }
+            // Restore cached AI insight
+            if (saved?.aiInsight && saved?.aiSnapshot) {
+                aiInsightRef.current = saved.aiInsight;
+                aiSnapshotRef.current = saved.aiSnapshot;
+                setAiInsight(saved.aiInsight);
+            }
             saveAllowedRef.current = true;
             setLoaded(true);
         }).catch(err => {
@@ -1838,13 +1857,13 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             }, 0);
             return { date, tracks, saving, monthsLeft: ml, newTotal };
         }).filter(ms => ms.monthsLeft > 0);
-    }, [items, totalMonthly, showInflation, inflationRate]);
+    }, [items, showInflation, inflationRate]);
 
-    const allCategoryIds = CATEGORIES.map(c => c.id);
-    const customCategoryIds = [...new Set(
-        items.filter(i => !allCategoryIds.includes(i.categoryId)).map(i => i.categoryId)
-    )];
     const visibleCategories = useMemo(() => {
+        const allCategoryIds = CATEGORIES.map(c => c.id);
+        const customCategoryIds = [...new Set(
+            items.filter(i => !allCategoryIds.includes(i.categoryId)).map(i => i.categoryId)
+        )];
         const all = [
             ...CATEGORIES,
             ...customCategoryIds.map(id => ({ id, icon: '📋', labelHe: id, labelEn: id })),
@@ -1860,7 +1879,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             const totalB = catItemsB.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0);
             return totalB - totalA;
         });
-    }, [items, customCategoryIds]);
+    }, [items]);
 
     const applyStatusItemsWithImmediateSave = useCallback((nextItems) => {
         const normalizedNextItems = Array.isArray(nextItems) ? nextItems.map(normalizeBudgetItem) : [];
@@ -1925,9 +1944,10 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             setAiInsight(null);
             aiInsightRef.current = null;
             aiSnapshotRef.current = null;
+            if (uid) setBudgetAiInsight(uid, null, null).catch(() => {});
         }
         setPendingConfirm(null);
-    }, [pendingConfirm, updateItems]);
+    }, [pendingConfirm, updateItems, uid]);
 
     const handleAddCategory = useCallback(() => {
         const name = prompt(t('budgetCategoryName'));
@@ -2085,12 +2105,13 @@ Gap vs target and what can be optimized.`;
             aiSnapshotRef.current = snapshot;
             aiInsightRef.current = reply;
             setAiInsight(reply);
+            if (uid) setBudgetAiInsight(uid, reply, snapshot).catch(() => {});
         } catch (err) {
             if (err.name !== 'AbortError') setAiError(err.message || 'Error');
         } finally {
             setAiLoading(false);
         }
-    }, [aiProvider, aiModel, apiKeyOverride, items, target, totalMonthly, isHe]);
+    }, [aiProvider, aiModel, apiKeyOverride, items, target, totalMonthly, householdSize, isHe, uid]);
 
     const pct = target > 0 ? Math.min(totalMonthly / target, 1.5) : 0;
     const projectedPct = target > 0 ? Math.min(totalProjectedMonthly / target, 1.5) : 0;

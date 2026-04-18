@@ -17,7 +17,7 @@ function isLifeEventSource(source) {
 
 
 
-export function GlobalRemindersSync({ uid, lifeEvents = [], currentProfileId, profiles = [], updateProfile }) {
+export function GlobalRemindersSync({ uid, lifeEvents: _lifeEvents = [], currentProfileId, profiles = [], updateProfile }) {
     const lastSyncedUidRef = useRef(null);
     const lastLifeEventSourceRef = useRef(null);
 
@@ -163,7 +163,7 @@ export function GlobalRemindersSync({ uid, lifeEvents = [], currentProfileId, pr
                         const idx = items.findIndex(i => String(i.id) === String(id));
                         if (idx > -1 && items[idx].reminder) {
                             const newItems = [...items];
-                            const { reminder, ...rest } = newItems[idx];
+                            const { reminder: _reminder, ...rest } = newItems[idx];
                             newItems[idx] = rest;
                             await setBudgetItems(uid, newItems, bSnap.householdSize, bSnap.backupSlots);
                         }
@@ -181,7 +181,7 @@ export function GlobalRemindersSync({ uid, lifeEvents = [], currentProfileId, pr
                             if (itemIdx > -1 && cat.items[itemIdx].reminder) {
                                 changed = true;
                                 const newItems = [...cat.items];
-                                const { reminder, ...rest } = newItems[itemIdx];
+                                const { reminder: _reminder, ...rest } = newItems[itemIdx];
                                 newItems[itemIdx] = rest;
                                 return { ...cat, items: newItems };
                             }
@@ -231,7 +231,7 @@ export function GlobalRemindersSync({ uid, lifeEvents = [], currentProfileId, pr
 
         window.addEventListener('rc-reminder-confirmed', handleConfirm);
         return () => window.removeEventListener('rc-reminder-confirmed', handleConfirm);
-    }, [uid]);
+    }, [uid, profiles, updateProfile]);
 
     useEffect(() => {
         if (!uid) return;

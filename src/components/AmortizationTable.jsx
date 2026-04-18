@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { X, Table } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -80,8 +81,8 @@ export function AmortizationTableModal({ isOpen, onClose, history, t, language }
         return isNegative ? 'text-red-400' : 'text-emerald-400';
     };
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    return createPortal(
+        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 50000 }}>
             {/* Backdrop */}
             <div
                 className="absolute inset-0 backdrop-blur-md bg-black/50"
@@ -152,7 +153,8 @@ export function AmortizationTableModal({ isOpen, onClose, history, t, language }
                     </table>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }
 

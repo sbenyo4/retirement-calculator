@@ -79,15 +79,16 @@ describe('calculateStatistics', () => {
 
     describe('requiredCapitalForPerpetuity', () => {
         it('is finite and correct for a positive real return', () => {
-            // effectiveMonthlyRate = (5/100/12) * (1-0.25) = 0.003125
-            // perpetuity = 3000 / 0.003125 = 960000
+            // effectiveMonthlyRate = ((1+5%)^(1/12)-1) * (1-0.25)
+            // perpetuity = monthly need / effectiveMonthlyRate
             const result = calculateStatistics({
                 ...baseArgs,
                 annualReturnRate: 5,
                 retirementAnnualReturnRate: 5,
                 taxRateDecimal: 0.25,
             });
-            expect(result.requiredCapitalForPerpetuity).toBeCloseTo(960000, 0);
+            const expected = baseArgs.monthlyNetIncomeDesired / ((Math.pow(1.05, 1 / 12) - 1) * 0.75);
+            expect(result.requiredCapitalForPerpetuity).toBeCloseTo(expected, 0);
         });
 
         it('is Infinity when effective retirement rate is zero (fix: was incorrectly 0)', () => {

@@ -122,7 +122,7 @@ export default function AddEventModal({
             setAmount(monthlyChange);
             setMonthlyChange('');
         }
-    }, [eventType]);
+    }, [isRecurring, isOneTime, amount, monthlyChange]);
 
     // Validation to prevent end date before start date
     useEffect(() => {

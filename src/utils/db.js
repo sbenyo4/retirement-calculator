@@ -187,7 +187,13 @@ export async function getBudgetItems(uid) {
                 items: normalizeBudgetItemsStatus(slot?.items)
             }))
             : [],
+        aiInsight: data.aiInsight ?? null,
+        aiSnapshot: data.aiSnapshot ?? null,
     };
+}
+
+export async function setBudgetAiInsight(uid, insight, snapshot) {
+    await setDoc(budgetItemsRef(uid), { aiInsight: insight, aiSnapshot: snapshot }, { merge: true });
 }
 
 export async function setBudgetItems(uid, items, householdSize, backupSlots) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useDraggable } from '../hooks/useDraggable';
 import { useDebouncedValue } from '../hooks/useDebounce';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
@@ -23,7 +23,6 @@ export default function VariableRatesModal({
     bucketType = 'accumulation', // 'accumulation', 'safe', or 'surplus'
     onSave,
     language,
-    t,
     inputs
 }) {
     const { theme } = useTheme();
@@ -45,6 +44,42 @@ export default function VariableRatesModal({
 
     // Guard: don't fire onPreview during initial population of rates
     const previewReadyRef = useRef(false);
+
+    // Helper: Calculate months in year for weighting
+    const getMonthsForYear = useCallback((year) => {
+        const bDate = inputs?.birthDate || inputs?.birthdate;
+
+        // 1. First Year of simulation
+        if (year === startYear) {
+            // If this is also retirement start year, use birth month (retirement starts on birthday)
+            if (startYear === retirementStartYear && inputs && bDate) {
+                const birthMonth = new Date(bDate).getMonth(); // 0-11
+                return 12 - birthMonth; // Months remaining in year after birthday
+            }
+            // Otherwise (accumulation phase), use current month
+            const currentMonth = new Date().getMonth(); // 0-11
+            return 12 - currentMonth;
+        }
+
+        // 2. Last Year (End of Simulation)
+        if (year === endYear) {
+            // For accumulation bucket (ends before retirement), use retirementStartAge
+            // For retirement buckets, use retirementEndAge
+            const isAccumulation = endYear < retirementStartYear;
+            const targetAge = isAccumulation ? inputs.retirementStartAge : inputs.retirementEndAge;
+
+            if (inputs && bDate && targetAge) {
+                const birthMonth = new Date(bDate).getMonth();
+                const ageMonths = (parseFloat(targetAge) % 1) * 12;
+                const endMonthIndex = Math.floor((birthMonth + ageMonths) % 12);
+                return endMonthIndex + 1;
+            }
+            return 12; // Fallback
+        }
+
+        // 3. Intermediate Years
+        return 12;
+    }, [inputs, startYear, endYear, retirementStartYear]);
 
     // Initialize rates on open only — not on every prop change, which would
     // cause a re-init loop when onPreview updates inputs (and thus variableRates prop)
@@ -95,42 +130,6 @@ export default function VariableRatesModal({
         if (!isOpen || !onPreview || !previewReadyRef.current) return;
         onPreview(debouncedRates);
     }, [debouncedRates]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // Helper: Calculate months in year for weighting
-    const getMonthsForYear = (year) => {
-        const bDate = inputs?.birthDate || inputs?.birthdate;
-
-        // 1. First Year of simulation
-        if (year === startYear) {
-            // If this is also retirement start year, use birth month (retirement starts on birthday)
-            if (startYear === retirementStartYear && inputs && bDate) {
-                const birthMonth = new Date(bDate).getMonth(); // 0-11
-                return 12 - birthMonth; // Months remaining in year after birthday
-            }
-            // Otherwise (accumulation phase), use current month
-            const currentMonth = new Date().getMonth(); // 0-11
-            return 12 - currentMonth;
-        }
-
-        // 2. Last Year (End of Simulation)
-        if (year === endYear) {
-            // For accumulation bucket (ends before retirement), use retirementStartAge
-            // For retirement buckets, use retirementEndAge
-            const isAccumulation = endYear < retirementStartYear;
-            const targetAge = isAccumulation ? inputs.retirementStartAge : inputs.retirementEndAge;
-
-            if (inputs && bDate && targetAge) {
-                const birthMonth = new Date(bDate).getMonth();
-                const ageMonths = (parseFloat(targetAge) % 1) * 12;
-                const endMonthIndex = Math.floor((birthMonth + ageMonths) % 12);
-                return endMonthIndex + 1;
-            }
-            return 12; // Fallback
-        }
-
-        // 3. Intermediate Years
-        return 12;
-    };
 
     // Helper: Get month name for display
     // Helper to format month name without day-overflow bug
@@ -207,7 +206,7 @@ export default function VariableRatesModal({
         }
 
         return totalMonths > 0 ? (totalWeightedRate / totalMonths) : 0;
-    }, [rates, startYear, endYear, retirementStartYear, inputs]);
+    }, [rates, startYear, endYear, getMonthsForYear]);
 
     // Step 4: Live Calculation Logic
     const { averageBalance, gap, minBalance, maxBalance, minGap, maxGap, spread } = useMemo(() => {
@@ -274,7 +273,7 @@ export default function VariableRatesModal({
             console.warn("Calculation error (likely invalid inputs):", error.message);
             return zeroResult;
         }
-    }, [debouncedRates, inputs, calculatedAverage, startYear, endYear]);
+    }, [debouncedRates, inputs, calculatedAverage, startYear, endYear, bucketType]);
 
     const formatCurrency = (val) => formatCurrencyUtil(val, language);
 

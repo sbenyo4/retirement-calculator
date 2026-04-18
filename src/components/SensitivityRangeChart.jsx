@@ -172,7 +172,7 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language, ai
         } else if (!inputs.enableBuckets && [PARAMETER_TYPES.ACCUMULATION_RATE, PARAMETER_TYPES.SAFE_RATE, PARAMETER_TYPES.SURPLUS_RATE].includes(parameterType)) {
             setParameterType(PARAMETER_TYPES.INTEREST);
         }
-    }, [inputs.enableBuckets]);
+    }, [inputs.enableBuckets, parameterType]);
 
     // Lock background scroll when modal is open
     React.useEffect(() => {
@@ -264,15 +264,13 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language, ai
                             // Need to withdraw less
                             high = mid;
                         }
-                    } catch (e) {
+                    } catch {
                         break;
                     }
                 }
                 // Return the converged value
                 return Math.round((low + high) / 2);
             };
-
-            const currentTargetBalance = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
 
             for (let targetBalance = effectiveMin; targetBalance <= effectiveMax; targetBalance += stepSize) {
                 const requiredWithdrawal = findWithdrawalForTarget(targetBalance);
@@ -386,7 +384,7 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language, ai
                 const res2 = calculateRetirementProjection(inputs2);
                 totalDiff += Math.abs(res1.balanceAtEnd - res2.balanceAtEnd);
                 count++;
-            } catch (e) {
+            } catch {
                 // Ignore
             }
         }
@@ -420,10 +418,10 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language, ai
             }
 
             return { label: winnerLabel, diff: maxDiff, step: stepLabel };
-        } catch (e) {
+        } catch {
             return null;
         }
-    }, [inputs, t, parameterType]);
+    }, [inputs, t]);
 
     // Calculate "Most Impactful Global Factor"
     const impactfulGlobalFactor = useMemo(() => {
@@ -487,7 +485,7 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language, ai
             console.error(e);
             return null;
         }
-    }, [inputs, t, parameterType]);
+    }, [inputs, t]);
 
     // Chart data
     const chartData = useMemo(() => {
@@ -748,8 +746,6 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language, ai
     const inputBg = theme === 'light' ? 'bg-white' : 'bg-white/10';
     const inputBorder = theme === 'light' ? 'border-slate-400 shadow-sm' : 'border-white/20';
     const inputText = theme === 'light' ? 'text-gray-900' : 'text-white';
-    const optionBg = theme === 'light' ? 'bg-white text-gray-900' : 'bg-slate-800 text-white';
-
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             {/* Backdrop */}

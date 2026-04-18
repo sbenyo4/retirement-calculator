@@ -77,6 +77,18 @@ export default function InputForm({
         if (capitalPreservationNeededToday > 0 || capitalPreservation > 0) setShowCapitalPreservationBtn(true);
     }, [neededToday, capitalPreservationNeededToday, capitalPreservation]);
 
+    // Command palette handler
+    useEffect(() => {
+        const handler = (e) => {
+            const id = e.detail;
+            if (id === 'open:scenario')         { scenarioSnapshotRef.current = { scenarioEnabled: inputs.scenarioEnabled, scenario: inputs.scenario }; setShowScenario(true); }
+            if (id === 'open:additionalIncome')  setShowAdditionalIncome(true);
+            if (id === 'open:variableRates')     setShowVariableRates(true);
+        };
+        window.addEventListener('app:command', handler);
+        return () => window.removeEventListener('app:command', handler);
+    }, [inputs.scenarioEnabled, inputs.scenario]);
+
     // Memoized currency formatter for performance
     const currencyFormatter = useMemo(() => new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
         style: 'currency',
@@ -106,7 +118,7 @@ export default function InputForm({
         }
 
         return errors;
-    }, [inputs.currentAge, inputs.retirementStartAge, inputs.retirementEndAge, language]);
+    }, [inputs.currentAge, inputs.retirementStartAge, inputs.retirementEndAge, t]);
 
     const handleChange = (e) => {
         const { name, value } = e.target;

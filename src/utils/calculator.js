@@ -4,6 +4,7 @@ import { validateInputs } from './calculators/validators.js';
 import { calculateAccumulation } from './calculators/accumulation.js';
 import { calculateDecumulation } from './calculators/decumulation.js';
 import { calculateStatistics } from './calculators/statistics.js';
+import { getCalendarYearForMonth } from './calculators/helpers.js';
 import { calculateIncomeAtAge, calculateNationalInsurance } from './pensionCalculator.js';
 import { mergeScenarioIntoRates } from './scenarioUtils.js';
 import { translations } from './translations.js';
@@ -95,7 +96,9 @@ export function calculateRetirementProjection(inputs, t = null) {
     const realSafeVariableRates = inflationRate ? adjustVariableRates(safeVariableRatesWithScenario) : safeVariableRatesWithScenario;
     const realSurplusVariableRates = inflationRate ? adjustVariableRates(surplusVariableRatesWithScenario) : surplusVariableRatesWithScenario;
 
-    const startYear = new Date().getFullYear();
+    const now = new Date();
+    const startYear = now.getFullYear();
+    const startMonth = now.getMonth() + 1;
 
     // 2. Accumulation Phase (Phase 1)
     const accumResult = calculateAccumulation({
@@ -107,7 +110,8 @@ export function calculateRetirementProjection(inputs, t = null) {
         variableRates: realVariableRates,
         variableRatesEnabled: effectiveVariableRatesEnabled,
         lifeEvents: parsedInputs.lifeEvents,
-        startYear
+        startYear,
+        startMonth
     });
 
     const { balanceAtRetirement, totalPrincipal, history: accumHistory, lastMonthIndex } = accumResult;
@@ -136,6 +140,7 @@ export function calculateRetirementProjection(inputs, t = null) {
         annualReturnRate: realReturnRate,
         taxRateDecimal: taxRate / 100,
         startYear,
+        startMonth,
         parameters: inputs.fiscalParameters || null // Pass dynamic parameters
     }, t);
 
@@ -150,29 +155,28 @@ export function calculateRetirementProjection(inputs, t = null) {
     // simulation — especially when step mode sets all retirement years to a single target rate.
     let effectiveAccumRate = realReturnRate;
     let effectiveRetirementRate = retirementAnnualReturnRate;
-    if (parsedInputs.variableRatesEnabled && realVariableRates) {
-        const retirCalStart = startYear + Math.floor(retirementStartAge - currentAge);
-        const retirCalEnd = startYear + Math.floor(retirementEndAge - currentAge);
+    if (effectiveVariableRatesEnabled && realVariableRates) {
+        const averageMonthlyMappedRate = (fromMonth, toMonth, fallbackRate) => {
+            const rateValues = [];
+            for (let m = fromMonth; m <= toMonth; m++) {
+                const year = getCalendarYearForMonth(m, startYear, startMonth);
+                const r = parseFloat(realVariableRates[year]);
+                rateValues.push(!isNaN(r) ? r : fallbackRate);
+            }
+            return rateValues.length > 0
+                ? rateValues.reduce((a, b) => a + b, 0) / rateValues.length
+                : fallbackRate;
+        };
 
-        const accumRateValues = [];
-        for (let y = startYear; y < retirCalStart; y++) {
-            const r = parseFloat(realVariableRates[y]);
-            if (!isNaN(r)) accumRateValues.push(r);
-        }
-        if (accumRateValues.length > 0) {
-            effectiveAccumRate = accumRateValues.reduce((a, b) => a + b, 0) / accumRateValues.length;
-        }
+        effectiveAccumRate = averageMonthlyMappedRate(1, lastMonthIndex, realReturnRate);
 
         // Don't override bucket perpetuity rate — that's governed by the safe-bucket rate
         if (!parsedInputs.enableBuckets) {
-            const retirRateValues = [];
-            for (let y = retirCalStart; y <= retirCalEnd; y++) {
-                const r = parseFloat(realVariableRates[y]);
-                if (!isNaN(r)) retirRateValues.push(r);
-            }
-            if (retirRateValues.length > 0) {
-                effectiveRetirementRate = retirRateValues.reduce((a, b) => a + b, 0) / retirRateValues.length;
-            }
+            effectiveRetirementRate = averageMonthlyMappedRate(
+                lastMonthIndex + 1,
+                lastMonthIndex + Math.floor(monthsInRetirement),
+                retirementAnnualReturnRate
+            );
         }
     }
 

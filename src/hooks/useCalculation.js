@@ -30,6 +30,7 @@ export function useCalculation(inputs, settings) {
     const generationRef = useRef(0);
 
     const { runSimulation, runProjection } = useSimulationWorker();
+    const { calculationMode, simulationType } = settings;
 
     // Debounce inputs for heavy calculations (300ms delay)
     const debouncedInputs = useDebouncedValue(inputs, 300);
@@ -42,6 +43,10 @@ export function useCalculation(inputs, settings) {
     // Using it as the sole inputs dependency prevents spurious recalculations on every debounce tick
     // when the user hasn't actually changed anything meaningful.
     useEffect(() => {
+        // Every input/settings change invalidates any in-flight worker response,
+        // including changes that make the current form temporarily invalid.
+        const generation = ++generationRef.current;
+
         const age = parseFloat(memoizedDebouncedInputs.currentAge);
         const retirementStart = parseFloat(memoizedDebouncedInputs.retirementStartAge);
         const retirementEnd = parseFloat(memoizedDebouncedInputs.retirementEndAge);
@@ -59,9 +64,6 @@ export function useCalculation(inputs, settings) {
 
             // Capture generation and settings for the async callback closure.
             // If inputs change before the worker responds, the stale result is discarded.
-            const generation = ++generationRef.current;
-            const { calculationMode, simulationType } = settings;
-
             runProjection(
                 memoizedDebouncedInputs,
                 ({ projection, goalSeekWithdrawal: gsw }) => {
@@ -92,6 +94,7 @@ export function useCalculation(inputs, settings) {
                                     setSimulationResults(result);
                                 },
                                 (errorMessage) => {
+                                    if (generationRef.current !== generation) return; // stale — discard
                                     console.error('Simulation error:', errorMessage);
                                     setSimulationError(errorMessage);
                                 }
@@ -115,7 +118,7 @@ export function useCalculation(inputs, settings) {
             setResults(null);
             setSimulationResults(null);
         }
-    }, [memoizedDebouncedInputs, settings.calculationMode, settings.simulationType, runProjection, runSimulation]);
+    }, [memoizedDebouncedInputs, calculationMode, simulationType, runProjection, runSimulation]);
 
     return {
         results,

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getMonthFromDate } from './helpers';
+import { getCalendarYearForMonth, getMonthFromDate, getMonthlyRateForMonth } from './helpers';
 
 describe('getMonthFromDate', () => {
     const NOW = new Date('2026-03-15');
@@ -66,5 +66,22 @@ describe('expired life events are not active at calculation start', () => {
         const pastStartDate = { year: 2024, month: 1 };
         const startMonth = getMonthFromDate(pastStartDate);
         expect(startMonth).toBeLessThan(0);
+    });
+});
+
+describe('calendar-year lookup for variable rates', () => {
+    it('moves to the next calendar year at January, not after 12 calculation months', () => {
+        // Start in November 2026. Month 1 is December 2026; month 2 is January 2027.
+        expect(getCalendarYearForMonth(1, 2026, 11)).toBe(2026);
+        expect(getCalendarYearForMonth(2, 2026, 11)).toBe(2027);
+    });
+
+    it('uses the calendar-year rate for the looked-up month', () => {
+        const rates = { 2026: 0, 2027: 12 };
+        const decemberRate = getMonthlyRateForMonth(1, 2026, true, rates, 5, 11);
+        const januaryRate = getMonthlyRateForMonth(2, 2026, true, rates, 5, 11);
+
+        expect(decemberRate).toBeCloseTo(0, 10);
+        expect(januaryRate).toBeCloseTo(Math.pow(1.12, 1 / 12) - 1, 10);
     });
 });

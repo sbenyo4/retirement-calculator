@@ -1,12 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { Save, Trash2, Upload, RotateCcw, Pencil, Check, X } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 import { DEFAULT_INPUTS } from '../constants';
 import { deepEqual } from '../hooks/useDeepCompare';
 import { normalizeInputs } from '../utils/profileUtils';
-
-import { calculateAgeFromDate } from '../utils/dateUtils';
 
 export function ProfileManager({ currentInputs, onLoad, t, language, profiles, onSaveProfile, onUpdateProfile, onRenameProfile, onDeleteProfile, onProfileLoad, onActiveProfileChange, lastLoadedProfileId, onSaveGlobalPension }) {
     const [newProfileName, setNewProfileName] = useState('');
@@ -30,19 +28,24 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         ? "bg-white border border-slate-400 text-gray-900 placeholder-gray-500 shadow-sm focus:ring-blue-500"
         : "bg-black/20 border border-white/50 text-white placeholder-gray-500 focus:ring-blue-500";
 
-    const selectClass = isLight
-        ? "bg-white border border-slate-400 text-gray-900 shadow-sm focus:ring-blue-500"
-        : "bg-black/20 border border-white/50 text-white focus:ring-blue-500";
-
-    const optionClass = isLight ? "bg-white text-gray-900" : "bg-gray-800 text-white";
-
     // Track the last known database state of the currently selected profile.
     // This allows us to safely pull in background database updates (like latency-resolving Firebased syncs)
     // IF the user hasn't made any manual unsaved changes to the form. 
     const [lastKnownDbSnapshot, setLastKnownDbSnapshot] = useState(null);
 
     // Normalize currentInputs to ensure types match (Strings -> Numbers) before comparison
-    const normalizedCurrent = currentInputs ? normalizeInputs(currentInputs) : null;
+    const normalizedCurrent = useMemo(
+        () => currentInputs ? normalizeInputs(currentInputs) : null,
+        [currentInputs]
+    );
+
+    const getGlobalPensionSources = useCallback(() => {
+        // Pension sources are loaded globally from Firestore via useRetirementData.
+        if (Array.isArray(currentInputs?.pensionIncomeSources) && currentInputs.pensionIncomeSources.length > 0) {
+            return currentInputs.pensionIncomeSources;
+        }
+        return [];
+    }, [currentInputs?.pensionIncomeSources]);
 
     const stripComputedFields = (data) => {
         if (!data) return null;
@@ -99,7 +102,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                 // If it's a linked event, App.jsx will RE-CALCULATE the startDate on every render/profile load.
                 // We MUST ignore startDate for these events to avoid immediate "Unsaved Changes" on load.
                 if (event.linkedTo) {
-                    const { startDate, ...eventRest } = event;
+                    const { startDate: _startDate, ...eventRest } = event;
                     return eventRest;
                 }
                 return event;
@@ -138,7 +141,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                 const globalPension = getGlobalPensionSources();
                 onLoad({
                     ...currentDbData,
-                    pensionIncomeSources: globalPension.length > 0 ? globalPension : (currentInputs?.pensionIncomeSources || [])
+                    pensionIncomeSources: globalPension
                 }, dbProfile?.aiInsights ?? null);
                 
                 // Update our tracker so we don't loop
@@ -150,7 +153,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                 setLastKnownDbSnapshot({ id: selectedProfileId, data: currentDbData });
             }
         }
-    }, [profiles, selectedProfileId, normalizedCurrent, lastKnownDbSnapshot, currentInputs]);
+    }, [profiles, selectedProfileId, normalizedCurrent, lastKnownDbSnapshot, getGlobalPensionSources, onLoad]);
 
     const saveProfile = () => {
         if (!newProfileName.trim()) return;
@@ -199,15 +202,6 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     const handleCancelRename = () => {
         setIsRenaming(false);
         setRenameInput('');
-    };
-
-    const getGlobalPensionSources = () => {
-        // Pension sources are now loaded from Firestore via useRetirementData
-        // Just return the current pension sources from the inputs prop
-        if (Array.isArray(currentInputs?.pensionIncomeSources) && currentInputs.pensionIncomeSources.length > 0) {
-            return currentInputs.pensionIncomeSources;
-        }
-        return [];
     };
 
     const reloadProfile = () => {

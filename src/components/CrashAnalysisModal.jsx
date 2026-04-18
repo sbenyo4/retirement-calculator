@@ -64,7 +64,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
     );
     useEffect(() => {
         setLocalAffectsSafe(analysisInputs?.scenario?.affectsSafeBucket ?? false);
-    }, [analysisInputs?.scenario?.affectsSafeBucket]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [analysisInputs?.scenario?.affectsSafeBucket]);
 
     const effectiveInputs = useMemo(() => ({
         ...analysisInputs,
@@ -137,7 +137,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
             } catch (e) { console.error('Sweep failed:', e); }
             setIsSweeping(false);
         }, 50);
-    }, [effectiveInputs, currentYear, retirementEndYear, retirementStartYear]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [effectiveInputs, currentYear, retirementEndYear, retirementStartYear]);
 
     // ── Compare logic ──────────────────────────────────────────────────────
     const buildDefaultRows = useCallback(() => {
@@ -150,7 +150,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
             { id: uid(), year: retirementStartYear,      depth, recYears },
             { id: uid(), year: retirementStartYear + 3,  depth, recYears },
         ].filter(r => r.year >= currentYear && r.year < retirementEndYear);
-    }, [effectiveInputs, currentYear, retirementStartYear, retirementEndYear]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [effectiveInputs, currentYear, retirementStartYear, retirementEndYear]);
 
     const runCompare = useCallback((rows) => {
         if (!rows.length) return;
@@ -181,7 +181,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
             } catch (e) { console.error('Compare failed:', e); }
             setIsComparing(false);
         }, 10);
-    }, [effectiveInputs]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [effectiveInputs]);
 
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
     const { dragStyle: detailDragStyle, onDragMouseDown: onDetailDragMouseDown } = useDraggable(selectedYear !== null);
@@ -241,7 +241,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
         } finally {
             setIsLoadingAI(false);
         }
-    }, [sweepResults, aiProvider, aiModel, apiKeyOverride, analysisInputs, language, isLoadingAI, aiInsight]);
+    }, [sweepResults, aiProvider, aiModel, apiKeyOverride, language, isLoadingAI, aiInsight, effectiveInputs, localAffectsSafe]);
 
     // Init compare rows on first tab visit
     useEffect(() => {
@@ -408,7 +408,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
             sweepEntry,
             baseRate
         };
-    }, [selectedYear, sweepResults, activeSweep, analysisInputs, currentYear, retirementEndYear, retirementStartYear]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [selectedYear, sweepResults, activeSweep, analysisInputs, currentYear, retirementEndYear, retirementStartYear]);
 
     const makeChartOptions = useCallback((getTooltipItems, onClick) => {
         const textColor = isLight ? '#374151' : '#d1d5db';
@@ -431,7 +431,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                 y: { ticks: { color: textColor, font: { size: 10 }, callback: (v) => fmt(v) }, grid: { color: gridColor } }
             }
         };
-    }, [isLight]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [isLight]);
 
     const sweepOptions = useMemo(() => makeChartOptions((idx) => {
         const r = activeSweep?.[idx];
@@ -446,7 +446,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                 `${he ? 'הפרש' : 'Diff'}: ${sign}${fmt(r.diff)} (${sign}${r.pctDiff.toFixed(1)}%)`
             ]
         };
-    }, handleSweepChartClick), [makeChartOptions, activeSweep, sweepResults, localAffectsSafe, he, handleSweepChartClick]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, handleSweepChartClick), [makeChartOptions, activeSweep, sweepResults, localAffectsSafe, he, handleSweepChartClick]);
 
     const compareOptions = useMemo(() => makeChartOptions((idx) => {
         const row = compareRows[idx];
@@ -462,7 +462,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                 `${he ? 'הפרש' : 'Diff'}: ${sign}${fmt(res.diff)} (${sign}${res.pctDiff.toFixed(1)}%)`
             ]
         };
-    }, null), [makeChartOptions, compareRows, compareResults, retirementStartYear, he]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, null), [makeChartOptions, compareRows, compareResults, retirementStartYear, he]);
 
     // ── Sweep stats ────────────────────────────────────────────────────────
     const sweepStats = useMemo(() => {

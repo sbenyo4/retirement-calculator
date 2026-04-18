@@ -5,8 +5,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { setGeneralReminders } from '../utils/db';
 
 const isLifeEventSource = (source) => typeof source === 'string' && (source === 'lifeEvents' || source.startsWith('lifeEvents:'));
+const SHOW_LEGACY_FUTURE_GROUP = false;
 
-export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
+export function ReminderBell({ id, t: _t, language, isLight, activeProfileId }) {
     const { reminders, dueNow, future, dismiss, confirmReminder } = useReminders();
     const { currentUser } = useAuth();
     const uid = currentUser?.uid;
@@ -21,20 +22,20 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
     
     const isHe = language === 'he';
     const activeLifeEventSource = activeProfileId ? `lifeEvents:${activeProfileId}` : null;
-    const isVisibleReminder = (reminder) => {
+    const isVisibleReminder = useCallback((reminder) => {
         if (!reminder) return false;
         if (!isLifeEventSource(reminder.source)) return true;
         return reminder.source === activeLifeEventSource;
-    };
+    }, [activeLifeEventSource]);
     
     // Derived state: general reminders are just a filter of the global list
     // This is the SINGLE SOURCE OF TRUTH. No local state or effects needed to sync.
     const genReminders = useMemo(() => 
         reminders.filter(r => r.source === 'general'), 
     [reminders]);
-    const visibleReminders = useMemo(() => reminders.filter(isVisibleReminder), [reminders, activeLifeEventSource]);
-    const visibleDueNow = useMemo(() => dueNow.filter(isVisibleReminder), [dueNow, activeLifeEventSource]);
-    const visibleFuture = useMemo(() => future.filter(isVisibleReminder), [future, activeLifeEventSource]);
+    const visibleReminders = useMemo(() => reminders.filter(isVisibleReminder), [reminders, isVisibleReminder]);
+    const visibleDueNow = useMemo(() => dueNow.filter(isVisibleReminder), [dueNow, isVisibleReminder]);
+    const visibleFuture = useMemo(() => future.filter(isVisibleReminder), [future, isVisibleReminder]);
     const visibleTomorrow = useMemo(() => {
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
@@ -220,7 +221,7 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
                                         ))}
                                     </div>
                                 )}
-                                {false && visibleFuture.length > 0 && (
+                                {SHOW_LEGACY_FUTURE_GROUP && visibleFuture.length > 0 && (
                                     <div>
                                         <div className={`px-3 py-1 text-[10px] font-semibold uppercase tracking-wide ${isLight ? 'text-amber-700 bg-amber-50' : 'text-amber-400 bg-amber-500/10'}`}>
                                             {isHe ? 'עתידיות' : 'Upcoming'}
@@ -370,7 +371,7 @@ export function ReminderBell({ id, t, language, isLight, activeProfileId }) {
     );
 }
 
-function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onDismiss, onEdit, onSaveEdit, onCancelEdit, isEditing, editForm, setEditForm, due, tone }) {
+function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onDismiss: _onDismiss, onEdit, onSaveEdit, onCancelEdit, isEditing, editForm, setEditForm, due, tone }) {
     const isTomorrow = tone === 'tomorrow';
     const [showNote, setShowNote] = useState(false);
     return (
