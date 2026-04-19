@@ -1514,8 +1514,9 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const [aiModalOpen, setAiModalOpen] = useState(false);
     const [aiLoading, setAiLoading] = useState(false);
     const [aiError, setAiError] = useState(null);
-    const aiInsightRef = useRef(null);    // cached insight text (survives modal close)
-    const aiStaleInitRef = useRef(false); // true after the first post-load render
+    const aiInsightRef = useRef(null);      // cached insight text (survives modal close)
+    const aiInsightStaleRef = useRef(false); // mirror of aiInsightStale for use inside callbacks
+    const aiStaleInitRef = useRef(false);   // true after the first post-load render
     const { dragStyle: aiDragStyle, onDragMouseDown: onAiDragMouseDown } = useDraggable(aiModalOpen);
     const [showFuture, setShowFuture] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -1534,8 +1535,9 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         };
     }, []);
 
-    // Always-current ref so closures (setTimeout, beforeunload) always see latest state
+    // Always-current refs so closures always see latest state
     latestStateRef.current = { items, householdSize };
+    aiInsightStaleRef.current = aiInsightStale;
 
     const updateItems = useCallback((updater) => {
         setItems(prev => {
@@ -1993,7 +1995,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         if (!aiProvider || !aiModel) return;
 
         setAiModalOpen(true);
-        if (aiInsightRef.current && !aiInsightStale) return; // cached and data unchanged — show as-is
+        if (aiInsightRef.current && !aiInsightStaleRef.current) return; // cached and data unchanged — show as-is
 
         setAiLoading(true);
         setAiError(null);
@@ -2113,7 +2115,7 @@ Gap vs target and what can be optimized.`;
         } finally {
             setAiLoading(false);
         }
-    }, [aiProvider, aiModel, apiKeyOverride, items, target, totalMonthly, householdSize, isHe, uid, aiInsightStale]);
+    }, [aiProvider, aiModel, apiKeyOverride, items, target, totalMonthly, householdSize, isHe, uid]);
 
     const pct = target > 0 ? Math.min(totalMonthly / target, 1.5) : 0;
     const projectedPct = target > 0 ? Math.min(totalProjectedMonthly / target, 1.5) : 0;

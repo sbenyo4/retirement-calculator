@@ -1470,7 +1470,6 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     }, [doRefresh]);
 
     const fetchOverview = useCallback(async () => {
-        const snap = getSnapshot(latestRef.current.inputs, latestRef.current.results);
         setOverviewLoading(true);
         setOverviewError(null);
         try {
