@@ -7,7 +7,7 @@ import { Chart as ChartJS, ArcElement, CategoryScale, LinearScale, BarElement, L
 ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend);
 import { silenceReminder, syncComponentReminders, nextOccurrenceOf, nextOccurrenceByInterval } from '../hooks/useReminders';
 import { useAuth } from '../contexts/AuthContext';
-import { getBudgetItems, setBudgetItems, getBudgetAiInsight, setBudgetAiInsight } from '../utils/db';
+import { getBudgetItems, setBudgetItems, getBudgetAiInsight, setBudgetAiInsight, getUserSettings, setUserSettings } from '../utils/db';
 import { getChatResponse } from '../utils/ai-chat';
 import { useDraggable } from '../hooks/useDraggable';
 
@@ -125,7 +125,7 @@ const getNowYM = () => { const d = new Date(); return d.getFullYear() * 12 + d.g
 const CAT_COLORS = ['#3b82f6','#22c55e','#ef4444','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#6b7280'];
 
 // ─── Budget Statistics Modal ─────────────────────────────────────────────────
-function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showInflation: showInflationProp, isLight, isHe, currency, t: _t }) {
+function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRate, showInflation: showInflationProp, isLight, isHe, currency, t: _t, sliderConsumed, setSliderConsumed }) {
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
     const [localShowInflation, setLocalShowInflation] = useState(showInflationProp);
     const [selectedYearIdx, setSelectedYearIdx] = useState(null);
@@ -136,6 +136,14 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
     useEffect(() => {
         if (isOpen) { setLocalShowInflation(showInflationProp); setSelectedYearIdx(null); setShowSavings(false); }
     }, [isOpen, showInflationProp]);
+
+    // Prevent body scroll while modal is open
+    useEffect(() => {
+        if (!isOpen) return;
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = prev; };
+    }, [isOpen]);
 
     // Auto-focus the bar div when modal opens so arrow keys work immediately
     useEffect(() => {
@@ -448,6 +456,60 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
         },
     }), [currency, textColor, gridColor, isHe, barData.target]);
 
+    // ── Savings slider ─────────────────────────────────────────────────────────
+
+    const savingsSliderData = useMemo(() => {
+        const Fend = results?.balanceAtEnd;
+        const F0   = results?.balanceAtRetirement;
+        const W    = barData.target;
+        const { ages } = yearGeom;
+        const N = ages.length;
+        if (Fend == null || !F0 || F0 <= 0 || !W || !N || !barData.datasets.length) return null;
+
+        const savingsLabel = isHe ? 'חיסכון' : 'Savings';
+        const barTotals = ages.map((_, yi) =>
+            barData.datasets
+                .filter(ds => ds.stack === 'total' && ds.label !== savingsLabel)
+                .reduce((s, ds) => s + (ds.data[yi] || 0), 0)
+        );
+        if (barTotals[0] >= W) return null;
+
+        // Decumulation rate
+        const realRate = (results?.effectiveRetirementRate ?? 0) / 100;
+        const rAnnual  = localShowInflation
+            ? (1 + realRate) * (1 + inflationRate) - 1
+            : realRate;
+        const rMonthly = rAnnual > 0 ? Math.pow(1 + rAnnual, 1 / 12) - 1 : 0;
+
+        // Per-year savings and their FV to end of retirement — anchored to Fend
+        let totalSavings = 0;
+        let FV_bonus = 0;
+        for (let yi = 0; yi < N; yi++) {
+            const monthlySaved = Math.max(0, W - barTotals[yi]);
+            if (monthlySaved <= 0) continue;
+            totalSavings += monthlySaved * 12;
+            // FV of 12 monthly deposits, then grown for remaining (N-1-yi) full years
+            const fvYear = rMonthly > 0
+                ? monthlySaved * (Math.pow(1 + rMonthly, 12) - 1) / rMonthly
+                : monthlySaved * 12;
+            const growthFactor = rAnnual > 0 ? Math.pow(1 + rAnnual, N - 1 - yi) : 1;
+            FV_bonus += fvYear * growthFactor;
+        }
+        if (totalSavings <= 0) return null;
+
+        // Fmax guaranteed anchored: at S=0 → Fend+FV_bonus, at S=totalSavings → Fend exactly
+        const Fmax = Fend + FV_bonus;
+
+        const STEP = 10000;
+        const totalSavingsRounded = Math.round(totalSavings / STEP) * STEP;
+        return { totalSavings: totalSavingsRounded, FV_bonus, Fend, Fmax };
+    }, [results, barData, yearGeom, inflationRate, localShowInflation, isHe]);
+
+    // Clamp slider when data changes (e.g. budget edited) so it stays in range
+    useEffect(() => {
+        if (savingsSliderData) setSliderConsumed(v => Math.min(v, savingsSliderData.totalSavings));
+    }, [savingsSliderData]);
+
     const doughnutOptions = useMemo(() => ({
         responsive: true,
         maintainAspectRatio: false,
@@ -698,6 +760,80 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
                             </div>
                         </div>
                     )}
+
+                    {/* ── Savings slider ── */}
+                    {savingsSliderData && (() => {
+                        const { totalSavings, FV_bonus, Fend, Fmax } = savingsSliderData;
+                        const frac = totalSavings > 0 ? sliderConsumed / totalSavings : 0;
+                        // At frac=1 (use all) → Fend exactly; at frac=0 (use none) → Fend+FV_bonus=Fmax
+                        const finalBal = Math.round(Fend + (1 - frac) * FV_bonus);
+                        const formatM = v => {
+                            const abs = Math.abs(v);
+                            const sign = v < 0 ? '-' : '';
+                            if (abs >= 1_000_000) return `${sign}${currency}${(abs / 1_000_000).toFixed(2)}M`;
+                            if (abs >= 1_000) return `${sign}${currency}${Math.round(abs / 1000).toLocaleString()}K`;
+                            return `${sign}${currency}${abs.toLocaleString()}`;
+                        };
+                        return (
+                            <div className="mt-6">
+                                <h3 className={`text-sm font-semibold mb-0.5 ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                                    {isHe ? 'כמה מהחיסכון אני רוצה לנצל?' : 'How much of the savings to use?'}
+                                </h3>
+                                <div className={`flex items-baseline justify-between gap-2 flex-wrap mb-4 text-xs ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                    <span>
+                                        {isHe
+                                            ? `סה"כ חיסכון פוטנציאלי לתקופת הפרישה: ${currency}${totalSavings.toLocaleString()}`
+                                            : `Total potential savings over retirement: ${currency}${totalSavings.toLocaleString()}`}
+                                    </span>
+                                    <span className="flex gap-3 shrink-0 text-[11px]" dir="ltr">
+                                        <span>{isHe ? 'יתרה בסיסית' : 'Baseline'}: <span className={isLight ? 'text-slate-500' : 'text-gray-400'}>{formatM(Fend)}</span></span>
+                                        <span>{isHe ? 'יתרה מקסימלית' : 'Max'}: <span className={isLight ? 'text-slate-500' : 'text-gray-400'}>{formatM(Fmax)}</span></span>
+                                    </span>
+                                </div>
+
+                                <div dir="ltr" className={`flex justify-between text-[11px] mb-1 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                    <span>{isHe ? 'לא מנצל כלום' : 'Use nothing'}</span>
+                                    <span>{isHe ? 'מנצל הכל' : 'Use all'}</span>
+                                </div>
+                                <div dir="ltr">
+                                    <input
+                                        type="range"
+                                        min={0}
+                                        max={totalSavings}
+                                        step={10000}
+                                        value={sliderConsumed}
+                                        onChange={e => setSliderConsumed(+e.target.value)}
+                                        className="w-full accent-purple-500 outline-none focus:outline-none"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-2 mt-4">
+                                    {(() => {
+                                        const N = yearGeom.ages.length;
+                                        const annualUsed = N > 0 ? Math.round(sliderConsumed / N) : 0;
+                                        return [
+                                            {
+                                                label: isHe ? 'מנצל מהחיסכון' : 'Using',
+                                                value: sliderConsumed,
+                                                sub: sliderConsumed > 0 ? `(${currency}${annualUsed.toLocaleString()}${isHe ? '/שנה' : '/yr'})` : null,
+                                                color: isLight ? 'text-orange-600' : 'text-orange-400',
+                                            },
+                                            { label: isHe ? 'שומר בקרן' : 'Keeping', value: totalSavings - sliderConsumed, sub: totalSavings > 0 ? `(${Math.round((totalSavings - sliderConsumed) / totalSavings * 100)}%)` : null, color: isLight ? 'text-green-700' : 'text-green-400' },
+                                            { label: isHe ? 'יתרה סופית' : 'Final balance', value: finalBal, color: isLight ? 'text-purple-700' : 'text-purple-300', big: true },
+                                        ];
+                                    })().map(({ label, value, sub, color, big }) => (
+                                        <div key={label} className={`rounded-xl p-3 text-center ${isLight ? 'bg-slate-100' : 'bg-white/5'}`}>
+                                            <div className={`text-[10px] mb-1 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{label}</div>
+                                            <div className={`font-bold ${big ? 'text-base' : 'text-sm'} ${color}`} dir="ltr">
+                                                {sub && <span className={`text-[10px] font-normal me-1 ${isLight ? 'text-sky-500' : 'text-sky-400'}`}>{sub}</span>}{formatM(value)}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                            </div>
+                        );
+                    })()}
 
                     </>)}
                 </div>
@@ -1576,6 +1712,24 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const [showFuture, setShowFuture] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [showStats, setShowStats] = useState(false);
+    const [sliderConsumed, setSliderConsumed] = useState(0);
+
+    // Load slider value from Firestore on login
+    useEffect(() => {
+        if (!uid) return;
+        getUserSettings(uid).then(s => {
+            if (s?.budgetSliderConsumed != null) setSliderConsumed(s.budgetSliderConsumed);
+        }).catch(() => {});
+    }, [uid]);
+
+    // Debounced save of slider value to Firestore
+    useEffect(() => {
+        if (!uid) return;
+        const t = setTimeout(() => {
+            setUserSettings(uid, { budgetSliderConsumed: sliderConsumed }).catch(() => {});
+        }, 800);
+        return () => clearTimeout(t);
+    }, [uid, sliderConsumed]);
 
     useEffect(() => {
         const handler = (e) => {
@@ -2646,12 +2800,15 @@ Gap vs target and what can be optimized.`;
             onClose={() => setShowStats(false)}
             items={items}
             inputs={inputs}
+            results={results}
             inflationRate={inflationRate}
             showInflation={showInflation}
             isLight={isLight}
             isHe={isHe}
             currency={currency}
             t={t}
+            sliderConsumed={sliderConsumed}
+            setSliderConsumed={setSliderConsumed}
         />
         </>
     );
