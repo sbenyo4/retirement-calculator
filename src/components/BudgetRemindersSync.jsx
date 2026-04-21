@@ -19,7 +19,16 @@ export function BudgetRemindersSync({ uid }) {
                     .map(i => ({
                         id: String(i.id),
                         label: i.label || i.title || i.id,
-                        reminder: { date: i.reminder.date, text: i.reminder.text || '' }
+                        reminder: {
+                            date: i.reminder.date,
+                            text: i.reminder.text || '',
+                            ...(i.reminder.recurring ? {
+                                recurring: true,
+                                recurringType: i.reminder.recurringType,
+                                ...(i.reminder.recurringDay !== undefined ? { recurringDay: i.reminder.recurringDay } : {}),
+                                ...(i.reminder.recurringInterval !== undefined ? { recurringInterval: i.reminder.recurringInterval } : {}),
+                            } : {}),
+                        },
                     }));
 
                 syncComponentReminders('budget', budgetReminders, bootstrappedRef.current);

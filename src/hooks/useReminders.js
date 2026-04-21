@@ -79,6 +79,10 @@ export function updateReminderInSession(source, id, changes = {}) {
                 ...(changes.label !== undefined ? { label: changes.label } : {}),
                 ...(changes.date !== undefined ? { date: changes.date } : {}),
                 ...(changes.text !== undefined ? { text: changes.text } : {}),
+                ...(changes.recurring !== undefined ? { recurring: changes.recurring } : {}),
+                ...(changes.recurringType !== undefined ? { recurringType: changes.recurringType } : {}),
+                ...(changes.recurringDay !== undefined ? { recurringDay: changes.recurringDay } : {}),
+                ...(changes.recurringInterval !== undefined ? { recurringInterval: changes.recurringInterval } : {}),
             };
         });
         sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
@@ -119,6 +123,57 @@ function todayStr() {
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
+}
+
+function toYMDStr(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function nextOccurrenceOf(day) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const clamp = (y, m, d) => Math.min(d, new Date(y, m + 1, 0).getDate());
+    const y = today.getFullYear();
+    const m = today.getMonth();
+    const thisDate = new Date(y, m, clamp(y, m, day));
+    if (thisDate > today) return toYMDStr(thisDate);
+    const nextM = m === 11 ? 0 : m + 1;
+    const nextY = m === 11 ? y + 1 : y;
+    return toYMDStr(new Date(nextY, nextM, clamp(nextY, nextM, day)));
+}
+
+export function nextOccurrenceByInterval(days) {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + Math.max(1, days));
+    return toYMDStr(d);
+}
+
+function recurringNextDate(reminder) {
+    const type = reminder.recurringType || (reminder.recurringDay ? 'monthly' : null);
+    if (type === 'monthly') return nextOccurrenceOf(reminder.recurringDay);
+    if (type === 'interval') return nextOccurrenceByInterval(reminder.recurringInterval || 7);
+    return null;
+}
+
+export function advanceRecurringReminder(id, source) {
+    if (!id || !source) return;
+    try {
+        const current = readReminders();
+        const reminder = current.find(r => String(r.id) === String(id) && r.source === source);
+        if (!reminder?.recurring) return;
+        const newDate = recurringNextDate(reminder);
+        if (!newDate) return;
+        const next = current.map(r =>
+            (String(r.id) === String(id) && r.source === source) ? { ...r, date: newDate } : r
+        );
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
+        loginHandledReminderIds.add(toGlobalId(id, source));
+        window.dispatchEvent(new CustomEvent('rc-reminder-advanced', { detail: { id, source, newDate } }));
+        window.dispatchEvent(new Event('rc-reminders-updated'));
+    } catch (err) {
+        console.error('[useReminders] advance recurring failed', err);
+    }
 }
 
 function readReminders() {
@@ -252,14 +307,26 @@ export function syncMultipleSources(syncConfigs) {
             nextState = nextState.filter(r => r.source !== source);
             const newOnes = items
                 .filter(i => !!(i.reminder?.date || i.date))
-                .map(i => ({
-                    id: String(i.id),
-                    label: i.label || i.title || i.description || i.id,
-                    source: source,
-                    date: normalizeDate(i.reminder?.date || i.date),
-                    text: i.reminder?.text || i.text || '',
-                    note: i.note || '',
-                }));
+                .map(i => {
+                    const isRec = i.recurring || i.reminder?.recurring;
+                    const rType = i.recurringType || i.reminder?.recurringType;
+                    const rDay = i.recurringDay ?? i.reminder?.recurringDay;
+                    const rInterval = i.recurringInterval ?? i.reminder?.recurringInterval;
+                    return {
+                        id: String(i.id),
+                        label: i.label || i.title || i.description || i.id,
+                        source: source,
+                        date: normalizeDate(i.reminder?.date || i.date),
+                        text: i.reminder?.text || i.text || '',
+                        note: i.note || '',
+                        ...(isRec ? {
+                            recurring: true,
+                            ...(rType ? { recurringType: rType } : {}),
+                            ...(rDay !== undefined ? { recurringDay: rDay } : {}),
+                            ...(rInterval !== undefined ? { recurringInterval: rInterval } : {}),
+                        } : {}),
+                    };
+                });
             nextState = [...nextState, ...newOnes];
         });
         const nextValue = JSON.stringify(nextState);

@@ -1,11 +1,11 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell, Save, BarChart3, Calculator } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell, Save, BarChart3, Calculator, RefreshCw } from 'lucide-react';
 import { MaintenanceCalcPanel } from './MaintenanceCalcPanel';
 import { Doughnut, Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend } from 'chart.js';
 ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend);
-import { silenceReminder, syncComponentReminders } from '../hooks/useReminders';
+import { silenceReminder, syncComponentReminders, nextOccurrenceOf, nextOccurrenceByInterval } from '../hooks/useReminders';
 import { useAuth } from '../contexts/AuthContext';
 import { getBudgetItems, setBudgetItems, getBudgetAiInsight, setBudgetAiInsight } from '../utils/db';
 import { getChatResponse } from '../utils/ai-chat';
@@ -592,37 +592,61 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, inflationRate, showI
                     {/* ── Bar section ── */}
                     {barData.datasets.length > 0 && (
                         <div>
-                            <div className="flex items-center justify-between gap-2 mb-1">
-                                <h3 className={`text-sm font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
-                                    {isHe ? 'הוצאות חודשיות לפי שנת פרישה' : 'Monthly Expenses by Retirement Year'}
-                                </h3>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    {showSavings && barData.totalSavings > 0 && (() => {
-                                        const monthlySavings = barData.target - pieData.grandTotal;
-                                        return (
-                                            <span dir="ltr" className={`text-xs font-semibold flex items-baseline gap-1 ${isLight ? 'text-green-700' : 'text-green-400'}`}>
-                                                <span>+{currency}{Math.round(monthlySavings).toLocaleString()}</span>
-                                                <span className="font-normal opacity-60">/ {isHe ? 'חו׳' : 'mo'}</span>
-                                                <span className="opacity-40">·</span>
-                                                <span>+{currency}{Math.round(monthlySavings * 12).toLocaleString()}</span>
-                                                <span className="font-normal opacity-60">/ {isHe ? 'שנה' : 'yr'}</span>
-                                            </span>
-                                        );
-                                    })()}
-                                    {barData.target > 0 && (
-                                        <button
-                                            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
-                                            onClick={() => setShowSavings(v => !v)}
-                                            className={`flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border transition-colors ${showSavings
-                                                ? (isLight ? 'border-green-400 bg-green-50 text-green-700' : 'border-green-500 bg-green-900/20 text-green-400')
-                                                : (isLight ? 'border-slate-200 bg-slate-50 text-slate-400' : 'border-white/20 bg-white/5 text-gray-500')}`}
-                                        >
-                                            {showSavings ? <ToggleRight size={13} /> : <ToggleLeft size={13} />}
-                                            {isHe ? 'חיסכון' : 'Savings'}
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
+                            {(() => {
+                                const activeIdx = selectedYearIdx ?? defaultYearIdx;
+                                const savingsDs = showSavings
+                                    ? barData.datasets.find(ds => ds.label === 'חיסכון' || ds.label === 'Savings')
+                                    : null;
+                                const cumulative = savingsDs
+                                    ? Math.round(savingsDs.data.slice(0, activeIdx + 1).reduce((s, v) => s + (v || 0) * 12, 0))
+                                    : 0;
+                                return (
+                                    <div className="flex items-center justify-between gap-2 mb-1">
+                                        <h3 className={`text-sm font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                                            {isHe ? 'הוצאות חודשיות לפי שנת פרישה' : 'Monthly Expenses by Retirement Year'}
+                                        </h3>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            {showSavings && cumulative > 0 && (() => {
+                                                const withdrawalMonths = barData.target > 0 ? Math.floor(cumulative / barData.target) : 0;
+                                                const totalMonths = (barData.ages?.length ?? 0) * 12;
+                                                const withdrawalPct = totalMonths > 0 ? Math.round(withdrawalMonths / totalMonths * 100) : 0;
+                                                return (
+                                                    <span className={`text-[11px] font-semibold flex items-baseline gap-1 ${isLight ? 'text-green-700' : 'text-green-400'}`}>
+                                                        <span className="font-normal opacity-70">{isHe ? 'מצטבר:' : 'Cumulative:'}</span>
+                                                        <span dir="ltr">+{currency}{cumulative.toLocaleString()}</span>
+                                                        <span className="opacity-40">·</span>
+                                                        {isHe ? (
+                                                            <>
+                                                                <span className="font-normal opacity-70">חו׳ משיכה</span>
+                                                                <span dir="ltr">{withdrawalMonths}</span>
+                                                                <span className="font-normal opacity-50" dir="ltr">({withdrawalPct}%)</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <span dir="ltr">{withdrawalMonths}</span>
+                                                                <span className="font-normal opacity-50" dir="ltr">({withdrawalPct}%)</span>
+                                                                <span className="font-normal opacity-70">mo withdrawal</span>
+                                                            </>
+                                                        )}
+                                                    </span>
+                                                );
+                                            })()}
+                                            {barData.target > 0 && (
+                                                <button
+                                                    onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+                                                    onClick={() => setShowSavings(v => !v)}
+                                                    className={`flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border transition-colors ${showSavings
+                                                        ? (isLight ? 'border-green-400 bg-green-50 text-green-700' : 'border-green-500 bg-green-900/20 text-green-400')
+                                                        : (isLight ? 'border-slate-200 bg-slate-50 text-slate-400' : 'border-white/20 bg-white/5 text-gray-500')}`}
+                                                >
+                                                    {showSavings ? <ToggleRight size={13} /> : <ToggleLeft size={13} />}
+                                                    {isHe ? 'חיסכון' : 'Savings'}
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                             <p className={`text-xs mb-4 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
                                 {localShowInflation
                                     ? (isHe ? 'כולל השפעת אינפלציה וסיום הלוואות' : 'Includes inflation and loan payoffs')
@@ -814,6 +838,9 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, o
     const [showReminder, setShowReminder] = useState(false);
     const [reminderDate, setReminderDate] = useState(item.reminder?.date || '');
     const [reminderText, setReminderText] = useState(item.reminder?.text || '');
+    const [reminderType, setReminderType] = useState(() => item.reminder?.recurring ? (item.reminder?.recurringType || 'monthly') : 'none');
+    const [reminderDay, setReminderDay] = useState(item.reminder?.recurringDay || 10);
+    const [reminderInterval, setReminderInterval] = useState(item.reminder?.recurringInterval || 7);
 
     const commitLabel = () => {
         setEditingLabel(false);
@@ -971,21 +998,44 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, o
                         </div>
                         {item.reminder?.date && (
                             <button
-                                onMouseDown={e => { e.preventDefault(); onChange({ ...item, reminder: undefined }); setReminderDate(''); setReminderText(''); setShowReminder(false); }}
+                                onMouseDown={e => { e.preventDefault(); onChange({ ...item, reminder: undefined }); setReminderDate(''); setReminderText(''); setReminderType('none'); setShowReminder(false); }}
                                 className={`transition-colors ${isLight ? 'text-slate-300 hover:text-red-500' : 'text-gray-600 hover:text-red-400'}`}
                                 title={isHe ? 'מחק תזכורת' : 'Delete reminder'}
                             ><Trash2 size={11} /></button>
                         )}
                     </div>
                     <div className="p-2.5 space-y-2">
-                        <div>
-                            <label className={`text-[10px] font-medium ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'תאריך תזכורת' : 'Reminder date'}</label>
-                            <input
-                                type="date"
-                                value={reminderDate}
-                                onChange={e => setReminderDate(e.target.value)}
-                                className={`mt-0.5 w-full text-xs px-2 py-1 rounded border outline-none ${isLight ? 'border-slate-200 bg-white text-slate-700' : 'border-white/20 bg-white/10 text-gray-200'}`}
-                            />
+                        <div className="space-y-1.5">
+                            <div className={`flex rounded-lg overflow-hidden border text-[10px] font-semibold ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
+                                {[
+                                    { val: 'none', label: isHe ? 'תאריך' : 'Date' },
+                                    { val: 'monthly', label: isHe ? 'חודשי' : 'Monthly', icon: true },
+                                    { val: 'interval', label: isHe ? 'כל X ימים' : 'Every X days', icon: true },
+                                ].map(opt => (
+                                    <button key={opt.val} type="button" onMouseDown={e => e.preventDefault()} onClick={() => setReminderType(opt.val)}
+                                        className={`flex-1 flex items-center justify-center gap-0.5 py-1.5 transition-colors ${reminderType === opt.val ? (isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-500/30 text-purple-300') : (isLight ? 'bg-white text-slate-400 hover:bg-slate-50' : 'bg-transparent text-gray-500 hover:bg-white/5')}`}>
+                                        {opt.icon && <RefreshCw size={8} />}{opt.label}
+                                    </button>
+                                ))}
+                            </div>
+                            {reminderType === 'monthly' ? (
+                                <div className="flex items-center gap-2 mt-1">
+                                    <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'כל ה-' : 'Day'}</span>
+                                    <input type="number" min={1} max={28} value={reminderDay} onChange={e => setReminderDay(Math.min(28, Math.max(1, parseInt(e.target.value) || 1)))}
+                                        className={`w-14 px-1.5 py-1 text-xs rounded border outline-none text-center ${isLight ? 'border-slate-200 bg-white text-slate-700' : 'border-white/20 bg-white/10 text-gray-200'}`} />
+                                    <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'לחודש' : 'of month'}</span>
+                                </div>
+                            ) : reminderType === 'interval' ? (
+                                <div className="flex items-center gap-2 mt-1">
+                                    <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'כל' : 'Every'}</span>
+                                    <input type="number" min={1} max={365} value={reminderInterval} onChange={e => setReminderInterval(Math.min(365, Math.max(1, parseInt(e.target.value) || 1)))}
+                                        className={`w-14 px-1.5 py-1 text-xs rounded border outline-none text-center ${isLight ? 'border-slate-200 bg-white text-slate-700' : 'border-white/20 bg-white/10 text-gray-200'}`} />
+                                    <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'ימים' : 'days'}</span>
+                                </div>
+                            ) : (
+                                <input type="date" value={reminderDate} onChange={e => setReminderDate(e.target.value)}
+                                    className={`w-full text-xs px-2 py-1 rounded border outline-none ${isLight ? 'border-slate-200 bg-white text-slate-700' : 'border-white/20 bg-white/10 text-gray-200'}`} />
+                            )}
                         </div>
                         <div>
                             <label className={`text-[10px] font-medium ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'טקסט (אופציונלי)' : 'Note (optional)'}</label>
@@ -1000,13 +1050,18 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, o
                         <button
                             onMouseDown={e => {
                                 e.preventDefault();
-                                if (!reminderDate) return;
+                                const computedDate = reminderType === 'monthly' ? nextOccurrenceOf(reminderDay) : reminderType === 'interval' ? nextOccurrenceByInterval(reminderInterval) : reminderDate;
+                                if (!computedDate) return;
                                 silenceReminder(item.id);
-                                onChange({ ...item, reminder: { date: reminderDate, text: reminderText.trim() } });
+                                onChange({ ...item, reminder: {
+                                    date: computedDate,
+                                    text: reminderText.trim(),
+                                    ...(reminderType !== 'none' ? { recurring: true, recurringType: reminderType, ...(reminderType === 'monthly' ? { recurringDay: reminderDay } : { recurringInterval: reminderInterval }) } : {}),
+                                }});
                                 setShowReminder(false);
                             }}
-                            disabled={!reminderDate}
-                            className={`w-full text-xs py-1.5 rounded font-medium transition-colors ${reminderDate
+                            disabled={reminderType === 'none' && !reminderDate}
+                            className={`w-full text-xs py-1.5 rounded font-medium transition-colors ${(reminderType !== 'none' || reminderDate)
                                 ? (isLight ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-blue-600 text-white hover:bg-blue-500')
                                 : (isLight ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white/5 text-gray-600 cursor-not-allowed')}`}
                         >

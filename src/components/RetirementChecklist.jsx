@@ -11,7 +11,7 @@ import {
     Umbrella, Stethoscope, Building2, FileText, Users,
     Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Landmark, RotateCcw, Search, X, EyeOff, Undo2, Trash2, MessageSquare, Bell, Save, Lock, LockOpen
 } from 'lucide-react';
-import { syncComponentReminders, forgetReminderShown, silenceReminder } from '../hooks/useReminders';
+import { syncComponentReminders, forgetReminderShown, silenceReminder, nextOccurrenceOf, nextOccurrenceByInterval } from '../hooks/useReminders';
 import { undismissReminder } from '../utils/db';
 
 const PRIORITIES = {
@@ -868,17 +868,23 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
     const [showReminder, setShowReminder] = useState(false);
     const [reminderDate, setReminderDate] = useState(item.reminder?.date || '');
     const [reminderText, setReminderText] = useState(item.reminder?.text || '');
+    const [reminderType, setReminderType] = useState(() => item.reminder?.recurring ? (item.reminder?.recurringType || 'monthly') : 'none');
+    const [reminderDay, setReminderDay] = useState(item.reminder?.recurringDay || 10);
+    const [reminderInterval, setReminderInterval] = useState(item.reminder?.recurringInterval || 7);
 
     const reminderBtnRef = useRef(null);
     const noteBtnRef = useRef(null);
     const [reminderAnchor, setReminderAnchor] = useState(null);
     const [noteAnchor, setNoteAnchor] = useState(null);
-    
+
     // Reset local reminder state when the item's reminder changes externally (e.g. after confirm/delete)
     useEffect(() => {
         setReminderDate(item.reminder?.date || '');
         setReminderText(item.reminder?.text || '');
-    }, [item.reminder?.date, item.reminder?.text]);
+        setReminderType(item.reminder?.recurring ? (item.reminder?.recurringType || 'monthly') : 'none');
+        setReminderDay(item.reminder?.recurringDay || 10);
+        setReminderInterval(item.reminder?.recurringInterval || 7);
+    }, [item.reminder?.date, item.reminder?.text, item.reminder?.recurring, item.reminder?.recurringType, item.reminder?.recurringDay, item.reminder?.recurringInterval]);
 
     // Reset note draft when item.note changes externally
     useEffect(() => {
@@ -1058,14 +1064,37 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                                     <div className="px-2 py-1.5 leading-snug">{item.note}</div>
                                 </div>
                             )}
-                            <div>
-                                <label className={`text-[10px] font-medium ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'תאריך תזכורת' : 'Reminder date'}</label>
-                                <input
-                                    type="date"
-                                    value={reminderDate}
-                                    onChange={e => setReminderDate(e.target.value)}
-                                    className={`mt-0.5 w-full text-xs px-2 py-1 rounded border outline-none ${isLight ? 'border-slate-200 bg-white text-slate-700' : 'border-white/20 bg-white/10 text-gray-200'}`}
-                                />
+                            <div className="space-y-1.5">
+                                <div className={`flex rounded-lg overflow-hidden border text-[10px] font-semibold ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
+                                    {[
+                                        { val: 'none', label: isHe ? 'תאריך' : 'Date' },
+                                        { val: 'monthly', label: isHe ? 'חודשי' : 'Monthly', icon: true },
+                                        { val: 'interval', label: isHe ? 'כל X ימים' : 'Every X days', icon: true },
+                                    ].map(opt => (
+                                        <button key={opt.val} type="button" onMouseDown={e => e.preventDefault()} onClick={() => setReminderType(opt.val)}
+                                            className={`flex-1 flex items-center justify-center gap-0.5 py-1.5 transition-colors ${reminderType === opt.val ? (isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-500/30 text-purple-300') : (isLight ? 'bg-white text-slate-400 hover:bg-slate-50' : 'bg-transparent text-gray-500 hover:bg-white/5')}`}>
+                                            {opt.icon && <RefreshCw size={8} />}{opt.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                {reminderType === 'monthly' ? (
+                                    <div className="flex items-center gap-2">
+                                        <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'כל ה-' : 'Day'}</span>
+                                        <input type="number" min={1} max={28} value={reminderDay} onChange={e => setReminderDay(Math.min(28, Math.max(1, parseInt(e.target.value) || 1)))}
+                                            className={`w-14 px-1.5 py-1 text-xs rounded border outline-none text-center ${isLight ? 'border-slate-200 bg-white text-slate-700' : 'border-white/20 bg-white/10 text-gray-200'}`} />
+                                        <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'לחודש' : 'of month'}</span>
+                                    </div>
+                                ) : reminderType === 'interval' ? (
+                                    <div className="flex items-center gap-2">
+                                        <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'כל' : 'Every'}</span>
+                                        <input type="number" min={1} max={365} value={reminderInterval} onChange={e => setReminderInterval(Math.min(365, Math.max(1, parseInt(e.target.value) || 1)))}
+                                            className={`w-14 px-1.5 py-1 text-xs rounded border outline-none text-center ${isLight ? 'border-slate-200 bg-white text-slate-700' : 'border-white/20 bg-white/10 text-gray-200'}`} />
+                                        <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'ימים' : 'days'}</span>
+                                    </div>
+                                ) : (
+                                    <input type="date" value={reminderDate} onChange={e => setReminderDate(e.target.value)}
+                                        className={`w-full text-xs px-2 py-1 rounded border outline-none ${isLight ? 'border-slate-200 bg-white text-slate-700' : 'border-white/20 bg-white/10 text-gray-200'}`} />
+                                )}
                             </div>
                             <div>
                                 <label className={`text-[10px] font-medium ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'טקסט (אופציונלי)' : 'Note (optional)'}</label>
@@ -1080,19 +1109,22 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                             <button
                                 onMouseDown={e => {
                                     e.preventDefault();
-                                    if (!reminderDate) return;
-                                    if (uid) {
-                                        undismissReminder(uid, item.id).catch(() => {});
-                                    }
+                                    const computedDate = reminderType === 'monthly' ? nextOccurrenceOf(reminderDay) : reminderType === 'interval' ? nextOccurrenceByInterval(reminderInterval) : reminderDate;
+                                    if (!computedDate) return;
+                                    if (uid) undismissReminder(uid, item.id).catch(() => {});
                                     onChangeItem(
-                                        { ...item, reminder: { date: reminderDate, text: reminderText.trim() } },
+                                        { ...item, reminder: {
+                                            date: computedDate,
+                                            text: reminderText.trim(),
+                                            ...(reminderType !== 'none' ? { recurring: true, recurringType: reminderType, ...(reminderType === 'monthly' ? { recurringDay: reminderDay } : { recurringInterval: reminderInterval }) } : {}),
+                                        }},
                                         { reminderChanged: true, suppressImmediateAlert: true }
                                     );
                                     setShowReminder(false);
                                     setReminderAnchor(null);
                                 }}
-                                disabled={!reminderDate}
-                                className={`w-full text-xs py-1.5 rounded font-medium transition-colors ${reminderDate
+                                disabled={reminderType === 'none' && !reminderDate}
+                                className={`w-full text-xs py-1.5 rounded font-medium transition-colors ${(reminderType !== 'none' || reminderDate)
                                     ? (isLight ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-blue-600 text-white hover:bg-blue-500')
                                     : (isLight ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white/5 text-gray-600 cursor-not-allowed')}`}
                             >

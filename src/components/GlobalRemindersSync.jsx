@@ -71,7 +71,16 @@ export function GlobalRemindersSync({ uid, lifeEvents: _lifeEvents = [], current
                                             id: String(i.id),
                                             label: i.label || i.title,
                                             note: i.note || '',
-                                            reminder: { date: i.reminder.date, text: i.reminder.text || '' }
+                                            reminder: {
+                                                date: i.reminder.date,
+                                                text: i.reminder.text || '',
+                                                ...(i.reminder.recurring ? {
+                                                    recurring: true,
+                                                    recurringType: i.reminder.recurringType,
+                                                    ...(i.reminder.recurringDay !== undefined ? { recurringDay: i.reminder.recurringDay } : {}),
+                                                    ...(i.reminder.recurringInterval !== undefined ? { recurringInterval: i.reminder.recurringInterval } : {}),
+                                                } : {}),
+                                            },
                                         });
                                     });
                                 }
@@ -85,7 +94,13 @@ export function GlobalRemindersSync({ uid, lifeEvents: _lifeEvents = [], current
                             .map(r => ({
                                 id: String(r.id),
                                 label: r.label,
-                                reminder: { date: r.date, text: r.text || '' }
+                                reminder: { date: r.date, text: r.text || '' },
+                                ...(r.recurring ? {
+                                    recurring: true,
+                                    ...(r.recurringType ? { recurringType: r.recurringType } : {}),
+                                    ...(r.recurringDay !== undefined ? { recurringDay: r.recurringDay } : {}),
+                                    ...(r.recurringInterval !== undefined ? { recurringInterval: r.recurringInterval } : {}),
+                                } : {}),
                             }));
                         configs.push({ source: 'general', items: generalReminders });
 
@@ -237,7 +252,7 @@ export function GlobalRemindersSync({ uid, lifeEvents: _lifeEvents = [], current
         if (!uid) return;
 
         const handleEdit = async (e) => {
-            const { id, source, date, label, text } = e.detail || {};
+            const { id, source, date, label, text, recurring, recurringType, recurringDay, recurringInterval } = e.detail || {};
             if (!id || !source) return;
 
             try {
@@ -298,6 +313,10 @@ export function GlobalRemindersSync({ uid, lifeEvents: _lifeEvents = [], current
                         const nextRem = { ...r, date };
                         if (nextLabel !== undefined) nextRem.label = nextLabel;
                         if (nextText !== undefined) nextRem.text = nextText || '';
+                        if (recurring !== undefined) nextRem.recurring = recurring;
+                        if (recurringType !== undefined) nextRem.recurringType = recurringType;
+                        if (recurringDay !== undefined) nextRem.recurringDay = recurringDay;
+                        if (recurringInterval !== undefined) nextRem.recurringInterval = recurringInterval;
                         return nextRem;
                     });
                     const changed = next.length !== gRems.length ||
@@ -335,6 +354,71 @@ export function GlobalRemindersSync({ uid, lifeEvents: _lifeEvents = [], current
 
         window.addEventListener('rc-reminder-edited', handleEdit);
         return () => window.removeEventListener('rc-reminder-edited', handleEdit);
+    }, [uid, profiles, updateProfile]);
+
+    // Handle recurring reminder advance (update date in Firestore)
+    useEffect(() => {
+        if (!uid) return;
+
+        const handleAdvance = async (e) => {
+            const { id, source, newDate } = e.detail || {};
+            if (!id || !source || !newDate) return;
+            try {
+                if (source === 'general') {
+                    const gRems = await getGeneralReminders(uid);
+                    const next = gRems.map(r => String(r.id) === String(id) ? { ...r, date: newDate } : r);
+                    if (next.some((r, i) => r.date !== gRems[i]?.date)) await setGeneralReminders(uid, next);
+                }
+
+                if (source === 'budget') {
+                    const bSnap = await getBudgetItems(uid);
+                    if (bSnap) {
+                        const items = Array.isArray(bSnap) ? bSnap : (bSnap.items || []);
+                        const idx = items.findIndex(i => String(i.id) === String(id));
+                        if (idx > -1 && items[idx].reminder) {
+                            const newItems = [...items];
+                            newItems[idx] = { ...newItems[idx], reminder: { ...newItems[idx].reminder, date: newDate } };
+                            await setBudgetItems(uid, newItems, bSnap.householdSize, bSnap.backupSlots);
+                        }
+                    }
+                }
+
+                if (source === 'checklist') {
+                    const cSnap = await getChecklistState(uid);
+                    if (cSnap?.categories) {
+                        let changed = false;
+                        const newCats = cSnap.categories.map(cat => {
+                            if (!cat.items) return cat;
+                            const idx = cat.items.findIndex(i => String(i.id) === String(id));
+                            if (idx > -1 && cat.items[idx].reminder) {
+                                changed = true;
+                                const newItems = [...cat.items];
+                                newItems[idx] = { ...newItems[idx], reminder: { ...newItems[idx].reminder, date: newDate } };
+                                return { ...cat, items: newItems };
+                            }
+                            return cat;
+                        });
+                        if (changed) await setChecklistState(uid, { ...cSnap, categories: newCats });
+                    }
+                }
+
+                if (isLifeEventSource(source)) {
+                    const profileId = source.split(':').slice(1).join(':');
+                    const profile = profiles.find(p => p.id === profileId);
+                    if (profile?.data?.lifeEvents && updateProfile) {
+                        const nextLifeEvents = profile.data.lifeEvents.map(ev =>
+                            String(ev.id) === String(id) ? { ...ev, reminder: { ...ev.reminder, date: newDate } } : ev
+                        );
+                        await updateProfile(profileId, { ...profile.data, lifeEvents: nextLifeEvents });
+                    }
+                }
+            } catch (err) {
+                console.error('[GlobalRemindersSync] advance recurring failed:', err);
+            }
+        };
+
+        window.addEventListener('rc-reminder-advanced', handleAdvance);
+        return () => window.removeEventListener('rc-reminder-advanced', handleAdvance);
     }, [uid, profiles, updateProfile]);
 
     // Smart alerts: re-evaluate whenever budget sessionStorage changes

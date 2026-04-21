@@ -3,7 +3,7 @@ import { useDraggable } from '../hooks/useDraggable';
 import { useTheme } from '../contexts/ThemeContext';
 import { useThemeClasses } from '../hooks/useThemeClasses';
 import { EVENT_TYPES } from '../constants';
-import { X, DollarSign, Calendar, TrendingUp, TrendingDown, ChevronUp, ChevronDown, Trash2, Lock, LockOpen, Copy } from 'lucide-react';
+import { X, DollarSign, Calendar, TrendingUp, TrendingDown, ChevronUp, ChevronDown, Trash2, Lock, LockOpen, Copy, RefreshCw } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 
 const MONTHS = [
@@ -78,6 +78,9 @@ export default function AddEventModal({
     const [description, setDescription] = useState(event?.description || '');
     const [linkedTo, setLinkedTo] = useState(event?.linkedTo || null);
     const [hasReminder, setHasReminder] = useState(!!event?.reminder?.date);
+    const [reminderRecurringType, setReminderRecurringType] = useState(() => event?.reminder?.recurring ? (event?.reminder?.recurringType || 'monthly') : 'none');
+    const [reminderDay, setReminderDay] = useState(event?.reminder?.recurringDay || 10);
+    const [reminderInterval, setReminderInterval] = useState(event?.reminder?.recurringInterval || 7);
 
     // Derived validation state
     const isRecurring = eventType === EVENT_TYPES.INCOME_CHANGE || eventType === EVENT_TYPES.EXPENSE_CHANGE;
@@ -109,6 +112,9 @@ export default function AddEventModal({
         setDescription(event?.description || '');
         setLinkedTo(event?.linkedTo || null);
         setHasReminder(!!event?.reminder?.date);
+        setReminderRecurringType(event?.reminder?.recurring ? (event?.reminder?.recurringType || 'monthly') : 'none');
+        setReminderDay(event?.reminder?.recurringDay || 10);
+        setReminderInterval(event?.reminder?.recurringInterval || 7);
     }, [event, currentYear, currentMonth]);
 
 
@@ -151,7 +157,12 @@ export default function AddEventModal({
         reminder: hasReminder
             ? {
                 date: toReminderDate(parseInt(startYear), parseInt(startMonth)),
-                text: event?.reminder?.text || ''
+                text: event?.reminder?.text || '',
+                ...(reminderRecurringType !== 'none' ? {
+                    recurring: true,
+                    recurringType: reminderRecurringType,
+                    ...(reminderRecurringType === 'monthly' ? { recurringDay: reminderDay } : { recurringInterval: reminderInterval }),
+                } : {}),
             }
             : null
     });
@@ -600,7 +611,7 @@ export default function AddEventModal({
                                 </div>
                             </div>
 
-                            <div className={`rounded-xl border p-3 ${isLight ? 'bg-blue-50/60 border-blue-100' : 'bg-blue-500/10 border-blue-500/20'}`}>
+                            <div className={`rounded-xl border p-3 space-y-2.5 ${isLight ? 'bg-blue-50/60 border-blue-100' : 'bg-blue-500/10 border-blue-500/20'}`}>
                                 <label className="flex items-start gap-3 cursor-pointer">
                                     <input
                                         type="checkbox"
@@ -612,6 +623,38 @@ export default function AddEventModal({
                                         {language === 'he' ? 'צור תזכורת אוטומטית לאירוע' : 'Create an automatic reminder for this event'}
                                     </div>
                                 </label>
+                                {hasReminder && (
+                                    <div className="space-y-1.5 ps-7">
+                                        <div className={`flex rounded-lg overflow-hidden border text-[10px] font-semibold ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
+                                            {[
+                                                { val: 'none', label: language === 'he' ? 'חד-פעמי' : 'One-time' },
+                                                { val: 'monthly', label: language === 'he' ? 'חודשי' : 'Monthly', icon: true },
+                                                { val: 'interval', label: language === 'he' ? 'כל X ימים' : 'Every X days', icon: true },
+                                            ].map(opt => (
+                                                <button key={opt.val} type="button" onClick={() => setReminderRecurringType(opt.val)}
+                                                    className={`flex-1 flex items-center justify-center gap-0.5 py-1.5 transition-colors ${reminderRecurringType === opt.val ? (isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-500/30 text-purple-300') : (isLight ? 'bg-white text-slate-400 hover:bg-slate-50' : 'bg-transparent text-gray-500 hover:bg-white/5')}`}>
+                                                    {opt.icon && <RefreshCw size={8} />}{opt.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        {reminderRecurringType === 'monthly' && (
+                                            <div className="flex items-center gap-2">
+                                                <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{language === 'he' ? 'כל ה-' : 'Day'}</span>
+                                                <input type="number" min={1} max={28} value={reminderDay} onChange={e => setReminderDay(Math.min(28, Math.max(1, parseInt(e.target.value) || 1)))}
+                                                    className={`w-14 px-1.5 py-1 text-xs rounded border outline-none text-center ${isLight ? 'border-slate-200 bg-white' : 'border-white/20 bg-white/10 text-gray-200'}`} />
+                                                <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{language === 'he' ? 'לחודש' : 'of month'}</span>
+                                            </div>
+                                        )}
+                                        {reminderRecurringType === 'interval' && (
+                                            <div className="flex items-center gap-2">
+                                                <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{language === 'he' ? 'כל' : 'Every'}</span>
+                                                <input type="number" min={1} max={365} value={reminderInterval} onChange={e => setReminderInterval(Math.min(365, Math.max(1, parseInt(e.target.value) || 1)))}
+                                                    className={`w-14 px-1.5 py-1 text-xs rounded border outline-none text-center ${isLight ? 'border-slate-200 bg-white' : 'border-white/20 bg-white/10 text-gray-200'}`} />
+                                                <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{language === 'he' ? 'ימים' : 'days'}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

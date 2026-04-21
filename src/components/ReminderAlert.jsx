@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Bell, CheckCircle, Clock, ArrowUpRight, MessageSquare } from 'lucide-react';
+import { Bell, CheckCircle, Clock, ArrowUpRight, MessageSquare, RefreshCw } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { markLoginReminderHandled, useReminders } from '../hooks/useReminders';
+import { markLoginReminderHandled, useReminders, advanceRecurringReminder } from '../hooks/useReminders';
 
 const isLifeEventSource = (source) =>
     typeof source === 'string' && (source === 'lifeEvents' || source.startsWith('lifeEvents:'));
@@ -144,32 +144,78 @@ export function ReminderAlert({ language, isLight, sessionKey }) {
                                     <span>{formatDate(active.date)}</span>
                                     <span className="opacity-30">·</span>
                                     <span className="uppercase text-[10px] tracking-widest">{sourceLabel(active.source)}</span>
+                                    {active.recurring && (
+                                        <>
+                                            <span className="opacity-30">·</span>
+                                            <span className={`flex items-center gap-0.5 text-[10px] font-semibold ${isLight ? 'text-purple-500' : 'text-purple-400'}`}>
+                                                <RefreshCw size={9} />
+                                                {(active.recurringType || 'monthly') === 'interval'
+                                                    ? (isHe ? `חוזרת כל ${active.recurringInterval} ימים` : `every ${active.recurringInterval} days`)
+                                                    : (isHe ? `חוזרת כל ה-${active.recurringDay}` : `every d.${active.recurringDay}`)
+                                                }
+                                            </span>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         </div>
 
-                        <div className="flex gap-2">
-                            <button
-                                onClick={() => confirmReminder(active.id, active.source)}
-                                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
-                            >
-                                <CheckCircle size={16} />
-                                {isHe ? 'בוצע' : 'Done'}
-                            </button>
-                            <button
-                                onClick={() => {
-                                    markLoginReminderHandled(active.id, active.source);
-                                    setLocallyClosedAlertIds(prev => {
-                                        const next = new Set(prev);
-                                        next.add(globalId);
-                                        return next;
-                                    });
-                                }}
-                                className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}
-                            >
-                                {isHe ? 'הזכר לי אח"כ' : 'Snooze'}
-                            </button>
-                        </div>
+                        {active.recurring ? (
+                            <div className="space-y-2">
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => advanceRecurringReminder(active.id, active.source)}
+                                        className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                                    >
+                                        <CheckCircle size={15} />
+                                        {isHe ? 'אשר עכשיו' : 'Confirm'}
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            markLoginReminderHandled(active.id, active.source);
+                                            setLocallyClosedAlertIds(prev => {
+                                                const next = new Set(prev);
+                                                next.add(globalId);
+                                                return next;
+                                            });
+                                        }}
+                                        className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}
+                                    >
+                                        {isHe ? 'הזכר אח"כ' : 'Snooze'}
+                                    </button>
+                                </div>
+                                <button
+                                    onClick={() => confirmReminder(active.id, active.source)}
+                                    className={`w-full py-2 rounded-xl text-xs font-semibold transition-all active:scale-95 flex items-center justify-center gap-1.5 ${isLight ? 'bg-red-50 hover:bg-red-100 text-red-500 border border-red-200' : 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20'}`}
+                                >
+                                    <RefreshCw size={12} />
+                                    {isHe ? 'בטל תזכורת חוזרת לצמיתות' : 'Stop recurring reminder'}
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => confirmReminder(active.id, active.source)}
+                                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                                >
+                                    <CheckCircle size={16} />
+                                    {isHe ? 'בוצע' : 'Done'}
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        markLoginReminderHandled(active.id, active.source);
+                                        setLocallyClosedAlertIds(prev => {
+                                            const next = new Set(prev);
+                                            next.add(globalId);
+                                            return next;
+                                        });
+                                    }}
+                                    className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}
+                                >
+                                    {isHe ? 'הזכר לי אח"כ' : 'Snooze'}
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

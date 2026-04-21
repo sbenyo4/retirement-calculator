@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Bell, BellRing, X, Clock, Trash2, FileText, Plus, Pencil, Save, MessageSquare } from 'lucide-react';
-import { useReminders, syncComponentReminders, silenceReminder, updateReminderInSession } from '../hooks/useReminders';
+import { Bell, BellRing, X, Clock, Trash2, FileText, Plus, Pencil, Save, MessageSquare, RefreshCw } from 'lucide-react';
+import { useReminders, syncComponentReminders, silenceReminder, updateReminderInSession, nextOccurrenceOf, nextOccurrenceByInterval } from '../hooks/useReminders';
 import { useAuth } from '../contexts/AuthContext';
 import { setGeneralReminders } from '../utils/db';
 
@@ -16,9 +16,9 @@ export function ReminderBell({ id, t: _t, language, isLight, activeProfileId }) 
     const panelRef = useRef(null);
     const [isAdding, setIsAdding] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
-    const [form, setForm] = useState({ label: '', date: '', text: '' });
+    const [form, setForm] = useState({ label: '', date: '', text: '', recurringType: 'none', recurringDay: 10, recurringInterval: 7 });
     const [editingReminder, setEditingReminder] = useState(null);
-    const [editForm, setEditForm] = useState({ date: '', text: '', note: '' });
+    const [editForm, setEditForm] = useState({ date: '', text: '', note: '', recurringDay: 10, recurringInterval: 7 });
     
     const isHe = language === 'he';
     const activeLifeEventSource = activeProfileId ? `lifeEvents:${activeProfileId}` : null;
@@ -62,18 +62,31 @@ export function ReminderBell({ id, t: _t, language, isLight, activeProfileId }) 
     }, [open]);
 
     const handleAdd = async () => {
-        if (!form.label || !form.date || !uid) return;
+        if (!form.label || !uid) return;
+        if (form.recurringType === 'none' && !form.date) return;
         const newId = `gen-${Date.now()}`;
+        const isRecurring = form.recurringType !== 'none';
+        const computedDate = form.recurringType === 'monthly'
+            ? nextOccurrenceOf(form.recurringDay || 10)
+            : form.recurringType === 'interval'
+            ? nextOccurrenceByInterval(form.recurringInterval || 7)
+            : form.date;
         const newRem = {
             id: newId,
             label: form.label,
-            date: form.date, // Browser input type="date" is already YYYY-MM-DD
-            text: form.text
+            date: computedDate,
+            text: form.text,
+            ...(isRecurring ? {
+                recurring: true,
+                recurringType: form.recurringType,
+                ...(form.recurringType === 'monthly' ? { recurringDay: form.recurringDay } : {}),
+                ...(form.recurringType === 'interval' ? { recurringInterval: form.recurringInterval } : {}),
+            } : {}),
         };
 
         // 1. CLOSE modal and clear form immediately for responsive feel
         const nextList = [...genReminders, newRem];
-        setForm({ label: '', date: '', text: '' });
+        setForm({ label: '', date: '', text: '', recurringType: 'none', recurringDay: 10, recurringInterval: 7 });
         setIsAdding(false);
         setIsSaving(true);
 
@@ -116,6 +129,8 @@ export function ReminderBell({ id, t: _t, language, isLight, activeProfileId }) 
             date: reminder?.date || '',
             text: reminder?.label || reminder?.description || '',
             note: reminder?.text || '',
+            recurringDay: reminder?.recurringDay || 10,
+            recurringInterval: reminder?.recurringInterval || 7,
         });
     };
 
@@ -135,13 +150,31 @@ export function ReminderBell({ id, t: _t, language, isLight, activeProfileId }) 
     };
 
     const saveEditReminder = async () => {
-        if (!editingReminder?.id || !editingReminder?.source || !editForm.date) return;
+        if (!editingReminder?.id || !editingReminder?.source) return;
+        if (!editingReminder.recurring && !editForm.date) return;
         const nextText = editForm.text.trim();
         const { id: reminderId, source } = editingReminder;
+        const rType = editingReminder.recurringType || (editingReminder.recurringDay ? 'monthly' : null);
+        const computedDate = rType === 'monthly'
+            ? nextOccurrenceOf(editForm.recurringDay || 10)
+            : rType === 'interval'
+            ? nextOccurrenceByInterval(editForm.recurringInterval || 7)
+            : editForm.date;
+        const changes = {
+            date: computedDate,
+            label: nextText,
+            text: editForm.note,
+            ...(editingReminder.recurring ? {
+                recurring: true,
+                recurringType: rType,
+                ...(rType === 'monthly' ? { recurringDay: editForm.recurringDay } : {}),
+                ...(rType === 'interval' ? { recurringInterval: editForm.recurringInterval } : {}),
+            } : {}),
+        };
         silenceReminder(reminderId, source);
-        updateReminderInSession(source, reminderId, { date: editForm.date, label: nextText, text: editForm.note });
+        updateReminderInSession(source, reminderId, changes);
         window.dispatchEvent(new CustomEvent('rc-reminder-edited', {
-            detail: { id: reminderId, source, date: editForm.date, label: nextText, text: editForm.note }
+            detail: { id: reminderId, source, ...changes }
         }));
         setEditingReminder(null);
     };
@@ -329,25 +362,69 @@ export function ReminderBell({ id, t: _t, language, isLight, activeProfileId }) 
                                         onChange={e => setForm(f => ({ ...f, text: e.target.value }))}
                                     />
                                 </div>
-                                <div className="grid gap-2" style={{ gridTemplateColumns: '1fr auto' }}>
-                                    <div className="space-y-1">
-                                        <label className={`text-[10px] font-bold uppercase tracking-wider ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'מתי?' : 'When?'}</label>
+                                <div className="space-y-1.5">
+                                    <label className={`text-[10px] font-bold uppercase tracking-wider ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'מתי?' : 'When?'}</label>
+                                    {/* Recurring type selector */}
+                                    <div className={`flex rounded-lg overflow-hidden border text-[10px] font-semibold ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
+                                        {[
+                                            { val: 'none', label: isHe ? 'תאריך' : 'Date' },
+                                            { val: 'monthly', label: isHe ? 'חודשי' : 'Monthly', icon: true },
+                                            { val: 'interval', label: isHe ? 'כל X ימים' : 'Every X days', icon: true },
+                                        ].map(opt => (
+                                            <button
+                                                key={opt.val}
+                                                type="button"
+                                                onClick={() => setForm(f => ({ ...f, recurringType: opt.val }))}
+                                                className={`flex-1 flex items-center justify-center gap-0.5 py-1.5 transition-colors ${
+                                                    form.recurringType === opt.val
+                                                        ? (isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-500/30 text-purple-300')
+                                                        : (isLight ? 'bg-white text-slate-400 hover:bg-slate-50' : 'bg-slate-800 text-gray-500 hover:bg-white/5')
+                                                }`}
+                                            >
+                                                {opt.icon && <RefreshCw size={8} />}
+                                                {opt.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {form.recurringType === 'monthly' ? (
+                                        <div className="flex items-center gap-2">
+                                            <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'כל ה-' : 'Day'}</span>
+                                            <input
+                                                type="number" min={1} max={28}
+                                                className={`w-16 px-2 py-2 text-xs rounded-lg border outline-none text-center ${isLight ? 'bg-white border-slate-200' : 'bg-slate-800 border-white/10 text-white'}`}
+                                                value={form.recurringDay}
+                                                onChange={e => setForm(f => ({ ...f, recurringDay: Math.min(28, Math.max(1, parseInt(e.target.value) || 1)) }))}
+                                            />
+                                            <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'לחודש' : 'of month'}</span>
+                                        </div>
+                                    ) : form.recurringType === 'interval' ? (
+                                        <div className="flex items-center gap-2">
+                                            <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'כל' : 'Every'}</span>
+                                            <input
+                                                type="number" min={1} max={365}
+                                                className={`w-16 px-2 py-2 text-xs rounded-lg border outline-none text-center ${isLight ? 'bg-white border-slate-200' : 'bg-slate-800 border-white/10 text-white'}`}
+                                                value={form.recurringInterval}
+                                                onChange={e => setForm(f => ({ ...f, recurringInterval: Math.min(365, Math.max(1, parseInt(e.target.value) || 1)) }))}
+                                            />
+                                            <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'ימים' : 'days'}</span>
+                                        </div>
+                                    ) : (
                                         <input
                                             type="date"
                                             className={`w-full px-2 py-2 text-xs rounded-lg border outline-none ${isLight ? 'bg-white border-slate-200' : 'bg-slate-800 border-white/10 text-white'}`}
                                             value={form.date}
                                             onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
                                         />
-                                    </div>
-                                    <div className="flex items-end">
-                                        <button
-                                            onClick={handleAdd}
-                                            disabled={!form.label || !form.date || isSaving}
-                                            className="px-4 py-2 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-                                        >
-                                            {isSaving ? (isHe ? 'שומר...' : 'Saving...') : (isHe ? 'שמור' : 'Save')}
-                                        </button>
-                                    </div>
+                                    )}
+                                </div>
+                                <div className="flex justify-end">
+                                    <button
+                                        onClick={handleAdd}
+                                        disabled={!form.label || (form.recurringType === 'none' && !form.date) || isSaving}
+                                        className="px-4 py-2 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                                    >
+                                        {isSaving ? (isHe ? 'שומר...' : 'Saving...') : (isHe ? 'שמור' : 'Save')}
+                                    </button>
                                 </div>
                                 <div className="flex justify-center">
                                     <button onClick={() => setIsAdding(false)} className={`text-[10px] font-medium hover:underline ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
@@ -379,7 +456,7 @@ function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onD
         <div className={`flex items-start gap-2 px-3 py-2.5 ${due ? (isLight ? 'bg-red-50/50' : 'bg-red-500/5') : isTomorrow ? (isLight ? 'bg-yellow-50/70' : 'bg-yellow-500/5') : ''}`}>
             <Clock size={13} className={`mt-0.5 shrink-0 ${due ? 'text-red-400' : isTomorrow ? (isLight ? 'text-yellow-500' : 'text-yellow-300') : (isLight ? 'text-slate-400' : 'text-gray-500')}`} />
             <div className="flex-1 min-w-0">
-                <div 
+                <div
                     className="flex items-center gap-1.5 flex-wrap cursor-pointer group"
                     onClick={() => {
                         if (r.source === 'general') return;
@@ -389,6 +466,15 @@ function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onD
                 >
                     <span className={`text-xs font-medium truncate ${r.source !== 'general' ? 'group-hover:underline' : ''} ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{r.label}</span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isLight ? 'bg-slate-100 text-slate-500' : 'bg-white/10 text-gray-400'}`}>{sourceLabel(r.source)}</span>
+                    {r.recurring && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5 ${isLight ? 'bg-purple-100 text-purple-600' : 'bg-purple-500/20 text-purple-300'}`}>
+                            <RefreshCw size={8} />
+                            {(r.recurringType || 'monthly') === 'interval'
+                                ? (isHe ? `כל ${r.recurringInterval} ימים` : `every ${r.recurringInterval}d`)
+                                : (isHe ? `כל ה-${r.recurringDay}` : `d.${r.recurringDay}`)
+                            }
+                        </span>
+                    )}
                 </div>
                 <div className={`text-[11px] mt-0.5 ${due ? (isLight ? 'text-red-500' : 'text-red-400') : isTomorrow ? (isLight ? 'text-yellow-600' : 'text-yellow-300') : (isLight ? 'text-blue-500' : 'text-blue-400')}`}>
                     {formatDate(r.date)}
@@ -429,12 +515,38 @@ function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onD
                 <div className="grid gap-2 pt-2" style={{ gridTemplateColumns: '1fr auto' }}>
                     <div className="space-y-1">
                         <label className={`text-[10px] font-bold uppercase tracking-wider ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'מתי?' : 'When?'}</label>
-                        <input
-                            type="date"
-                            value={editForm.date}
-                            onChange={e => setEditForm(prev => ({ ...prev, date: e.target.value }))}
-                            className={`w-full px-2 py-2 text-xs rounded-lg border outline-none ${isLight ? 'bg-white border-slate-200' : 'bg-slate-800 border-white/10 text-white'}`}
-                        />
+                        {r.recurring ? (
+                            (r.recurringType || 'monthly') === 'interval' ? (
+                                <div className="flex items-center gap-2">
+                                    <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'כל' : 'Every'}</span>
+                                    <input
+                                        type="number" min={1} max={365}
+                                        value={editForm.recurringInterval || 7}
+                                        onChange={e => setEditForm(prev => ({ ...prev, recurringInterval: Math.min(365, Math.max(1, parseInt(e.target.value) || 1)) }))}
+                                        className={`w-16 px-2 py-2 text-xs rounded-lg border outline-none text-center ${isLight ? 'bg-white border-slate-200' : 'bg-slate-800 border-white/10 text-white'}`}
+                                    />
+                                    <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'ימים' : 'days'}</span>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-2">
+                                    <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'כל ה-' : 'Day'}</span>
+                                    <input
+                                        type="number" min={1} max={28}
+                                        value={editForm.recurringDay || 10}
+                                        onChange={e => setEditForm(prev => ({ ...prev, recurringDay: Math.min(28, Math.max(1, parseInt(e.target.value) || 1)) }))}
+                                        className={`w-16 px-2 py-2 text-xs rounded-lg border outline-none text-center ${isLight ? 'bg-white border-slate-200' : 'bg-slate-800 border-white/10 text-white'}`}
+                                    />
+                                    <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'לחודש' : 'of month'}</span>
+                                </div>
+                            )
+                        ) : (
+                            <input
+                                type="date"
+                                value={editForm.date}
+                                onChange={e => setEditForm(prev => ({ ...prev, date: e.target.value }))}
+                                className={`w-full px-2 py-2 text-xs rounded-lg border outline-none ${isLight ? 'bg-white border-slate-200' : 'bg-slate-800 border-white/10 text-white'}`}
+                            />
+                        )}
                         <label className={`text-[10px] font-bold uppercase tracking-wider ${isLight ? 'text-slate-400' : 'text-gray-500'} pt-1`}>{isHe ? 'טקסט התזכורת' : 'Reminder text'}</label>
                         <input
                             type="text"
@@ -455,8 +567,8 @@ function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onD
                     <div className="flex items-end gap-1">
                         <button
                             onClick={() => onSaveEdit?.()}
-                            disabled={!editForm.date}
-                            className={`px-2.5 py-2 rounded-lg text-xs font-semibold transition-colors ${editForm.date ? 'bg-blue-600 text-white hover:bg-blue-700' : isLight ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white/5 text-gray-600 cursor-not-allowed'}`}
+                            disabled={!r.recurring && !editForm.date}
+                            className={`px-2.5 py-2 rounded-lg text-xs font-semibold transition-colors ${(r.recurring || editForm.date) ? 'bg-blue-600 text-white hover:bg-blue-700' : isLight ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white/5 text-gray-600 cursor-not-allowed'}`}
                             title={isHe ? 'שמור' : 'Save'}
                         >
                             <Save size={12} />
