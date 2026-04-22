@@ -121,15 +121,49 @@ const DEFAULT_ITEMS = [
 
 const getNowYM = () => { const d = new Date(); return d.getFullYear() * 12 + d.getMonth(); };
 
+// ─── Retirement-adjustment helpers ───────────────────────────────────────────
+const RET_JSON_START = '---RETIREMENT_JSON_START---';
+const RET_JSON_END   = '---RETIREMENT_JSON_END---';
+
+function parseRetirementAdj(text) {
+    if (!text) return null;
+    const s = text.indexOf(RET_JSON_START);
+    const e = text.indexOf(RET_JSON_END);
+    if (s === -1 || e === -1) return null;
+    try {
+        const adj = JSON.parse(text.slice(s + RET_JSON_START.length, e).trim());
+        if (!adj || (!adj.additions && !adj.increases)) return null;
+        adj.additions = Array.isArray(adj.additions) ? adj.additions : [];
+        adj.increases = Array.isArray(adj.increases) ? adj.increases : [];
+        return adj;
+    } catch { return null; }
+}
+
+function stripRetirementJson(text) {
+    if (!text) return text;
+    const s = text.indexOf(RET_JSON_START);
+    if (s === -1) return text;
+    const e = text.indexOf(RET_JSON_END);
+    if (e === -1) return text;
+    return (text.slice(0, s) + text.slice(e + RET_JSON_END.length)).trim();
+}
+
+function matchIncrease(itemLabel, incLabel) {
+    const a = itemLabel.toLowerCase().trim();
+    const b = incLabel.toLowerCase().trim();
+    return a === b || a.includes(b) || b.includes(a);
+}
+
 // Colors aligned with CATEGORIES order
 const CAT_COLORS = ['#3b82f6','#22c55e','#ef4444','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#6b7280'];
 
 // ─── Budget Statistics Modal ─────────────────────────────────────────────────
-function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRate, showInflation: showInflationProp, isLight, isHe, currency, t: _t, sliderConsumed, setSliderConsumed }) {
+function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRate, showInflation: showInflationProp, isLight, isHe, currency, t: _t, sliderConsumed, setSliderConsumed, retirementAdj }) {
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
     const [localShowInflation, setLocalShowInflation] = useState(showInflationProp);
     const [selectedYearIdx, setSelectedYearIdx] = useState(null);
     const [showSavings, setShowSavings] = useState(false);
+    const [localShowRetirement, setLocalShowRetirement] = useState(false);
     const barDivRef = useRef(null);
 
     // Sync with parent toggle when modal opens
@@ -166,6 +200,19 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRa
         return { yearsToRet, retYM, ages };
     }, [inputs]);
 
+    // Per-category retirement delta (today's ₪, inflated when applied)
+    const retDeltaByCat = useMemo(() => {
+        if (!localShowRetirement || !retirementAdj) return {};
+        const map = {};
+        (retirementAdj.additions || []).forEach(a => {
+            map[a.categoryId] = (map[a.categoryId] || 0) + (a.monthlyAmount || 0);
+        });
+        (retirementAdj.increases || []).forEach(inc => {
+            map[inc.categoryId] = (map[inc.categoryId] || 0) + (inc.increaseAmount || 0);
+        });
+        return map;
+    }, [localShowRetirement, retirementAdj]);
+
     // ── Helper: compute per-category totals for a given year index ──
     const computeCatTotals = useCallback((yi) => {
         const { yearsToRet, retYM } = yearGeom;
@@ -175,7 +222,7 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRa
 
         return CATEGORIES.map((cat, i) => {
             const catItems = items.filter(it => it.categoryId === cat.id && it.enabled !== false);
-            const total = Math.round(catItems.reduce((s, it) => {
+            const base = catItems.reduce((s, it) => {
                 if (it.type === 'loan') {
                     return s + (it.tracks || []).reduce((ts, tr) => {
                         if (!tr.endDate) return ts + (tr.amount || 0);
@@ -187,10 +234,12 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRa
                 }
                 const monthly = it.frequency === 'annual' ? (it.amount || 0) / 12 : (it.amount || 0);
                 return s + monthly * inflFactor;
-            }, 0));
+            }, 0);
+            const retDelta = (retDeltaByCat[cat.id] || 0) * inflFactor;
+            const total = Math.round(base + retDelta);
             return { cat, total, color: CAT_COLORS[i] };
         }).filter(c => c.total > 0);
-    }, [items, yearGeom, inflationRate, localShowInflation]);
+    }, [items, yearGeom, inflationRate, localShowInflation, retDeltaByCat]);
 
     // ── Default pie year: current age if already retired, else retirement start ──
     const defaultYearIdx = useMemo(() => {
@@ -224,11 +273,12 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRa
             const catItems = items.filter(it => it.categoryId === cat.id && it.enabled !== false);
             if (!catItems.length) return null;
 
+            const catRetDelta = retDeltaByCat[cat.id] || 0;
             const data = ages.map((_, yi) => {
                 const yearsFromNow = yearsToRet + yi;
                 const inflFactor   = localShowInflation ? Math.pow(1 + inflationRate, yearsFromNow) : 1;
                 const atYM         = retYM + yi * 12;
-                return Math.round(catItems.reduce((s, it) => {
+                const base = catItems.reduce((s, it) => {
                     if (it.type === 'loan') {
                         return s + (it.tracks || []).reduce((ts, tr) => {
                             if (!tr.endDate) return ts + (tr.amount || 0);
@@ -240,7 +290,8 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRa
                     }
                     const monthly = it.frequency === 'annual' ? (it.amount || 0) / 12 : (it.amount || 0);
                     return s + monthly * inflFactor;
-                }, 0));
+                }, 0);
+                return Math.round(base + catRetDelta * inflFactor);
             });
 
             if (data.every(v => v === 0)) return null;
@@ -317,7 +368,7 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRa
         const curAge  = parseFloat(inputs.currentAge) || 30;
         const years   = ages.map(a => nowYear + Math.round(a - curAge));
         return { labels: ages.map(a => `${isHe ? 'גיל' : 'Age'} ${a}`), datasets, target, ages, years, loanEndIndices, totalSavings };
-    }, [items, inputs, yearGeom, inflationRate, localShowInflation, isHe, selectedYearIdx, defaultYearIdx, showSavings]);
+    }, [items, inputs, yearGeom, inflationRate, localShowInflation, isHe, selectedYearIdx, defaultYearIdx, showSavings, retDeltaByCat]);
 
     const textColor   = isLight ? '#475569' : '#94a3b8';
     const gridColor   = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)';
@@ -572,6 +623,19 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRa
                             {localShowInflation ? <ToggleRight size={13} /> : <ToggleLeft size={13} />}
                             {isHe ? 'אינפלציה' : 'Inflation'}
                         </button>
+                        {retirementAdj && (
+                            <button
+                                onClick={() => setLocalShowRetirement(v => !v)}
+                                onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+                                className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border transition-colors shrink-0 ${localShowRetirement
+                                    ? (isLight ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-amber-500 bg-amber-900/20 text-amber-300')
+                                    : (isLight ? 'border-slate-200 bg-slate-50 text-slate-400' : 'border-white/20 bg-white/5 text-gray-500')}`}
+                                title={isHe ? 'תצוגת פרישה' : 'Retirement view'}
+                            >
+                                {localShowRetirement ? <ToggleRight size={13} /> : <ToggleLeft size={13} />}
+                                🔮 {isHe ? 'פרישה' : 'Retirement'}
+                            </button>
+                        )}
                         <button onClick={onClose} className={`p-1.5 rounded-lg transition-colors ${isLight ? 'hover:bg-slate-100 text-slate-400' : 'hover:bg-white/10 text-gray-400'}`}>
                             <X size={16} />
                         </button>
@@ -1512,11 +1576,18 @@ function MaintenanceCalcItemRow({ item, isHe, isLight, currency, t, onChange, on
 }
 
 // ─── Category accordion ───────────────────────────────────────────────────────
-function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onToggleItemEnabled, onAddItem, onAddLoanItem, onAddMaintenanceItem, onToggleAll, projFactor, projYears, showInflation, totalMonthly, householdSize, aiProvider, aiModel, apiKeyOverride }) {
+function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onToggleItemEnabled, onAddItem, onAddLoanItem, onAddMaintenanceItem, onToggleAll, projFactor, projYears, showInflation, totalMonthly, householdSize, aiProvider, aiModel, apiKeyOverride, retirementOverlay }) {
     const label = isHe ? category.labelHe : category.labelEn;
     const enabledItems = items.filter(i => i.enabled !== false);
     const categoryTotal = enabledItems.reduce((s, i) => s + toMonthly(i), 0);
     const categoryProjected = enabledItems.reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0);
+
+    const retAdditions = retirementOverlay?.additions?.filter(a => a.categoryId === category.id) ?? [];
+    const retIncreases = retirementOverlay?.increases?.filter(inc => inc.categoryId === category.id) ?? [];
+    const retDelta = retirementOverlay
+        ? retAdditions.reduce((s, a) => s + (a.monthlyAmount || 0), 0) +
+          retIncreases.reduce((s, inc) => s + (inc.increaseAmount || 0), 0)
+        : 0;
     const disabledCount = items.length - enabledItems.length;
     const allDisabled = items.length > 0 && enabledItems.length === 0;
     const notesCount = items.filter(i => i.note?.trim()).length;
@@ -1568,6 +1639,11 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
                                 → {currency}{Math.round(categoryProjected).toLocaleString()}
                             </span>
                         )}
+                        {retDelta > 0 && (
+                            <span className={`text-xs font-semibold px-1 py-0.5 rounded ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-300'}`}>
+                                +{currency}{Math.round(retDelta).toLocaleString()}
+                            </span>
+                        )}
                     </span>
                 )}
                 <button
@@ -1586,8 +1662,15 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
 
             {open && (
                 <div className="px-2 pb-2 space-y-0.5">
-                    {items.map(item =>
-                        item.type === 'loan' ? (
+                    {items.map(item => {
+                        const inc = retIncreases.find(r => matchIncrease(item.label, r.itemLabel));
+                        const retBadge = inc && item.enabled !== false ? (
+                            <span className={`shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${isLight ? 'bg-amber-100 text-amber-700 border border-amber-300' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'}`} dir="ltr">
+                                🔮 +{currency}{(inc.increaseAmount || 0).toLocaleString()}
+                                {inc.increasePercent ? ` (+${inc.increasePercent}%)` : ''}
+                            </span>
+                        ) : null;
+                        if (item.type === 'loan') return (
                             <LoanItemRow
                                 key={item.id}
                                 item={item}
@@ -1602,7 +1685,8 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
                                 projYears={projYears}
                                 showInflation={showInflation}
                             />
-                        ) : item.type === 'maintenance-calc' ? (
+                        );
+                        if (item.type === 'maintenance-calc') return (
                             <MaintenanceCalcItemRow
                                 key={item.id}
                                 item={item}
@@ -1620,7 +1704,8 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
                                 aiModel={aiModel}
                                 apiKeyOverride={apiKeyOverride}
                             />
-                        ) : (
+                        );
+                        return (
                             <BudgetItemRow
                                 key={item.id}
                                 item={item}
@@ -1633,9 +1718,20 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
                                 onToggleEnabled={onToggleItemEnabled}
                                 projFactor={projFactor}
                                 showInflation={showInflation}
+                                labelAdornment={retBadge}
                             />
-                        )
-                    )}
+                        );
+                    })}
+                    {retAdditions.map(a => (
+                        <div key={`ret-add-${a.label}`} className={`flex items-center justify-between px-3 py-2 rounded-lg border-2 border-dashed text-sm ${isLight ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-amber-500/50 bg-amber-500/10 text-amber-300'}`} dir={isHe ? 'rtl' : 'ltr'}>
+                            <span className="flex items-center gap-2 min-w-0">
+                                <span className="opacity-60 shrink-0">🔮</span>
+                                <span className="font-medium truncate">{a.label}</span>
+                                {a.note && <span className="text-[10px] opacity-60 truncate hidden sm:inline">{a.note}</span>}
+                            </span>
+                            <span className="font-bold shrink-0 ms-2" dir="ltr">+{currency}{(a.monthlyAmount || 0).toLocaleString()}</span>
+                        </div>
+                    ))}
                     <div className="flex items-center gap-2 mt-1 flex-wrap" dir={isHe ? 'rtl' : 'ltr'}>
                         <button
                             onClick={onAddItem}
@@ -1705,6 +1801,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const [aiModalOpen, setAiModalOpen] = useState(false);
     const [aiLoading, setAiLoading] = useState(false);
     const [aiError, setAiError] = useState(null);
+    const [showRetirementMode, setShowRetirementMode] = useState(false);
     const aiInsightRef = useRef(null);      // cached insight text (survives modal close)
     const aiInsightStaleRef = useRef(false); // mirror of aiInsightStale for use inside callbacks
     const aiStaleInitRef = useRef(false);   // true after the first post-load render
@@ -1747,6 +1844,10 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     // Always-current refs so closures always see latest state
     latestStateRef.current = { items, householdSize };
     aiInsightStaleRef.current = aiInsightStale;
+
+    // Derive clean display text and structured retirement adjustments from raw AI insight
+    const insightText    = useMemo(() => stripRetirementJson(aiInsight), [aiInsight]);
+    const retirementAdj  = useMemo(() => parseRetirementAdj(aiInsight),  [aiInsight]);
 
     const updateItems = useCallback((updater) => {
         setItems(prev => {
@@ -1964,7 +2065,15 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     useEffect(() => {
         if (!loaded) return;
         try {
-            const monthly = items.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0);
+            const monthlyBase = items.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0);
+            const retDelta = showRetirementMode && retirementAdj
+                ? (retirementAdj.additions || []).reduce((s, a) => s + (a.monthlyAmount || 0), 0)
+                  + (retirementAdj.increases || []).reduce((s, inc) => {
+                      const matched = items.filter(i => i.enabled !== false).some(i => matchIncrease(i.label, inc.itemLabel));
+                      return s + (matched ? (inc.increaseAmount || 0) : 0);
+                  }, 0)
+                : 0;
+            const monthly = monthlyBase + retDelta;
             const incomeTarget = Math.round(results?.initialNetWithdrawal ?? parseFloat(inputs.monthlyNetIncomeDesired) ?? 0);
             const perPerson = householdSize > 0 ? Math.round(monthly / householdSize) : 0;
 
@@ -2014,7 +2123,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             }));
             window.dispatchEvent(new Event('rc-budget-updated'));
         } catch {}
-    }, [items, loaded, inputs.monthlyNetIncomeDesired, results, householdSize, showInflation, inflationRate, projFactor, projYears]);
+    }, [items, loaded, inputs.monthlyNetIncomeDesired, results, householdSize, showInflation, inflationRate, projFactor, projYears, showRetirementMode, retirementAdj]);
 
     // Keep budget reminders in sync immediately from local state (before DB debounce/save).
     useEffect(() => {
@@ -2030,10 +2139,21 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     }, [items, loaded]);
 
     // totalMonthly must be declared before any callbacks that reference it
-    const totalMonthly = useMemo(
+    const totalMonthlyBase = useMemo(
         () => items.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0),
         [items]
     );
+    const retirementDeltaTotal = useMemo(() => {
+        if (!showRetirementMode || !retirementAdj) return 0;
+        const additions = (retirementAdj.additions || []).reduce((s, a) => s + (a.monthlyAmount || 0), 0);
+        const increases = (retirementAdj.increases || []).reduce((s, inc) => {
+            // only count increase if there's a matching enabled item
+            const matched = items.filter(i => i.enabled !== false).some(i => matchIncrease(i.label, inc.itemLabel));
+            return s + (matched ? (inc.increaseAmount || 0) : 0);
+        }, 0);
+        return additions + increases;
+    }, [showRetirementMode, retirementAdj, items]);
+    const totalMonthly = showRetirementMode ? totalMonthlyBase + retirementDeltaTotal : totalMonthlyBase;
     const fullMonthly = useMemo(
         () => items.reduce((s, i) => s + toMonthly(i), 0),
         [items]
@@ -2277,28 +2397,81 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
 
             const perPerson = householdSize > 0 ? Math.round(totalMonthly / householdSize) : 0;
 
+            const retirementAge = parseFloat(inputs.retirementStartAge) || 67;
+            const retirementEndAge = parseFloat(inputs.retirementEndAge) || 90;
+            const currentAge    = parseFloat(inputs.currentAge) || 0;
+            const isPreRetirement = currentAge < retirementAge;
+            const NI_PENSION_AGE = 67;
+            const isRetirementBeforeNI = retirementAge < NI_PENSION_AGE;
+
             const systemPrompt = isHe
                 ? `אתה יועץ פיננסי בכיר המתמחה בתכנון פרישה בישראל. נתח את תקציב ההוצאות החודשי. המשתמש הזין ${householdSize} נפש/ות. הוצאה לנפש: ${cur}${perPerson.toLocaleString()}/חודש.
 
-**מבנה התשובה הנדרש (עד 350 מילה):**
+**מבנה התשובה הנדרש (עד 400 מילה):**
 
 ⚠️ התראות לפי נפשות:
 עבור כל קטגוריה המסומנת [משתנה לפי נפשות] — בדוק אם הסכום לנפש הגיוני. ציין במפורש: גבוה מדי / נמוך מדי / סביר, עם הסבר קצר. עבור קטגוריות [קבועות] — בדוק אם הסכום הכולל הגיוני ללא תלות בנפשות.
 
 ➕ הוצאות חסרות:
 סקור את הקטגוריות הריקות שצוינו. ציין אילו מהן כנראה חסרות הוצאות אמיתיות (לפי גיל פרישה ומשפחה ישראלית), ואת ההוצאה הצפויה הממוצעת. גם הצע הוצאות שאינן ברשימה כלל אך חשובות לגיל זה.
+${isPreRetirement ? `
+🔮 שינויים בהוצאות בפרישה:
+התקציב הנוכחי הוא לפני גיל פרישה (${retirementAge}). המשתמש מתכוון להפסיק לעבוד בגיל ${retirementAge} ולחיות מחסכונות עד גיל ${retirementEndAge}.
+${isRetirementBeforeNI ? `
+⚠️ שים לב: גיל הפרישה (${retirementAge}) הוא לפני גיל הזכאות לפנסיה/ביטוח לאומי (67). לכן יש להבחין בין שתי תקופות:
+
+תקופה א' — מגיל ${retirementAge} עד גיל 67 (לפני גמלאות):
+המשתמש מוגדר כ"מי שאינו עובד שכיר ואינו עובד עצמאי". בתקופה זו משלמים דמי ביטוח לאומי ודמי ביטוח בריאות כ"מי שאינו עובד" — לפי שיעורים מינימליים על בסיס 25% מהשכר הממוצע במשק (כ-₪185–220/חודש נכון ל-2024, כולל ביטוח בריאות). אין "דמי בריאות לגמלאי" בתקופה זו. יש לציין את הסכום הנכון לתקופה זו בלבד.
+
+תקופה ב' — מגיל 67 ואילך (גמלאי):
+מגיל 67 חלים כללים שונים לביטוח לאומי — הזכאות לגמלת הזקנה מתחילה ודמי הביטוח הלאומי עשויים לרדת או להשתנות בהתאם להכנסה מפנסיה.
+` : ''}
+חלק לשני תתי-סעיפים:
+
+א) הוצאות חדשות שיתווספו בתקופת הפרישה${isRetirementBeforeNI ? ` (גיל ${retirementAge}–67)` : ''}: ${isRetirementBeforeNI ? 'דמי ביטוח לאומי ובריאות כ"מי שאינו עובד" (לא דמי בריאות לגמלאי),' : 'ביטוח לאומי (דמי בריאות לגמלאי),'} שינוי בביטוח רפואי פרטי, תרופות וטיפולים רפואיים נוספים, פנאי ונסיעות גדולות יותר, עזרה בבית, ועוד — עם סכום חודשי משוער.
+
+ב) הוצאות קיימות שיגדלו: בפרישה נמצאים יותר זמן בבית ולא עובדים, לכן בדוק מהקטגוריות הקיימות מה צפוי לגדול — למשל צריכת מזון (יותר ארוחות בבית), חשמל וגז (יותר שעות בבית), תקשורת ובידור, ועוד. ציין את אחוז הגידול הצפוי לכל סעיף ואת התוספת החודשית המשוערת.
+
+בסוף תשובתך (אחרי הסיכום) הוסף בלוק JSON בפורמט המדויק הזה ואל תשנה את המבנה. categoryId חייב להיות אחד מ: housing, food, health, transport, entertainment, personal, family, misc. itemLabel חייב להיות זהה לשם הפריט בתקציב שהוזן. ${isRetirementBeforeNI ? 'השתמש בסכום המתאים לתקופה לפני גיל 67 (דמי ביטוח לאומי כ"מי שאינו עובד"), לא לגמלאי.' : ''}
+
+---RETIREMENT_JSON_START---
+{"additions":[{"categoryId":"health","label":"ביטוח לאומי ובריאות (לא עובד)","monthlyAmount":210,"note":"דמי ביטוח לאומי ובריאות כמי שאינו עובד, לפני גיל 67"}],"increases":[{"categoryId":"food","itemLabel":"קניות וסופר","increaseAmount":500,"increasePercent":20,"note":"יותר ארוחות בבית"}]}
+---RETIREMENT_JSON_END---` : ''}
 
 📊 סיכום:
 פער מהיעד ומה אפשר לייעל.`
                 : `You are a senior financial advisor specializing in retirement planning. The user has ${householdSize} person${householdSize !== 1 ? 's' : ''} in the household. Per-person spending: ${cur}${perPerson.toLocaleString()}/mo.
 
-**Required response structure (under 350 words):**
+**Required response structure (under 400 words):**
 
 ⚠️ Per-person anomalies:
 For each category tagged [scales with people] — check if the per-person amount is reasonable. State explicitly: too high / too low / reasonable, with a brief reason. For [fixed] categories — check if the total amount makes sense regardless of household size.
 
 ➕ Missing expenses:
 Review the empty categories listed. State which ones likely have real expenses missing (for a retired household), with expected typical amounts. Also suggest important expenses not in the list at all for this life stage.
+${isPreRetirement ? `
+🔮 Retirement budget changes:
+This budget is pre-retirement (retirement age: ${retirementAge}). The user plans to stop working at age ${retirementAge} and live off savings until age ${retirementEndAge}.
+${isRetirementBeforeNI ? `
+⚠️ Important: retirement age (${retirementAge}) is before the NI pension eligibility age (67). Distinguish between two periods:
+
+Period 1 — age ${retirementAge} to 67 (pre-pension):
+The user is classified as a "non-employed, non-self-employed person". They pay National Insurance and health insurance as a "non-worker" at minimum rates based on 25% of the average wage (approx. ₪185–220/month in 2024, inclusive of health insurance). Do NOT suggest "pensioner health contributions" for this period. Use the correct non-worker rate.
+
+Period 2 — age 67+ (pensioner):
+From age 67, different NI rules apply — pension-age entitlements begin and NI contributions may decrease or change based on pension income.
+` : ''}
+Split into two sub-sections:
+
+a) New expenses added during retirement${isRetirementBeforeNI ? ` (age ${retirementAge}–67)` : ''}: ${isRetirementBeforeNI ? 'NI and health insurance as a non-worker (NOT pensioner rates),' : 'national insurance (pensioner health contributions),'} changes in private medical insurance, additional medications and treatments, more leisure and travel, home help, etc. — with estimated monthly amounts.
+
+b) Existing expenses that will increase: being home all day instead of working means certain costs rise — check the existing categories and flag which ones will grow, e.g. food (more meals at home), electricity and gas (more hours at home), communication and entertainment, etc. Estimate the percentage increase and additional monthly cost for each.
+
+At the end of your response (after the summary) include a JSON block in exactly this format. categoryId must be one of: housing, food, health, transport, entertainment, personal, family, misc. itemLabel must match the budget item name exactly as entered. ${isRetirementBeforeNI ? 'Use the amount applicable to a non-worker before age 67, not the pensioner rate.' : ''}
+
+---RETIREMENT_JSON_START---
+{"additions":[{"categoryId":"health","label":"NI & Health (non-worker)","monthlyAmount":210,"note":"NI and health insurance as non-worker, before age 67"}],"increases":[{"categoryId":"food","itemLabel":"קניות וסופר","increaseAmount":500,"increasePercent":20,"note":"more meals at home"}]}
+---RETIREMENT_JSON_END---` : ''}
 
 📊 Summary:
 Gap vs target and what can be optimized.`;
@@ -2306,9 +2479,15 @@ Gap vs target and what can be optimized.`;
             const householdLine = isHe
                 ? `נפשות בבית: ${householdSize} | הוצאה לנפש: ${cur}${perPerson.toLocaleString()}/חודש`
                 : `Household: ${householdSize} person${householdSize !== 1 ? 's' : ''} | Per-person: ${cur}${perPerson.toLocaleString()}/mo`;
+            const ageContext = currentAge > 0
+                ? (isHe
+                    ? `\nגיל נוכחי: ${currentAge} | גיל פרישה: ${retirementAge} | גיל סיום תכנון: ${retirementEndAge}${isRetirementBeforeNI ? ` | גיל ביטוח לאומי/פנסיה: 67 (${Math.round(NI_PENSION_AGE - retirementAge)} שנים לאחר הפרישה)` : ''}${isPreRetirement ? ` | שנים לפרישה: ${Math.round(retirementAge - currentAge)}` : ' | כבר בפרישה'}`
+                    : `\nCurrent age: ${currentAge} | Retirement age: ${retirementAge} | Planning end age: ${retirementEndAge}${isRetirementBeforeNI ? ` | NI/pension age: 67 (${Math.round(NI_PENSION_AGE - retirementAge)} years after retirement)` : ''}${isPreRetirement ? ` | Years to retirement: ${Math.round(retirementAge - currentAge)}` : ' | Already retired'}`)
+                : '';
+
             const userMsg = isHe
-                ? `${householdLine}\nיעד הכנסה חודשית: ${cur}${Math.round(target)}\nסה"כ הוצאות: ${cur}${Math.round(totalMonthly)}\nפער: ${cur}${Math.round(target - totalMonthly)}\n\nפירוט:\n${lines || 'אין הוצאות מוזנות'}${missingSection}${futureSavingsSection}`
-                : `${householdLine}\nMonthly income target: ${cur}${Math.round(target)}\nTotal expenses: ${cur}${Math.round(totalMonthly)}\nGap: ${cur}${Math.round(target - totalMonthly)}\n\nBreakdown:\n${lines || 'No expenses entered'}${missingSection}${futureSavingsSection}`;
+                ? `${householdLine}${ageContext}\nיעד הכנסה חודשית: ${cur}${Math.round(target)}\nסה"כ הוצאות: ${cur}${Math.round(totalMonthly)}\nפער: ${cur}${Math.round(target - totalMonthly)}\n\nפירוט:\n${lines || 'אין הוצאות מוזנות'}${missingSection}${futureSavingsSection}`
+                : `${householdLine}${ageContext}\nMonthly income target: ${cur}${Math.round(target)}\nTotal expenses: ${cur}${Math.round(totalMonthly)}\nGap: ${cur}${Math.round(target - totalMonthly)}\n\nBreakdown:\n${lines || 'No expenses entered'}${missingSection}${futureSavingsSection}`;
 
             const reply = await getChatResponse(
                 [{ role: 'user', content: userMsg }],
@@ -2336,6 +2515,23 @@ Gap vs target and what can be optimized.`;
     return (
         <>
         <div className="space-y-3" dir={isHe ? 'rtl' : 'ltr'}>
+
+            {/* ── Retirement mode banner ── */}
+            {showRetirementMode && retirementAdj && (() => {
+                const totalDelta = (retirementAdj.additions || []).reduce((s, a) => s + (a.monthlyAmount || 0), 0)
+                    + (retirementAdj.increases || []).reduce((s, inc) => s + (inc.increaseAmount || 0), 0);
+                return (
+                    <div className={`flex items-center justify-between gap-3 px-3 py-2 rounded-xl text-xs font-medium border mb-1 ${isLight ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-amber-500/10 border-amber-500/40 text-amber-300'}`} dir={isHe ? 'rtl' : 'ltr'}>
+                        <span className="flex items-center gap-1.5">
+                            <span>🔮</span>
+                            <span>{isHe ? 'תצוגת תקציב פרישה' : 'Retirement budget view'}</span>
+                        </span>
+                        <span dir="ltr" className="font-bold">
+                            {isHe ? 'תוספת צפויה:' : 'Expected addition:'} +{currency}{Math.round(totalDelta).toLocaleString()}{isHe ? '/חודש' : '/mo'}
+                        </span>
+                    </div>
+                );
+            })()}
 
             {/* ── Summary banner — sticky ── */}
             <div className={`sticky top-0 z-20 rounded-xl p-3 border backdrop-blur-md ${isLight ? 'bg-white border-slate-200' : 'bg-white/10 border-white/20'}`}>
@@ -2562,6 +2758,17 @@ Gap vs target and what can be optimized.`;
                 >
                     <BarChart3 size={14} />
                 </button>
+                {retirementAdj && (
+                    <button
+                        onClick={() => setShowRetirementMode(v => !v)}
+                        title={isHe ? 'תצוגת תקציב פרישה' : 'Retirement budget view'}
+                        className={`shrink-0 px-2 py-1.5 rounded-xl border text-xs font-medium transition-colors ${showRetirementMode
+                            ? (isLight ? 'bg-amber-100 border-amber-400 text-amber-700' : 'bg-amber-500/20 border-amber-400 text-amber-300')
+                            : (isLight ? 'bg-slate-50 border-slate-200 text-slate-400 hover:border-amber-300 hover:text-amber-600' : 'bg-white/5 border-white/20 text-gray-500 hover:border-amber-400 hover:text-amber-400')}`}
+                    >
+                        🔮
+                    </button>
+                )}
             </div>
 
             {/* ── Search results ── */}
@@ -2623,6 +2830,7 @@ Gap vs target and what can be optimized.`;
                         aiProvider={aiProvider}
                         aiModel={aiModel}
                         apiKeyOverride={apiKeyOverride}
+                        retirementOverlay={showRetirementMode ? retirementAdj : null}
                     />
                 );
             })}
@@ -2782,8 +2990,8 @@ Gap vs target and what can be optimized.`;
                         {aiError && !aiLoading && (
                             <p className="text-sm text-red-500">{aiError}</p>
                         )}
-                        {aiInsight && (
-                            <InsightRenderer text={aiInsight} isLight={isLight} />
+                        {insightText && (
+                            <InsightRenderer text={insightText} isLight={isLight} />
                         )}
                         {!aiLoading && !aiError && !aiInsight && (
                             <p className={`text-sm ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
@@ -2809,6 +3017,7 @@ Gap vs target and what can be optimized.`;
             t={t}
             sliderConsumed={sliderConsumed}
             setSliderConsumed={setSliderConsumed}
+            retirementAdj={retirementAdj}
         />
         </>
     );
