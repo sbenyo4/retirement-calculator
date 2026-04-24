@@ -83,7 +83,8 @@ export const WITHDRAWAL_STRATEGIES = {
     FOUR_PERCENT: 'fourPercent', // 4% rule - withdraw 4% of initial balance yearly
     PERCENTAGE: 'percentage', // Fixed percentage of current balance
     DYNAMIC: 'dynamic',       // Adjust based on market conditions
-    INTEREST_ONLY: 'interestOnly' // Withdraw only the monthly interest
+    INTEREST_ONLY: 'interestOnly', // Withdraw only the monthly interest
+    GUARDRAILS: 'guardrails'  // Guyton-Klinger guardrails — adjust based on portfolio withdrawal rate
 };
 
 // Life Events Types

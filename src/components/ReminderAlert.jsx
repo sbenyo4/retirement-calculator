@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Bell, CheckCircle, Clock, ArrowUpRight, MessageSquare, RefreshCw } from 'lucide-react';
+import { Bell, CheckCircle, Clock, ArrowUpRight, MessageSquare, RefreshCw, ChevronUp, ChevronDown } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { markLoginReminderHandled, useReminders, advanceRecurringReminder } from '../hooks/useReminders';
+import { markLoginReminderHandled, useReminders, advanceRecurringReminder, updateReminderInSession, setReminderSnooze } from '../hooks/useReminders';
 
 const isLifeEventSource = (source) =>
     typeof source === 'string' && (source === 'lifeEvents' || source.startsWith('lifeEvents:'));
@@ -10,6 +10,7 @@ export function ReminderAlert({ language, isLight, sessionKey }) {
     const { alertDueNow, confirmReminder } = useReminders();
     const isHe = language === 'he';
     const [locallyClosedAlertIds, setLocallyClosedAlertIds] = useState(() => new Set());
+    const [snoozeDays, setSnoozeDays] = useState(0);
 
     useEffect(() => {
         setLocallyClosedAlertIds(new Set());
@@ -49,6 +50,27 @@ export function ReminderAlert({ language, isLight, sessionKey }) {
         if (source === 'budget') return isHe ? 'תקציב' : 'Budget';
         if (isLifeEventSource(source)) return isHe ? 'אירוע חיים' : 'Life Event';
         return source;
+    }
+
+    function computeSnoozeDate(days) {
+        const d = new Date();
+        d.setDate(d.getDate() + Math.max(1, parseInt(days) || 1));
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function handleSnooze(id, source) {
+        if (snoozeDays > 0) {
+            const date = computeSnoozeDate(snoozeDays);
+            setReminderSnooze(id, source, date);
+            updateReminderInSession(source, id, { date });
+        }
+        setSnoozeDays(0);
+        markLoginReminderHandled(id, source);
+        setLocallyClosedAlertIds(prev => {
+            const next = new Set(prev);
+            next.add(`${source}-${id}`);
+            return next;
+        });
     }
 
     // Active card is always the first visible alert
@@ -161,35 +183,20 @@ export function ReminderAlert({ language, isLight, sessionKey }) {
                         </div>
 
                         {active.recurring ? (
-                            <div className="space-y-2">
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => advanceRecurringReminder(active.id, active.source)}
-                                        className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
-                                    >
-                                        <CheckCircle size={15} />
-                                        {isHe ? 'אשר עכשיו' : 'Confirm'}
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            markLoginReminderHandled(active.id, active.source);
-                                            setLocallyClosedAlertIds(prev => {
-                                                const next = new Set(prev);
-                                                next.add(globalId);
-                                                return next;
-                                            });
-                                        }}
-                                        className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}
-                                    >
-                                        {isHe ? 'הזכר אח"כ' : 'Snooze'}
-                                    </button>
-                                </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => advanceRecurringReminder(active.id, active.source)}
+                                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                                >
+                                    <CheckCircle size={15} />
+                                    {isHe ? 'אישור' : 'Confirm'}
+                                </button>
                                 <button
                                     onClick={() => confirmReminder(active.id, active.source)}
-                                    className={`w-full py-2 rounded-xl text-xs font-semibold transition-all active:scale-95 flex items-center justify-center gap-1.5 ${isLight ? 'bg-red-50 hover:bg-red-100 text-red-500 border border-red-200' : 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20'}`}
+                                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 ${isLight ? 'bg-red-50 hover:bg-red-100 text-red-500 border border-red-200' : 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20'}`}
                                 >
-                                    <RefreshCw size={12} />
-                                    {isHe ? 'בטל תזכורת חוזרת לצמיתות' : 'Stop recurring reminder'}
+                                    <RefreshCw size={15} />
+                                    {isHe ? 'ביטול תזכורת' : 'Stop reminder'}
                                 </button>
                             </div>
                         ) : (
@@ -201,19 +208,28 @@ export function ReminderAlert({ language, isLight, sessionKey }) {
                                     <CheckCircle size={16} />
                                     {isHe ? 'בוצע' : 'Done'}
                                 </button>
-                                <button
-                                    onClick={() => {
-                                        markLoginReminderHandled(active.id, active.source);
-                                        setLocallyClosedAlertIds(prev => {
-                                            const next = new Set(prev);
-                                            next.add(globalId);
-                                            return next;
-                                        });
-                                    }}
-                                    className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}
+                                <div
+                                    dir="ltr"
+                                    className={`flex items-stretch rounded-xl overflow-hidden border text-xs font-bold ${isLight ? 'bg-slate-100 border-slate-200 text-slate-600' : 'bg-white/10 border-white/10 text-gray-300'}`}
                                 >
-                                    {isHe ? 'הזכר לי אח"כ' : 'Snooze'}
-                                </button>
+                                    <div className={`flex flex-col border-r ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
+                                        <button onClick={() => setSnoozeDays(d => Math.min(365, d + 1))} className={`flex-1 w-7 flex items-center justify-center transition-colors ${isLight ? 'hover:bg-slate-200' : 'hover:bg-white/10'}`}>
+                                            <ChevronUp size={11} />
+                                        </button>
+                                        <button onClick={() => setSnoozeDays(d => Math.max(0, d - 1))} className={`flex-1 w-7 flex items-center justify-center transition-colors ${isLight ? 'hover:bg-slate-200' : 'hover:bg-white/10'}`}>
+                                            <ChevronDown size={11} />
+                                        </button>
+                                    </div>
+                                    <span className="flex items-center justify-center px-3 tabular-nums select-none whitespace-nowrap">
+                                        {snoozeDays}{isHe ? ' יום' : ' day'}
+                                    </span>
+                                    <button
+                                        onClick={() => handleSnooze(active.id, active.source)}
+                                        className={`px-3 py-2.5 border-l transition-colors active:scale-95 whitespace-nowrap ${isLight ? 'border-slate-200 hover:bg-slate-200' : 'border-white/10 hover:bg-white/10'}`}
+                                    >
+                                        {isHe ? 'הזכר' : 'Remind'}
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>

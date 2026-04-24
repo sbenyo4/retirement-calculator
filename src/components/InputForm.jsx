@@ -830,7 +830,8 @@ export default function InputForm({
                                 { id: WITHDRAWAL_STRATEGIES.FOUR_PERCENT, label: t('withdrawalFourPercent') },
                                 { id: WITHDRAWAL_STRATEGIES.PERCENTAGE, label: t('withdrawalPercentage') },
                                 { id: WITHDRAWAL_STRATEGIES.DYNAMIC, label: t('withdrawalDynamic') },
-                                { id: WITHDRAWAL_STRATEGIES.INTEREST_ONLY, label: t('withdrawalInterestOnly') }
+                                { id: WITHDRAWAL_STRATEGIES.INTEREST_ONLY, label: t('withdrawalInterestOnly') },
+                                { id: WITHDRAWAL_STRATEGIES.GUARDRAILS, label: t('withdrawalGuardrails') }
                             ].map(strategy => (
                                 <button
                                     key={strategy.id}
@@ -859,6 +860,7 @@ export default function InputForm({
                             {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE && t('withdrawalPercentageDesc')}
                             {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC && t('withdrawalDynamicDesc')}
                             {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY && t('withdrawalInterestOnlyDesc')}
+                            {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.GUARDRAILS && t('withdrawalGuardrailsDesc')}
                             {inputs.variableRatesEnabled && t('variableRatesDesc')}
                             {!inputs.variableRatesEnabled && (!inputs.withdrawalStrategy || inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FIXED) && t('withdrawalFixedDesc')}
                         </p>

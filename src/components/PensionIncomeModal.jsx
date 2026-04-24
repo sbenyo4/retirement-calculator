@@ -28,7 +28,8 @@ import {
     WifiOff,
     KeyRound,
     CreditCard,
-    FileX
+    FileX,
+    Clock
 } from 'lucide-react';
 import { getPensionAIInsights, classifyAiError } from '../utils/ai-insights';
 import {
@@ -373,6 +374,8 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const [pensionInterestRate, setPensionInterestRate] = useState(() => inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : 4);
     const [showRateTooltip, setShowRateTooltip] = useState(false);
     const rateTooltipRef = useRef(null);
+    const [deferralYears, setDeferralYears] = useState(0);
+    const [showDeferralPanel, setShowDeferralPanel] = useState(false);
 
     // Lock body scroll when modal is open
     useEffect(() => {
@@ -495,6 +498,30 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         const annuitySources = incomeSources.filter(s => !s.isLumpSum);
         return calculateIncomeAtAge(annuitySources, retirementEndAge, fiscalParameters ? { ...fiscalParameters, retirementAge: retirementStartAge, familyStatus } : { familyStatus, retirementAge: retirementStartAge });
     }, [incomeSources, retirementEndAge, fiscalParameters, retirementStartAge, familyStatus]);
+
+    const deferralCalc = useMemo(() => {
+        const niSource = incomeSources.find(s => s.type === 'nationalInsurance' && s.enabled !== false);
+        if (!niSource) return null;
+        const niStartAge = parseFloat(niSource.startAge) || 67;
+        const niGross = parseFloat(niSource.amount) || 0;
+        const deferredGross = niGross * Math.pow(1.05, deferralYears);
+        const effTaxRate = (incomeAtPensionAge.effectiveTaxRate || 0) / 100;
+        const baseNet = niGross * (1 - effTaxRate);
+        const deferredNet = deferredGross * (1 - effTaxRate);
+        const deltaNet = deferredNet - baseNet;
+        const milestoneAtNiAge = summary.milestones.find(m => m.age === niStartAge);
+        const balAtNiAge = milestoneAtNiAge?.accumulatedCapital ?? capitalAtRetirement;
+        const returnRate = pensionInterestRate / 100;
+        let projectedBalance = balAtNiAge;
+        for (let y = 0; y < deferralYears; y++) {
+            projectedBalance = projectedBalance * (1 + returnRate) - baseNet * 12;
+        }
+        const fundingCost = baseNet * 12 * deferralYears;
+        const breakEvenAge = (deltaNet > 0 && deferralYears > 0)
+            ? niStartAge + deferralYears + Math.ceil(fundingCost / deltaNet / 12)
+            : null;
+        return { niStartAge, niGross, deferredGross, baseNet, deferredNet, deltaNet, balAtNiAge, projectedBalance: Math.max(0, projectedBalance), fundingCost, breakEvenAge };
+    }, [deferralYears, incomeSources, incomeAtPensionAge, summary, capitalAtRetirement, pensionInterestRate]);
 
     // Track changes
     const initialIncomeSources = useMemo(() => getSafeSources(), [getSafeSources]);
@@ -856,6 +883,117 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                 </div>
                             )}
                         </div>
+
+                        {/* NI Deferral Panel */}
+                        {deferralCalc && (
+                            <div className={`rounded-xl border transition-all duration-300 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'}`}>
+                                <button
+                                    onClick={() => setShowDeferralPanel(!showDeferralPanel)}
+                                    className={`w-full flex items-center justify-between p-3 ${isLight ? 'hover:bg-slate-100' : 'hover:bg-white/5'} transition-colors`}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <div className={`p-1 rounded ${isLight ? 'bg-blue-100 text-blue-600' : 'bg-blue-500/20 text-blue-400'}`}>
+                                            <Clock size={14} />
+                                        </div>
+                                        <h3 className={`text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                                            {language === 'he' ? 'דחיית ביטוח לאומי' : 'NI Deferral Analysis'}
+                                        </h3>
+                                        {deferralYears > 0 && (
+                                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isLight ? 'bg-blue-100 text-blue-600' : 'bg-blue-500/20 text-blue-400'}`}>
+                                                {deferralYears === 1 ? (language === 'he' ? 'שנה 1' : '1 year') : (language === 'he' ? `${deferralYears} שנים` : `${deferralYears} years`)}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {showDeferralPanel ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                </button>
+
+                                {showDeferralPanel && (
+                                    <div className={`p-3 border-t space-y-3 ${isLight ? 'border-slate-200' : 'border-white/10'}`} dir={language === 'he' ? 'rtl' : 'ltr'}>
+                                        {/* Slider */}
+                                        <div className="space-y-1">
+                                            <div className="flex items-center justify-between">
+                                                <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                    {language === 'he' ? 'שנות דחייה' : 'Deferral years'}
+                                                </span>
+                                                <span className={`text-sm font-bold ${isLight ? 'text-blue-600' : 'text-blue-400'}`}>
+                                                    {deferralYears === 0
+                                                        ? (language === 'he' ? 'ללא דחייה' : 'No deferral')
+                                                        : (language === 'he' ? `${deferralYears} שנים` : `${deferralYears} years`)}
+                                                </span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="5"
+                                                step="1"
+                                                value={language === 'he' ? 5 - deferralYears : deferralYears}
+                                                onChange={e => setDeferralYears(language === 'he' ? 5 - parseInt(e.target.value) : parseInt(e.target.value))}
+                                                className="w-full accent-blue-500"
+                                                style={language === 'he' ? { transform: 'scaleX(-1)' } : {}}
+                                            />
+                                            <div dir="ltr" className={`flex justify-between text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                                {language === 'he'
+                                                    ? <><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span><span>0</span></>
+                                                    : <><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></>
+                                                }
+                                            </div>
+                                        </div>
+
+                                        {/* Comparison Table */}
+                                        <div className={`rounded-lg overflow-hidden border ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
+                                            <div className={`grid grid-cols-3 text-[10px] font-semibold uppercase tracking-wide px-3 py-2 ${isLight ? 'bg-slate-100 text-slate-500' : 'bg-white/5 text-gray-400'}`}>
+                                                <span>{language === 'he' ? 'פרמטר' : 'Parameter'}</span>
+                                                <span className="text-center">{language === 'he' ? 'ללא דחייה' : 'No deferral'}</span>
+                                                <span className="text-center">{language === 'he' ? 'עם דחייה' : 'With deferral'}</span>
+                                            </div>
+                                            <div className={`divide-y text-xs ${isLight ? 'divide-slate-100' : 'divide-white/5'}`}>
+                                                <div className={`grid grid-cols-3 px-3 py-2 ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/5'}`}>
+                                                    <span className={isLight ? 'text-slate-600' : 'text-gray-400'}>{language === 'he' ? 'קצבה חודשית (נטו)' : 'Monthly net'}</span>
+                                                    <span className={`text-center font-medium ${isLight ? 'text-slate-900' : 'text-white'}`}>{formatCurrency(Math.round(deferralCalc.baseNet))}</span>
+                                                    <span className={`text-center font-medium ${deferralYears > 0 ? (isLight ? 'text-emerald-600' : 'text-emerald-400') : (isLight ? 'text-slate-900' : 'text-white')}`}>
+                                                        {formatCurrency(Math.round(deferralCalc.deferredNet))}
+                                                        {deferralYears > 0 && deferralCalc.deltaNet > 0 && (
+                                                            <span className="text-[10px] ms-1 opacity-70">(+{formatCurrency(Math.round(deferralCalc.deltaNet))})</span>
+                                                        )}
+                                                    </span>
+                                                </div>
+                                                <div className={`grid grid-cols-3 px-3 py-2 ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/5'}`}>
+                                                    <span className={isLight ? 'text-slate-600' : 'text-gray-400'}>{language === 'he' ? 'עלות מימון' : 'Funding cost'}</span>
+                                                    <span className={`text-center font-medium ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>—</span>
+                                                    <span className={`text-center font-medium ${deferralYears > 0 ? (isLight ? 'text-red-600' : 'text-red-400') : (isLight ? 'text-slate-400' : 'text-gray-500')}`}>
+                                                        {deferralYears > 0 ? formatCurrency(Math.round(deferralCalc.fundingCost)) : '—'}
+                                                    </span>
+                                                </div>
+                                                <div className={`grid grid-cols-3 px-3 py-2 ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/5'}`}>
+                                                    <span className={isLight ? 'text-slate-600' : 'text-gray-400'}>{language === 'he' ? 'יתרת תיק בתחילת קצבה' : 'Portfolio at pension start'}</span>
+                                                    <span className={`text-center font-medium ${isLight ? 'text-slate-900' : 'text-white'}`}>{formatCurrency(Math.round(deferralCalc.balAtNiAge))}</span>
+                                                    <span className={`text-center font-medium ${isLight ? 'text-indigo-600' : 'text-indigo-400'}`}>
+                                                        {deferralYears > 0 ? formatCurrency(Math.round(deferralCalc.projectedBalance)) : '—'}
+                                                    </span>
+                                                </div>
+                                                <div className={`grid grid-cols-3 px-3 py-2 ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/5'}`}>
+                                                    <span className={isLight ? 'text-slate-600' : 'text-gray-400'}>{language === 'he' ? 'גיל החזר השקעה' : 'Break-even age'}</span>
+                                                    <span className={`text-center font-medium ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>—</span>
+                                                    <span className={`text-center font-bold ${deferralCalc.breakEvenAge ? (isLight ? 'text-amber-600' : 'text-amber-400') : (isLight ? 'text-slate-400' : 'text-gray-500')}`}>
+                                                        {deferralYears > 0
+                                                            ? (deferralCalc.breakEvenAge ? `${language === 'he' ? 'גיל' : 'Age'} ${deferralCalc.breakEvenAge}` : '—')
+                                                            : '—'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {deferralYears > 0 && deferralCalc.breakEvenAge && (
+                                            <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                {language === 'he'
+                                                    ? `דחייה כדאית אם תחיה מעבר לגיל ${deferralCalc.breakEvenAge}.`
+                                                    : `Deferral pays off if you live past age ${deferralCalc.breakEvenAge}.`}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* Age Milestones */}
                         <div className="flex-1 flex flex-col min-h-0">

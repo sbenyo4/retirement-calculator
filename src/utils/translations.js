@@ -225,6 +225,8 @@ export const translations = {
         withdrawalDynamicDesc: 'Adjusts based on market performance',
         withdrawalInterestOnly: 'Interest Only',
         withdrawalInterestOnlyDesc: 'Withdraw only the monthly interest',
+        withdrawalGuardrails: 'Guardrails',
+        withdrawalGuardrailsDesc: 'Guyton-Klinger: adjusts ±10% when portfolio withdrawal rate crosses ±20% of initial',
         withdrawalPercentageRate: 'Withdrawal Rate (%)',
         netWithdrawal: 'Net Withdrawal',
         // Error Boundary
@@ -626,6 +628,8 @@ export const translations = {
         withdrawalDynamicDesc: 'מתאים לפי ביצועי השוק',
         withdrawalInterestOnly: 'ריבית בלבד',
         withdrawalInterestOnlyDesc: 'משיכת הריבית החודשית בלבד (שימור קרן)',
+        withdrawalGuardrails: 'גדרות',
+        withdrawalGuardrailsDesc: 'Guyton-Klinger: מתאים ±10% כאשר אחוז המשיכה חורג ב-±20% מהשיעור ההתחלתי',
         withdrawalPercentageRate: 'אחוז משיכה (%)',
         netWithdrawal: 'משיכה נטו',
         // Error Boundary

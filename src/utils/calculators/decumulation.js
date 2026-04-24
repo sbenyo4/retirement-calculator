@@ -69,6 +69,14 @@ export function calculateDecumulation({
     let dynamicBaseWithdrawal = monthlyNetIncomeDesired;
     let dynamicAnnualGrowth = 1; // cumulative (1+r) product over the current 12-month window
 
+    // Guardrails (Guyton-Klinger): track portfolio withdrawal rate vs initial
+    let guardrailsBaseWithdrawal = monthlyNetIncomeDesired;
+    const guardrailsInitialRate = balanceAtRetirement > 0
+        ? (monthlyNetIncomeDesired * 12) / balanceAtRetirement
+        : 0;
+    const guardrailsFloor = monthlyNetIncomeDesired * 0.8;
+    const guardrailsCeiling = monthlyNetIncomeDesired * 1.5;
+
     // Required Capital PV Accumulator
     let requiredCapitalPV = 0;
     // Running product of (1 + r_k) for each retirement month k.
@@ -305,6 +313,20 @@ export function calculateDecumulation({
                     dynamicAnnualGrowth = 1; // reset for next year
                 }
                 netWithdrawal = dynamicBaseWithdrawal;
+                break;
+            }
+            case WITHDRAWAL_STRATEGIES.GUARDRAILS: {
+                if (i % 12 === 0 && guardrailsInitialRate > 0) {
+                    const currentRate = (guardrailsBaseWithdrawal * 12) / Math.max(1, currentBalance);
+                    if (currentRate < guardrailsInitialRate * 0.8) {
+                        // Portfolio grew — spending rate is too low → increase withdrawal 10%
+                        guardrailsBaseWithdrawal = Math.min(guardrailsBaseWithdrawal * 1.1, guardrailsCeiling);
+                    } else if (currentRate > guardrailsInitialRate * 1.2) {
+                        // Portfolio shrank — spending rate too high → decrease withdrawal 10%
+                        guardrailsBaseWithdrawal = Math.max(guardrailsBaseWithdrawal * 0.9, guardrailsFloor);
+                    }
+                }
+                netWithdrawal = guardrailsBaseWithdrawal;
                 break;
             }
             case WITHDRAWAL_STRATEGIES.INTEREST_ONLY: {

@@ -1,6 +1,21 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 
 const SESSION_KEY = 'rc-reminders';
+const SNOOZE_KEY = 'rc-reminders-snoozed';
+
+function readSnoozed() {
+    try { return JSON.parse(sessionStorage.getItem(SNOOZE_KEY) || '{}'); } catch { return {}; }
+}
+
+export function setReminderSnooze(id, source, date) {
+    if (!id || !source) return;
+    const globalId = toGlobalId(id, source);
+    const today = todayStr();
+    const existing = readSnoozed();
+    const cleaned = Object.fromEntries(Object.entries(existing).filter(([, d]) => d > today));
+    cleaned[globalId] = date;
+    try { sessionStorage.setItem(SNOOZE_KEY, JSON.stringify(cleaned)); } catch {}
+}
 
 // In-memory state for the current browser session
 const shownThisSession = new Set();
@@ -303,6 +318,8 @@ export function syncMultipleSources(syncConfigs) {
     try {
         const existing = readReminders();
         let nextState = [...existing];
+        const snoozed = readSnoozed();
+        const today = todayStr();
         syncConfigs.forEach(({ source, items }) => {
             nextState = nextState.filter(r => r.source !== source);
             const newOnes = items
@@ -312,7 +329,7 @@ export function syncMultipleSources(syncConfigs) {
                     const rType = i.recurringType || i.reminder?.recurringType;
                     const rDay = i.recurringDay ?? i.reminder?.recurringDay;
                     const rInterval = i.recurringInterval ?? i.reminder?.recurringInterval;
-                    return {
+                    const item = {
                         id: String(i.id),
                         label: i.label || i.title || i.description || i.id,
                         source: source,
@@ -326,6 +343,14 @@ export function syncMultipleSources(syncConfigs) {
                             ...(rInterval !== undefined ? { recurringInterval: rInterval } : {}),
                         } : {}),
                     };
+                    // If this reminder was snoozed and the snooze date is still in the future,
+                    // keep the snoozed date so Firestore syncs don't undo the snooze.
+                    const globalId = toGlobalId(item.id, source);
+                    const snoozeDate = snoozed[globalId];
+                    if (snoozeDate && snoozeDate > today) {
+                        item.date = snoozeDate;
+                    }
+                    return item;
                 });
             nextState = [...nextState, ...newOnes];
         });
