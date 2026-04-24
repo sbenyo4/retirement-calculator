@@ -2485,9 +2485,40 @@ Gap vs target and what can be optimized.`;
                     : `\nCurrent age: ${currentAge} | Retirement age: ${retirementAge} | Planning end age: ${retirementEndAge}${isRetirementBeforeNI ? ` | NI/pension age: 67 (${Math.round(NI_PENSION_AGE - retirementAge)} years after retirement)` : ''}${isPreRetirement ? ` | Years to retirement: ${Math.round(retirementAge - currentAge)}` : ' | Already retired'}`)
                 : '';
 
+            // Retirement portfolio context from calculator results
+            const balAtRet  = results?.balanceAtRetirement ?? null;
+            const balAtEnd  = results?.balanceAtEnd ?? null;
+            const netWd     = results?.initialNetWithdrawal ?? null;
+            const reqCap    = results?.requiredCapitalAtRetirement ?? null;
+            const surplusAmt = results?.surplus ?? null;
+            const ranOut    = results?.ranOutAtAge ?? null;
+            const wdRate    = (balAtRet && netWd) ? (netWd * 12) / balAtRet : null;
+
+            const calcContext = isHe
+                ? (() => {
+                    const lines2 = [];
+                    if (balAtRet != null) lines2.push(`יתרה צבורה בגיל פרישה: ${cur}${Math.round(balAtRet).toLocaleString()}`);
+                    if (reqCap  != null) lines2.push(`הון נדרש לפרישה: ${cur}${Math.round(reqCap).toLocaleString()}`);
+                    if (surplusAmt != null) lines2.push(`עודף / גירעון: ${surplusAmt >= 0 ? '+' : ''}${cur}${Math.round(surplusAmt).toLocaleString()}`);
+                    if (wdRate   != null) lines2.push(`אחוז משיכה מהתיק: ${(wdRate * 100).toFixed(1)}% לשנה`);
+                    if (balAtEnd != null) lines2.push(`יתרה בסוף תקופת הפרישה: ${cur}${Math.round(balAtEnd).toLocaleString()}`);
+                    if (ranOut   != null) lines2.push(`⚠️ הכסף נגמר בגיל: ${ranOut.toFixed(1)}`);
+                    return lines2.length ? `\nנתוני חישוב פרישה:\n${lines2.join('\n')}` : '';
+                })()
+                : (() => {
+                    const lines2 = [];
+                    if (balAtRet != null) lines2.push(`Portfolio at retirement: ${cur}${Math.round(balAtRet).toLocaleString()}`);
+                    if (reqCap  != null) lines2.push(`Required capital: ${cur}${Math.round(reqCap).toLocaleString()}`);
+                    if (surplusAmt != null) lines2.push(`Surplus / deficit: ${surplusAmt >= 0 ? '+' : ''}${cur}${Math.round(surplusAmt).toLocaleString()}`);
+                    if (wdRate   != null) lines2.push(`Withdrawal rate: ${(wdRate * 100).toFixed(1)}%/yr`);
+                    if (balAtEnd != null) lines2.push(`Balance at end of retirement: ${cur}${Math.round(balAtEnd).toLocaleString()}`);
+                    if (ranOut   != null) lines2.push(`⚠️ Funds run out at age: ${ranOut.toFixed(1)}`);
+                    return lines2.length ? `\nRetirement calculation data:\n${lines2.join('\n')}` : '';
+                })();
+
             const userMsg = isHe
-                ? `${householdLine}${ageContext}\nיעד הכנסה חודשית: ${cur}${Math.round(target)}\nסה"כ הוצאות: ${cur}${Math.round(totalMonthly)}\nפער: ${cur}${Math.round(target - totalMonthly)}\n\nפירוט:\n${lines || 'אין הוצאות מוזנות'}${missingSection}${futureSavingsSection}`
-                : `${householdLine}${ageContext}\nMonthly income target: ${cur}${Math.round(target)}\nTotal expenses: ${cur}${Math.round(totalMonthly)}\nGap: ${cur}${Math.round(target - totalMonthly)}\n\nBreakdown:\n${lines || 'No expenses entered'}${missingSection}${futureSavingsSection}`;
+                ? `${householdLine}${ageContext}${calcContext}\nיעד הכנסה חודשית: ${cur}${Math.round(target)}\nסה"כ הוצאות: ${cur}${Math.round(totalMonthly)}\nפער: ${cur}${Math.round(target - totalMonthly)}\n\nפירוט:\n${lines || 'אין הוצאות מוזנות'}${missingSection}${futureSavingsSection}`
+                : `${householdLine}${ageContext}${calcContext}\nMonthly income target: ${cur}${Math.round(target)}\nTotal expenses: ${cur}${Math.round(totalMonthly)}\nGap: ${cur}${Math.round(target - totalMonthly)}\n\nBreakdown:\n${lines || 'No expenses entered'}${missingSection}${futureSavingsSection}`;
 
             const reply = await getChatResponse(
                 [{ role: 'user', content: userMsg }],
