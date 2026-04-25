@@ -69,8 +69,8 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
         recognitionRef.current = recognition;
 
         const tryAutoSubmit = (accumulated) => {
-            if (!/(?:^|\s)done[.,!?\s]*$/i.test(accumulated)) return false;
-            const text = accumulated.replace(/[\s.,!?]*done[.,!?\s]*$/i, '').trim();
+            if (!/(?:^|\s)(done|דן)[.,!?\s]*$/.test(accumulated)) return false;
+            const text = accumulated.replace(/[\s.,!?]*(done|דן)[.,!?\s]*$/, '').trim();
             listeningRef.current = false;
             recognitionRef.current?.stop();
             setListening(false);

@@ -253,24 +253,59 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
     const computeExtremes = useCallback(() => {
         try {
             const base = parseFloat(effectiveInputs?.annualReturnRate) || 6;
-            const baseline = calculateRetirementProjection({ ...effectiveInputs, scenarioEnabled: false });
+            const safeRate = parseFloat(effectiveInputs?.bucketSafeRate) || 2;
+            const surplusRate = parseFloat(effectiveInputs?.bucketSurplusRate) || 6;
+
+            // Clear ALL per-year variable rate overrides so user's custom rates
+            // don't interfere with the clean extremes scenarios. The scenario
+            // calculator will still generate crash/recovery rates from the scenario object.
+            const cleanInputs = {
+                ...effectiveInputs,
+                variableRatesEnabled: false,
+                variableRates: {},
+                safeVariableRates: {},
+                surplusVariableRates: {},
+            };
+
+            const baseline = calculateRetirementProjection({ ...cleanInputs, scenarioEnabled: false });
+
+            // Worst: fully explicit scenario — no spread of existing scenario params.
             const worst = calculateRetirementProjection({
-                ...effectiveInputs, scenarioEnabled: true,
-                scenario: { ...effectiveInputs.scenario, startYear: retirementStartYear, crashDepth: -40, recoveryYears: 5 }
+                ...cleanInputs,
+                scenarioEnabled: true,
+                scenario: {
+                    type: 'crash',
+                    startYear: retirementStartYear,
+                    crashDepth: -40,
+                    recoveryYears: 7,
+                    recoveryShape: 'linear',
+                    recoveryMode: 'rate',
+                    targetAvgRate: base,
+                    affectsSafeBucket: localAffectsSafe,
+                }
             });
+
+            // Best: boost all return rates — annualReturnRate affects accumulation & non-bucket path;
+            // bucket rates must also be boosted because decumulation uses them directly, not annualReturnRate.
             const best = calculateRetirementProjection({
-                ...effectiveInputs, scenarioEnabled: false,
-                annualReturnRate: base + 2
+                ...cleanInputs,
+                scenarioEnabled: false,
+                annualReturnRate: base + 4,
+                ...(effectiveInputs?.enableBuckets ? {
+                    bucketSafeRate: safeRate + 2,
+                    bucketSurplusRate: surplusRate + 4,
+                } : {}),
             });
-            setExtremesResult({ baseline, worst, best });
-        } catch {}
-    }, [effectiveInputs, retirementStartYear]);
+
+            setExtremesResult({ baseline, worst, best, meta: { base, safeRate, surplusRate } });
+        } catch (err) { console.error('[extremes]', err); }
+    }, [effectiveInputs, retirementStartYear, localAffectsSafe]);
 
     useEffect(() => {
-        if (activeTab !== 'extremes' || extremesInitRef.current) return;
-        extremesInitRef.current = true;
+        if (activeTab !== 'extremes') return;
+        if (!extremesInitRef.current) extremesInitRef.current = true;
         computeExtremes();
-    }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [activeTab, computeExtremes]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Init compare rows on first tab visit
     useEffect(() => {
@@ -600,12 +635,12 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                                 {he ? 'דלי בטוח:' : 'Safe bucket:'}
                                 <button
                                     onClick={() => setLocalAffectsSafe(v => !v)}
-                                    className={`relative inline-flex w-8 h-4 rounded-full transition-colors ${localAffectsSafe ? 'bg-orange-500' : (isLight ? 'bg-gray-300' : 'bg-gray-600')}`}
+                                    className={`relative inline-flex w-8 h-4 rounded-full transition-colors ${localAffectsSafe ? 'bg-orange-500' : 'bg-green-500'}`}
                                     title={localAffectsSafe ? (he ? 'לחץ להגן על הדלי הבטוח' : 'Click to shield safe bucket') : (he ? 'לחץ להשפיע על הדלי הבטוח' : 'Click to affect safe bucket')}
                                 >
                                     <span className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-all duration-200" style={{ left: localAffectsSafe ? 18 : 2 }} />
                                 </button>
-                                <strong className={localAffectsSafe ? 'text-orange-400' : ''}>{localAffectsSafe ? (he ? 'מושפע' : 'affected') : (he ? 'מוגן' : 'shielded')}</strong>
+                                <strong className={localAffectsSafe ? 'text-orange-400' : 'text-green-400'}>{localAffectsSafe ? (he ? 'מושפע' : 'affected') : (he ? 'מוגן' : 'shielded')}</strong>
                             </span>
                         )}
                         <span className={`ms-auto ${isLight ? 'text-amber-600' : 'text-amber-500'} opacity-70`}>⚠ {he ? 'לתכנון בלבד' : 'Planning only'}</span>
@@ -786,7 +821,7 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                                     {he ? 'מחשב...' : 'Computing...'}
                                 </div>
                             ) : (() => {
-                                const base = parseFloat(effectiveInputs?.annualReturnRate) || 6;
+                                const { base, safeRate, surplusRate } = extremesResult.meta;
                                 const worstHistory  = extremesResult.worst.history    || [];
                                 const baseHistory   = extremesResult.baseline.history || [];
                                 const bestHistory   = extremesResult.best.history     || [];
@@ -807,10 +842,17 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                                         y: { ticks: { color: isLight ? '#374151' : '#d1d5db', font: { size: 10 }, callback: (v) => fmt(v) }, grid: { color: isLight ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)' } }
                                     }
                                 };
+                                const hasBuckets = !!effectiveInputs?.enableBuckets;
+                                const worstBucketNote = hasBuckets
+                                    ? (localAffectsSafe ? (he ? ', דלי בטוח חשוף' : ', safe exposed') : (he ? ', דלי בטוח מוגן' : ', safe shielded'))
+                                    : '';
+                                const bestDesc = hasBuckets
+                                    ? (he ? `תשואה ${base + 4}%, דלי בטוח ${safeRate + 2}%, עודף ${surplusRate + 4}%` : `${base + 4}% return, safe ${safeRate + 2}%, surplus ${surplusRate + 4}%`)
+                                    : (he ? `תשואה שנתית ${base + 4}%, ללא קריסה` : `${base + 4}% annual return, no crash`);
                                 const cards = [
-                                    { label: he ? 'מצב קיצוני לרע'  : 'Worst case',  desc: he ? `קריסה 40% בגיל פרישה, התאוששות 5 שנים` : `−40% crash at retirement, 5yr recovery`, val: extremesResult.worst.balanceAtEnd,    color: 'text-red-400',    border: isLight ? 'border-red-200 bg-red-50' : 'border-red-500/20 bg-red-500/5' },
-                                    { label: he ? 'תחזית בסיס'      : 'Baseline',     desc: he ? `תשואה שנתית ${base}%`                    : `${base}% annual return`,                 val: extremesResult.baseline.balanceAtEnd, color: 'text-yellow-400', border: isLight ? 'border-yellow-200 bg-yellow-50' : 'border-yellow-500/20 bg-yellow-500/5' },
-                                    { label: he ? 'מצב קיצוני לטוב' : 'Best case',   desc: he ? `תשואה שנתית ${base + 2}%, ללא קריסה`    : `${base + 2}% annual return, no crash`,   val: extremesResult.best.balanceAtEnd,     color: 'text-emerald-400', border: isLight ? 'border-emerald-200 bg-emerald-50' : 'border-emerald-500/20 bg-emerald-500/5' },
+                                    { label: he ? 'מצב קיצוני לרע'  : 'Worst case',  desc: he ? `קריסה 40% בגיל פרישה, התאוששות 7 שנים${worstBucketNote}` : `−40% crash at retirement, 7yr recovery${worstBucketNote}`, val: extremesResult.worst.balanceAtEnd,    color: 'text-red-400',    border: isLight ? 'border-red-200 bg-red-50' : 'border-red-500/20 bg-red-500/5' },
+                                    { label: he ? 'תחזית בסיס'      : 'Baseline',     desc: he ? `תשואה שנתית ${base}%`                                                                                                         : `${base}% annual return`,                                                                                               val: extremesResult.baseline.balanceAtEnd, color: 'text-yellow-400', border: isLight ? 'border-yellow-200 bg-yellow-50' : 'border-yellow-500/20 bg-yellow-500/5' },
+                                    { label: he ? 'מצב קיצוני לטוב' : 'Best case',   desc: bestDesc,                                                                                                                              val: extremesResult.best.balanceAtEnd,     color: 'text-emerald-400', border: isLight ? 'border-emerald-200 bg-emerald-50' : 'border-emerald-500/20 bg-emerald-500/5' },
                                 ];
                                 return (
                                     <>
