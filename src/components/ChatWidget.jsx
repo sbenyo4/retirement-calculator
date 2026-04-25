@@ -68,7 +68,18 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
         recognition.maxAlternatives = 1;
         recognitionRef.current = recognition;
 
-        const SUBMIT_TRIGGERS = ['בצע', 'סיימתי', 'שלח', 'שלח עכשיו', 'submit', 'send', 'done', 'go'];
+        const tryAutoSubmit = (accumulated) => {
+            if (!/(?:^|\s)done[.,!?\s]*$/i.test(accumulated)) return false;
+            const text = accumulated.replace(/[\s.,!?]*done[.,!?\s]*$/i, '').trim();
+            listeningRef.current = false;
+            recognitionRef.current?.stop();
+            setListening(false);
+            voiceTranscriptRef.current = '';
+            interimRef.current = '';
+            setInput('');
+            if (text) setTimeout(() => sendMessageRef.current?.(text), 0);
+            return true;
+        };
 
         recognition.onresult = (e) => {
             let interim = '';
@@ -76,29 +87,14 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
                 const t = e.results[i][0].transcript;
                 if (e.results[i].isFinal) {
                     const trimmed = t.trim();
-                    const lower = trimmed.toLowerCase();
-                    const trigger = SUBMIT_TRIGGERS.find(kw => lower === kw || lower.endsWith(' ' + kw) || lower.endsWith(',' + kw));
-                    if (trigger) {
-                        // Strip the trigger word and auto-send
-                        const stripped = trimmed.slice(0, trimmed.toLowerCase().lastIndexOf(trigger)).replace(/[,\s]+$/, '');
-                        const full = (voiceTranscriptRef.current + (stripped ? ' ' + stripped : '')).trim();
-                        listeningRef.current = false;
-                        recognitionRef.current?.stop();
-                        setListening(false);
-                        voiceTranscriptRef.current = '';
-                        interimRef.current = '';
-                        setInput('');
-                        if (full) sendMessageRef.current?.(full);
-                        return;
-                    }
                     voiceTranscriptRef.current += (voiceTranscriptRef.current ? ' ' : '') + trimmed;
                     interim = '';
+                    if (tryAutoSubmit(voiceTranscriptRef.current)) return;
                 } else {
                     interim += t;
                 }
             }
             interimRef.current = interim;
-            // Show combined final + interim in textarea
             setInput(voiceTranscriptRef.current + (interim ? ' ' + interim : ''));
         };
 
