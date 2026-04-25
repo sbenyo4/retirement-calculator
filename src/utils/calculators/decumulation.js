@@ -31,7 +31,8 @@ export function calculateDecumulation({
         bucketSurplusRate = 0,
         safeVariableRates = {},
         surplusVariableRates = {},
-        additionalYearlyIncome = []
+        additionalYearlyIncome = [],
+        capeRatio = 33.5
     } = inputs;
 
     // Pre-build calendar-year → monthly income map for O(1) lookup in the hot loop
@@ -332,6 +333,12 @@ export function calculateDecumulation({
             case WITHDRAWAL_STRATEGIES.VPW: {
                 const monthsRemaining = monthsInRetirement - i + 1;
                 netWithdrawal = monthsRemaining > 0 ? currentBalance / monthsRemaining : currentBalance;
+                break;
+            }
+            case WITHDRAWAL_STRATEGIES.CAPE: {
+                const ratio = parseFloat(capeRatio) || 33.5;
+                const annualRate = Math.max(0.025, 0.5 / ratio + 0.015);
+                netWithdrawal = (currentBalance * annualRate) / 12;
                 break;
             }
             case WITHDRAWAL_STRATEGIES.INTEREST_ONLY: {

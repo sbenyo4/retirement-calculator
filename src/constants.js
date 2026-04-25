@@ -85,7 +85,8 @@ export const WITHDRAWAL_STRATEGIES = {
     DYNAMIC: 'dynamic',       // Adjust based on market conditions
     INTEREST_ONLY: 'interestOnly', // Withdraw only the monthly interest
     GUARDRAILS: 'guardrails', // Guyton-Klinger guardrails — adjust based on portfolio withdrawal rate
-    VPW: 'vpw'               // Variable Percentage Withdrawal — balance / months remaining
+    VPW: 'vpw',              // Variable Percentage Withdrawal — balance / months remaining
+    CAPE: 'cape'             // CAPE-based — withdrawal rate tied to Shiller P/E (market valuation)
 };
 
 // Life Events Types

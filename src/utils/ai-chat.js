@@ -1,6 +1,7 @@
 import { getProviderEnvKey } from '../config/ai-models';
 import { withRetry } from './ai-calculator';
 import { DEFAULT_TAX_BRACKETS } from './fiscalDefaults';
+import { capeToWithdrawalRate } from './cape';
 
 /**
  * Builds a system prompt giving the AI full context about the user's retirement plan.
@@ -66,6 +67,25 @@ export function buildChatSystemPrompt(inputs, results, language) {
         })
         .join(', ');
 
+    // Withdrawal strategy
+    const strategyMap = {
+        fixed: isHe ? 'קבוע — סכום חודשי קבוע' : 'Fixed — fixed monthly amount',
+        fourPercent: isHe ? 'כלל 4% — 4% מהיתרה ההתחלתית בשנה' : '4% Rule — 4% of initial balance per year',
+        percentage: isHe ? `% מהתיק — ${inputs.withdrawalPercentage ?? 4}% מהיתרה הנוכחית` : `% of Portfolio — ${inputs.withdrawalPercentage ?? 4}% of current balance`,
+        dynamic: isHe ? 'דינמי — מתאים לפי ביצועי השוק' : 'Dynamic — adjusts to market performance',
+        interestOnly: isHe ? 'ריבית בלבד — רק הרבית החודשית' : 'Interest Only — monthly interest only',
+        guardrails: isHe ? 'גדרות גויטון-קלינגר — שומר על קצב משיכה סביר' : 'Guardrails (Guyton-Klinger) — keeps withdrawal rate in safe band',
+        vpw: isHe ? 'VPW — יתרה / חודשים שנותרו' : 'VPW — balance ÷ months remaining',
+        cape: (() => {
+            const capeVal = parseFloat(inputs.capeRatio) || 33.5;
+            const rate = (capeToWithdrawalRate(capeVal) * 100).toFixed(1);
+            return isHe
+                ? `CAPE — שיעור משיכה לפי P/E שילר (${capeVal.toFixed(1)}${inputs.capeIsLive ? '' : ' מוערך'}) → ${rate}%/שנה`
+                : `CAPE-based — Shiller P/E ratio (${capeVal.toFixed(1)}${inputs.capeIsLive ? '' : ' est.'}) → ${rate}%/yr`;
+        })(),
+    };
+    const withdrawalStrategyText = strategyMap[inputs.withdrawalStrategy] || strategyMap.fixed;
+
     // Budget planner awareness — read from sessionStorage (written by BudgetPlanner on every change)
     let budgetSection = '';
     try {
@@ -117,7 +137,8 @@ USER PROFILE:
 - Current savings: ${currency}${Number(inputs.currentSavings).toLocaleString()} | Monthly contribution: ${currency}${inputs.monthlyContribution}
 - Desired monthly income in retirement: ${currency}${inputs.monthlyNetIncomeDesired}${inputs.targetEndBalance ? ` | Target end balance: ${currency}${Number(inputs.targetEndBalance).toLocaleString()}` : ''}
 - Annual return: ${returnRateText} | Inflation: ${inputs.inflationRate ?? 0}% | Tax on gains: ${inputs.taxRate ?? 25}%
-- Strategy: ${bucketText}
+- Withdrawal strategy: ${withdrawalStrategyText}
+- Portfolio strategy: ${bucketText}
 
 PENSION / INCOME SOURCES:
 ${pensionText}

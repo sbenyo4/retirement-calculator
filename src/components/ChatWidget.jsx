@@ -177,7 +177,7 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
                     const data = JSON.parse(reminderMatch[1].trim());
                     if (data.label && data.date) {
                         const id = `chat_${Date.now()}`;
-                        addSingleReminder({
+                        const reminderPayload = {
                             id,
                             source: 'general',
                             label: data.label,
@@ -189,7 +189,9 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
                                 ...(data.recurringDay != null ? { recurringDay: data.recurringDay } : {}),
                                 ...(data.recurringInterval != null ? { recurringInterval: data.recurringInterval } : {}),
                             } : {}),
-                        });
+                        };
+                        addSingleReminder(reminderPayload);
+                        window.dispatchEvent(new CustomEvent('rc-general-reminder-add', { detail: reminderPayload }));
                         markInitialSyncDone();
                         createdReminder = { label: data.label, date: data.date };
                     }

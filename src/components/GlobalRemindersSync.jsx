@@ -159,7 +159,39 @@ export function GlobalRemindersSync({ uid, lifeEvents: _lifeEvents = [], current
         syncComponentReminders(sourceKey, activeLifeEvents, !isFirstForSource ? true : false);
     }, [uid, currentProfileId, profiles]);
 
-    // 2. Global listener for confirmation
+    // 2a. Persist chat-created reminders to Firestore
+    useEffect(() => {
+        if (!uid) return;
+
+        const handleAdd = async (e) => {
+            const { id, label, date, note, recurring, recurringType, recurringDay, recurringInterval } = e.detail || {};
+            if (!id || !label || !date) return;
+            try {
+                const existing = await getGeneralReminders(uid);
+                if (existing.some(r => String(r.id) === String(id))) return;
+                const newReminder = {
+                    id: String(id),
+                    label,
+                    date,
+                    ...(note ? { text: note } : {}),
+                    ...(recurring ? {
+                        recurring: true,
+                        ...(recurringType ? { recurringType } : {}),
+                        ...(recurringDay != null ? { recurringDay } : {}),
+                        ...(recurringInterval != null ? { recurringInterval } : {}),
+                    } : {}),
+                };
+                await setGeneralReminders(uid, [...existing, newReminder]);
+            } catch (err) {
+                console.error('[GlobalRemindersSync] Failed to persist chat reminder:', err);
+            }
+        };
+
+        window.addEventListener('rc-general-reminder-add', handleAdd);
+        return () => window.removeEventListener('rc-general-reminder-add', handleAdd);
+    }, [uid]);
+
+    // 2b. Global listener for confirmation
     useEffect(() => {
         if (!uid) return;
 

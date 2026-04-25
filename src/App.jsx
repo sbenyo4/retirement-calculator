@@ -129,6 +129,17 @@ function MainApp() {
   });
   const { inputs, setInputs, saveGlobalPension, inputsLoaded } = useRetirementData();
 
+  const [capeRatio, setCapeRatio] = useState(33.5);
+  const [capeIsLive, setCapeIsLive] = useState(false);
+  useEffect(() => {
+    import('./utils/cape').then(({ fetchCurrentCAPE }) => {
+      fetchCurrentCAPE().then(({ value, live }) => {
+        setCapeRatio(value);
+        setCapeIsLive(live);
+      });
+    });
+  }, []);
+
   // Core calculation pipeline (projection, goal-seek, simulation)
   const {
     results,
@@ -138,7 +149,7 @@ function MainApp() {
     dismissSimulationError,
     goalSeekWithdrawal,
     memoizedDebouncedInputs
-  } = useCalculation(React.useMemo(() => ({ ...inputs, language, fourPercentMode: settings.fourPercentMode }), [inputs, language, settings.fourPercentMode]), settings);
+  } = useCalculation(React.useMemo(() => ({ ...inputs, language, fourPercentMode: settings.fourPercentMode, capeRatio }), [inputs, language, settings.fourPercentMode, capeRatio]), settings);
 
   // Sync calculation results to sessionStorage so smart alerts can read them
   useEffect(() => {
@@ -823,10 +834,12 @@ function MainApp() {
               netWithdrawal={
                 inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC && simulationResults
                   ? simulationResults.initialNetWithdrawal
-                  : inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.VPW
+                  : (inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.VPW || inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.CAPE)
                     ? results?.averageNetWithdrawal
                     : results?.initialNetWithdrawal
               }
+              capeRatio={capeRatio}
+              capeIsLive={capeIsLive}
               neededToday={results?.pvOfDeficit}
               capitalPreservation={results?.requiredCapitalForPerpetuity}
               capitalPreservationNeededToday={results?.pvOfCapitalPreservation}
@@ -962,7 +975,7 @@ function MainApp() {
 
       {/* Chat Widget */}
       <ChatWidget
-        inputs={inputs}
+        inputs={{ ...inputs, capeRatio, capeIsLive }}
         results={results}
         language={language}
         aiProvider={settings.aiProvider}

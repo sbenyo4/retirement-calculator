@@ -374,6 +374,7 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
         { key: WITHDRAWAL_STRATEGIES.GUARDRAILS,    label: language === 'he' ? 'גדרות'       : 'Guardrails',    color: '#f472b6' },
         { key: WITHDRAWAL_STRATEGIES.INTEREST_ONLY, label: language === 'he' ? 'ריבית בלבד'  : 'Interest Only', color: '#facc15' },
         { key: WITHDRAWAL_STRATEGIES.VPW,           label: 'VPW',                                               color: '#2dd4bf' },
+        { key: WITHDRAWAL_STRATEGIES.CAPE,          label: 'CAPE',                                              color: '#f87171' },
     ], [language]);
 
     const strategyComparisonData = useMemo(() => {

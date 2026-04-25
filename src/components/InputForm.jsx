@@ -42,7 +42,9 @@ export default function InputForm({
     currentProfileId,
     aiModelsOverride,
     activeView,
-    setActiveView
+    setActiveView,
+    capeRatio,
+    capeIsLive
     // Note: sensitivity props (showInterestSensitivity, etc.) were previously passed but are not used in this component
 }) {
     const { theme } = useTheme();
@@ -656,7 +658,8 @@ export default function InputForm({
                                         inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
                                         inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
                                         inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY ||
-                                        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.VPW))
+                                        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.VPW ||
+                                        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.CAPE))
                                         ? Math.round(netWithdrawal || 0)
                                         : inputs.monthlyNetIncomeDesired
                             }
@@ -670,7 +673,8 @@ export default function InputForm({
                                     inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
                                     inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
                                     inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY ||
-                                    inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.VPW))
+                                    inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.VPW ||
+                                    inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.CAPE))
                             }
                             richContent={goalSeekWithdrawal != null ? (() => {
                                 const desired = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
@@ -834,7 +838,8 @@ export default function InputForm({
                                 { id: WITHDRAWAL_STRATEGIES.DYNAMIC, label: t('withdrawalDynamic') },
                                 { id: WITHDRAWAL_STRATEGIES.INTEREST_ONLY, label: t('withdrawalInterestOnly') },
                                 { id: WITHDRAWAL_STRATEGIES.GUARDRAILS, label: t('withdrawalGuardrails') },
-                                { id: WITHDRAWAL_STRATEGIES.VPW, label: t('withdrawalVpw') }
+                                { id: WITHDRAWAL_STRATEGIES.VPW, label: t('withdrawalVpw') },
+                                { id: WITHDRAWAL_STRATEGIES.CAPE, label: t('withdrawalCape') }
                             ].map(strategy => (
                                 <button
                                     key={strategy.id}
@@ -865,6 +870,9 @@ export default function InputForm({
                             {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY && t('withdrawalInterestOnlyDesc')}
                             {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.GUARDRAILS && t('withdrawalGuardrailsDesc')}
                             {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.VPW && t('withdrawalVpwDesc')}
+                            {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.CAPE && (
+                                <>{t('withdrawalCapeDesc')}{capeRatio ? ` — CAPE: ${Number(capeRatio).toFixed(1)}${capeIsLive ? '' : ' (est.)'} → ${(Math.max(0.025, 0.5 / capeRatio + 0.015) * 100).toFixed(1)}%/yr` : ''}</>
+                            )}
                             {inputs.variableRatesEnabled && t('variableRatesDesc')}
                             {!inputs.variableRatesEnabled && (!inputs.withdrawalStrategy || inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FIXED) && t('withdrawalFixedDesc')}
                         </p>

@@ -33,7 +33,7 @@ export function calculateRetirementProjection(inputs, t = null) {
     // Parse Inputs safely
     const parsedInputs = Object.fromEntries(
         Object.entries(inputs).map(([k, v]) => {
-            if (k === 'variableRates' || k === 'variableRatesEnabled' || k === 'lifeEvents' || k === 'enableBuckets' || k === 'withdrawalStrategy' || k === 'safeVariableRates' || k === 'surplusVariableRates' || k === 'targetEndBalance' || k === 'fourPercentMode' || k === 'language' || k === 'additionalYearlyIncome') return [k, v];
+            if (k === 'variableRates' || k === 'variableRatesEnabled' || k === 'lifeEvents' || k === 'enableBuckets' || k === 'withdrawalStrategy' || k === 'safeVariableRates' || k === 'surplusVariableRates' || k === 'targetEndBalance' || k === 'fourPercentMode' || k === 'language' || k === 'additionalYearlyIncome' || k === 'capeRatio' || k === 'scenarioEnabled' || k === 'scenario' || k === 'pensionIncomeSources' || k === 'manualAge' || k === 'birthdate' || k === 'fiscalParameters') return [k, v];
             return [k, parseFloat(v) || 0];
         })
     );
