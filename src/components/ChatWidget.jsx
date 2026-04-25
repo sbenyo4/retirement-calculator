@@ -68,12 +68,30 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
         recognition.maxAlternatives = 1;
         recognitionRef.current = recognition;
 
+        const SUBMIT_TRIGGERS = ['בצע', 'סיימתי', 'שלח', 'שלח עכשיו', 'submit', 'send', 'done', 'go'];
+
         recognition.onresult = (e) => {
             let interim = '';
             for (let i = e.resultIndex; i < e.results.length; i++) {
                 const t = e.results[i][0].transcript;
                 if (e.results[i].isFinal) {
-                    voiceTranscriptRef.current += (voiceTranscriptRef.current ? ' ' : '') + t.trim();
+                    const trimmed = t.trim();
+                    const lower = trimmed.toLowerCase();
+                    const trigger = SUBMIT_TRIGGERS.find(kw => lower === kw || lower.endsWith(' ' + kw) || lower.endsWith(',' + kw));
+                    if (trigger) {
+                        // Strip the trigger word and auto-send
+                        const stripped = trimmed.slice(0, trimmed.toLowerCase().lastIndexOf(trigger)).replace(/[,\s]+$/, '');
+                        const full = (voiceTranscriptRef.current + (stripped ? ' ' + stripped : '')).trim();
+                        listeningRef.current = false;
+                        recognitionRef.current?.stop();
+                        setListening(false);
+                        voiceTranscriptRef.current = '';
+                        interimRef.current = '';
+                        setInput('');
+                        if (full) sendMessageRef.current?.(full);
+                        return;
+                    }
+                    voiceTranscriptRef.current += (voiceTranscriptRef.current ? ' ' : '') + trimmed;
                     interim = '';
                 } else {
                     interim += t;
