@@ -310,6 +310,16 @@ export function useReminders() {
     };
 }
 
+export function addSingleReminder(reminder) {
+    if (!reminder?.id || !reminder?.source || !reminder?.date) return;
+    try {
+        const existing = readReminders();
+        const next = [...existing, { ...reminder, date: normalizeDate(reminder.date) }];
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
+        window.dispatchEvent(new Event('rc-reminders-updated'));
+    } catch {}
+}
+
 export function syncComponentReminders(source, items, silent = false) {
     syncMultipleSources([{ source, items, silent }]);
 }

@@ -84,7 +84,8 @@ export const WITHDRAWAL_STRATEGIES = {
     PERCENTAGE: 'percentage', // Fixed percentage of current balance
     DYNAMIC: 'dynamic',       // Adjust based on market conditions
     INTEREST_ONLY: 'interestOnly', // Withdraw only the monthly interest
-    GUARDRAILS: 'guardrails'  // Guyton-Klinger guardrails — adjust based on portfolio withdrawal rate
+    GUARDRAILS: 'guardrails', // Guyton-Klinger guardrails — adjust based on portfolio withdrawal rate
+    VPW: 'vpw'               // Variable Percentage Withdrawal — balance / months remaining
 };
 
 // Life Events Types

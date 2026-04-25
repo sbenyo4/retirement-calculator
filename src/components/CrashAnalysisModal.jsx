@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useDraggable } from '../hooks/useDraggable';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { X, BarChart2, TrendingDown, TrendingUp, Plus, Trash2, Info, Sparkles, Loader2 } from 'lucide-react';
-import { Bar } from 'react-chartjs-2';
+import { Bar, Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
     CategoryScale, LinearScale, BarElement,
@@ -57,6 +57,10 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
     const [aiError, setAiError] = useState(null);
     const aiAbortRef = useRef(null);
     const aiCacheKeyRef = useRef(null);
+
+    // ── Extremes state ─────────────────────────────────────────────────────
+    const [extremesResult, setExtremesResult] = useState(null);
+    const extremesInitRef = useRef(false);
 
     // ── Local safe-bucket override ─────────────────────────────────────────
     const [localAffectsSafe, setLocalAffectsSafe] = useState(
@@ -192,7 +196,9 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
         if (!isOpen) {
             setSweepResults(null);
             setCompareResults(null);
+            setExtremesResult(null);
             compareInitRef.current = false;
+            extremesInitRef.current = false;
             setActiveTab('sweep');
             setSelectedYear(null);
             setAiInsight(null);
@@ -242,6 +248,29 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
             setIsLoadingAI(false);
         }
     }, [sweepResults, aiProvider, aiModel, apiKeyOverride, language, isLoadingAI, aiInsight, effectiveInputs, localAffectsSafe]);
+
+    // Init extremes on first tab visit
+    const computeExtremes = useCallback(() => {
+        try {
+            const base = parseFloat(effectiveInputs?.annualReturnRate) || 6;
+            const baseline = calculateRetirementProjection({ ...effectiveInputs, scenarioEnabled: false });
+            const worst = calculateRetirementProjection({
+                ...effectiveInputs, scenarioEnabled: true,
+                scenario: { ...effectiveInputs.scenario, startYear: retirementStartYear, crashDepth: -40, recoveryYears: 5 }
+            });
+            const best = calculateRetirementProjection({
+                ...effectiveInputs, scenarioEnabled: false,
+                annualReturnRate: base + 2
+            });
+            setExtremesResult({ baseline, worst, best });
+        } catch {}
+    }, [effectiveInputs, retirementStartYear]);
+
+    useEffect(() => {
+        if (activeTab !== 'extremes' || extremesInitRef.current) return;
+        extremesInitRef.current = true;
+        computeExtremes();
+    }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Init compare rows on first tab visit
     useEffect(() => {
@@ -540,6 +569,9 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                         <button className={tabCls('compare')} onClick={() => setActiveTab('compare')}>
                             {he ? 'השוואת תרחישים' : 'Compare'}
                         </button>
+                        <button className={tabCls('extremes')} onClick={() => setActiveTab('extremes')}>
+                            {he ? 'קצוות' : 'Extremes'}
+                        </button>
                         {aiProvider && sweepResults && (
                             <button
                                 onClick={runAIAnalysis}
@@ -742,6 +774,75 @@ export default function CrashAnalysisModal({ isOpen, onClose, analysisInputs, la
                                     {he ? 'הוסף שורה' : 'Add row'}
                                 </button>
                             </div>
+                        </>
+                    )}
+
+                    {/* ════════════ EXTREMES TAB ════════════ */}
+                    {activeTab === 'extremes' && (
+                        <>
+                            {!extremesResult ? (
+                                <div className="flex items-center justify-center py-10 text-sm text-gray-400">
+                                    <Loader2 size={16} className="animate-spin me-2" />
+                                    {he ? 'מחשב...' : 'Computing...'}
+                                </div>
+                            ) : (() => {
+                                const base = parseFloat(effectiveInputs?.annualReturnRate) || 6;
+                                const worstHistory  = extremesResult.worst.history    || [];
+                                const baseHistory   = extremesResult.baseline.history || [];
+                                const bestHistory   = extremesResult.best.history     || [];
+                                const labels = baseHistory.map(h => `${he ? 'גיל' : 'Age'} ${Math.floor(h.age)}`);
+                                const lineData = {
+                                    labels,
+                                    datasets: [
+                                        { label: he ? 'מצב קיצוני לרע' : 'Worst case',  data: worstHistory.map(h => h.balance),  borderColor: 'rgba(239,68,68,0.9)',   backgroundColor: 'transparent', fill: false, tension: 0.4, pointRadius: 0, pointHitRadius: 10, borderWidth: 2 },
+                                        { label: he ? 'תחזית בסיס'     : 'Baseline',     data: baseHistory.map(h => h.balance),   borderColor: 'rgba(251,191,36,0.9)',  backgroundColor: 'transparent', fill: false, tension: 0.4, pointRadius: 0, pointHitRadius: 10, borderWidth: 2, borderDash: [6,3] },
+                                        { label: he ? 'מצב קיצוני לטוב' : 'Best case',  data: bestHistory.map(h => h.balance),   borderColor: 'rgba(34,197,94,0.9)',   backgroundColor: 'transparent', fill: false, tension: 0.4, pointRadius: 0, pointHitRadius: 10, borderWidth: 2 },
+                                    ]
+                                };
+                                const lineOptions = {
+                                    responsive: true, maintainAspectRatio: false,
+                                    plugins: { legend: { display: false }, tooltip: { callbacks: { label: (item) => `${item.dataset.label}: ${fmt(item.raw)}` } } },
+                                    scales: {
+                                        x: { ticks: { color: isLight ? '#374151' : '#d1d5db', font: { size: 9 }, maxTicksLimit: 10 }, grid: { color: isLight ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)' } },
+                                        y: { ticks: { color: isLight ? '#374151' : '#d1d5db', font: { size: 10 }, callback: (v) => fmt(v) }, grid: { color: isLight ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)' } }
+                                    }
+                                };
+                                const cards = [
+                                    { label: he ? 'מצב קיצוני לרע'  : 'Worst case',  desc: he ? `קריסה 40% בגיל פרישה, התאוששות 5 שנים` : `−40% crash at retirement, 5yr recovery`, val: extremesResult.worst.balanceAtEnd,    color: 'text-red-400',    border: isLight ? 'border-red-200 bg-red-50' : 'border-red-500/20 bg-red-500/5' },
+                                    { label: he ? 'תחזית בסיס'      : 'Baseline',     desc: he ? `תשואה שנתית ${base}%`                    : `${base}% annual return`,                 val: extremesResult.baseline.balanceAtEnd, color: 'text-yellow-400', border: isLight ? 'border-yellow-200 bg-yellow-50' : 'border-yellow-500/20 bg-yellow-500/5' },
+                                    { label: he ? 'מצב קיצוני לטוב' : 'Best case',   desc: he ? `תשואה שנתית ${base + 2}%, ללא קריסה`    : `${base + 2}% annual return, no crash`,   val: extremesResult.best.balanceAtEnd,     color: 'text-emerald-400', border: isLight ? 'border-emerald-200 bg-emerald-50' : 'border-emerald-500/20 bg-emerald-500/5' },
+                                ];
+                                return (
+                                    <>
+                                        {/* Legend */}
+                                        <div className="flex gap-4 mb-2 text-xs">
+                                            {cards.map(c => (
+                                                <span key={c.label} className={`flex items-center gap-1.5 ${c.color}`}>
+                                                    <span className="inline-block w-6 h-0.5 rounded" style={{ background: 'currentColor' }} />
+                                                    {c.label}
+                                                </span>
+                                            ))}
+                                        </div>
+                                        {/* Chart */}
+                                        <div className="h-48 mb-3">
+                                            <Line data={lineData} options={lineOptions} />
+                                        </div>
+                                        {/* Summary cards */}
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {cards.map(c => (
+                                                <div key={c.label} className={`rounded-xl border p-3 ${c.border}`}>
+                                                    <p className={`text-xs font-semibold mb-1 ${c.color}`}>{c.label}</p>
+                                                    <p className={`text-base font-bold ${c.color}`}>{fmt(c.val)}</p>
+                                                    <p className={`text-[10px] mt-1 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>{c.desc}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <p className={`text-[10px] mt-2 ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
+                                            {he ? '* לצרכי תכנון בלבד — אינו חיזוי מדויק' : '* For planning purposes only — not an accurate prediction'}
+                                        </p>
+                                    </>
+                                );
+                            })()}
                         </>
                     )}
 

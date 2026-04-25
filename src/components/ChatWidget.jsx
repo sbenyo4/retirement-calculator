@@ -4,6 +4,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useDraggable } from '../hooks/useDraggable';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { getChatResponse, buildChatSystemPrompt } from '../utils/ai-chat';
+import { addSingleReminder, markInitialSyncDone } from '../hooks/useReminders';
 
 const MAX_DISPLAY_MESSAGES = 20; // keep last N messages in state (DOM + context bound)
 
@@ -152,7 +153,40 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
         try {
             const systemPrompt = buildChatSystemPrompt(inputs, results, language);
             const reply = await getChatResponse(newMessages, systemPrompt, aiProvider, aiModel, apiKeyOverride, { signal: controller.signal });
-            setMessages(prev => [...prev.slice(-MAX_DISPLAY_MESSAGES), { role: 'assistant', content: reply }]);
+
+            // Parse reminder action if present
+            const reminderMatch = reply.match(/%%REMINDER%%([\s\S]*?)%%ENDREMINDER%%/);
+            const cleanReply = reply.replace(/%%REMINDER%%[\s\S]*?%%ENDREMINDER%%/, '').trim();
+            let createdReminder = null;
+            if (reminderMatch) {
+                try {
+                    const data = JSON.parse(reminderMatch[1].trim());
+                    if (data.label && data.date) {
+                        const id = `chat_${Date.now()}`;
+                        addSingleReminder({
+                            id,
+                            source: 'general',
+                            label: data.label,
+                            date: data.date,
+                            note: data.note || '',
+                            ...(data.recurring ? {
+                                recurring: true,
+                                ...(data.recurringType ? { recurringType: data.recurringType } : {}),
+                                ...(data.recurringDay != null ? { recurringDay: data.recurringDay } : {}),
+                                ...(data.recurringInterval != null ? { recurringInterval: data.recurringInterval } : {}),
+                            } : {}),
+                        });
+                        markInitialSyncDone();
+                        createdReminder = { label: data.label, date: data.date };
+                    }
+                } catch {}
+            }
+
+            setMessages(prev => [...prev.slice(-MAX_DISPLAY_MESSAGES), {
+                role: 'assistant',
+                content: cleanReply,
+                reminder: createdReminder,
+            }]);
         } catch (err) {
             if (err.name !== 'AbortError') {
                 console.error('[Chat error]', err, err?.status, err?.error);
@@ -283,6 +317,13 @@ export function ChatWidget({ inputs, results, language, aiProvider, aiModel, api
                                                 : isLight ? 'bg-gray-100 text-gray-800' : 'bg-black/30 text-gray-100'
                                         }`}>
                                             {msg.content}
+                                            {msg.reminder && (
+                                                <div className={`mt-2 pt-2 border-t flex items-center gap-1.5 text-xs ${isLight ? 'border-gray-200 text-emerald-600' : 'border-white/10 text-emerald-400'}`}>
+                                                    <span>🔔</span>
+                                                    <span className="font-medium">{isHe ? 'תזכורת נוצרה:' : 'Reminder set:'}</span>
+                                                    <span>{msg.reminder.label} · {msg.reminder.date}</span>
+                                                </div>
+                                            )}
                                         </div>
                                         {/* Copy & Retry actions */}
                                         <div className={`absolute -bottom-4 flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity z-20 ${

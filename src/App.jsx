@@ -823,7 +823,9 @@ function MainApp() {
               netWithdrawal={
                 inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC && simulationResults
                   ? simulationResults.initialNetWithdrawal
-                  : results?.initialNetWithdrawal
+                  : inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.VPW
+                    ? results?.averageNetWithdrawal
+                    : results?.initialNetWithdrawal
               }
               neededToday={results?.pvOfDeficit}
               capitalPreservation={results?.requiredCapitalForPerpetuity}

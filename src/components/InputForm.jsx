@@ -655,7 +655,8 @@ export default function InputForm({
                                     : (!inputs.variableRatesEnabled && (
                                         inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
                                         inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
-                                        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY))
+                                        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY ||
+                                        inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.VPW))
                                         ? Math.round(netWithdrawal || 0)
                                         : inputs.monthlyNetIncomeDesired
                             }
@@ -668,7 +669,8 @@ export default function InputForm({
                                 (!inputs.variableRatesEnabled && (
                                     inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
                                     inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.PERCENTAGE ||
-                                    inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY))
+                                    inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY ||
+                                    inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.VPW))
                             }
                             richContent={goalSeekWithdrawal != null ? (() => {
                                 const desired = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
@@ -831,7 +833,8 @@ export default function InputForm({
                                 { id: WITHDRAWAL_STRATEGIES.PERCENTAGE, label: t('withdrawalPercentage') },
                                 { id: WITHDRAWAL_STRATEGIES.DYNAMIC, label: t('withdrawalDynamic') },
                                 { id: WITHDRAWAL_STRATEGIES.INTEREST_ONLY, label: t('withdrawalInterestOnly') },
-                                { id: WITHDRAWAL_STRATEGIES.GUARDRAILS, label: t('withdrawalGuardrails') }
+                                { id: WITHDRAWAL_STRATEGIES.GUARDRAILS, label: t('withdrawalGuardrails') },
+                                { id: WITHDRAWAL_STRATEGIES.VPW, label: t('withdrawalVpw') }
                             ].map(strategy => (
                                 <button
                                     key={strategy.id}
@@ -861,6 +864,7 @@ export default function InputForm({
                             {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.DYNAMIC && t('withdrawalDynamicDesc')}
                             {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.INTEREST_ONLY && t('withdrawalInterestOnlyDesc')}
                             {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.GUARDRAILS && t('withdrawalGuardrailsDesc')}
+                            {inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.VPW && t('withdrawalVpwDesc')}
                             {inputs.variableRatesEnabled && t('variableRatesDesc')}
                             {!inputs.variableRatesEnabled && (!inputs.withdrawalStrategy || inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FIXED) && t('withdrawalFixedDesc')}
                         </p>

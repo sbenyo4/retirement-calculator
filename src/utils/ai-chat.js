@@ -8,6 +8,7 @@ import { DEFAULT_TAX_BRACKETS } from './fiscalDefaults';
 export function buildChatSystemPrompt(inputs, results, language) {
     const isHe = language === 'he';
     const currency = isHe ? '₪' : '$';
+    const todayStr = new Date().toISOString().split('T')[0];
     const yearsToRetirement = Math.max(0, Math.round(parseFloat(inputs.retirementStartAge) - parseFloat(inputs.currentAge)));
     const yearsInRetirement = Math.round(parseFloat(inputs.retirementEndAge) - parseFloat(inputs.retirementStartAge));
 
@@ -97,7 +98,19 @@ export function buildChatSystemPrompt(inputs, results, language) {
 Answer questions about the user's personal retirement plan using their data below.
 Respond in ${isHe ? 'Hebrew' : 'English'}. Be concise and conversational (under 200 words unless more is needed).
 CRITICAL: Always cite specific numbers (${currency} amounts, ages, %) from the user's data. Never give generic advice without numbers.
-Do NOT use JSON. If asked about something unrelated to retirement planning, gently redirect.
+Do NOT use JSON in your visible reply. If asked about something unrelated to retirement planning, gently redirect.
+
+TODAY'S DATE: ${todayStr}
+
+REMINDER CREATION:
+If the user asks to set a reminder (any language/phrasing), append this block at the very end of your reply — after your full text response, on a new line — and nowhere else:
+%%REMINDER%%{"label":"<short title>","date":"<YYYY-MM-DD>","note":"<optional context>","recurring":<true|false>,"recurringType":"<monthly|interval|null>","recurringDay":<1-31 or null>,"recurringInterval":<days or null>}%%ENDREMINDER%%
+Rules:
+- For a one-time reminder: recurring=false, recurringType=null, recurringDay=null, recurringInterval=null
+- For monthly recurring (e.g. "every 1st of the month"): recurring=true, recurringType="monthly", recurringDay=<day>, recurringInterval=null
+- For interval recurring (e.g. "every 30 days"): recurring=true, recurringType="interval", recurringInterval=<days>, recurringDay=null
+- Date must be YYYY-MM-DD. For relative dates ("in 2 weeks", "next month") compute from today (${todayStr}).
+- Only append this block when explicitly creating a reminder. Never include it otherwise.
 
 USER PROFILE:
 - Age: ${inputs.currentAge} | Retire at: ${inputs.retirementStartAge} (in ${yearsToRetirement} yrs) | End age: ${inputs.retirementEndAge} (${yearsInRetirement} yrs drawdown)

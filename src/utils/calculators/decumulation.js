@@ -329,6 +329,11 @@ export function calculateDecumulation({
                 netWithdrawal = guardrailsBaseWithdrawal;
                 break;
             }
+            case WITHDRAWAL_STRATEGIES.VPW: {
+                const monthsRemaining = monthsInRetirement - i + 1;
+                netWithdrawal = monthsRemaining > 0 ? currentBalance / monthsRemaining : currentBalance;
+                break;
+            }
             case WITHDRAWAL_STRATEGIES.INTEREST_ONLY: {
                 // Withdraw exactly the interest earned so the portfolio stays flat.
                 // grossWithdrawal = effectiveInterest; the user receives interest minus tax on profit.

@@ -47,6 +47,7 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
     const [showInflationModal, setShowInflationModal] = useState(false);
     const [showPensionModal, setShowPensionModal] = useState(false);
     const [activeTab, setActiveTab] = useState('numerical'); // 'numerical' | 'insights' | 'budget'
+    const [showStrategyComparison, setShowStrategyComparison] = useState(false);
 
     useEffect(() => {
         const handler = () => setActiveTab('budget');
@@ -364,6 +365,47 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
             return { labels: [], datasets: [] };
         }
     }, [activeResults?.history, isCompareMode, isAiMode, isSimMode, orderedColumns, sensitivityResults, t]);
+
+    const STRATEGY_LINES = useMemo(() => [
+        { key: WITHDRAWAL_STRATEGIES.FIXED,         label: language === 'he' ? 'קבוע'        : 'Fixed',         color: '#60a5fa' },
+        { key: WITHDRAWAL_STRATEGIES.FOUR_PERCENT,  label: language === 'he' ? 'כלל 4%'      : '4% Rule',       color: '#34d399' },
+        { key: WITHDRAWAL_STRATEGIES.PERCENTAGE,    label: language === 'he' ? '% מהתיק'     : '% of Portfolio', color: '#a78bfa' },
+        { key: WITHDRAWAL_STRATEGIES.DYNAMIC,       label: language === 'he' ? 'דינמי'       : 'Dynamic',       color: '#fb923c' },
+        { key: WITHDRAWAL_STRATEGIES.GUARDRAILS,    label: language === 'he' ? 'גדרות'       : 'Guardrails',    color: '#f472b6' },
+        { key: WITHDRAWAL_STRATEGIES.INTEREST_ONLY, label: language === 'he' ? 'ריבית בלבד'  : 'Interest Only', color: '#facc15' },
+        { key: WITHDRAWAL_STRATEGIES.VPW,           label: 'VPW',                                               color: '#2dd4bf' },
+    ], [language]);
+
+    const strategyComparisonData = useMemo(() => {
+        if (!showStrategyComparison || !inputs) return null;
+        const labels = results?.history?.map(h => `${language === 'he' ? 'גיל' : 'Age'} ${Math.floor(h.age)}`) || [];
+        const datasets = STRATEGY_LINES.map(({ key, label, color }) => {
+            try {
+                const res = calculateRetirementProjection({ ...inputs, withdrawalStrategy: key, variableRatesEnabled: false });
+                return {
+                    label,
+                    data: res.history?.map(h => h.balance) || [],
+                    borderColor: color,
+                    backgroundColor: 'transparent',
+                    fill: false,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHitRadius: 10,
+                    borderWidth: 2,
+                };
+            } catch { return null; }
+        }).filter(Boolean);
+        return { labels, datasets };
+    }, [showStrategyComparison, inputs, results?.history, STRATEGY_LINES, language]);
+
+    const coastFireNumber = useMemo(() => {
+        const target = activeResults?.requiredCapitalAtRetirement;
+        if (!target) return null;
+        const yearsToRetirement = (parseFloat(inputs?.retirementStartAge) || 67) - (parseFloat(inputs?.currentAge) || 30);
+        if (yearsToRetirement <= 0) return null;
+        const annualReturn = (parseFloat(inputs?.annualReturnRate) || 7) / 100;
+        return target / Math.pow(1 + annualReturn, yearsToRetirement);
+    }, [activeResults?.requiredCapitalAtRetirement, inputs?.retirementStartAge, inputs?.currentAge, inputs?.annualReturnRate]);
 
     // Calculate inputs for sensitivity tools (Heatmap/Range)
     // In comparison mode, use the first selected profile/scenario. Fallback to current inputs.
@@ -922,6 +964,16 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                                 value={formatCurrency(requiredCapitalAtRetirement)}
                                 subtext={t('toEndWithZero')}
                                 color="text-purple-400"
+                                extraContent={coastFireNumber != null ? (
+                                    <div className="mt-1 pt-1 border-t border-white/10">
+                                        <span className={`text-xs font-medium block ${isLight ? 'text-teal-600' : 'text-teal-400'}`}>
+                                            {language === 'he' ? 'CoastFIRE היום:' : 'CoastFIRE today:'}
+                                        </span>
+                                        <span className={`text-lg font-bold ${isLight ? 'text-teal-600' : 'text-teal-400'}`}>
+                                            {formatCurrency(Math.round(coastFireNumber))}
+                                        </span>
+                                    </div>
+                                ) : null}
                             />
                             <SummaryCard
                                 label={t('capitalPreservation')}
@@ -1001,26 +1053,50 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                             <div className="flex items-center gap-3">
                                 <h3 className={`text-lg font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>{t('wealthProjection')}</h3>
                                 {/* Year-by-Year Progress Button */}
-                                {!isCompareMode && history && (
+                                {!isCompareMode && !showStrategyComparison && history && (
                                     <AmortizationTableButton
                                         onClick={() => setShowAmortizationModal(true)}
                                         t={t}
                                     />
                                 )}
+                                {/* Strategy Comparison Toggle */}
+                                <button
+                                    onClick={() => setShowStrategyComparison(v => !v)}
+                                    className={`px-2 py-1 rounded-lg text-[10px] font-medium transition-all border ${showStrategyComparison
+                                        ? (isLight ? 'bg-indigo-100 border-indigo-300 text-indigo-700' : 'bg-indigo-500/30 border-indigo-400/50 text-indigo-300')
+                                        : (isLight ? 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10')
+                                    }`}
+                                >
+                                    {language === 'he' ? 'השוואת אסטרטגיות' : 'Compare strategies'}
+                                </button>
                             </div>
-                            <div className="flex gap-6">
-                                <div className="flex items-center gap-1.5">
-                                    <span className={`w-3 h-3 inline-block ${isAiMode ? 'bg-[#a78bfa]' : (isSimMode ? 'bg-[#f472b6]' : 'bg-[#60a5fa]')}`}></span>
-                                    <span className={`text-sm ${isLight ? 'text-slate-700' : 'text-white'}`}>{t('wealthProjection')}</span>
+                            {showStrategyComparison ? (
+                                <div className="flex flex-wrap gap-x-3 gap-y-1">
+                                    {STRATEGY_LINES.map(({ key, label, color }) => (
+                                        <div key={key} className="flex items-center gap-1">
+                                            <span className="w-3 h-0.5 inline-block rounded" style={{ backgroundColor: color, display: 'inline-block', height: 2, width: 12 }}></span>
+                                            <span className={`text-[10px] ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>{label}</span>
+                                        </div>
+                                    ))}
                                 </div>
-                                <div className="flex items-center gap-1.5">
-                                    <span className="w-3 h-3 bg-[#facc15] inline-block"></span>
-                                    <span className={`text-sm ${isLight ? 'text-slate-700' : 'text-white'}`}>{t('accumulatedWithdrawals')}</span>
+                            ) : (
+                                <div className="flex gap-6">
+                                    <div className="flex items-center gap-1.5">
+                                        <span className={`w-3 h-3 inline-block ${isAiMode ? 'bg-[#a78bfa]' : (isSimMode ? 'bg-[#f472b6]' : 'bg-[#60a5fa]')}`}></span>
+                                        <span className={`text-sm ${isLight ? 'text-slate-700' : 'text-white'}`}>{t('wealthProjection')}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="w-3 h-3 bg-[#facc15] inline-block"></span>
+                                        <span className={`text-sm ${isLight ? 'text-slate-700' : 'text-white'}`}>{t('accumulatedWithdrawals')}</span>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                         <div className="h-52">
-                            <Line data={chartData} options={options} />
+                            <Line
+                                data={showStrategyComparison && strategyComparisonData ? strategyComparisonData : chartData}
+                                options={options}
+                            />
                         </div>
                     </div>
 
