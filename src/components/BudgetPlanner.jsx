@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell, Save, BarChart3, Calculator, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell, Save, BarChart3, Calculator, RefreshCw, Copy, Undo2, Redo2, TrendingUp } from 'lucide-react';
 import { MaintenanceCalcPanel } from './MaintenanceCalcPanel';
 import { Doughnut, Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend } from 'chart.js';
@@ -1007,6 +1007,11 @@ const trackActiveInFuture = (track, projYears) => {
     return y * 12 + (m - 1) >= getNowYM() + Math.round(projYears * 12);
 };
 
+const trackActiveInYear = (track, year) => {
+    if (!track.endDate) return true;
+    return parseInt(track.endDate.split('-')[0]) >= year;
+};
+
 // Projected monthly cost accounting for loan end dates and per-track inflation flag
 const toProjectedMonthly = (item, projFactor, projYears) => {
     if (item.enabled === false) return 0;
@@ -1023,7 +1028,7 @@ function genId() {
 }
 
 // ─── Single item row ──────────────────────────────────────────────────────────
-function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, onToggleEnabled, projFactor, showInflation, extraActionButton: _extraActionButton, labelAdornment }) {
+function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, onToggleEnabled, projFactor, showInflation, extraActionButton: _extraActionButton, labelAdornment, currentAge, retirementEndAge }) {
     const [editingLabel, setEditingLabel] = useState(false);
     const [labelDraft, setLabelDraft] = useState(item.label);
     const [amountDraft, setAmountDraft] = useState(item.amount === 0 ? '' : String(item.amount));
@@ -1041,6 +1046,18 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, o
     const [reminderType, setReminderType] = useState(() => item.reminder?.recurring ? (item.reminder?.recurringType || 'monthly') : 'none');
     const [reminderDay, setReminderDay] = useState(item.reminder?.recurringDay || 10);
     const [reminderInterval, setReminderInterval] = useState(item.reminder?.recurringInterval || 7);
+
+    const [showContinuous, setShowContinuous] = useState(false);
+    const [continuousDraft, setContinuousDraft] = useState({
+        isContinuous: !!item.isContinuous,
+        endYear: item.endYear || '',
+        growthType: item.growthType || 'fixed',
+        growthValue: item.growthValue || ''
+    });
+    const continuousDirty = continuousDraft.isContinuous !== !!item.isContinuous ||
+        continuousDraft.endYear !== (item.endYear || '') ||
+        continuousDraft.growthType !== (item.growthType || 'fixed') ||
+        continuousDraft.growthValue !== (item.growthValue || '');
 
     const commitLabel = () => {
         setEditingLabel(false);
@@ -1100,6 +1117,19 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, o
                     {item.label}
                 </span>
             )}
+            {item.isContinuous && (
+                <span className={`text-[9px] px-1.5 py-0.5 rounded border leading-none shrink-0 cursor-default ${isLight ? 'bg-purple-50 border-purple-200 text-purple-600' : 'bg-purple-500/20 border-purple-500/30 text-purple-300'}`}
+                      title={isHe ? 'פריט מתמשך עם הגדרות גידול' : 'Continuous item with growth settings'}>
+                    {(() => {
+                        const parts = [];
+                        if (item.growthType === 'fixed') parts.push(`+${currency}${item.growthValue || 0}`);
+                        else if (item.growthType === 'percent') parts.push(`+${item.growthValue || 0}%`);
+                        else if (item.growthType === 'categoryPercent') parts.push(`+${item.growthValue || 0}% ${isHe ? 'מקטגוריה' : 'cat'}`);
+                        if (item.endYear) parts.push(`${isHe ? 'עד (כולל)' : 'till (incl)'} ${item.endYear}`);
+                        return parts.join(' | ') || (isHe ? 'מתמשך' : 'Continuous');
+                    })()}
+                </span>
+            )}
             {labelAdornment}
 
             {/* Amount + annual hint + inflation projection */}
@@ -1150,7 +1180,7 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, o
 
             {/* Reminder button */}
             <button
-                onMouseDown={e => { e.preventDefault(); setShowReminder(v => !v); setShowNote(false); }}
+                onMouseDown={e => { e.preventDefault(); setShowReminder(v => !v); setShowNote(false); setShowContinuous(false); }}
                 className={`shrink-0 p-0.5 rounded transition-colors ${showReminder
                     ? (isLight ? 'text-blue-600 bg-blue-100' : 'text-blue-400 bg-blue-500/20')
                     : item.reminder?.date
@@ -1163,7 +1193,7 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, o
 
             {/* Note button — toggle */}
             <button
-                onMouseDown={e => { e.preventDefault(); setShowNote(v => !v); setShowReminder(false); }}
+                onMouseDown={e => { e.preventDefault(); setShowNote(v => !v); setShowReminder(false); setShowContinuous(false); }}
                 className={`shrink-0 p-0.5 rounded transition-colors ${showNote
                     ? (isLight ? 'text-amber-600 bg-amber-100' : 'text-amber-400 bg-amber-500/20')
                     : item.note
@@ -1180,6 +1210,19 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, o
                 className={`shrink-0 p-0.5 rounded transition-colors ${isLight ? 'text-slate-300 hover:text-red-500 hover:bg-red-50' : 'text-gray-600 hover:text-red-400 hover:bg-red-900/20'}`}
             >
                 <Trash2 size={13} />
+            </button>
+
+            {/* Continuous Settings button */}
+            <button
+                onMouseDown={e => { e.preventDefault(); setShowContinuous(v => !v); setShowNote(false); setShowReminder(false); }}
+                className={`shrink-0 p-0.5 rounded transition-colors ${showContinuous
+                    ? (isLight ? 'text-purple-600 bg-purple-100' : 'text-purple-400 bg-purple-500/20')
+                    : item.isContinuous
+                        ? (isLight ? 'text-purple-500 hover:text-purple-600' : 'text-purple-400 hover:text-purple-300')
+                        : (isLight ? 'text-slate-300 hover:text-slate-500' : 'text-gray-600 hover:text-gray-400')}`}
+                title={isHe ? 'הגדרות מתמשכות (סיום/גידול)' : 'Continuous settings (end/growth)'}
+            >
+                <TrendingUp size={13} />
             </button>
 
             {/* Floating reminder panel */}
@@ -1320,6 +1363,108 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, o
                         placeholder={isHe ? 'הערה חופשית...' : 'Free note...'}
                         className={`w-full text-xs px-2 pb-2 resize-none outline-none leading-relaxed bg-transparent ${isLight ? 'text-slate-700 placeholder-slate-300' : 'text-gray-200 placeholder-gray-600'}`}
                     />
+                </div>
+            )}
+
+            {/* Floating continuous panel */}
+            {showContinuous && (
+                <div
+                    className={`absolute z-[9999] top-full mt-1 w-56 rounded-lg border shadow-lg overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-white/20'}`}
+                    style={{ [isHe ? 'right' : 'left']: '5rem' }}
+                    dir={isHe ? 'rtl' : 'ltr'}
+                >
+                    <div className={`flex items-center justify-between px-2.5 py-2 border-b ${isLight ? 'bg-purple-50 border-purple-100' : 'bg-purple-500/10 border-white/10'}`}>
+                        <div className="flex items-center gap-1.5">
+                            <TrendingUp size={12} className={isLight ? 'text-purple-500' : 'text-purple-400'} />
+                            <span className={`text-[11px] font-semibold ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>
+                                {isHe ? `מתמשך — ${item.label}` : `Continuous — ${item.label}`}
+                            </span>
+                        </div>
+                        <label className="flex items-center gap-1 cursor-pointer">
+                            <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'פעיל' : 'Active'}</span>
+                            <input
+                                type="checkbox"
+                                checked={continuousDraft.isContinuous}
+                                onChange={e => setContinuousDraft(d => ({ ...d, isContinuous: e.target.checked }))}
+                                className={`rounded text-purple-500 focus:ring-purple-500 outline-none ${isLight ? 'border-slate-300' : 'border-white/20 bg-white/10'}`}
+                            />
+                        </label>
+                    </div>
+                    {continuousDraft.isContinuous && (
+                        <div className="p-2.5 space-y-3">
+                            <div>
+                                <label className={`block text-[10px] font-medium mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'שנת סיום (אופציונלי, כולל)' : 'End Year (optional, inclusive)'}</label>
+                                <input
+                                    type="number"
+                                    value={continuousDraft.endYear}
+                                    onChange={e => setContinuousDraft(d => ({ ...d, endYear: e.target.value ? parseInt(e.target.value) || '' : '' }))}
+                                    onKeyDown={e => {
+                                        if (e.key === 'ArrowUp') {
+                                            e.preventDefault();
+                                            setContinuousDraft(d => {
+                                                const currentYear = new Date().getFullYear();
+                                                const maxYear = currentYear + Math.max(1, Math.round(retirementEndAge - currentAge));
+                                                let current = d.endYear ? parseInt(d.endYear) : currentYear;
+                                                return { ...d, endYear: Math.min(maxYear, current + 1) };
+                                            });
+                                        } else if (e.key === 'ArrowDown') {
+                                            e.preventDefault();
+                                            setContinuousDraft(d => {
+                                                const currentYear = new Date().getFullYear();
+                                                const minYear = currentYear + 1;
+                                                let current = d.endYear ? parseInt(d.endYear) : minYear + 1;
+                                                return { ...d, endYear: Math.max(minYear, current - 1) };
+                                            });
+                                        }
+                                    }}
+                                    placeholder={isHe ? 'למשל: 2035' : 'e.g. 2035'}
+                                    className={`w-full text-xs px-2 py-1 rounded border outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${isLight ? 'border-slate-200 bg-white text-slate-700 placeholder-slate-300' : 'border-white/20 bg-slate-800 text-gray-200 placeholder-gray-600'}`}
+                                />
+                            </div>
+                            <div>
+                                <label className={`block text-[10px] font-medium mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'סוג גידול משנה לשנה' : 'Yearly Growth Type'}</label>
+                                <select
+                                    value={continuousDraft.growthType}
+                                    onChange={e => setContinuousDraft(d => ({ ...d, growthType: e.target.value }))}
+                                    className={`w-full text-xs px-2 py-1 rounded border outline-none ${isLight ? 'border-slate-200 bg-white text-slate-700' : 'border-white/20 bg-slate-800 text-gray-200'}`}
+                                >
+                                    <option value="fixed" className={isLight ? 'bg-white' : 'bg-slate-800'}>{isHe ? 'סכום קבוע' : 'Fixed amount'}</option>
+                                    <option value="percent" className={isLight ? 'bg-white' : 'bg-slate-800'}>{isHe ? 'אחוז קבוע' : 'Fixed percentage'}</option>
+                                    <option value="categoryPercent" className={isLight ? 'bg-white' : 'bg-slate-800'}>{isHe ? 'אחוז מהקטגוריה' : 'Percentage of category'}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className={`block text-[10px] font-medium mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'ערך גידול' : 'Growth Value'}</label>
+                                <input
+                                    type="number"
+                                    value={continuousDraft.growthValue}
+                                    onChange={e => setContinuousDraft(d => ({ ...d, growthValue: e.target.value ? parseFloat(e.target.value) || 0 : '' }))}
+                                    placeholder={continuousDraft.growthType === 'fixed' ? '0.00' : '0%'}
+                                    className={`w-full text-xs px-2 py-1 rounded border outline-none ${isLight ? 'border-slate-200 bg-white text-slate-700' : 'border-white/20 bg-slate-800 text-gray-200'}`}
+                                />
+                            </div>
+                        </div>
+                    )}
+                    <div className="p-2.5 pt-0 mt-2">
+                        <button
+                            onMouseDown={e => {
+                                e.preventDefault();
+                                onChange({ ...item, 
+                                    isContinuous: continuousDraft.isContinuous,
+                                    endYear: continuousDraft.endYear || undefined,
+                                    growthType: continuousDraft.growthType,
+                                    growthValue: continuousDraft.growthValue !== '' ? continuousDraft.growthValue : undefined
+                                });
+                                setShowContinuous(false);
+                            }}
+                            disabled={!continuousDirty}
+                            className={`w-full text-xs py-1.5 rounded font-medium transition-colors ${continuousDirty
+                                ? (isLight ? 'bg-purple-500 text-white hover:bg-purple-600' : 'bg-purple-600 text-white hover:bg-purple-500')
+                                : (isLight ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white/5 text-gray-600 cursor-not-allowed')}`}
+                        >
+                            {isHe ? 'שמור שינויים' : 'Save changes'}
+                        </button>
+                    </div>
                 </div>
             )}
         </div>
@@ -1576,7 +1721,7 @@ function MaintenanceCalcItemRow({ item, isHe, isLight, currency, t, onChange, on
 }
 
 // ─── Category accordion ───────────────────────────────────────────────────────
-function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onToggleItemEnabled, onAddItem, onAddLoanItem, onAddMaintenanceItem, onToggleAll, projFactor, projYears, showInflation, totalMonthly, householdSize, aiProvider, aiModel, apiKeyOverride, retirementOverlay }) {
+function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onToggleItemEnabled, onAddItem, onAddLoanItem, onAddMaintenanceItem, onToggleAll, projFactor, projYears, showInflation, totalMonthly, householdSize, aiProvider, aiModel, apiKeyOverride, retirementOverlay, currentAge, retirementEndAge }) {
     const label = isHe ? category.labelHe : category.labelEn;
     const enabledItems = items.filter(i => i.enabled !== false);
     const categoryTotal = enabledItems.reduce((s, i) => s + toMonthly(i), 0);
@@ -1599,7 +1744,7 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
                 className={`sticky top-0 z-10 flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium backdrop-blur-md ${isLight ? 'bg-white' : 'bg-white/10'}`}
                 dir={isHe ? 'rtl' : 'ltr'}
             >
-                <button onClick={onToggle} className="flex items-center gap-2 flex-1 min-w-0 text-start">
+                <button tabIndex={-1} onClick={onToggle} className="flex items-center gap-2 flex-1 min-w-0 text-start select-none outline-none focus:outline-none">
                     <span className="text-base shrink-0">{category.icon}</span>
                     <span className="flex-1 min-w-0 truncate">
                         {label} <span className="font-normal opacity-60">({items.length})</span>
@@ -1719,6 +1864,8 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
                                 projFactor={projFactor}
                                 showInflation={showInflation}
                                 labelAdornment={retBadge}
+                                currentAge={currentAge}
+                                retirementEndAge={retirementEndAge}
                             />
                         );
                     })}
@@ -1806,10 +1953,56 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const aiInsightStaleRef = useRef(false); // mirror of aiInsightStale for use inside callbacks
     const aiStaleInitRef = useRef(false);   // true after the first post-load render
     const { dragStyle: aiDragStyle, onDragMouseDown: onAiDragMouseDown } = useDraggable(aiModalOpen);
-    const [showFuture, setShowFuture] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [showStats, setShowStats] = useState(false);
     const [sliderConsumed, setSliderConsumed] = useState(0);
+    const currentYear = new Date().getFullYear();
+    const retirementEndYear = currentYear + Math.max(0, Math.round(
+        parseFloat(inputs.retirementEndAge || 90) - parseFloat(inputs.currentAge || 40)
+    ));
+    const [selectedYear, setSelectedYear] = useState(currentYear);
+    const [yearAmounts, setYearAmounts] = useState({});
+    const yearAmountsRef = useRef({});
+    // Undo / redo
+    const [canUndo, setCanUndo] = useState(false);
+    const [canRedo, setCanRedo] = useState(false);
+    const historyRef = useRef({ past: [], future: [] });
+    const beforeChangeRef = useRef(null);
+    const historyDebounceRef = useRef(null);
+    // Copy-from dropdown
+    const [copyDropdownOpen, setCopyDropdownOpen] = useState(false);
+    const copyDropdownRef = useRef(null);
+    const [copiedStateByYear, setCopiedStateByYear] = useState({});
+
+    // Close copy dropdown on outside click
+    useEffect(() => {
+        if (!copyDropdownOpen) return;
+        const handler = (e) => {
+            if (copyDropdownRef.current && !copyDropdownRef.current.contains(e.target)) {
+                setCopyDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [copyDropdownOpen]);
+
+    // Keyboard navigation for years
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            const target = e.target;
+            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+            
+            if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                setSelectedYear(y => isHe ? Math.max(currentYear, y - 1) : Math.min(retirementEndYear, y + 1));
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                setSelectedYear(y => isHe ? Math.min(retirementEndYear, y + 1) : Math.max(currentYear, y - 1));
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isHe, currentYear, retirementEndYear]);
 
     // Load slider value from Firestore on login
     useEffect(() => {
@@ -1842,7 +2035,8 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     }, []);
 
     // Always-current refs so closures always see latest state
-    latestStateRef.current = { items, householdSize };
+    latestStateRef.current = { items, householdSize, yearAmounts };
+    yearAmountsRef.current = yearAmounts;
     aiInsightStaleRef.current = aiInsightStale;
 
     // Derive clean display text and structured retirement adjustments from raw AI insight
@@ -1857,10 +2051,70 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         });
     }, []);
 
+    // History helpers — capture state before changes for undo/redo
+    const prepareHistoryCapture = useCallback(() => {
+        if (!beforeChangeRef.current) {
+            beforeChangeRef.current = {
+                items: latestStateRef.current.items,
+                yearAmounts: { ...yearAmountsRef.current },
+            };
+        }
+        clearTimeout(historyDebounceRef.current);
+        historyDebounceRef.current = setTimeout(() => {
+            if (beforeChangeRef.current) {
+                historyRef.current.past.push(beforeChangeRef.current);
+                if (historyRef.current.past.length > 50) historyRef.current.past.shift();
+                historyRef.current.future = [];
+                beforeChangeRef.current = null;
+                setCanUndo(true);
+                setCanRedo(false);
+            }
+        }, 1200);
+    }, []);
+
+    const pushHistoryNow = useCallback(() => {
+        clearTimeout(historyDebounceRef.current);
+        beforeChangeRef.current = null;
+        historyRef.current.past.push({
+            items: latestStateRef.current.items,
+            yearAmounts: { ...yearAmountsRef.current },
+        });
+        if (historyRef.current.past.length > 50) historyRef.current.past.shift();
+        historyRef.current.future = [];
+        setCanUndo(true);
+        setCanRedo(false);
+    }, []);
+
+    const handleUndo = useCallback(() => {
+        clearTimeout(historyDebounceRef.current);
+        beforeChangeRef.current = null;
+        const { past, future } = historyRef.current;
+        if (!past.length) return;
+        future.push({ items: latestStateRef.current.items, yearAmounts: { ...yearAmountsRef.current } });
+        const prev = past.pop();
+        setItems(prev.items.map(normalizeBudgetItem));
+        setYearAmounts(prev.yearAmounts || {});
+        setCanUndo(past.length > 0);
+        setCanRedo(true);
+    }, []);
+
+    const handleRedo = useCallback(() => {
+        clearTimeout(historyDebounceRef.current);
+        beforeChangeRef.current = null;
+        const { past, future } = historyRef.current;
+        if (!future.length) return;
+        past.push({ items: latestStateRef.current.items, yearAmounts: { ...yearAmountsRef.current } });
+        const next = future.pop();
+        setItems(next.items.map(normalizeBudgetItem));
+        setYearAmounts(next.yearAmounts || {});
+        setCanUndo(true);
+        setCanRedo(future.length > 0);
+    }, []);
+
     const persistBudgetSnapshot = useCallback((withBackup = true) => {
         if (!uid || !loaded || !saveAllowedRef.current) return;
 
-        const { items: latestItems, householdSize: latestHouseholdSize } = latestStateRef.current;
+        const { items: latestItems, householdSize: latestHouseholdSize, yearAmounts: latestYearAmounts } = latestStateRef.current;
         const normalizedItems = Array.isArray(latestItems) ? latestItems.map(normalizeBudgetItem) : latestItems;
         const prev = confirmedRef.current;
         let newSlots = backupSlotsRef.current;
@@ -1881,7 +2135,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         }
 
         const snap = { items: normalizedItems, householdSize: latestHouseholdSize, savedAt: Date.now() };
-        setBudgetItems(uid, normalizedItems, latestHouseholdSize, withBackup ? newSlots : undefined)
+        setBudgetItems(uid, normalizedItems, latestHouseholdSize, withBackup ? newSlots : undefined, latestYearAmounts || {})
             .then(() => {
                 confirmedRef.current = snap;
                 if (withBackup) {
@@ -1939,17 +2193,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         return () => window.removeEventListener('rc-scroll-to-budget-item', handleScroll);
     }, []);
 
-    const searchResults = useMemo(() => {
-        const q = searchQuery.trim().toLowerCase();
-        if (!q) return null;
-        return items.filter(item => {
-            const hay = [
-                item.label,
-                ...(item.tracks || []).map(tr => tr.label),
-            ].filter(Boolean).join(' ').toLowerCase();
-            return hay.includes(q);
-        });
-    }, [searchQuery, items]);
+
 
     const pauseStateFingerprint = useMemo(
         () => items
@@ -1957,6 +2201,106 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             .join('|'),
         [items]
     );
+
+    // Helper to calculate continuous item values dynamically from currentYear to targetYear
+    const getResolvedItemsForYear = useCallback((targetYear) => {
+        let result = [];
+        if (targetYear <= currentYear) {
+            const yearData = yearAmounts[targetYear] || {};
+            result = items.map(item => {
+                if (item.type === 'loan') {
+                    const filteredTracks = (item.tracks || []).filter(tr => trackActiveInYear(tr, targetYear));
+                    return { ...item, tracks: filteredTracks };
+                }
+                const override = yearData[item.id];
+                if (override) return { ...item, ...override };
+                return item;
+            });
+        } else {
+            let prevYearItems = items.map(item => {
+                if (item.type === 'loan') {
+                    const filteredTracks = (item.tracks || []).filter(tr => trackActiveInYear(tr, currentYear));
+                    return { ...item, tracks: filteredTracks };
+                }
+                const override = yearAmounts[currentYear]?.[item.id];
+                return override ? { ...item, ...override } : item;
+            });
+
+            for (let y = currentYear + 1; y <= targetYear; y++) {
+                const categoryTotals = {};
+                prevYearItems.forEach(item => {
+                    if (item.enabled !== false && item.type !== 'loan') {
+                        categoryTotals[item.categoryId] = (categoryTotals[item.categoryId] || 0) + (item.frequency === 'annual' ? item.amount / 12 : item.amount);
+                    }
+                });
+
+                const currentYearItems = prevYearItems.map((prevItem, idx) => {
+                    const baseItem = items[idx];
+                    if (baseItem.type === 'loan') {
+                        const filteredTracks = (baseItem.tracks || []).filter(tr => trackActiveInYear(tr, y));
+                        return { ...baseItem, tracks: filteredTracks };
+                    }
+
+                    let nextItem = { ...prevItem };
+                    
+                    if (baseItem.isContinuous) {
+                        if (baseItem.endYear && y > baseItem.endYear) {
+                            nextItem.amount = 0;
+                        } else {
+                            let growth = 0;
+                            if (baseItem.growthType === 'fixed') {
+                                growth = baseItem.growthValue || 0;
+                            } else if (baseItem.growthType === 'percent') {
+                                growth = prevItem.amount * ((baseItem.growthValue || 0) / 100);
+                            } else if (baseItem.growthType === 'categoryPercent') {
+                                const catTotalMonthly = categoryTotals[baseItem.categoryId] || 0;
+                                const catTotalForFreq = nextItem.frequency === 'annual' ? catTotalMonthly * 12 : catTotalMonthly;
+                                growth = catTotalForFreq * ((baseItem.growthValue || 0) / 100);
+                            }
+                            nextItem.amount = Math.round(prevItem.amount + growth);
+                        }
+                    }
+
+                    const override = yearAmounts[y]?.[baseItem.id];
+                    if (override) {
+                        if (baseItem.isContinuous) {
+                            const { amount, frequency, ...restOverride } = override;
+                            nextItem = { ...nextItem, ...restOverride };
+                        } else {
+                            nextItem = { ...nextItem, ...override };
+                        }
+                    }
+
+                    return nextItem;
+                });
+                prevYearItems = currentYearItems;
+            }
+            result = prevYearItems;
+        }
+
+        return result.filter(item => {
+            const baseItem = items.find(i => i.id === item.id);
+            if (!baseItem) return true;
+            if (baseItem.type === 'loan' && (baseItem.tracks || []).length > 0 && (item.tracks || []).length === 0) return false;
+            if (baseItem.isContinuous && baseItem.endYear && targetYear > baseItem.endYear) return false;
+            return true;
+        });
+    }, [items, yearAmounts, currentYear]);
+
+    // Per-year display items: base items with yearAmounts[selectedYear] overrides and loan tracks filtered by year
+    const displayItems = useMemo(() => getResolvedItemsForYear(selectedYear), [selectedYear, getResolvedItemsForYear]);
+
+    const searchResults = useMemo(() => {
+        const q = searchQuery.trim().toLowerCase();
+        if (!q) return null;
+        return displayItems.filter(item => {
+            const hay = [
+                item.label,
+                ...(item.tracks || []).map(tr => tr.label),
+            ].filter(Boolean).join(' ').toLowerCase();
+            return hay.includes(q);
+        });
+    }, [searchQuery, displayItems]);
 
     useEffect(() => {
         pauseStateFingerprintRef.current = null;
@@ -1968,11 +2312,13 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         getBudgetItems(uid).then(saved => {
             let loadedItems = null;
             let loadedHouseholdSize = 2;
+            let loadedYearAmounts = null;
             if (saved) {
                 if (Array.isArray(saved)) { loadedItems = saved; } // legacy format
                 else {
                     if (Array.isArray(saved.items)) loadedItems = saved.items;
                     if (saved.householdSize) loadedHouseholdSize = saved.householdSize;
+                    if (saved.yearAmounts && typeof saved.yearAmounts === 'object') loadedYearAmounts = saved.yearAmounts;
                 }
             }
             if (loadedItems) {
@@ -2004,6 +2350,10 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
 
                 setItems(normalizedLoadedItems);
                 setHouseholdSize(loadedHouseholdSize);
+                if (loadedYearAmounts) {
+                    setYearAmounts(loadedYearAmounts);
+                    yearAmountsRef.current = loadedYearAmounts;
+                }
                 confirmedRef.current = { items: normalizedLoadedItems, householdSize: loadedHouseholdSize, savedAt: Date.now() };
                 backupSlotsRef.current = slots;
                 setBackups(slots);
@@ -2044,7 +2394,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         persistBudgetSnapshot(false);
     }, [uid, loaded, pauseStateFingerprint, persistBudgetSnapshot]);
 
-    // Debounced save to Firestore whenever items change (after initial load)
+    // Debounced save to Firestore whenever items or yearAmounts change (after initial load)
     useEffect(() => {
         if (!uid || !loaded || !saveAllowedRef.current) return;
         clearTimeout(saveTimerRef.current);
@@ -2052,7 +2402,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             persistBudgetSnapshot(true);
         }, SAVE_DEBOUNCE_MS);
         return () => clearTimeout(saveTimerRef.current);
-    }, [uid, items, householdSize, loaded, persistBudgetSnapshot]);
+    }, [uid, items, householdSize, yearAmounts, loaded, persistBudgetSnapshot]);
 
     // Mark AI insight as stale when items/householdSize change after initial load
     useEffect(() => {
@@ -2065,11 +2415,11 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     useEffect(() => {
         if (!loaded) return;
         try {
-            const monthlyBase = items.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0);
+            const monthlyBase = displayItems.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0);
             const retDelta = showRetirementMode && retirementAdj
                 ? (retirementAdj.additions || []).reduce((s, a) => s + (a.monthlyAmount || 0), 0)
                   + (retirementAdj.increases || []).reduce((s, inc) => {
-                      const matched = items.filter(i => i.enabled !== false).some(i => matchIncrease(i.label, inc.itemLabel));
+                      const matched = displayItems.filter(i => i.enabled !== false).some(i => matchIncrease(i.label, inc.itemLabel));
                       return s + (matched ? (inc.increaseAmount || 0) : 0);
                   }, 0)
                 : 0;
@@ -2079,7 +2429,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
 
             const SCALABLE_CATS = new Set(['food', 'health', 'personal', 'family', 'entertainment']);
             const categories = CATEGORIES.map(cat => {
-                const catItems = items.filter(i => i.categoryId === cat.id && i.enabled !== false && toMonthly(i) > 0);
+                const catItems = displayItems.filter(i => i.categoryId === cat.id && i.enabled !== false && toMonthly(i) > 0);
                 const catTotal = Math.round(catItems.reduce((s, i) => s + toMonthly(i), 0));
                 return {
                     labelHe: cat.labelHe,
@@ -2096,14 +2446,14 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                 };
             });
 
-            const loanTracks = items.filter(i => i.type === 'loan' && i.enabled !== false)
+            const loanTracks = displayItems.filter(i => i.type === 'loan' && i.enabled !== false)
                 .flatMap(i => (i.tracks || []).filter(tr => tr.endDate && tr.amount > 0).map(tr => {
                     const [y, m] = tr.endDate.split('-').map(Number);
                     const ml = y * 12 + (m - 1) - getNowYM();
                     return { loan: i.label, track: tr.label, amount: tr.amount, endDate: tr.endDate, monthsLeft: ml, active: ml >= 0 };
                 }));
 
-            const projectedMonthly = items.filter(i => i.enabled !== false).reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0);
+            const projectedMonthly = displayItems.filter(i => i.enabled !== false).reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0);
 
             sessionStorage.setItem('rc-budget-summary', JSON.stringify({
                 totalMonthly: Math.round(monthly),
@@ -2112,6 +2462,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                 gap: Math.round(incomeTarget - monthly),
                 householdSize,
                 perPerson,
+                selectedYear,
                 categories,
                 loanTracks: loanTracks.length ? loanTracks : undefined,
                 inflation: showInflation ? {
@@ -2123,7 +2474,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             }));
             window.dispatchEvent(new Event('rc-budget-updated'));
         } catch {}
-    }, [items, loaded, inputs.monthlyNetIncomeDesired, results, householdSize, showInflation, inflationRate, projFactor, projYears, showRetirementMode, retirementAdj]);
+    }, [displayItems, loaded, inputs.monthlyNetIncomeDesired, results, householdSize, showInflation, inflationRate, projFactor, projYears, showRetirementMode, retirementAdj, selectedYear]);
 
     // Keep budget reminders in sync immediately from local state (before DB debounce/save).
     useEffect(() => {
@@ -2140,70 +2491,30 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
 
     // totalMonthly must be declared before any callbacks that reference it
     const totalMonthlyBase = useMemo(
-        () => items.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0),
-        [items]
+        () => displayItems.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0),
+        [displayItems]
     );
     const retirementDeltaTotal = useMemo(() => {
         if (!showRetirementMode || !retirementAdj) return 0;
         const additions = (retirementAdj.additions || []).reduce((s, a) => s + (a.monthlyAmount || 0), 0);
         const increases = (retirementAdj.increases || []).reduce((s, inc) => {
             // only count increase if there's a matching enabled item
-            const matched = items.filter(i => i.enabled !== false).some(i => matchIncrease(i.label, inc.itemLabel));
+            const matched = displayItems.filter(i => i.enabled !== false).some(i => matchIncrease(i.label, inc.itemLabel));
             return s + (matched ? (inc.increaseAmount || 0) : 0);
         }, 0);
         return additions + increases;
-    }, [showRetirementMode, retirementAdj, items]);
+    }, [showRetirementMode, retirementAdj, displayItems]);
     const totalMonthly = showRetirementMode ? totalMonthlyBase + retirementDeltaTotal : totalMonthlyBase;
     const fullMonthly = useMemo(
-        () => items.reduce((s, i) => s + toMonthly(i), 0),
-        [items]
+        () => displayItems.reduce((s, i) => s + toMonthly(i), 0),
+        [displayItems]
     );
     const pausedMonthly = fullMonthly - totalMonthly;
     const totalProjectedMonthly = useMemo(
-        () => items.filter(i => i.enabled !== false).reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0),
-        [items, projFactor, projYears]
+        () => displayItems.filter(i => i.enabled !== false).reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0),
+        [displayItems, projFactor, projYears]
     );
 
-    // Future milestones: points in time where loan tracks expire and expenses drop
-    const futureMilestones = useMemo(() => {
-        const expiring = items
-            .filter(i => i.type === 'loan' && i.enabled !== false)
-            .flatMap(i => (i.tracks || [])
-                .filter(tr => tr.endDate && tr.amount > 0 && trackActive(tr))
-                .map(tr => ({ loanLabel: i.label, trackLabel: tr.label, amount: tr.amount, endDate: tr.endDate, inflationAffected: !!tr.inflationAffected, itemRef: i }))
-            )
-            .sort((a, b) => a.endDate.localeCompare(b.endDate));
-        if (!expiring.length) return [];
-        const byDate = expiring.reduce((acc, tr) => {
-            if (!acc[tr.endDate]) acc[tr.endDate] = [];
-            acc[tr.endDate].push(tr);
-            return acc;
-        }, {});
-        const nowYM = getNowYM();
-        // For each milestone date, compute the projected total at that future point
-        const allDates = Object.keys(byDate).sort();
-        return allDates.map((date, idx) => {
-            const tracks = byDate[date];
-            const saving = tracks.reduce((s, tr) => s + tr.amount, 0);
-            const [y, m] = date.split('-').map(Number);
-            const ml = y * 12 + (m - 1) - nowYM;
-            const yearsAway = ml / 12;
-            // After this milestone: all loan tracks that end by this date are gone
-            const expiredByNow = new Set(allDates.slice(0, idx + 1).flatMap(d => byDate[d].map(tr => `${tr.loanLabel}|${tr.trackLabel}`)));
-            const newTotal = items.filter(i => i.enabled !== false).reduce((s, i) => {
-                if (i.type === 'loan') {
-                    const remaining = (i.tracks || []).filter(tr => {
-                        if (!trackActive(tr)) return false;
-                        if (expiredByNow.has(`${i.label}|${tr.label}`)) return false;
-                        return true;
-                    }).reduce((ts, tr) => ts + (tr.amount || 0) * (showInflation && tr.inflationAffected ? Math.pow(1 + inflationRate, yearsAway) : 1), 0);
-                    return s + remaining;
-                }
-                return s + toMonthly(i) * (showInflation ? Math.pow(1 + inflationRate, yearsAway) : 1);
-            }, 0);
-            return { date, tracks, saving, monthsLeft: ml, newTotal };
-        }).filter(ms => ms.monthsLeft > 0);
-    }, [items, showInflation, inflationRate]);
 
     const visibleCategories = useMemo(() => {
         const allCategoryIds = CATEGORIES.map(c => c.id);
@@ -2216,8 +2527,8 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         ];
         // Fully-disabled categories sink to the bottom; within each group sort by enabled monthly cost desc
         return all.sort((a, b) => {
-            const catItemsA = items.filter(i => i.categoryId === a.id);
-            const catItemsB = items.filter(i => i.categoryId === b.id);
+            const catItemsA = displayItems.filter(i => i.categoryId === a.id);
+            const catItemsB = displayItems.filter(i => i.categoryId === b.id);
             const allOffA = catItemsA.length > 0 && catItemsA.every(i => i.enabled === false);
             const allOffB = catItemsB.length > 0 && catItemsB.every(i => i.enabled === false);
             if (allOffA !== allOffB) return allOffA ? 1 : -1;
@@ -2225,17 +2536,17 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             const totalB = catItemsB.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0);
             return totalB - totalA;
         });
-    }, [items]);
+    }, [items, displayItems]);
 
     const applyStatusItemsWithImmediateSave = useCallback((nextItems) => {
         const normalizedNextItems = Array.isArray(nextItems) ? nextItems.map(normalizeBudgetItem) : [];
         setItems(normalizedNextItems);
-        const nextHouseholdSize = latestStateRef.current.householdSize;
-        latestStateRef.current = { items: normalizedNextItems, householdSize: nextHouseholdSize };
+        const { householdSize: nextHouseholdSize, yearAmounts: nextYearAmounts } = latestStateRef.current;
+        latestStateRef.current = { items: normalizedNextItems, householdSize: nextHouseholdSize, yearAmounts: nextYearAmounts };
 
         if (!uid || !loaded || !saveAllowedRef.current) return;
         clearTimeout(saveTimerRef.current);
-        setBudgetItems(uid, normalizedNextItems, nextHouseholdSize)
+        setBudgetItems(uid, normalizedNextItems, nextHouseholdSize, undefined, nextYearAmounts || {})
             .then(() => {
                 confirmedRef.current = { items: normalizedNextItems, householdSize: nextHouseholdSize, savedAt: Date.now() };
             })
@@ -2243,8 +2554,35 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     }, [uid, loaded]);
 
     const handleChangeItem = useCallback((updated) => {
-        updateItems(prev => prev.map(i => i.id === updated.id ? mergeBudgetItemUpdate(i, updated) : i));
-    }, [updateItems]);
+        const isLoan = updated.type === 'loan';
+        const hasAmountOrFreq = 'amount' in updated || 'frequency' in updated;
+        const baseItem = latestStateRef.current.items.find(i => i.id === updated.id);
+
+        if (!isLoan && hasAmountOrFreq && !baseItem?.isContinuous) {
+            // Store amount/frequency as a per-year override
+            const currentOverride = yearAmountsRef.current[selectedYear]?.[updated.id] || {};
+            prepareHistoryCapture();
+            setYearAmounts(prev => ({
+                ...prev,
+                [selectedYear]: {
+                    ...(prev[selectedYear] || {}),
+                    [updated.id]: {
+                        amount: 'amount' in updated ? (updated.amount ?? 0) : (currentOverride.amount ?? baseItem?.amount ?? 0),
+                        frequency: 'frequency' in updated ? (updated.frequency ?? 'monthly') : (currentOverride.frequency ?? baseItem?.frequency ?? 'monthly'),
+                    }
+                }
+            }));
+            // Update structural fields only (strip amount/frequency so items stays as template)
+            const { amount: _a, frequency: _f, ...withoutAmounts } = updated;
+            if (Object.keys(withoutAmounts).length > 1) { // more than just 'id'
+                updateItems(prev => prev.map(i => i.id === updated.id ? mergeBudgetItemUpdate(i, withoutAmounts) : i));
+            }
+        } else {
+            // Loan items or pure structural changes → update items directly
+            prepareHistoryCapture();
+            updateItems(prev => prev.map(i => i.id === updated.id ? mergeBudgetItemUpdate(i, updated) : i));
+        }
+    }, [updateItems, selectedYear, prepareHistoryCapture]);
 
     const handleToggleItemEnabled = useCallback((itemId, nextEnabled) => {
         const currentItems = Array.isArray(latestStateRef.current.items) ? latestStateRef.current.items : [];
@@ -2253,26 +2591,38 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     }, [applyStatusItemsWithImmediateSave]);
 
     const handleDeleteItem = useCallback((id) => {
+        pushHistoryNow();
         updateItems(prev => prev.filter(i => i.id !== id));
-    }, [updateItems]);
+        setYearAmounts(prev => {
+            const next = {};
+            for (const [yr, amounts] of Object.entries(prev)) {
+                const { [id]: _removed, ...rest } = amounts;
+                next[yr] = rest;
+            }
+            return next;
+        });
+    }, [updateItems, pushHistoryNow]);
 
     const handleAddItem = useCallback((categoryId) => {
+        pushHistoryNow();
         const newItem = { id: genId(), categoryId, label: t('budgetNewItem'), amount: 0, frequency: 'monthly', enabled: true };
         updateItems(prev => [...prev, newItem]);
-    }, [updateItems, t]);
+    }, [updateItems, t, pushHistoryNow]);
 
     const handleAddLoanItem = useCallback((categoryId) => {
+        pushHistoryNow();
         const firstTrack = { id: genId(), label: t('budgetTrack'), amount: 0, endDate: '' };
         const newItem = { id: genId(), categoryId, label: t('budgetAddLoan'), type: 'loan', tracks: [firstTrack], enabled: true };
         updateItems(prev => [...prev, newItem]);
         setOpenCategoryId(categoryId);
-    }, [updateItems, t]);
+    }, [updateItems, t, pushHistoryNow]);
 
     const handleAddMaintenanceItem = useCallback((categoryId) => {
+        pushHistoryNow();
         const newItem = { id: genId(), categoryId, label: isHe ? 'תחזוקת דירה' : 'Home Maintenance', type: 'maintenance-calc', amount: 0, frequency: 'annual', enabled: true };
         updateItems(prev => [...prev, newItem]);
         setOpenCategoryId(categoryId);
-    }, [updateItems, isHe]);
+    }, [updateItems, isHe, pushHistoryNow]);
 
     const handleRestore = useCallback((backup) => {
         setPendingConfirm({ type: 'restore', backup });
@@ -2280,6 +2630,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
 
     const handleConfirmAction = useCallback(() => {
         if (!pendingConfirm) return;
+        pushHistoryNow();
         if (pendingConfirm.type === 'restore') {
             const { backup } = pendingConfirm;
             if (Array.isArray(backup.items)) setItems(backup.items.map(normalizeBudgetItem));
@@ -2293,7 +2644,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             if (uid) setBudgetAiInsight(uid, null).catch(err => console.error('[Budget AI insight reset error]', err));
         }
         setPendingConfirm(null);
-    }, [pendingConfirm, updateItems, uid]);
+    }, [pendingConfirm, updateItems, uid, pushHistoryNow]);
 
     const handleAddCategory = useCallback(() => {
         const name = prompt(t('budgetCategoryName'));
@@ -2336,9 +2687,9 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
 
             const emptyCatNames = [];
             const lines = CATEGORIES.map(cat => {
-                const catItems = items.filter(i => i.categoryId === cat.id && i.enabled !== false);
+                const catItems = displayItems.filter(i => i.categoryId === cat.id && i.enabled !== false);
                 const activeItems = catItems.filter(i => {
-                    if (i.type === 'loan') return (i.tracks || []).some(trackActive);
+                    if (i.type === 'loan') return (i.tracks || []).some(tr => !tr.endDate || parseInt(tr.endDate.split('-')[0]) >= selectedYear);
                     return i.amount > 0;
                 });
                 if (!activeItems.length) {
@@ -2377,7 +2728,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                     : `\nEmpty categories (₪0 — possibly missing expenses): ${emptyCatNames.join(', ')}`)
                 : '';
 
-            // Build a summary of future savings from expiring loan tracks
+            // Build a summary of future savings from expiring loan tracks (from all years, not filtered)
             const futureSavings = items.filter(i => i.type === 'loan' && i.enabled !== false)
                 .flatMap(i => (i.tracks || []).filter(tr => tr.endDate && trackActive(tr) && tr.amount > 0)
                     .map(tr => {
@@ -2534,7 +2885,7 @@ Gap vs target and what can be optimized.`;
         } finally {
             setAiLoading(false);
         }
-    }, [aiProvider, aiModel, apiKeyOverride, items, target, totalMonthly, householdSize, isHe, uid]);
+    }, [aiProvider, aiModel, apiKeyOverride, items, displayItems, target, totalMonthly, householdSize, isHe, uid, selectedYear]);
 
     const pct = target > 0 ? Math.min(totalMonthly / target, 1.5) : 0;
     const projectedPct = target > 0 ? Math.min(totalProjectedMonthly / target, 1.5) : 0;
@@ -2566,6 +2917,102 @@ Gap vs target and what can be optimized.`;
 
             {/* ── Summary banner — sticky ── */}
             <div className={`sticky top-0 z-20 rounded-xl p-3 border backdrop-blur-md ${isLight ? 'bg-white border-slate-200' : 'bg-white/10 border-white/20'}`}>
+                {/* Year navigation — integrated into summary header */}
+                <div className={`flex items-center pt-1 pb-3 mb-2 border-b ${isLight ? 'border-slate-100' : 'border-white/10'}`} dir="ltr">
+                    {/* Left arrow: decrease in LTR, increase in Hebrew */}
+                    <button
+                        onClick={() => setSelectedYear(y => isHe ? Math.min(retirementEndYear, y + 1) : Math.max(currentYear, y - 1))}
+                        disabled={isHe ? selectedYear >= retirementEndYear : selectedYear <= currentYear}
+                        className={`w-7 h-7 flex items-center justify-center shrink-0 rounded transition-colors focus:outline-none focus:ring-0 disabled:opacity-25 ${isLight ? 'hover:bg-slate-100 text-slate-500' : 'hover:bg-white/10 text-gray-400'}`}
+                    >
+                        <ChevronDown size={14} className="rotate-90" />
+                    </button>
+                    {/* Center: year + copy dropdown icon */}
+                    <div className={`flex-1 flex items-center justify-center gap-2 ${isHe ? 'flex-row-reverse' : 'flex-row'}`}>
+                        <div className="flex items-center justify-center gap-1.5" dir={isHe ? 'rtl' : 'ltr'}>
+                            <span className={`text-xl font-bold leading-none tabular-nums ${selectedYear === currentYear ? (isLight ? 'text-slate-700' : 'text-gray-200') : (isLight ? 'text-indigo-700' : 'text-indigo-300')}`}>
+                                {selectedYear}
+                            </span>
+                            {(() => {
+                                const st = copiedStateByYear[selectedYear];
+                                const hasEdits = Object.keys(yearAmounts[selectedYear] || {}).length > 0;
+                                if (st && JSON.stringify(yearAmounts[selectedYear] || {}) === st.amountsStr) {
+                                    return (
+                                        <span className={`text-[10px] px-1.5 rounded-full border leading-none tracking-wide py-0.5 ${isLight ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-indigo-900/30 text-indigo-300 border-indigo-700/50'}`}>
+                                            {isHe ? `העתק מ-${st.sourceYear}` : `Copied from ${st.sourceYear}`}
+                                        </span>
+                                    );
+                                } else if (selectedYear !== currentYear && !hasEdits) {
+                                    return (
+                                        <span className={`text-[10px] px-1.5 rounded-full border leading-none tracking-wide py-0.5 ${isLight ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-indigo-900/30 text-indigo-300 border-indigo-700/50'}`}>
+                                            {isHe ? 'העתק משנה נוכחית' : 'Copied from current year'}
+                                        </span>
+                                    );
+                                }
+                                return null;
+                            })()}
+                        </div>
+                        {selectedYear === currentYear ? (
+                            <span className={`text-[10px] leading-none ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                {isHe ? 'שנה נוכחית' : 'current year'}
+                            </span>
+                        ) : (
+                            <div className="relative" ref={copyDropdownRef}>
+                                <button
+                                    onClick={() => setCopyDropdownOpen(o => !o)}
+                                    title={isHe ? 'העתק מ...' : 'Copy from year...'}
+                                    className={`w-7 h-7 flex items-center justify-center shrink-0 rounded transition-colors focus:outline-none focus:ring-0 ${isLight ? 'text-indigo-500 hover:bg-indigo-50' : 'text-indigo-400 hover:bg-indigo-900/20'} ${copyDropdownOpen ? (isLight ? 'bg-indigo-50' : 'bg-indigo-900/20') : ''}`}
+                                >
+                                    <Copy size={12} />
+                                </button>
+                                {copyDropdownOpen && (
+                                    <div className={`absolute top-full mt-1 z-50 rounded-lg shadow-lg border overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-slate-800 border-white/20'}`}
+                                        style={{ [isHe ? 'right' : 'left']: 0, minWidth: '7rem' }}
+                                    >
+                                        <div className={`px-2 py-1 text-[10px] font-semibold uppercase tracking-wide border-b ${isLight ? 'text-slate-400 border-slate-100' : 'text-gray-500 border-white/10'}`}>
+                                            {isHe ? 'העתק מ-' : 'Copy from'}
+                                        </div>
+                                        <div className="max-h-40 overflow-y-auto custom-scrollbar scrollbar-right">
+                                            {Array.from({ length: retirementEndYear - currentYear + 1 }, (_, i) => currentYear + i)
+                                                .filter(y => y !== selectedYear)
+                                                .map(y => (
+                                                    <button
+                                                        key={y}
+                                                        onClick={() => {
+                                                            pushHistoryNow();
+                                                            const srcAmounts = yearAmountsRef.current[y] || {};
+                                                            const newAmountsForSelectedYear = { ...(yearAmountsRef.current[selectedYear] || {}), ...srcAmounts };
+                                                            setYearAmounts(prev => ({
+                                                                ...prev,
+                                                                [selectedYear]: newAmountsForSelectedYear
+                                                            }));
+                                                            setCopiedStateByYear(prev => ({
+                                                                ...prev,
+                                                                [selectedYear]: { sourceYear: y, amountsStr: JSON.stringify(newAmountsForSelectedYear) }
+                                                            }));
+                                                            setCopyDropdownOpen(false);
+                                                        }}
+                                                        className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${isLight ? 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-700' : 'text-gray-300 hover:bg-indigo-900/30 hover:text-indigo-300'}`}
+                                                    >
+                                                        {y}{y === currentYear ? (isHe ? ' (נוכחית)' : ' (current)') : ''}
+                                                    </button>
+                                                ))
+                                            }
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    {/* Right arrow: increase in LTR, decrease in Hebrew */}
+                    <button
+                        onClick={() => setSelectedYear(y => isHe ? Math.max(currentYear, y - 1) : Math.min(retirementEndYear, y + 1))}
+                        disabled={isHe ? selectedYear <= currentYear : selectedYear >= retirementEndYear}
+                        className={`w-7 h-7 flex items-center justify-center shrink-0 rounded transition-colors focus:outline-none focus:ring-0 disabled:opacity-25 ${isLight ? 'hover:bg-slate-100 text-slate-500' : 'hover:bg-white/10 text-gray-400'}`}
+                    >
+                        <ChevronDown size={14} className="-rotate-90" />
+                    </button>
+                </div>
                 <div className="flex items-end justify-between mb-2 gap-4">
                     <div className="text-right">
                         <div className={`text-sm font-medium mb-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
@@ -2680,88 +3127,6 @@ Gap vs target and what can be optimized.`;
                     )}
                 </div>
 
-                {/* Future budget toggle — shown only when there are expiring loan tracks */}
-                {futureMilestones.length > 0 && (
-                    <button
-                        onClick={() => setShowFuture(v => !v)}
-                        className={`mt-2 w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-xs transition-colors ${isLight ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : 'bg-indigo-900/20 text-indigo-300 hover:bg-indigo-900/30'}`}
-                        dir={isHe ? 'rtl' : 'ltr'}
-                    >
-                        <span className="font-medium">
-                            {isHe ? `תקציב עתידי — ${futureMilestones.length} שינויים צפויים` : `Future budget — ${futureMilestones.length} planned change${futureMilestones.length > 1 ? 's' : ''}`}
-                        </span>
-                        {showFuture ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                    </button>
-                )}
-
-                {/* Future milestones timeline */}
-                {showFuture && futureMilestones.length > 0 && (
-                    <div className="mt-2 space-y-2" dir={isHe ? 'rtl' : 'ltr'}>
-                        {futureMilestones.map((ms, idx) => {
-                            const futureGap = target - ms.newTotal;
-                            const futurePct = target > 0 ? Math.min(ms.newTotal / target, 1.5) : 0;
-                            const futureBarColor = futurePct > 1 ? 'bg-red-400' : futurePct > 0.9 ? 'bg-amber-400' : 'bg-emerald-400';
-                            return (
-                                <div key={idx} className={`rounded-lg p-2.5 border ${isLight ? 'border-indigo-100 bg-indigo-50/60' : 'border-indigo-500/20 bg-indigo-900/10'}`}>
-                                    {/* Date + saving badge */}
-                                    <div className="flex items-center justify-between mb-1.5 gap-2">
-                                        <span className={`text-xs font-semibold ${isLight ? 'text-indigo-700' : 'text-indigo-300'}`}>
-                                            {ms.date}
-                                            <span className={`ms-1.5 font-normal ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
-                                                ({ms.monthsLeft}m)
-                                            </span>
-                                        </span>
-                                        <span className="text-xs px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 font-medium">
-                                            −{currency}{Math.round(ms.saving).toLocaleString()}/{isHe ? 'חודש' : 'mo'}
-                                        </span>
-                                    </div>
-                                    {/* Expiring tracks */}
-                                    <div className={`text-xs mb-2 space-y-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
-                                        {ms.tracks.map((tr, ti) => (
-                                            <div key={ti}>• {tr.loanLabel} — {tr.trackLabel}: {currency}{tr.amount}/{isHe ? 'חודש' : 'mo'}</div>
-                                        ))}
-                                    </div>
-                                    {/* New totals */}
-                                    <div className="flex items-center justify-between text-xs mb-1">
-                                        <span className={isLight ? 'text-slate-500' : 'text-gray-400'}>{isHe ? 'הוצאה חודשית חדשה' : 'New monthly total'}</span>
-                                        <div className="flex items-center gap-2">
-                                            <span className={`font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
-                                                {currency}{Math.round(ms.newTotal).toLocaleString()}
-                                            </span>
-                                            {target > 0 && (
-                                                <span className={`font-medium ${futureGap >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
-                                                    ({futureGap >= 0 ? '+' : ''}{currency}{Math.round(futureGap).toLocaleString()})
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                    {target > 0 && (
-                                        <div className="flex items-center gap-2">
-                                            <div className={`flex-1 h-1.5 rounded-full overflow-hidden ${isLight ? 'bg-slate-100' : 'bg-white/10'}`}>
-                                                <div className={`h-full rounded-full ${futureBarColor}`} style={{ width: `${Math.min(futurePct * 100, 100)}%` }} />
-                                            </div>
-                                            <span dir="ltr" className={`text-[11px] font-medium shrink-0 ${futurePct > 1 ? 'text-red-500' : futurePct > 0.9 ? 'text-amber-500' : 'text-emerald-500'}`}>
-                                                {Math.round(futurePct * 100)}% {t('budgetOfTarget')}
-                                            </span>
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                        {/* Final state summary */}
-                        {futureMilestones.length > 1 && (() => {
-                            const last = futureMilestones[futureMilestones.length - 1];
-                            const totalSaving = futureMilestones.reduce((s, ms) => s + ms.saving, 0);
-                            return (
-                                <div className={`text-xs text-center py-1 rounded-lg ${isLight ? 'text-emerald-700 bg-emerald-50' : 'text-emerald-400 bg-emerald-900/10'}`}>
-                                    {isHe
-                                        ? `לאחר כל השינויים: ${currency}${Math.round(last.newTotal).toLocaleString()}/חודש (חיסכון של ${currency}${Math.round(totalSaving).toLocaleString()} בחודש)`
-                                        : `After all changes: ${currency}${Math.round(last.newTotal).toLocaleString()}/mo (saving ${currency}${Math.round(totalSaving).toLocaleString()}/mo)`}
-                                </div>
-                            );
-                        })()}
-                    </div>
-                )}
             </div>
 
             {/* ── Search + Stats ── */}
@@ -2781,6 +3146,24 @@ Gap vs target and what can be optimized.`;
                             <X size={13} />
                         </button>
                     )}
+                </div>
+                <div className="flex items-center gap-1 shrink-0" dir="ltr">
+                    <button
+                        onClick={handleUndo}
+                        disabled={!canUndo}
+                        title={isHe ? 'בטל' : 'Undo'}
+                        className={`p-2 rounded-xl border transition-colors disabled:opacity-30 ${isLight ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50' : 'bg-white/10 border-white/20 text-gray-400 hover:bg-white/20'}`}
+                    >
+                        <Undo2 size={14} />
+                    </button>
+                    <button
+                        onClick={handleRedo}
+                        disabled={!canRedo}
+                        title={isHe ? 'חזור' : 'Redo'}
+                        className={`p-2 rounded-xl border transition-colors disabled:opacity-30 ${isLight ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50' : 'bg-white/10 border-white/20 text-gray-400 hover:bg-white/20'}`}
+                    >
+                        <Redo2 size={14} />
+                    </button>
                 </div>
                 <button
                     onClick={() => setShowStats(true)}
@@ -2833,7 +3216,7 @@ Gap vs target and what can be optimized.`;
 
             {/* ── Categories ── */}
             {visibleCategories.map(cat => {
-                const catItems = items.filter(i => i.categoryId === cat.id);
+                const catItems = displayItems.filter(i => i.categoryId === cat.id);
                 if (catItems.length === 0 && !CATEGORIES.find(c => c.id === cat.id)) return null;
                 return (
                     <CategorySection
@@ -2862,6 +3245,8 @@ Gap vs target and what can be optimized.`;
                         aiModel={aiModel}
                         apiKeyOverride={apiKeyOverride}
                         retirementOverlay={showRetirementMode ? retirementAdj : null}
+                        currentAge={parseFloat(inputs.currentAge) || 30}
+                        retirementEndAge={parseFloat(inputs.retirementEndAge) || 90}
                     />
                 );
             })}

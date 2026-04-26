@@ -176,6 +176,7 @@ export function onBudgetItemsSnapshot(uid, callback) {
                     items: normalizeBudgetItemsStatus(slot?.items)
                 }))
                 : [],
+            yearAmounts: data.yearAmounts ?? null,
         });
     });
 }
@@ -195,6 +196,7 @@ export async function getBudgetItems(uid) {
                 items: normalizeBudgetItemsStatus(slot?.items)
             }))
             : [],
+        yearAmounts: data.yearAmounts ?? null,
     };
 }
 
@@ -210,7 +212,7 @@ export async function setBudgetAiInsight(uid, insight) {
     await setDoc(budgetAiInsightRef(uid), { insight: insight ?? null, updatedAt: Date.now() });
 }
 
-export async function setBudgetItems(uid, items, householdSize, backupSlots) {
+export async function setBudgetItems(uid, items, householdSize, backupSlots, yearAmounts) {
     const payload = {
         items: stripUndefinedDeep(normalizeBudgetItemsStatus(items)),
         updatedAt: Date.now()
@@ -224,6 +226,7 @@ export async function setBudgetItems(uid, items, householdSize, backupSlots) {
             }))
             : []);
     }
+    if (yearAmounts !== undefined) payload.yearAmounts = stripUndefinedDeep(yearAmounts);
     await setDoc(budgetItemsRef(uid), payload, { merge: true });
 }
 
