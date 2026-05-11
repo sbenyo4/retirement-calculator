@@ -158,12 +158,11 @@ function matchIncrease(itemLabel, incLabel) {
 const CAT_COLORS = ['#3b82f6','#22c55e','#ef4444','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#6b7280'];
 
 // ─── Budget Statistics Modal ─────────────────────────────────────────────────
-function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRate, showInflation: showInflationProp, isLight, isHe, currency, t: _t, sliderConsumed, setSliderConsumed, retirementAdj }) {
+function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRate, showInflation: showInflationProp, isLight, isHe, currency, t: _t, sliderConsumed, setSliderConsumed, retirementAdj, showRetirementMode, setShowRetirementMode }) {
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
     const [localShowInflation, setLocalShowInflation] = useState(showInflationProp);
     const [selectedYearIdx, setSelectedYearIdx] = useState(null);
     const [showSavings, setShowSavings] = useState(false);
-    const [localShowRetirement, setLocalShowRetirement] = useState(false);
     const barDivRef = useRef(null);
 
     // Sync with parent toggle when modal opens
@@ -202,7 +201,7 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRa
 
     // Per-category retirement delta (today's ₪, inflated when applied)
     const retDeltaByCat = useMemo(() => {
-        if (!localShowRetirement || !retirementAdj) return {};
+        if (!showRetirementMode || !retirementAdj) return {};
         const map = {};
         (retirementAdj.additions || []).forEach(a => {
             map[a.categoryId] = (map[a.categoryId] || 0) + (a.monthlyAmount || 0);
@@ -211,7 +210,7 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRa
             map[inc.categoryId] = (map[inc.categoryId] || 0) + (inc.increaseAmount || 0);
         });
         return map;
-    }, [localShowRetirement, retirementAdj]);
+    }, [showRetirementMode, retirementAdj]);
 
     // ── Helper: compute per-category totals for a given year index ──
     const computeCatTotals = useCallback((yi) => {
@@ -625,14 +624,14 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRa
                         </button>
                         {retirementAdj && (
                             <button
-                                onClick={() => setLocalShowRetirement(v => !v)}
+                                onClick={() => setShowRetirementMode(v => !v)}
                                 onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
-                                className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border transition-colors shrink-0 ${localShowRetirement
+                                className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border transition-colors shrink-0 ${showRetirementMode
                                     ? (isLight ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-amber-500 bg-amber-900/20 text-amber-300')
                                     : (isLight ? 'border-slate-200 bg-slate-50 text-slate-400' : 'border-white/20 bg-white/5 text-gray-500')}`}
                                 title={isHe ? 'תצוגת פרישה' : 'Retirement view'}
                             >
-                                {localShowRetirement ? <ToggleRight size={13} /> : <ToggleLeft size={13} />}
+                                {showRetirementMode ? <ToggleRight size={13} /> : <ToggleLeft size={13} />}
                                 🔮 {isHe ? 'פרישה' : 'Retirement'}
                             </button>
                         )}
@@ -871,26 +870,57 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRa
                                     />
                                 </div>
 
-                                <div className="grid grid-cols-3 gap-2 mt-4">
+                                <div className="grid grid-cols-2 gap-2 mt-4">
                                     {(() => {
                                         const N = yearGeom.ages.length;
-                                        const annualUsed = N > 0 ? Math.round(sliderConsumed / N) : 0;
+                                        const W = barData.target || 0;
+                                        // Monthly from savings portion (based on slider)
+                                        const monthlyFromSavings = N > 0 ? Math.round(sliderConsumed / (N * 12)) : 0;
+                                        // Monthly from other sources (pension etc.) = target minus what savings covers at full utilization
+                                        const monthlyFromOther = N > 0 ? Math.round(W - totalSavings / (N * 12)) : 0;
+                                        // Total monthly income = other + savings portion chosen
+                                        const totalMonthly = monthlyFromOther + monthlyFromSavings;
+                                        const annualUsed = monthlyFromSavings * 12;
                                         return [
                                             {
-                                                label: isHe ? 'מנצל מהחיסכון' : 'Using',
+                                                label: isHe ? 'מנצל מהחיסכון' : 'Using from savings',
                                                 value: sliderConsumed,
                                                 sub: sliderConsumed > 0 ? `(${currency}${annualUsed.toLocaleString()}${isHe ? '/שנה' : '/yr'})` : null,
                                                 color: isLight ? 'text-orange-600' : 'text-orange-400',
                                             },
-                                            { label: isHe ? 'שומר בקרן' : 'Keeping', value: totalSavings - sliderConsumed, sub: totalSavings > 0 ? `(${Math.round((totalSavings - sliderConsumed) / totalSavings * 100)}%)` : null, color: isLight ? 'text-green-700' : 'text-green-400' },
+                                            {
+                                                label: isHe ? 'משיכה חודשית ממוצעת' : 'Avg monthly withdrawal',
+                                                mainValue: totalMonthly,
+                                                fromSavings: monthlyFromSavings,
+                                                fromOther: monthlyFromOther,
+                                                color: isLight ? 'text-sky-600' : 'text-sky-400',
+                                                isMonthly: true,
+                                            },
+                                            { label: isHe ? 'שומר בקרן' : 'Keeping in fund', value: totalSavings - sliderConsumed, sub: totalSavings > 0 ? `(${Math.round((totalSavings - sliderConsumed) / totalSavings * 100)}%)` : null, color: isLight ? 'text-green-700' : 'text-green-400' },
                                             { label: isHe ? 'יתרה סופית' : 'Final balance', value: finalBal, color: isLight ? 'text-purple-700' : 'text-purple-300', big: true },
                                         ];
-                                    })().map(({ label, value, sub, color, big }) => (
-                                        <div key={label} className={`rounded-xl p-3 text-center ${isLight ? 'bg-slate-100' : 'bg-white/5'}`}>
-                                            <div className={`text-[10px] mb-1 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{label}</div>
-                                            <div className={`font-bold ${big ? 'text-base' : 'text-sm'} ${color}`} dir="ltr">
-                                                {sub && <span className={`text-[10px] font-normal me-1 ${isLight ? 'text-sky-500' : 'text-sky-400'}`}>{sub}</span>}{formatM(value)}
-                                            </div>
+                                    })().map((card) => (
+                                        <div key={card.label} className={`rounded-xl p-3 text-center ${isLight ? 'bg-slate-100' : 'bg-white/5'}`}>
+                                            <div className={`text-[10px] mb-1 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{card.label}</div>
+                                            {card.isMonthly ? (
+                                                <div dir="ltr">
+                                                    <span className={`font-bold text-sm ${card.color}`}>
+                                                        {card.mainValue > 0 ? `${currency}${card.mainValue.toLocaleString()}` : '—'}
+                                                    </span>
+                                                    {card.mainValue > 0 && <span className={`text-[10px] font-normal ms-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? '/חודש' : '/mo'}</span>}
+                                                    {card.mainValue > 0 && (
+                                                        <div className={`text-[10px] mt-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`} dir="ltr">
+                                                            <span className={isLight ? 'text-orange-500' : 'text-orange-400'}>{currency}{card.fromSavings.toLocaleString()}</span>
+                                                            {isHe ? ' חיסכון' : ' savings'}
+                                                            {card.fromOther > 0 && <> + <span className={isLight ? 'text-emerald-600' : 'text-emerald-400'}>{currency}{card.fromOther.toLocaleString()}</span>{isHe ? ' אחר' : ' other'}</>}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className={`font-bold ${card.big ? 'text-base' : 'text-sm'} ${card.color}`} dir="ltr">
+                                                    {card.sub && <span className={`text-[10px] font-normal me-1 ${isLight ? 'text-sky-500' : 'text-sky-400'}`}>{card.sub}</span>}{formatM(card.value)}
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
@@ -1994,10 +2024,14 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             
             if (e.key === 'ArrowRight') {
                 e.preventDefault();
-                setSelectedYear(y => isHe ? Math.max(currentYear, y - 1) : Math.min(retirementEndYear, y + 1));
+                setSelectedYear(y => isHe
+                    ? (y <= currentYear ? retirementEndYear : y - 1)
+                    : (y >= retirementEndYear ? currentYear : y + 1));
             } else if (e.key === 'ArrowLeft') {
                 e.preventDefault();
-                setSelectedYear(y => isHe ? Math.min(retirementEndYear, y + 1) : Math.max(currentYear, y - 1));
+                setSelectedYear(y => isHe
+                    ? (y >= retirementEndYear ? currentYear : y + 1)
+                    : (y <= currentYear ? retirementEndYear : y - 1));
             }
         };
         window.addEventListener('keydown', handleKeyDown);
@@ -2404,12 +2438,12 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         return () => clearTimeout(saveTimerRef.current);
     }, [uid, items, householdSize, yearAmounts, loaded, persistBudgetSnapshot]);
 
-    // Mark AI insight as stale when items/householdSize change after initial load
+    // Mark AI insight as stale when items, householdSize, or the calculator profile changes after initial load
     useEffect(() => {
         if (!loaded) return;
         if (!aiStaleInitRef.current) { aiStaleInitRef.current = true; return; } // skip the load-triggered fire
         if (aiInsightRef.current) setAiInsightStale(true);
-    }, [items, householdSize, loaded]);
+    }, [items, householdSize, results, loaded]);
 
     // Keep sessionStorage in sync so AI chat and AI insights can read the budget
     useEffect(() => {
@@ -2919,11 +2953,12 @@ Gap vs target and what can be optimized.`;
             <div className={`sticky top-0 z-20 rounded-xl p-3 border backdrop-blur-md ${isLight ? 'bg-white border-slate-200' : 'bg-white/10 border-white/20'}`}>
                 {/* Year navigation — integrated into summary header */}
                 <div className={`flex items-center pt-1 pb-3 mb-2 border-b ${isLight ? 'border-slate-100' : 'border-white/10'}`} dir="ltr">
-                    {/* Left arrow: decrease in LTR, increase in Hebrew */}
+                    {/* Left arrow: decrease in LTR, increase in Hebrew — wraps around */}
                     <button
-                        onClick={() => setSelectedYear(y => isHe ? Math.min(retirementEndYear, y + 1) : Math.max(currentYear, y - 1))}
-                        disabled={isHe ? selectedYear >= retirementEndYear : selectedYear <= currentYear}
-                        className={`w-7 h-7 flex items-center justify-center shrink-0 rounded transition-colors focus:outline-none focus:ring-0 disabled:opacity-25 ${isLight ? 'hover:bg-slate-100 text-slate-500' : 'hover:bg-white/10 text-gray-400'}`}
+                        onClick={() => setSelectedYear(y => isHe
+                            ? (y >= retirementEndYear ? currentYear : y + 1)
+                            : (y <= currentYear ? retirementEndYear : y - 1))}
+                        className={`w-7 h-7 flex items-center justify-center shrink-0 rounded transition-colors focus:outline-none focus:ring-0 ${isLight ? 'hover:bg-slate-100 text-slate-500' : 'hover:bg-white/10 text-gray-400'}`}
                     >
                         <ChevronDown size={14} className="rotate-90" />
                     </button>
@@ -3004,11 +3039,12 @@ Gap vs target and what can be optimized.`;
                             </div>
                         )}
                     </div>
-                    {/* Right arrow: increase in LTR, decrease in Hebrew */}
+                    {/* Right arrow: increase in LTR, decrease in Hebrew — wraps around */}
                     <button
-                        onClick={() => setSelectedYear(y => isHe ? Math.max(currentYear, y - 1) : Math.min(retirementEndYear, y + 1))}
-                        disabled={isHe ? selectedYear <= currentYear : selectedYear >= retirementEndYear}
-                        className={`w-7 h-7 flex items-center justify-center shrink-0 rounded transition-colors focus:outline-none focus:ring-0 disabled:opacity-25 ${isLight ? 'hover:bg-slate-100 text-slate-500' : 'hover:bg-white/10 text-gray-400'}`}
+                        onClick={() => setSelectedYear(y => isHe
+                            ? (y <= currentYear ? retirementEndYear : y - 1)
+                            : (y >= retirementEndYear ? currentYear : y + 1))}
+                        className={`w-7 h-7 flex items-center justify-center shrink-0 rounded transition-colors focus:outline-none focus:ring-0 ${isLight ? 'hover:bg-slate-100 text-slate-500' : 'hover:bg-white/10 text-gray-400'}`}
                     >
                         <ChevronDown size={14} className="-rotate-90" />
                     </button>
@@ -3434,6 +3470,8 @@ Gap vs target and what can be optimized.`;
             sliderConsumed={sliderConsumed}
             setSliderConsumed={setSliderConsumed}
             retirementAdj={retirementAdj}
+            showRetirementMode={showRetirementMode}
+            setShowRetirementMode={setShowRetirementMode}
         />
         </>
     );

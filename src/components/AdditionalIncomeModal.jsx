@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Trash2, TrendingUp, ToggleLeft, ToggleRight } from 'lucide-react';
+import { X, Plus, Trash2, TrendingUp, ToggleLeft, ToggleRight, Zap } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useDraggable } from '../hooks/useDraggable';
@@ -107,6 +107,35 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
 
     if (!isOpen) return null;
 
+    const TEMPLATES = [
+        {
+            labelHe: 'ייעוץ חלקי',  labelEn: 'Part-time consulting',
+            emoji: '💼', amount: 5000, durationYears: 5,
+        },
+        {
+            labelHe: 'שכירות נכס',  labelEn: 'Rental income',
+            emoji: '🏠', amount: 4000, durationYears: null,
+        },
+        {
+            labelHe: 'עבודה חלקית', labelEn: 'Part-time work',
+            emoji: '⏱️', amount: 6000, durationYears: 3,
+        },
+        {
+            labelHe: 'פרויקט עצמאי', labelEn: 'Freelance project',
+            emoji: '🚀', amount: 10000, durationYears: 1,
+        },
+    ];
+
+    const addFromTemplate = (tpl) => {
+        setEntries(prev => [...prev, {
+            id: String(Date.now()),
+            startYear: retirementYear,
+            endYear: tpl.durationYears ? retirementYear + tpl.durationYears : '',
+            monthlyAmount: tpl.amount,
+            enabled: true,
+        }]);
+    };
+
     const addEntry = () => {
         setEntries(prev => [...prev, {
             id: String(Date.now()),
@@ -171,6 +200,30 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                 {/* Description */}
                 <div className={`px-4 pt-3 pb-1 text-xs ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
                     {t('additionalIncomeDesc')}
+                </div>
+
+                {/* Templates */}
+                <div className="px-4 pb-2">
+                    <div className={`flex items-center gap-1.5 mb-1.5 text-[10px] font-semibold uppercase tracking-wide ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
+                        <Zap size={10} />
+                        {isRTL ? 'תבניות מהירות' : 'Quick templates'}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {TEMPLATES.map(tpl => (
+                            <button
+                                key={tpl.labelEn}
+                                onClick={() => addFromTemplate(tpl)}
+                                className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border transition-colors ${isLight ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100' : 'bg-green-900/10 border-green-500/25 text-green-400 hover:bg-green-900/20'}`}
+                            >
+                                <span>{tpl.emoji}</span>
+                                <span>{isRTL ? tpl.labelHe : tpl.labelEn}</span>
+                                <span className={`${isLight ? 'text-green-500' : 'text-green-500'} font-medium`} dir="ltr">
+                                    +{currency}{tpl.amount.toLocaleString()}
+                                    {tpl.durationYears ? `·${tpl.durationYears}y` : ''}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Entries */}

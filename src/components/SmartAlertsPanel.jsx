@@ -163,6 +163,9 @@ function buildTestRows(alert, appState, isHe) {
         rows.push([txt('Current monthly', 'הוצאה חודשית כיום'), fmt(appState.totalMonthly)]);
         rows.push([txt('Projected monthly', 'הוצאה מוקרנת'), fmt(appState.inflationProjectedMonthly)]);
         rows.push([txt('Threshold', 'סף'), `${c.operator}${fmt(c.amount)}`]);
+    } else if (c.type === 'budget_absolute') {
+        rows.push([txt('Total monthly budget', 'סה"כ תקציב חודשי'), fmt(appState.totalMonthly)]);
+        rows.push([txt('Threshold', 'סף'), `${c.operator}${fmt(c.amount)}`]);
     }
     return rows;
 }
@@ -332,7 +335,85 @@ export function SmartAlertsPanel({ isHe, isLight, appState, aiProvider, aiModel,
 
             {/* Body — hidden when collapsed */}
             {!collapsed && showAdd && (
-                <div className={`px-4 py-3 border-b space-y-2.5 ${isLight ? 'bg-amber-50/50 border-amber-100' : 'bg-amber-900/10 border-amber-500/20'}`}>
+                <div className={`px-4 py-3 border-b space-y-3 ${isLight ? 'bg-amber-50/50 border-amber-100' : 'bg-amber-900/10 border-amber-500/20'}`}>
+
+                    {/* ── Preset alerts ── */}
+                    {(() => {
+                        const PRESETS = [
+                            {
+                                emoji: '🔥',
+                                labelHe: 'Lean FIRE — תקציב נמוך מדי',
+                                labelEn: 'Lean FIRE — budget too low',
+                                summaryHe: 'מתריע כשסך ההוצאות החודשיות נמוך מ-₪10,000 — מינימום FIRE בישראל',
+                                summaryEn: 'Fires when total monthly expenses fall below ₪10,000 — Israeli Lean FIRE minimum',
+                                condition: { type: 'budget_absolute', amount: 10000, operator: '<' },
+                            },
+                            {
+                                emoji: '💸',
+                                labelHe: 'שיעור משיכה מעל 4%',
+                                labelEn: 'Withdrawal rate above 4%',
+                                summaryHe: 'מתריע כששיעור המשיכה השנתי מהתיק עולה על 4%',
+                                summaryEn: 'Fires when annual withdrawal rate from portfolio exceeds 4%',
+                                condition: { type: 'withdrawal_rate_from_portfolio', threshold: 0.04, operator: '>' },
+                            },
+                            {
+                                emoji: '📉',
+                                labelHe: 'כסף נגמר לפני גיל 95',
+                                labelEn: 'Funds run out before 95',
+                                summaryHe: 'מתריע אם החיסכון צפוי להיגמר לפני גיל 95',
+                                summaryEn: 'Fires if projected savings run out before age 95',
+                                condition: { type: 'ran_out_before_age', age: 95 },
+                            },
+                            {
+                                emoji: '🎯',
+                                labelHe: 'תקציב מעל 95% מהיעד',
+                                labelEn: 'Budget over 95% of target',
+                                summaryHe: 'מתריע כשהוצאות עולות על 95% מיעד המשיכה',
+                                summaryEn: 'Fires when expenses exceed 95% of withdrawal target',
+                                condition: { type: 'budget_pct_of_target', threshold: 0.95, operator: '>' },
+                            },
+                        ];
+                        const existingTypes = new Set(alerts.map(a => a.condition?.type + JSON.stringify(a.condition)));
+                        const available = PRESETS.filter(p => !existingTypes.has(p.condition.type + JSON.stringify(p.condition)));
+                        if (!available.length) return null;
+                        return (
+                            <div>
+                                <div className={`text-[10px] font-semibold uppercase tracking-wide mb-1.5 ${isLight ? 'text-amber-600' : 'text-amber-500'}`}>
+                                    {txt('Quick presets', 'תבניות מהירות')}
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {available.map(p => (
+                                        <button
+                                            key={p.labelEn}
+                                            onClick={async () => {
+                                                await persist([...alerts, {
+                                                    id: genId(),
+                                                    label: isHe ? p.labelHe : p.labelEn,
+                                                    originalText: isHe ? p.summaryHe : p.summaryEn,
+                                                    condition: p.condition,
+                                                    enabled: true,
+                                                }]);
+                                                setShowAdd(false);
+                                            }}
+                                            className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border transition-colors ${isLight ? 'bg-white border-amber-200 text-slate-700 hover:bg-amber-50' : 'bg-white/5 border-amber-500/25 text-gray-300 hover:bg-amber-900/20'}`}
+                                        >
+                                            <span>{p.emoji}</span>
+                                            <span>{isHe ? p.labelHe : p.labelEn}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {/* ── Divider ── */}
+                    <div className={`flex items-center gap-2 text-[10px] ${isLight ? 'text-amber-400' : 'text-amber-600'}`}>
+                        <div className={`flex-1 h-px ${isLight ? 'bg-amber-200' : 'bg-amber-500/20'}`} />
+                        {txt('or describe your own', 'או תאר בשפה חופשית')}
+                        <div className={`flex-1 h-px ${isLight ? 'bg-amber-200' : 'bg-amber-500/20'}`} />
+                    </div>
+
+                    {/* ── AI parser ── */}
                     <div className={`text-[11px] ${isLight ? 'text-amber-700' : 'text-amber-400'}`}>
                         {txt('Describe the alert condition in plain language:', 'תאר את תנאי ההתראה בשפה חופשית:')}
                     </div>

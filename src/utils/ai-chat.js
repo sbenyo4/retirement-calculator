@@ -91,11 +91,16 @@ export function buildChatSystemPrompt(inputs, results, language) {
     try {
         const budget = JSON.parse(sessionStorage.getItem('rc-budget-summary') || 'null');
         if (budget && budget.totalMonthly > 0) {
+            const hs = budget.householdSize ?? 1;
+            const yearLabel = budget.selectedYear ? ` (year ${budget.selectedYear})` : '';
             const catLines = (budget.categories || [])
+                .filter(c => !c.empty)
                 .map(c => {
                     const label = isHe ? c.labelHe : c.labelEn;
+                    const perPersonNote = hs > 1 && c.scalesWithPeople && c.perPerson
+                        ? ` [${currency}${c.perPerson}/person]` : '';
                     const itemLines = (c.items || []).map(i => `    • ${i.label}: ${currency}${i.amount}/mo`).join('\n');
-                    return `  ${label}: ${currency}${c.total}/mo${itemLines ? '\n' + itemLines : ''}`;
+                    return `  ${label}: ${currency}${c.total}/mo${perPersonNote}${itemLines ? '\n' + itemLines : ''}`;
                 })
                 .join('\n');
             const loanLines = (budget.loanTracks || [])
@@ -107,7 +112,10 @@ export function buildChatSystemPrompt(inputs, results, language) {
             const inflSection = budget.inflation
                 ? `\n- Inflation projection (${Math.round(budget.inflation.rate * 100 * 10) / 10}%/yr, ${budget.inflation.years} years): projected ${currency}${budget.inflation.projectedMonthly}/mo | ${currency}${budget.inflation.projectedAnnual}/yr`
                 : '';
-            budgetSection = `\nBUDGET PLANNER (monthly expense plan):\n- Total monthly: ${currency}${budget.totalMonthly} | Annual: ${currency}${budget.totalAnnual}\n- Gap vs income target: ${currency}${budget.gap} (${budget.gap >= 0 ? 'surplus' : 'shortfall'})${inflSection}\n- By category:\n${catLines}${loanSection}\n`;
+            const householdNote = hs > 1
+                ? `\n- Household: ${hs} people | Per-person average: ${currency}${budget.perPerson ?? Math.round(budget.totalMonthly / hs)}/mo`
+                : '';
+            budgetSection = `\nBUDGET PLANNER (monthly expense plan${yearLabel}):\n- Total monthly: ${currency}${budget.totalMonthly} | Annual: ${currency}${budget.totalAnnual}${householdNote}\n- Gap vs retirement income target: ${currency}${budget.gap} (${budget.gap >= 0 ? 'surplus — budget is below target' : 'shortfall — budget exceeds target'})${inflSection}\n- By category:\n${catLines}${loanSection}\n`;
         }
     } catch {}
 
@@ -119,6 +127,11 @@ Answer questions about the user's personal retirement plan using their data belo
 Respond in ${isHe ? 'Hebrew' : 'English'}. Be concise and conversational (under 200 words unless more is needed).
 CRITICAL: Always cite specific numbers (${currency} amounts, ages, %) from the user's data. Never give generic advice without numbers.
 Do NOT use JSON in your visible reply. If asked about something unrelated to retirement planning, gently redirect.
+BUDGET AWARENESS: When budget data is present, treat it as the user's actual expense plan for retirement. Use it to:
+- Explain how the total monthly expense compares to the desired retirement income and what capital that requires.
+- Factor in household size — scalable categories (food, health, personal, family, entertainment) change per person; fixed ones (housing utilities, insurance) do not.
+- When asked about reducing expenses or optimizing, identify which categories have the most impact on required retirement capital (each ${currency}100/mo saved reduces required capital by roughly ${currency}${Math.round(100 * 12 / 0.04).toLocaleString()} at the 4% rule).
+- If the budget exceeds the income target, proactively note the shortfall's effect on the calculator results.
 
 TODAY'S DATE: ${todayStr}
 

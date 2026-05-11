@@ -345,6 +345,24 @@ export const CONDITION_TYPES = {
         },
     },
 
+    // Monthly budget absolute value above/below a fixed amount (e.g. Lean FIRE threshold)
+    budget_absolute: {
+        labelHe: 'תקציב חודשי מוחלט',
+        labelEn: 'Monthly budget (absolute)',
+        check({ amount, operator }, { totalMonthly }) {
+            if (totalMonthly == null) return false;
+            return compare(totalMonthly, operator, amount);
+        },
+        statusHe({ amount, operator }, { totalMonthly }) {
+            if (totalMonthly == null) return 'אין נתוני תקציב';
+            return `תקציב: ₪${Math.round(totalMonthly).toLocaleString()} (סף: ${operator}₪${Math.round(amount).toLocaleString()})`;
+        },
+        statusEn({ amount, operator }, { totalMonthly }) {
+            if (totalMonthly == null) return 'No budget data';
+            return `Budget: ₪${Math.round(totalMonthly).toLocaleString()} (threshold: ${operator}₪${Math.round(amount).toLocaleString()})`;
+        },
+    },
+
     // Any active loan track ends within X months
     loan_ending_soon: {
         labelHe: 'הלוואה נגמרת בקרוב',
@@ -494,6 +512,12 @@ BUDGET CONDITIONS (continued):
 - budget_gap — checks: the monthly gap between income target and actual expenses (positive = saving, negative = overspending).
   Use for: "monthly gap / shortfall between target and expenses is below X".
   Example: "תתריע אם הפער החודשי יורד מתחת ל-₪1000".
+  Parameters: { type, amount (₪ number), operator }
+
+- budget_absolute — checks: the total monthly budget (sum of all expenses) vs a fixed amount in ₪.
+  Use for: "total monthly spending/budget is above/below ₪X" — including Lean FIRE thresholds.
+  Example: "תתריע אם התקציב החודשי נמוך מ-₪10,000" (Lean FIRE warning).
+  Example: "alert if monthly expenses exceed ₪20,000".
   Parameters: { type, amount (₪ number), operator }
 
 - inflation_adjusted_budget — checks: the inflation-projected monthly budget (as computed in the budget planner).
