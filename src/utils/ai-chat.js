@@ -243,7 +243,7 @@ export async function getChatResponse(messages, systemPrompt, provider, model, a
         const anthropic = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
         const message = await withRetry(() =>
             anthropic.messages.create({
-                model, max_tokens: 2048,
+                model, max_tokens: 4096,
                 system: systemPrompt,
                 messages: trimmed,
             }), { onRetry });

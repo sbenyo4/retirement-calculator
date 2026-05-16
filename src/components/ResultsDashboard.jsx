@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { calculateRetirementProjection } from '../utils/calculator';
 import { getProjectedYear } from '../utils/dateUtils';
@@ -8,7 +9,9 @@ import { SensitivityHeatmapButton, SensitivityHeatmapModal } from './Sensitivity
 import { InflationButton, InflationModal } from './InflationRealityCheck';
 import { PensionIncomeButton, PensionIncomeModal } from './PensionIncomeModal';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
-import { LayoutDashboard, BrainCircuit, Wallet } from 'lucide-react';
+import { LayoutDashboard, BrainCircuit, Wallet, Info, X, TrendingUp, PlusCircle, Landmark, Flag } from 'lucide-react';
+import { useDraggable } from '../hooks/useDraggable';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import AIInsightsView from './AIInsightsView';
 import BudgetPlanner from './BudgetPlanner';
 import { Line } from 'react-chartjs-2';
@@ -48,6 +51,8 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
     const [showPensionModal, setShowPensionModal] = useState(false);
     const [activeTab, setActiveTab] = useState('numerical'); // 'numerical' | 'insights' | 'budget'
     const [showStrategyComparison, setShowStrategyComparison] = useState(false);
+    const [showRetirementTargetModal, setShowRetirementTargetModal] = useState(false);
+    const [showEndBalanceTargetModal, setShowEndBalanceTargetModal] = useState(false);
 
     useEffect(() => {
         const handler = () => setActiveTab('budget');
@@ -676,7 +681,16 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                                         </span>
                                     )}
                                 </div>
-                                <div className={`px-4 py-2 rounded-lg border ${isLight ? 'bg-white/50 border-slate-200' : 'bg-black/20 border-white/10'}`}>
+                                <div className={`relative px-4 py-2 rounded-lg border ${isLight ? 'bg-white/50 border-slate-200' : 'bg-black/20 border-white/10'}`}>
+                                    {parseFloat(inputs.targetEndBalance) > 0 && (
+                                        <button
+                                            onClick={() => setShowEndBalanceTargetModal(true)}
+                                            className={`absolute top-1 end-1 p-0.5 rounded transition-colors ${isLight ? 'text-slate-300 hover:text-emerald-500 hover:bg-emerald-50' : 'text-white/20 hover:text-emerald-400 hover:bg-emerald-500/15'}`}
+                                            title={language === 'he' ? 'איך להגיע ליעד' : 'How to reach the target'}
+                                        >
+                                            <TrendingUp size={12} />
+                                        </button>
+                                    )}
                                     <div className="flex items-baseline gap-2">
                                         <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{t('balanceAtEnd')}:</span>
                                         <span className={`text-2xl font-bold ${ranOutAtAge ? (isLight ? 'text-red-600' : 'text-red-300') : (isLight ? 'text-slate-900' : 'text-white')}`}>
@@ -941,6 +955,7 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                                 value={formatCurrency(balanceAtRetirement)}
                                 subtext={t('projectedSavings')}
                                 color="text-blue-400"
+                                onInfoClick={() => setShowRetirementTargetModal(true)}
                                 extraContent={(() => {
                                     const currentSavings = parseFloat(inputs.currentSavings || 0);
                                     const monthlyContribution = parseFloat(inputs.monthlyContribution || 0);
@@ -1180,16 +1195,498 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                     )}
                 </div >
             )}
+            <RetirementTargetModal
+                isOpen={showRetirementTargetModal}
+                onClose={() => setShowRetirementTargetModal(false)}
+                inputs={inputs}
+                results={activeResults}
+                language={language}
+                currency={language === 'he' ? '₪' : '$'}
+            />
+            <EndBalanceTargetModal
+                isOpen={showEndBalanceTargetModal}
+                onClose={() => setShowEndBalanceTargetModal(false)}
+                inputs={inputs}
+                results={activeResults}
+                language={language}
+                currency={language === 'he' ? '₪' : '$'}
+            />
         </div>
     );
 });
 
-function SummaryCard({ label, value, subtext, color, extraContent }) {
+// ─── Lever row used by EndBalanceTargetModal ────────────────────────────────
+function LeverRow({ icon, iconBg, title, subtitle, currentLabel, neededLabel, deltaLabel, warning, impossible }) {
+    const { theme } = useTheme();
+    const isLight = theme === 'light';
+    if (impossible) {
+        return (
+            <div className={`rounded-xl px-4 py-3 opacity-40 ${isLight ? 'bg-slate-50 border border-slate-200' : 'bg-white/5 border border-white/10'}`}>
+                <div className="flex items-center gap-2.5">
+                    <div className={`p-1.5 rounded-lg shrink-0 ${iconBg}`}>{icon}</div>
+                    <div>
+                        <div className={`text-xs font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>{title}</div>
+                        <div className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{impossible}</div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+    return (
+        <div className={`rounded-xl px-4 py-3 ${isLight ? 'bg-white border border-slate-200 shadow-sm' : 'bg-white/5 border border-white/10'}`}>
+            <div className="flex items-center gap-3">
+                <div className={`p-1.5 rounded-lg shrink-0 ${iconBg}`}>{icon}</div>
+                <div className="flex-1 min-w-0">
+                    <div className={`text-xs font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{title}</div>
+                    <div className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{subtitle}</div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                    <span className={`text-xs ${isLight ? 'text-slate-400' : 'text-gray-400'}`} dir="ltr">{currentLabel}</span>
+                    <span className={`text-[10px] ${isLight ? 'text-slate-300' : 'text-white/25'}`}>→</span>
+                    <span className={`text-sm font-bold ${isLight ? 'text-slate-800' : 'text-white'}`} dir="ltr">{neededLabel}</span>
+                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded-md ${isLight ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-500/20 text-emerald-300'}`} dir="ltr">
+                        {deltaLabel}
+                    </span>
+                </div>
+            </div>
+            {warning && (
+                <p className={`mt-1.5 ms-9 text-[10px] ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>⚠ {warning}</p>
+            )}
+        </div>
+    );
+}
+
+// ─── End-balance target modal ────────────────────────────────────────────────
+function EndBalanceTargetModal({ isOpen, onClose, inputs, results, language, currency }) {
+    const { theme } = useTheme();
+    const isLight = theme === 'light';
+    const isHe = language === 'he';
+    const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
+    useBodyScrollLock(isOpen);
+
+    const data = useMemo(() => {
+        if (!isOpen || !inputs || !results) return null;
+        const T = parseFloat(inputs.targetEndBalance);
+        if (!T || T <= 0) return null;
+
+        // Strip the target constraint so we see what the portfolio does at full desired withdrawal
+        const baseInputs = { ...inputs, targetEndBalance: '' };
+        const calcEnd = (overrides) => {
+            try { return calculateRetirementProjection({ ...baseInputs, ...overrides })?.balanceAtEnd ?? 0; }
+            catch { return 0; }
+        };
+
+        const baseEnd   = calcEnd({});
+        const G         = T - baseEnd;
+        const currentRate    = parseFloat(inputs.annualReturnRate)    || 7;
+        const currentContrib = parseFloat(inputs.monthlyContribution) || 0;
+        const currentSavings = parseFloat(inputs.currentSavings)      || 0;
+        const yearsToRet     = Math.max(0, parseFloat(inputs.retirementStartAge) - parseFloat(inputs.currentAge));
+        const N              = Math.max(1, parseFloat(inputs.retirementEndAge)   - parseFloat(inputs.retirementStartAge));
+        const r_ret          = (results.effectiveRetirementRate ?? currentRate) / 100;
+        const W              = Math.round(results.initialNetWithdrawal ?? parseFloat(inputs.monthlyNetIncomeDesired) ?? 0);
+
+        if (G <= 0) return { T, baseEnd, G: 0, W, yearsToRet, N, r_ret, currentRate, currentContrib, currentSavings, F0_current: results.balanceAtRetirement || 0, F0_required: results.balanceAtRetirement || 0, F0_delta: 0 };
+
+        const bisect = (fn, lo, hi, iters = 25) => {
+            for (let i = 0; i < iters; i++) {
+                const mid = (lo + hi) / 2;
+                fn(mid) < T ? (lo = mid) : (hi = mid);
+            }
+            return (lo + hi) / 2;
+        };
+        const ceil = (v, step) => Math.ceil(v / step) * step;
+
+        // Lever 1: annual return rate (combined — affects both accumulation & retirement)
+        let rateResult = null;
+        const maxRateEnd = calcEnd({ annualReturnRate: 25 });
+        if (maxRateEnd >= T) {
+            const needed = bisect(r => calcEnd({ annualReturnRate: r }), currentRate, 25);
+            rateResult = { current: currentRate, needed: Math.round(needed * 100) / 100, delta: Math.round((needed - currentRate) * 100) / 100, aggressive: needed >= 12 };
+        }
+
+        // Lever 2: monthly contribution (only if pre-retirement)
+        let contribResult = null;
+        if (yearsToRet >= 1) {
+            const maxContribEnd = calcEnd({ monthlyContribution: currentContrib + 500000 });
+            if (maxContribEnd >= T) {
+                const needed = bisect(c => calcEnd({ monthlyContribution: c }), currentContrib, currentContrib + 500000);
+                contribResult = { current: currentContrib, needed: ceil(needed, 100), delta: ceil(needed - currentContrib, 100) };
+            }
+        }
+
+        // Lever 3: current savings (lump sum today)
+        let savingsResult = null;
+        const maxSavingsEnd = calcEnd({ currentSavings: currentSavings + 50_000_000 });
+        if (maxSavingsEnd >= T) {
+            const needed = bisect(s => calcEnd({ currentSavings: s }), currentSavings, currentSavings + 50_000_000);
+            savingsResult = { current: currentSavings, needed: ceil(needed, 10000), delta: ceil(needed - currentSavings, 10000) };
+        }
+
+        // Derived: required balance at retirement (analytical — based on effective retirement rate)
+        const F0_current  = results.balanceAtRetirement || 0;
+        const F0_delta    = G / Math.pow(1 + r_ret, N);
+        const F0_required = F0_current + F0_delta;
+
+        return { T, baseEnd, G, W, yearsToRet, N, r_ret, currentRate, currentContrib, currentSavings, F0_current, F0_required, F0_delta, levers: { rate: rateResult, contrib: contribResult, savings: savingsResult } };
+    }, [isOpen, inputs, results]);
+
+    if (!isOpen) return null;
+
+    const fmt = (v) => {
+        const abs = Math.abs(v), sign = v < 0 ? '-' : '';
+        if (abs >= 1_000_000) return `${sign}${currency}${(abs / 1_000_000).toFixed(abs >= 10_000_000 ? 1 : 2)}M`;
+        if (abs >= 1_000)     return `${sign}${currency}${(abs / 1000).toFixed(abs >= 100_000 ? 0 : 1)}K`;
+        return `${sign}${currency}${Math.round(abs).toLocaleString()}`;
+    };
+    const fmtPlus = (v) => `${v >= 0 ? '+' : ''}${fmt(v)}`;
+    const fmtPct  = (v, plus = false) => `${plus && v > 0 ? '+' : ''}${v.toFixed(1)}%`;
+
+    const targetSet = data?.T > 0;
+    const hasGap    = data?.G > 0;
+
+    return createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div
+                className={`relative w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl border shadow-2xl overflow-hidden ${isLight ? 'bg-white border-slate-300 text-slate-800' : 'border-white/30 text-white'}`}
+                style={dragStyle}
+                dir={isHe ? 'rtl' : 'ltr'}
+            >
+                {!isLight && (<><div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" /><div className="absolute inset-0 bg-white/10" /></>)}
+
+                {/* Header */}
+                <div className={`relative z-10 flex items-center justify-between px-5 py-4 border-b shrink-0 cursor-grab active:cursor-grabbing ${isLight ? 'border-slate-300' : 'border-white/10'}`} onMouseDown={onDragMouseDown}>
+                    <div className="flex items-center gap-2.5">
+                        <div className={`p-1.5 rounded-lg ${isLight ? 'bg-emerald-50 text-emerald-600' : 'bg-emerald-500/20 text-emerald-400'}`}><TrendingUp size={16} /></div>
+                        <div>
+                            <span className={`font-bold text-base ${isLight ? 'text-slate-800' : 'text-white'}`}>
+                                {isHe ? 'איך להגיע ליתרה יעד בסיום' : 'How to Reach Your Target End Balance'}
+                            </span>
+                            {targetSet && <span className={`ms-2 text-xs ${isLight ? 'text-slate-400' : 'text-gray-400'}`}>{isHe ? `יעד: ${fmt(data.T)}` : `Target: ${fmt(data.T)}`}</span>}
+                        </div>
+                    </div>
+                    <button onClick={onClose} onMouseDown={e => e.stopPropagation()} className={`p-1.5 rounded-lg transition-colors ${isLight ? 'hover:bg-slate-100 text-slate-400' : 'hover:bg-white/10 text-gray-400'}`}><X size={16} /></button>
+                </div>
+
+                {/* Body */}
+                <div className="relative z-10 overflow-y-auto custom-scrollbar scrollbar-right p-5 space-y-4">
+                    {!targetSet ? (
+                        <p className={`text-center py-8 text-sm ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'לא הוגדר יעד יתרה בסיום' : 'No target end balance set'}</p>
+                    ) : !hasGap ? (
+                        <p className={`text-center py-8 text-sm ${isLight ? 'text-green-600' : 'text-green-400'}`}>{isHe ? '✓ היתרה הנוכחית כבר עומדת ביעד' : '✓ Current balance already meets the target'}</p>
+                    ) : (<>
+
+                        {/* Gap summary */}
+                        <div className={`rounded-xl p-4 ${isLight ? 'bg-slate-50 border border-slate-200' : 'bg-white/5 border border-white/10'}`}>
+                            <p className={`text-[10px] font-medium mb-2.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                {isHe
+                                    ? `ללא הגבלת יעד — משיכה חודשית מלאה: ${currency}${data.W.toLocaleString()}`
+                                    : `Without target constraint — full monthly withdrawal: ${currency}${data.W.toLocaleString()}`}
+                            </p>
+                            <div className="flex items-center gap-3 flex-wrap">
+                                <div>
+                                    <div className={`text-[10px] mb-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'יתרה בסיום' : 'Balance at end'}</div>
+                                    <div className={`text-lg font-bold ${isLight ? 'text-slate-700' : 'text-gray-200'}`} dir="ltr">{fmt(data.baseEnd)}</div>
+                                </div>
+                                <span className={`text-xl font-light px-1 ${isLight ? 'text-slate-300' : 'text-white/25'}`}>→</span>
+                                <div>
+                                    <div className={`text-[10px] mb-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'יעד' : 'Target'}</div>
+                                    <div className={`text-lg font-bold ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`} dir="ltr">{fmt(data.T)}</div>
+                                </div>
+                                <div className={`ms-auto px-3 py-2 rounded-lg ${isLight ? 'bg-red-50 border border-red-200' : 'bg-red-500/10 border border-red-500/20'}`}>
+                                    <div className={`text-[10px] mb-0.5 ${isLight ? 'text-red-400' : 'text-red-400'}`}>{isHe ? 'פער לסגירה' : 'Gap to close'}</div>
+                                    <div className={`text-lg font-bold ${isLight ? 'text-red-600' : 'text-red-400'}`} dir="ltr">{fmt(data.G)}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <p className={`text-[10px] font-medium ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                            {isHe ? 'כל אחת מהאפשרויות הבאות סוגרת את הפער לבדה, ללא שינוי במשיכה החודשית' : 'Each option below closes the gap independently, without changing the monthly withdrawal'}
+                        </p>
+
+                        {/* Lever 1: Return rate */}
+                        <LeverRow
+                            icon={<TrendingUp size={14} />}
+                            iconBg={isLight ? 'bg-blue-50 text-blue-500' : 'bg-blue-500/20 text-blue-400'}
+                            title={isHe ? 'תשואה שנתית' : 'Annual return rate'}
+                            subtitle={isHe ? 'משפיע על שלב הצבירה ועל שלב הפרישה' : 'Affects both accumulation & retirement phases'}
+                            currentLabel={data.levers?.rate ? fmtPct(data.levers.rate.current) : undefined}
+                            neededLabel={data.levers?.rate ? fmtPct(data.levers.rate.needed) : undefined}
+                            deltaLabel={data.levers?.rate ? fmtPct(data.levers.rate.delta, true) : undefined}
+                            warning={data.levers?.rate?.aggressive ? (isHe ? 'תשואה גבוהה — דורש רמת סיכון גבוהה' : 'High return — requires elevated risk') : null}
+                            impossible={!data.levers?.rate ? (isHe ? 'דורש תשואה מעל 25% — לא ריאלי' : 'Requires return > 25% — not feasible') : null}
+                        />
+
+                        {/* Lever 2: Monthly contribution */}
+                        {data.yearsToRet >= 1 && (
+                            <LeverRow
+                                icon={<PlusCircle size={14} />}
+                                iconBg={isLight ? 'bg-purple-50 text-purple-500' : 'bg-purple-500/20 text-purple-400'}
+                                title={isHe ? 'הפקדה חודשית' : 'Monthly contribution'}
+                                subtitle={isHe ? `${Math.round(data.yearsToRet)} שנות צבירה עד פרישה` : `${Math.round(data.yearsToRet)} years of accumulation remaining`}
+                                currentLabel={data.levers?.contrib ? fmt(data.levers.contrib.current) : undefined}
+                                neededLabel={data.levers?.contrib ? fmt(data.levers.contrib.needed) : undefined}
+                                deltaLabel={data.levers?.contrib ? fmtPlus(data.levers.contrib.delta) : undefined}
+                                impossible={!data.levers?.contrib ? (isHe ? 'דורש הפקדה גבוהה מאוד — לא ריאלי' : 'Requires very high contribution — not feasible') : null}
+                            />
+                        )}
+
+                        {/* Lever 3: Current savings */}
+                        <LeverRow
+                            icon={<Landmark size={14} />}
+                            iconBg={isLight ? 'bg-amber-50 text-amber-500' : 'bg-amber-500/20 text-amber-400'}
+                            title={isHe ? 'חסכונות ראשוניים' : 'Current savings (lump sum today)'}
+                            subtitle={isHe ? 'הוספת הון עצמי היום' : 'Adding capital to the portfolio today'}
+                            currentLabel={data.levers?.savings ? fmt(data.levers.savings.current) : undefined}
+                            neededLabel={data.levers?.savings ? fmt(data.levers.savings.needed) : undefined}
+                            deltaLabel={data.levers?.savings ? fmtPlus(data.levers.savings.delta) : undefined}
+                            impossible={!data.levers?.savings ? (isHe ? 'דורש הון עצמי גבוה מאוד' : 'Requires very high initial capital') : null}
+                        />
+
+                        {/* Derived: required balance at retirement */}
+                        <div className={`rounded-xl px-4 py-3 border-2 border-dashed ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
+                            <div className="flex items-start gap-2.5">
+                                <div className={`p-1.5 rounded-lg shrink-0 mt-0.5 ${isLight ? 'bg-teal-50 text-teal-500' : 'bg-teal-500/20 text-teal-400'}`}><Flag size={13} /></div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-baseline justify-between gap-2 mb-1">
+                                        <span className={`text-xs font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                                            {isHe ? 'יתרה נדרשת בגיל הפרישה' : 'Required balance at retirement'}
+                                        </span>
+                                        <span className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>≈ {isHe ? 'הערכה' : 'estimate'}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`} dir="ltr">{fmt(data.F0_current)}</span>
+                                        <span className={`text-[10px] ${isLight ? 'text-slate-300' : 'text-white/25'}`}>→</span>
+                                        <span className={`text-sm font-bold ${isLight ? 'text-teal-600' : 'text-teal-300'}`} dir="ltr">{fmt(data.F0_required)}</span>
+                                        <span className={`text-xs font-semibold ${isLight ? 'text-teal-600' : 'text-teal-400'}`} dir="ltr">({fmtPlus(data.F0_delta)})</span>
+                                    </div>
+                                    <p className={`text-[10px] mt-1 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                        {isHe
+                                            ? `מחושב לפי ריבית פרישה ${fmtPct(data.r_ret * 100)} על ${data.N} שנים — להגיע לזה השתמש בחסכון/הפקדה למעלה`
+                                            : `Based on ${fmtPct(data.r_ret * 100)} retirement rate over ${data.N} yrs — use savings/contribution levers above to reach this`}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                    </>)}
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+}
+
+function RetirementTargetModal({ isOpen, onClose, inputs, results, language, currency }) {
+    const { theme } = useTheme();
+    const isLight = theme === 'light';
+    const isHe = language === 'he';
+    const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
+    useBodyScrollLock(isOpen);
+
+    const derived = useMemo(() => {
+        const projected = Math.round(results?.balanceAtRetirement || 0);
+        const required  = Math.round(results?.requiredCapitalAtRetirement || 0);
+        const yearsToRet = Math.max(0, parseFloat(inputs?.retirementStartAge) - parseFloat(inputs?.currentAge));
+        const inf = parseFloat(inputs?.inflationRate) || 0;
+        const netFallback = Math.round((parseFloat(inputs?.monthlyNetIncomeDesired) || 0) * Math.pow(1 + inf, yearsToRet));
+        const net = Math.round(results?.initialNetWithdrawal ?? netFallback);
+        const gap  = projected - required;
+        const isOk = gap >= 0;
+        const pct  = required > 0 ? Math.min(Math.round(projected / required * 100), 200) : 100;
+        return { projected, required, net, gap, isOk, pct };
+    }, [inputs?.retirementStartAge, inputs?.currentAge, inputs?.inflationRate, inputs?.monthlyNetIncomeDesired,
+        results?.balanceAtRetirement, results?.requiredCapitalAtRetirement, results?.initialNetWithdrawal]);
+
+    const { projected, required, net, gap, isOk, pct } = derived;
+
+    const fmt = useCallback(v => {
+        const abs  = Math.abs(v);
+        const sign = v < 0 ? '-' : '';
+        if (abs >= 1_000_000) return `${sign}${currency}${(abs / 1_000_000).toFixed(1)}M`;
+        if (abs >= 1_000)     return `${sign}${currency}${Math.round(abs / 1000).toLocaleString()}K`;
+        return `${sign}${currency}${abs.toLocaleString()}`;
+    }, [currency]);
+
+    const benchmarks = useMemo(() => [
+        { rate: '4%',   note: isHe ? 'כלל 4%' : '4% Rule',       mult: 25   },
+        { rate: '3.5%', note: isHe ? 'שמרני' : 'Conservative',    mult: 28.6 },
+        { rate: '3%',   note: isHe ? 'מאוד שמרני' : 'Very cons.', mult: 33.3 },
+    ], [isHe]);
+
+    if (!isOpen) return null;
+
+    return createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div
+                className={`relative w-full max-w-md max-h-[90vh] flex flex-col rounded-2xl border shadow-2xl overflow-hidden ${isLight ? 'bg-white border-slate-300 text-slate-800' : 'border-white/30 text-white'}`}
+                style={dragStyle}
+                dir={isHe ? 'rtl' : 'ltr'}
+            >
+                {!isLight && (
+                    <>
+                        <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" />
+                        <div className="absolute inset-0 bg-white/10" />
+                    </>
+                )}
+
+                {/* Header */}
+                <div
+                    className={`relative z-10 flex items-center justify-between px-5 py-4 border-b shrink-0 cursor-grab active:cursor-grabbing ${isLight ? 'border-slate-300' : 'border-white/10'}`}
+                    onMouseDown={onDragMouseDown}
+                >
+                    <div className="flex items-center gap-2.5">
+                        <div className={`p-1.5 rounded-lg ${isLight ? 'bg-purple-50 text-purple-600' : 'bg-purple-500/20 text-purple-400'}`}>
+                            <Info size={16} />
+                        </div>
+                        <div>
+                            <span className={`font-bold text-base ${isLight ? 'text-slate-800' : 'text-white'}`}>
+                                {isHe ? 'יעד הון לגיל הפרישה' : 'Retirement Capital Target'}
+                            </span>
+                            <span className={`ms-2 text-xs ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                {isHe ? `גיל ${inputs?.retirementStartAge}` : `age ${inputs?.retirementStartAge}`}
+                            </span>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className={`p-1.5 rounded-lg transition-colors ${isLight ? 'hover:bg-slate-100 text-slate-400' : 'hover:bg-white/10 text-gray-400'}`}>
+                        <X size={16} />
+                    </button>
+                </div>
+
+                {/* Body */}
+                <div className="relative z-10 overflow-y-auto custom-scrollbar scrollbar-right p-5 space-y-5">
+
+                    {/* Primary comparison */}
+                    <div className={`rounded-xl p-4 ${isLight ? 'bg-slate-50 border border-slate-200' : 'bg-white/5 border border-white/10'}`}>
+                        <div className="flex justify-between items-start gap-4 mb-3">
+                            <div>
+                                <div className={`text-[10px] mb-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                    {isHe ? 'תחזית בגיל הפרישה' : 'Projected at retirement'}
+                                </div>
+                                <div className={`text-xl font-bold ${isLight ? 'text-slate-800' : 'text-white'}`} dir="ltr">{fmt(projected)}</div>
+                            </div>
+                            {required > 0 && (
+                                <div className={isHe ? 'text-start' : 'text-end'}>
+                                    <div className={`text-[10px] mb-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                        {isHe ? 'הון נדרש (מחשבון)' : 'Required (calculator)'}
+                                    </div>
+                                    <div className={`text-xl font-bold ${isLight ? 'text-slate-600' : 'text-gray-300'}`} dir="ltr">{fmt(required)}</div>
+                                </div>
+                            )}
+                        </div>
+                        {required > 0 && (
+                            <>
+                                <div className={`w-full h-2.5 rounded-full overflow-hidden mb-2 ${isLight ? 'bg-slate-200' : 'bg-white/10'}`}>
+                                    <div
+                                        className={`h-full rounded-full transition-all ${isOk ? 'bg-green-500' : pct > 80 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                        style={{ width: `${Math.min(pct, 100)}%` }}
+                                    />
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className={`text-xs font-semibold ${isOk ? (isLight ? 'text-green-600' : 'text-green-400') : pct > 80 ? (isLight ? 'text-amber-600' : 'text-amber-400') : (isLight ? 'text-red-600' : 'text-red-400')}`}>
+                                        {pct}% {isOk ? (isHe ? '✓ מכוסה' : '✓ on track') : (isHe ? '⚠ חסר' : '⚠ short')}
+                                    </span>
+                                    <span className={`text-xs font-medium ${isOk ? (isLight ? 'text-green-600' : 'text-green-400') : (isLight ? 'text-red-600' : 'text-red-400')}`} dir="ltr">
+                                        {isOk ? '+' : ''}{fmt(gap)}
+                                    </span>
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    {/* Rule-of-thumb benchmarks */}
+                    {net > 0 && (
+                        <div>
+                            <div className={`text-[10px] font-medium mb-2 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                {isHe ? 'כללי אצבע לפי שיעור משיכה' : 'Rule-of-thumb by withdrawal rate'}
+                            </div>
+                            <div className="space-y-1.5">
+                                {benchmarks.map(b => {
+                                    const bTarget = Math.round(net * 12 * b.mult);
+                                    const bGap    = projected - bTarget;
+                                    const bPct    = Math.min(Math.round(projected / bTarget * 100), 100);
+                                    const bOk     = bGap >= 0;
+                                    return (
+                                        <div key={b.rate} className={`flex items-center gap-2 rounded-lg px-3 py-2 ${isLight ? 'bg-slate-50' : 'bg-white/5'}`}>
+                                            <div className="shrink-0" style={{ minWidth: 72 }}>
+                                                <span className={`text-[11px] font-bold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>{b.rate}</span>
+                                                <span className={`ms-1 text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{b.note}</span>
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className={`w-full h-1.5 rounded-full ${isLight ? 'bg-slate-200' : 'bg-white/10'}`}>
+                                                    <div className={`h-full rounded-full ${bOk ? 'bg-green-500' : 'bg-amber-500'}`} style={{ width: `${bPct}%` }} />
+                                                </div>
+                                            </div>
+                                            <div className="shrink-0" style={{ minWidth: 68 }}>
+                                                <span className={`text-[11px] font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`} dir="ltr">{fmt(bTarget)}</span>
+                                            </div>
+                                            <div className="shrink-0 text-end" style={{ minWidth: 56 }}>
+                                                <span className={`text-[11px] font-medium ${bOk ? (isLight ? 'text-green-600' : 'text-green-400') : (isLight ? 'text-amber-600' : 'text-amber-400')}`} dir="ltr">
+                                                    {bOk ? '+' : ''}{fmt(bGap)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+
+                                {/* Calculator row */}
+                                {required > 0 && (() => {
+                                    const bGap = projected - required;
+                                    const bPct = Math.min(Math.round(projected / required * 100), 100);
+                                    const bOk  = bGap >= 0;
+                                    return (
+                                        <div className={`flex items-center gap-2 rounded-lg px-3 py-2 border ${isLight ? 'bg-purple-50 border-purple-100' : 'bg-purple-500/10 border-purple-500/20'}`}>
+                                            <div className="shrink-0" style={{ minWidth: 72 }}>
+                                                <span className={`text-[11px] font-bold ${isLight ? 'text-purple-600' : 'text-purple-400'}`}>
+                                                    {isHe ? 'מחשבון' : 'Calc.'}
+                                                </span>
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className={`w-full h-1.5 rounded-full ${isLight ? 'bg-purple-100' : 'bg-purple-900/30'}`}>
+                                                    <div className={`h-full rounded-full ${bOk ? 'bg-purple-500' : 'bg-purple-400'}`} style={{ width: `${bPct}%` }} />
+                                                </div>
+                                            </div>
+                                            <div className="shrink-0" style={{ minWidth: 68 }}>
+                                                <span className={`text-[11px] font-semibold ${isLight ? 'text-purple-600' : 'text-purple-400'}`} dir="ltr">{fmt(required)}</span>
+                                            </div>
+                                            <div className="shrink-0 text-end" style={{ minWidth: 56 }}>
+                                                <span className={`text-[11px] font-medium ${bOk ? (isLight ? 'text-green-600' : 'text-green-400') : (isLight ? 'text-amber-600' : 'text-amber-400')}`} dir="ltr">
+                                                    {bOk ? '+' : ''}{fmt(bGap)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+
+                            <p className={`text-[10px] mt-3 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                {isHe
+                                    ? `* משיכה חודשית נטו: ${currency}${net.toLocaleString()} · ערכים נומינליים (כסף של גיל ${inputs?.retirementStartAge})`
+                                    : `* Net monthly withdrawal: ${currency}${net.toLocaleString()}/mo · Nominal values at age ${inputs?.retirementStartAge}`}
+                            </p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+}
+
+function SummaryCard({ label, value, subtext, color, extraContent, onInfoClick }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
 
     return (
-        <div className={`${isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-white/10 border-white/40'} backdrop-blur-md border rounded-xl p-2 md:p-3`}>
+        <div className={`relative ${isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-white/10 border-white/40'} backdrop-blur-md border rounded-xl p-2 md:p-3`}>
+            {onInfoClick && (
+                <button
+                    onClick={onInfoClick}
+                    className={`absolute top-1.5 end-1.5 p-1 rounded-md transition-colors ${isLight ? 'text-slate-300 hover:text-purple-500 hover:bg-purple-50' : 'text-white/20 hover:text-purple-400 hover:bg-purple-500/15'}`}
+                >
+                    <Info size={13} />
+                </button>
+            )}
             <p className={`${isLight ? 'text-slate-500' : 'text-gray-400'} text-xs md:text-sm truncate`}>{label}</p>
             <p className={`text-lg md:text-2xl font-bold ${color} my-0.5 md:my-1 truncate`}>{value}</p>
             <p className={`${isLight ? 'text-slate-400' : 'text-gray-500'} text-[10px] md:text-xs truncate`}>{subtext}</p>

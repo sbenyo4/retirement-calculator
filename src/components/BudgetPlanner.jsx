@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell, Save, BarChart3, Calculator, RefreshCw, Copy, Undo2, Redo2, TrendingUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell, Save, BarChart3, Calculator, RefreshCw, Copy, Undo2, Redo2, TrendingUp, Lock, Unlock, Globe, Car, PiggyBank } from 'lucide-react';
 import { MaintenanceCalcPanel } from './MaintenanceCalcPanel';
 import { Doughnut, Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend } from 'chart.js';
@@ -120,6 +120,20 @@ const DEFAULT_ITEMS = [
 
 
 const getNowYM = () => { const d = new Date(); return d.getFullYear() * 12 + d.getMonth(); };
+
+// ─── Fixed/Variable classification ───────────────────────────────────────────
+const FIXED_BY_DEFAULT_IDS = new Set([
+    'h-arnona', 'h-vaad', 'h-internet', 'h-insurance', 'h-maintenance',
+    'hlth-ins', 'hlth-dental', 'hlth-optics',
+    't-car-ins', 'e-sport', 'fam-support',
+]);
+function defaultIsFixed(item) {
+    if (item.type === 'loan') return true;
+    return FIXED_BY_DEFAULT_IDS.has(item.id);
+}
+function effectiveIsFixed(item) {
+    return item.isFixed !== undefined ? item.isFixed : defaultIsFixed(item);
+}
 
 // ─── Retirement-adjustment helpers ───────────────────────────────────────────
 const RET_JSON_START = '---RETIREMENT_JSON_START---';
@@ -1255,6 +1269,19 @@ function BudgetItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, o
                 <TrendingUp size={13} />
             </button>
 
+            {/* Fixed/Variable toggle */}
+            <button
+                onClick={() => onChange({ ...item, isFixed: !effectiveIsFixed(item) })}
+                className={`shrink-0 p-0.5 rounded transition-colors ${effectiveIsFixed(item)
+                    ? (isLight ? 'text-orange-500 hover:text-orange-600' : 'text-orange-400 hover:text-orange-300')
+                    : (isLight ? 'text-slate-300 hover:text-slate-500' : 'text-gray-600 hover:text-gray-400')}`}
+                title={effectiveIsFixed(item)
+                    ? (isHe ? 'קבוע — לחץ לסמן כמשתנה' : 'Fixed — click to mark variable')
+                    : (isHe ? 'משתנה — לחץ לסמן כקבוע' : 'Variable — click to mark fixed')}
+            >
+                {effectiveIsFixed(item) ? <Lock size={13} /> : <Unlock size={13} />}
+            </button>
+
             {/* Floating reminder panel */}
             {showReminder && (
                 <div
@@ -1608,6 +1635,17 @@ function LoanItemRow({ item, isHe, isLight, currency, t, onChange, onDelete, onT
                     className={`shrink-0 p-0.5 rounded transition-colors ${isLight ? 'text-slate-400 hover:text-slate-600' : 'text-gray-500 hover:text-gray-300'}`}>
                     {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                 </button>
+                <button
+                    onClick={() => onChange({ ...item, isFixed: !effectiveIsFixed(item) })}
+                    className={`shrink-0 p-0.5 rounded transition-colors ${effectiveIsFixed(item)
+                        ? (isLight ? 'text-orange-500 hover:text-orange-600' : 'text-orange-400 hover:text-orange-300')
+                        : (isLight ? 'text-slate-300 hover:text-slate-500' : 'text-gray-600 hover:text-gray-400')}`}
+                    title={effectiveIsFixed(item)
+                        ? (isHe ? 'קבוע — לחץ לסמן כמשתנה' : 'Fixed — click to mark variable')
+                        : (isHe ? 'משתנה — לחץ לסמן כקבוע' : 'Variable — click to mark fixed')}
+                >
+                    {effectiveIsFixed(item) ? <Lock size={13} /> : <Unlock size={13} />}
+                </button>
                 <button onClick={onDelete} className={`shrink-0 p-0.5 rounded ${isLight ? 'text-slate-300 hover:text-red-500 hover:bg-red-50' : 'text-gray-600 hover:text-red-400 hover:bg-red-900/20'}`}>
                     <Trash2 size={13} />
                 </button>
@@ -1942,6 +1980,1367 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
+// ─── Location suggestions modal ───────────────────────────────────────────────
+
+const COST_KEYS = [
+    { key: 'rent',          labelHe: 'דיור',     labelEn: 'Housing'       },
+    { key: 'food',          labelHe: 'אוכל',     labelEn: 'Food'          },
+    { key: 'transport',     labelHe: 'תחבורה',   labelEn: 'Transport'     },
+    { key: 'entertainment', labelHe: 'בילויים',  labelEn: 'Entertainment' },
+    { key: 'flights',       labelHe: 'טיסה לטיול בודד', labelEn: 'Flight for one trip' },
+    { key: 'carRental',     labelHe: 'שכירת רכב', labelEn: 'Car rental'    },
+    { key: 'other',         labelHe: 'אחרים',    labelEn: 'Other'         },
+];
+const TIER_META = {
+    cheap:     { labelHe: 'זול',    labelEn: 'Budget',  color: 'green'  },
+    medium:    { labelHe: 'בינוני', labelEn: 'Medium',  color: 'blue'   },
+    expensive: { labelHe: 'יקר',    labelEn: 'Premium', color: 'purple' },
+};
+
+const LOCATION_CARD_STYLES = [
+    {
+        card: { light: 'bg-gradient-to-br from-sky-50 to-blue-100 border-sky-200', dark: 'bg-gradient-to-br from-sky-500/15 to-blue-600/20 border-sky-400/25' },
+        chip: { light: 'bg-sky-100 text-sky-700', dark: 'bg-sky-400/15 text-sky-200' },
+    },
+    {
+        card: { light: 'bg-gradient-to-br from-emerald-50 to-teal-100 border-emerald-200', dark: 'bg-gradient-to-br from-emerald-500/15 to-teal-600/20 border-emerald-400/25' },
+        chip: { light: 'bg-emerald-100 text-emerald-700', dark: 'bg-emerald-400/15 text-emerald-200' },
+    },
+    {
+        card: { light: 'bg-gradient-to-br from-amber-50 to-orange-100 border-amber-200', dark: 'bg-gradient-to-br from-amber-500/15 to-orange-600/20 border-amber-400/25' },
+        chip: { light: 'bg-amber-100 text-amber-700', dark: 'bg-amber-400/15 text-amber-200' },
+    },
+    {
+        card: { light: 'bg-gradient-to-br from-rose-50 to-pink-100 border-rose-200', dark: 'bg-gradient-to-br from-rose-500/15 to-pink-600/20 border-rose-400/25' },
+        chip: { light: 'bg-rose-100 text-rose-700', dark: 'bg-rose-400/15 text-rose-200' },
+    },
+    {
+        card: { light: 'bg-gradient-to-br from-violet-50 to-fuchsia-100 border-violet-200', dark: 'bg-gradient-to-br from-violet-500/15 to-fuchsia-600/20 border-violet-400/25' },
+        chip: { light: 'bg-violet-100 text-violet-700', dark: 'bg-violet-400/15 text-violet-200' },
+    },
+    {
+        card: { light: 'bg-gradient-to-br from-cyan-50 to-lime-100 border-cyan-200', dark: 'bg-gradient-to-br from-cyan-500/15 to-lime-600/20 border-cyan-400/25' },
+        chip: { light: 'bg-cyan-100 text-cyan-700', dark: 'bg-cyan-400/15 text-cyan-200' },
+    },
+];
+
+const COST_OF_LIVING_PRICE_CONTEXT = `
+Use real 2026 market ranges and return every numeric amount in Israeli shekels (ILS/NIS), not USD/EUR/THB.
+Currency anchors for conversion: USD ~= ILS 2.9, EUR ~= ILS 3.4, THB ~= ILS 0.09.
+Do not confuse local currency with shekels. Cheap long-haul airfare is never a few hundred shekels; convert local prices before returning JSON.
+costs.rent is HOUSING: a realistic monthly housing cost for the selected lifestyle tier. Add housingType and housingLevel to explain whether this is an apartment, serviced apartment, hotel/guesthouse, and what standard/location it assumes.
+For the requested trip length, also return tripHousingCost and tripFoodCost when possible:
+- For short stays (1-14 nights), tripHousingCost should be the actual total accommodation cost for those nights, using realistic short-stay options for the tier: hostel/private room/simple guesthouse/budget hotel/short-stay apartment as appropriate. Do not derive it only by dividing monthly rent by 30.
+- For medium stays (15-27 nights), use realistic weekly/short monthly discounts when available.
+- For 28+ nights, monthly apartment rent can be appropriate.
+- tripFoodCost should reflect the requested trip length and tier: groceries/local meals for budget, mixed groceries/restaurants for moderate, more restaurants for premium. Do not simply divide monthly food if the trip length implies tourist eating patterns.
+Food, transport, entertainment and other in costs should still be monthly living costs.
+costs.flights is NOT monthly. It must be the current economy round-trip airfare for ONE TRIP from Tel Aviv (TLV) to the nearest practical airport, per adult, in ILS.
+flightRoundTrip must equal costs.flights.
+If car rental is requested, treat it as "consider car rental", not mandatory. Set costs.carRental to 0 when a car is not useful for that destination (dense/traffic-heavy cities, strong public transport, high parking cost, unsafe driving, or mostly city stay). Add car rental only for places where it materially improves the trip, such as island/coastal/rural destinations, road-trip bases, or spread-out areas. Examples: use 0 for Bangkok city; consider a car for Larnaca/Cyprus day trips. When included, costs.carRental must be a realistic total car rental cost for the requested car days in ILS, including basic insurance and local taxes. If car rental is not requested, return 0.
+If airfare is uncertain, use conservative annual round-trip anchors from TLV: nearby Middle East ILS 700-1,800; Europe/North Africa/Caucasus ILS 900-2,800; Gulf/Central Asia ILS 1,200-3,200; South/East/Southeast Asia ILS 2,200-5,500; Africa beyond North Africa ILS 2,500-6,000; North America ILS 2,600-6,000; Latin America/Australia/New Zealand ILS 4,000-8,500.
+Lifestyle tiers:
+- budget-friendly: lower-cost but still safe/local standard for that specific destination. Housing = modest studio/room/small apartment or simple guesthouse in a safe non-luxury area, not the most central/high-demand neighborhood. Food = mostly groceries, markets and local inexpensive restaurants, very few western/tourist restaurants. Transport = public transport, walking, shared rides or local taxis only when needed. Entertainment = low-cost local activities, limited paid attractions/nightlife. Other = basic phone/internet/laundry/small essentials. This tier should feel frugal but livable, not unsafe or unrealistic.
+- moderate: normal comfortable long-stay standard for that specific destination. Housing = comfortable private one-bedroom/studio or serviced apartment in a convenient but not top luxury area, with reliable internet/utilities. Food = groceries plus regular cafes/restaurants, including some international options. Transport = good public transport plus occasional taxis/rideshare. Entertainment = regular gym/cafes/activities and a few paid attractions. Other = comfortable routine expenses and small buffers. This tier should feel practical and comfortable, not premium.
+- premium: high-comfort local market for that specific destination. Housing = central/high-demand area or high-quality apartment/serviced apartment/hotel-standard stay. Food = frequent restaurants, cafes and higher-quality groceries. Transport = taxis/rideshare often or car budget when normal for that city. Entertainment = frequent paid activities, nightlife, tours, wellness/gym/coworking where relevant. Other = higher service level and convenience buffers. This tier should feel clearly above moderate but not absurd ultra-luxury.
+The selected lifestyle tier must be based on the local market of each city, not a universal global cap. For the same destination, budget-friendly should be clearly cheaper than moderate, and moderate clearly cheaper than premium because housing type/location, food choices, transport and entertainment assumptions change.
+For each location, costs.rent, food, transport, entertainment and other must all match the selected tier. In housingType/housingLevel and note, briefly describe the assumptions that justify the tier and trip length, such as hotel/private room/apartment, central vs non-central area, mostly local food vs frequent restaurants, and public transport vs taxis.
+For the chosen tier, choose cities where the requested stay length including one round-trip flight is plausible within the budget if possible. If not possible, return the closest realistic options and explain the mismatch in budgetNote.
+Return 8 diverse city options across different regions when possible, mixing places that fit the budget and aspirational places that may only fit for a shorter stay.
+total must equal monthly living costs only: rent + food + transport + entertainment + other. The app will add costs.flights, tripHousingCost/tripFoodCost when relevant, and costs.carRental to check whether the trip fits the budget.
+`;
+
+const TIER_PRICE_FLOORS = {
+    cheap:     { rent: 900,  food: 700,  transport: 120, entertainment: 250, other: 250 },
+    medium:    { rent: 1600, food: 1100, transport: 220, entertainment: 550, other: 450 },
+    expensive: { rent: 3000, food: 1800, transport: 450, entertainment: 1200, other: 900 },
+};
+
+const SHORT_STAY_HOUSING_MIN_NIGHTLY = {
+    cheap: 160,
+    medium: 300,
+    expensive: 650,
+};
+
+const SHORT_STAY_HOUSING_FACTOR = {
+    cheap: 2.1,
+    medium: 2.35,
+    expensive: 2.7,
+};
+
+const DEFAULT_TRIP_DAYS = 30;
+
+function normalizeTripDays(value) {
+    const days = Math.floor(numberOrZero(value));
+    if (!days) return DEFAULT_TRIP_DAYS;
+    return Math.max(1, Math.min(DEFAULT_TRIP_DAYS, days));
+}
+
+function normalizeTripBudget(value, fallback) {
+    const budget = Math.round(numberOrZero(value));
+    return budget > 0 ? budget : Math.max(0, Math.round(numberOrZero(fallback)));
+}
+
+function normalizeCarRentalDays(value, tripDays) {
+    const days = Math.floor(numberOrZero(value));
+    if (!days) return tripDays;
+    return Math.max(1, Math.min(tripDays, days));
+}
+
+function normalizeTierLivingCost(key, value, selectedTier) {
+    if (key === 'flights' || key === 'carRental') return value;
+    const raw = Math.max(0, Math.round(value || 0));
+    if (!raw) return 0;
+    const floor = TIER_PRICE_FLOORS[selectedTier]?.[key] ?? 0;
+    return Math.max(floor, raw);
+}
+
+function housingNightlyCost(costs, selectedTier, nights) {
+    const monthlyRent = Math.max(0, Math.round(costs?.rent || 0));
+    const monthlyNightly = monthlyRent > 0 ? monthlyRent / DEFAULT_TRIP_DAYS : 0;
+    if (nights <= 14) {
+        const factor = SHORT_STAY_HOUSING_FACTOR[selectedTier] ?? SHORT_STAY_HOUSING_FACTOR.medium;
+        const floor = SHORT_STAY_HOUSING_MIN_NIGHTLY[selectedTier] ?? SHORT_STAY_HOUSING_MIN_NIGHTLY.medium;
+        return Math.max(floor, Math.ceil(monthlyNightly * factor));
+    }
+    if (nights <= 21) return Math.ceil(monthlyNightly * 1.55);
+    return Math.ceil(monthlyNightly);
+}
+
+function tripHousingCostFor(locOrCosts, selectedTier, nights) {
+    const explicit = numberOrZero(locOrCosts?.tripHousingCost);
+    if (explicit > 0) return Math.round(explicit);
+    return housingNightlyCost(locOrCosts?.costs || locOrCosts, selectedTier, nights) * nights;
+}
+
+function tripFoodCostFor(locOrCosts, nights) {
+    const explicit = numberOrZero(locOrCosts?.tripFoodCost);
+    if (explicit > 0) return Math.round(explicit);
+    const costs = locOrCosts?.costs || locOrCosts;
+    return Math.ceil((costs?.food || 0) / DEFAULT_TRIP_DAYS) * nights;
+}
+
+function nonHousingDailyCost(costs) {
+    return ['transport', 'entertainment', 'other']
+        .reduce((sum, key) => sum + Math.ceil((costs?.[key] || 0) / DEFAULT_TRIP_DAYS), 0);
+}
+
+function tripLivingCost(costs, selectedTier, nights, explicit = {}) {
+    return tripHousingCostFor({ ...explicit, costs }, selectedTier, nights)
+        + tripFoodCostFor({ ...explicit, costs }, nights)
+        + nonHousingDailyCost(costs) * nights;
+}
+
+function parseAiJsonObject(reply) {
+    const text = String(reply || '')
+        .replace(/^\uFEFF/, '')
+        .replace(/```json\s*/gi, '')
+        .replace(/```\s*/g, '')
+        .trim();
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start < 0 || end <= start) {
+        throw new Error('AI response did not include a JSON object');
+    }
+    const jsonText = text
+        .slice(start, end + 1)
+        .replace(/,\s*([}\]])/g, '$1');
+    return JSON.parse(jsonText);
+}
+
+async function getParsedAiJson(messages, systemPrompt, aiProvider, aiModel, apiKeyOverride, fallbackMessages = null) {
+    try {
+        return parseAiJsonObject(await getChatResponse(messages, systemPrompt, aiProvider, aiModel, apiKeyOverride));
+    } catch (firstError) {
+        if (!fallbackMessages) throw firstError;
+        try {
+            return parseAiJsonObject(await getChatResponse(fallbackMessages, systemPrompt, aiProvider, aiModel, apiKeyOverride));
+        } catch (secondError) {
+            secondError.message = `${secondError.message || 'AI JSON failed'}; first attempt: ${firstError.message || firstError}`;
+            throw secondError;
+        }
+    }
+}
+
+function aiErrorMessage(err, isHe) {
+    const raw = String(err?.message || err || '');
+    if (/missing api key/i.test(raw)) return isHe ? 'חסר API key לספק ה-AI שנבחר' : 'Missing API key for the selected AI provider';
+    if (/quota|rate|429/i.test(raw)) return isHe ? 'הספק החזיר מגבלת שימוש או עומס. נסה שוב עוד רגע' : 'The AI provider returned a rate/quota limit. Try again shortly';
+    if (/json|object|parse|unexpected|unterminated/i.test(raw)) return isHe ? 'ה-AI החזיר תשובה לא תקינה במקום JSON מלא. נסה שוב' : 'The AI returned an invalid or incomplete JSON response. Try again';
+    if (/candidate|safety|blocked|finish/i.test(raw)) return isHe ? 'הספק חסם או חתך את התשובה. נסה שוב או החלף מודל' : 'The provider blocked or truncated the response. Try again or switch model';
+    return isHe ? `שגיאה בטעינת ההמלצות: ${raw.slice(0, 120)}` : `Error loading suggestions: ${raw.slice(0, 120)}`;
+}
+
+const AIRFARE_REGIONS = [
+    {
+        floor: 4000,
+        typical: [4000, 8500],
+        re: /(argentina|buenos aires|chile|santiago|peru|lima|brazil|rio|sao paulo|colombia|bogota|ecuador|uruguay|montevideo|australia|sydney|melbourne|new zealand|auckland|wellington|fiji|tahiti)/,
+    },
+    {
+        floor: 2600,
+        typical: [2600, 6000],
+        re: /(usa|united states|canada|toronto|vancouver|montreal|new york|miami|los angeles|san francisco|chicago|boston|washington|seattle|mexico|cancun|mexico city)/,
+    },
+    {
+        floor: 2500,
+        typical: [2500, 6000],
+        re: /(south africa|cape town|johannesburg|kenya|nairobi|tanzania|zanzibar|ethiopia|ghana|senegal|mauritius|seychelles|uganda|rwanda|namibia|botswana)/,
+    },
+    {
+        floor: 2200,
+        typical: [2200, 5500],
+        re: /(thailand|bangkok|chiang mai|phuket|vietnam|hanoi|ho chi minh|da nang|bali|indonesia|malaysia|kuala lumpur|philippines|manila|singapore|cambodia|laos|japan|tokyo|osaka|korea|seoul|china|beijing|shanghai|hong kong|taiwan|taipei|india|delhi|mumbai|goa|sri lanka|colombo|nepal|kathmandu)/,
+    },
+    {
+        floor: 1200,
+        typical: [1200, 3200],
+        re: /(uae|dubai|abu dhabi|qatar|doha|bahrain|oman|muscat|saudi|riyadh|jeddah|uzbekistan|tashkent|kazakhstan|almaty|azerbaijan|baku|armenia|yerevan)/,
+    },
+    {
+        floor: 900,
+        typical: [900, 2800],
+        re: /(greece|athens|cyprus|larnaca|paphos|portugal|lisbon|porto|spain|madrid|barcelona|italy|rome|milan|france|paris|germany|berlin|munich|austria|vienna|netherlands|amsterdam|belgium|brussels|switzerland|zurich|poland|warsaw|krakow|hungary|budapest|czech|prague|romania|bucharest|bulgaria|sofia|serbia|belgrade|croatia|zagreb|montenegro|albania|georgia|tbilisi|morocco|marrakesh|casablanca|egypt|cairo|tunisia)/,
+    },
+    {
+        floor: 700,
+        typical: [700, 1800],
+        re: /(jordan|amman|turkey|istanbul|antalya)/,
+    },
+];
+
+const CAR_RENTAL_AVOID_RE = /(bangkok|בנגקוק|tokyo|טוקיו|osaka|אוסקה|seoul|סיאול|singapore|סינגפור|hong kong|הונג קונג|taipei|טאיפיי|paris|פריז|london|לונדון|new york|ניו יורק|istanbul|איסטנבול|cairo|קהיר|marrakesh|מרקש|amsterdam|אמסטרדם|berlin|ברלין|madrid|מדריד|barcelona|ברצלונה|rome|רומא|lisbon|ליסבון|athens|אתונה)/i;
+const CAR_RENTAL_USEFUL_RE = /(larnaca|לרנקה|paphos|פאפוס|cyprus|קפריסין|crete|כרתים|rhodes|רודוס|tuscany|טוסקנה|algarve|אלגרבה|madeira|מדיירה|azores|איים האזוריים|sicily|סיציליה|sardinia|סרדיניה|zanzibar|זנזיבר|mauritius|מאוריציוס|seychelles|סיישל|bali|באלי|phuket|פוקט|chiang mai|צ'יאנג מאי|cape town|קייפטאון|georgia|גאורגיה|tbilisi|טביליסי|montenegro|מונטנגרו|croatia|קרואטיה|slovenia|סלובניה|iceland|איסלנד)/i;
+
+function shouldIncludeCarRental(loc) {
+    const text = `${loc?.city || ''} ${loc?.country || ''} ${loc?.countryEn || ''}`.toLowerCase();
+    if (CAR_RENTAL_USEFUL_RE.test(text)) return true;
+    if (CAR_RENTAL_AVOID_RE.test(text)) return false;
+    return false;
+}
+
+function recalcLocationTrip(loc, availableAmount, useCar) {
+    const costs = { ...(loc.costs || {}) };
+    const carRentalCost = useCar ? Math.max(0, Math.round(loc.carRentalOriginalCost || costs.carRental || 0)) : 0;
+    const carRentalDays = useCar ? (loc.carRentalOriginalDays || loc.carRentalDays || loc.tripDays || 0) : 0;
+    costs.carRental = carRentalCost;
+
+    const selectedTier = loc.tier || 'medium';
+    const tripDays = loc.tripDays || DEFAULT_TRIP_DAYS;
+    const roundTrip = loc.flightRoundTrip || costs.flights || 0;
+    const explicitTripCosts = { tripHousingCost: loc.tripHousingCost, tripFoodCost: loc.tripFoodCost };
+    const stayCost = tripLivingCost(costs, selectedTier, tripDays, explicitTripCosts);
+    const fullTripCost = stayCost + roundTrip + carRentalCost;
+    const carDailyCost = useCar && carRentalDays > 0 ? Math.ceil(carRentalCost / carRentalDays) : 0;
+
+    let daysAffordable = 0;
+    for (let d = 1; d <= tripDays; d += 1) {
+        const carDaysForStay = useCar ? Math.min(d, carRentalDays) : 0;
+        const proportionalExplicit = {
+            tripHousingCost: loc.tripHousingCost ? Math.round(loc.tripHousingCost * (d / tripDays)) : 0,
+            tripFoodCost: loc.tripFoodCost ? Math.round(loc.tripFoodCost * (d / tripDays)) : 0,
+        };
+        const candidateCost = roundTrip + tripLivingCost(costs, selectedTier, d, proportionalExplicit) + carDailyCost * carDaysForStay;
+        if (candidateCost <= availableAmount) daysAffordable = d;
+    }
+
+    const monthFits = availableAmount ? fullTripCost <= availableAmount : true;
+    const affordableTripCost = monthFits
+        ? fullTripCost
+        : (daysAffordable > 0 ? roundTrip + tripLivingCost(costs, selectedTier, daysAffordable, {
+            tripHousingCost: loc.tripHousingCost ? Math.round(loc.tripHousingCost * (daysAffordable / tripDays)) : 0,
+            tripFoodCost: loc.tripFoodCost ? Math.round(loc.tripFoodCost * (daysAffordable / tripDays)) : 0,
+        }) + carDailyCost * Math.min(daysAffordable, carRentalDays) : 0);
+    const dailyCost = monthFits
+        ? Math.ceil(fullTripCost / tripDays)
+        : (daysAffordable > 0 ? Math.ceil(affordableTripCost / daysAffordable) : 0);
+
+    return {
+        ...loc,
+        costs,
+        total: affordableTripCost,
+        fullTripCost,
+        dailyCost,
+        daysAffordable,
+        monthFits,
+        includeCarRental: useCar,
+        carRentalDays,
+    };
+}
+
+function getLocationTripNights(loc) {
+    return loc?.monthFits ? (loc.tripDays || DEFAULT_TRIP_DAYS) : (loc.daysAffordable || 0);
+}
+
+function tripBreakdownFor(loc) {
+    const costs = loc?.costs || {};
+    const nights = getLocationTripNights(loc);
+    const breakdown = {};
+    const requestedNights = loc?.tripDays || nights || DEFAULT_TRIP_DAYS;
+    breakdown.rent = tripHousingCostFor({
+        costs,
+        tripHousingCost: loc?.tripHousingCost && nights !== requestedNights
+            ? Math.round(loc.tripHousingCost * (nights / requestedNights))
+            : loc?.tripHousingCost,
+    }, loc?.tier || 'medium', nights);
+    breakdown.food = tripFoodCostFor({
+        costs,
+        tripFoodCost: loc?.tripFoodCost && nights !== requestedNights
+            ? Math.round(loc.tripFoodCost * (nights / requestedNights))
+            : loc?.tripFoodCost,
+    }, nights);
+    ['transport', 'entertainment', 'other'].forEach((key) => {
+        breakdown[key] = Math.ceil((costs[key] || 0) / DEFAULT_TRIP_DAYS) * nights;
+    });
+    breakdown.flights = costs.flights || 0;
+    breakdown.carRental = loc?.includeCarRental ? (costs.carRental || 0) : 0;
+    return { nights, breakdown };
+}
+
+const numberOrZero = value => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+        const parsed = Number(value.replace(/[^\d.-]/g, ''));
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+    return 0;
+};
+
+const COUNTRY_CODE_LOOKUP = {
+    'מצרים': 'EG', 'egypt': 'EG',
+    'תאילנד': 'TH', 'thailand': 'TH',
+    'פורטוגל': 'PT', 'portugal': 'PT',
+    'יוון': 'GR', 'greece': 'GR',
+    'קפריסין': 'CY', 'cyprus': 'CY',
+    'ספרד': 'ES', 'spain': 'ES',
+    'איטליה': 'IT', 'italy': 'IT',
+    'צרפת': 'FR', 'france': 'FR',
+    'גרמניה': 'DE', 'germany': 'DE',
+    'אוסטריה': 'AT', 'austria': 'AT',
+    'הולנד': 'NL', 'netherlands': 'NL',
+    'בלגיה': 'BE', 'belgium': 'BE',
+    'שוויץ': 'CH', 'switzerland': 'CH',
+    'פולין': 'PL', 'poland': 'PL',
+    'הונגריה': 'HU', 'hungary': 'HU',
+    'צ׳כיה': 'CZ', 'צכיה': 'CZ', 'czechia': 'CZ', 'czech republic': 'CZ',
+    'רומניה': 'RO', 'romania': 'RO',
+    'בולגריה': 'BG', 'bulgaria': 'BG',
+    'סרביה': 'RS', 'serbia': 'RS',
+    'קרואטיה': 'HR', 'croatia': 'HR',
+    'מונטנגרו': 'ME', 'montenegro': 'ME',
+    'אלבניה': 'AL', 'albania': 'AL',
+    'גאורגיה': 'GE', 'גרוזיה': 'GE', 'georgia': 'GE',
+    'מרוקו': 'MA', 'morocco': 'MA',
+    'טורקיה': 'TR', 'turkey': 'TR',
+    'ירדן': 'JO', 'jordan': 'JO',
+    'איחוד האמירויות': 'AE', 'איחוד אמירויות': 'AE', 'uae': 'AE', 'united arab emirates': 'AE',
+    'קטאר': 'QA', 'qatar': 'QA',
+    'אומן': 'OM', 'עומאן': 'OM', 'oman': 'OM',
+    'ערב הסעודית': 'SA', 'saudi arabia': 'SA',
+    'וייטנאם': 'VN', 'vietnam': 'VN',
+    'אינדונזיה': 'ID', 'indonesia': 'ID',
+    'מלזיה': 'MY', 'malaysia': 'MY',
+    'פיליפינים': 'PH', 'philippines': 'PH',
+    'סינגפור': 'SG', 'singapore': 'SG',
+    'קמבודיה': 'KH', 'cambodia': 'KH',
+    'לאוס': 'LA', 'laos': 'LA',
+    'יפן': 'JP', 'japan': 'JP',
+    'דרום קוריאה': 'KR', 'קוריאה': 'KR', 'south korea': 'KR', 'korea': 'KR',
+    'סין': 'CN', 'china': 'CN',
+    'הונג קונג': 'HK', 'hong kong': 'HK',
+    'טאיוואן': 'TW', 'taiwan': 'TW',
+    'הודו': 'IN', 'india': 'IN',
+    'סרי לנקה': 'LK', 'sri lanka': 'LK',
+    'נפאל': 'NP', 'nepal': 'NP',
+    'ארצות הברית': 'US', 'ארהב': 'US', 'ארה״ב': 'US', 'united states': 'US', 'usa': 'US',
+    'קנדה': 'CA', 'canada': 'CA',
+    'מקסיקו': 'MX', 'mexico': 'MX',
+    'ברזיל': 'BR', 'brazil': 'BR',
+    'ארגנטינה': 'AR', 'argentina': 'AR',
+    'צ׳ילה': 'CL', 'צילה': 'CL', 'chile': 'CL',
+    'קולומביה': 'CO', 'colombia': 'CO',
+    'פרו': 'PE', 'peru': 'PE',
+    'אוסטרליה': 'AU', 'australia': 'AU',
+    'ניו זילנד': 'NZ', 'new zealand': 'NZ',
+    'דרום אפריקה': 'ZA', 'south africa': 'ZA',
+    'קניה': 'KE', 'kenya': 'KE',
+    'טנזניה': 'TZ', 'tanzania': 'TZ',
+    'אתיופיה': 'ET', 'ethiopia': 'ET',
+    'מאוריציוס': 'MU', 'mauritius': 'MU',
+    'סיישל': 'SC', 'seychelles': 'SC',
+};
+
+function countryCodeFor(loc) {
+    const directCode = (loc?.countryCode || loc?.country_code || '').trim();
+    if (/^[A-Za-z]{2,3}$/.test(directCode)) return directCode.slice(0, 2).toUpperCase();
+    const lookupKey = (loc?.country || loc?.countryEn || loc?.countryEnglish || '').trim().toLowerCase();
+    if (COUNTRY_CODE_LOOKUP[lookupKey]) return COUNTRY_CODE_LOOKUP[lookupKey];
+    return '';
+}
+
+function countryInitials(loc) {
+    const code = countryCodeFor(loc);
+    if (code) return code;
+    const source = (loc?.countryEn || loc?.countryEnglish || loc?.country || loc?.city || '').trim();
+    if (!source) return '??';
+    const words = source
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^A-Za-z\s-]/g, ' ')
+        .split(/[\s-]+/)
+        .filter(Boolean);
+    if (!words.length) return 'NA';
+    if (words.length >= 2) return `${words[0][0]}${words[1][0]}`.toUpperCase();
+    return words[0].slice(0, 2).toUpperCase();
+}
+
+function flagImageUrlFor(loc) {
+    const code = countryCodeFor(loc);
+    return code ? `https://flagcdn.com/w40/${code.toLowerCase()}.png` : '';
+}
+
+function locationKeyFor(loc) {
+    return `${loc?.city || ''} ${loc?.country || loc?.countryEn || ''}`
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .trim();
+}
+
+function airfareRegionFor(loc) {
+    const text = `${loc?.city || ''} ${loc?.country || ''}`.toLowerCase();
+    return AIRFARE_REGIONS.find(region => region.re.test(text)) || { floor: 1200, typical: [1200, 3500] };
+}
+
+function normalizeLocationSuggestions(data, selectedTier, availableAmount, isHe, tripDays, includeCarRental, carRentalDaysInput, dailyTarget = 0) {
+    const locations = Array.isArray(data?.locations) ? data.locations : [];
+    const floors = TIER_PRICE_FLOORS[selectedTier] || TIER_PRICE_FLOORS.medium;
+    const requestedDays = normalizeTripDays(tripDays);
+    const requestedCarDays = includeCarRental ? normalizeCarRentalDays(carRentalDaysInput, requestedDays) : 0;
+    let overBudgetCount = 0;
+    return {
+        budgetFits: selectedTier,
+        budgetNote: '',
+        locations: (() => {
+            const normalizedLocations = locations.map(raw => {
+            const costs = {};
+            COST_KEYS.forEach(({ key }) => {
+                costs[key] = normalizeTierLivingCost(key, numberOrZero(raw?.costs?.[key]), selectedTier);
+            });
+
+            Object.entries(floors).forEach(([key, floor]) => {
+                if (costs[key] > 0 && costs[key] < floor) costs[key] = floor;
+            });
+
+            const region = airfareRegionFor(raw);
+            const aiRoundTrip = numberOrZero(raw?.flightRoundTrip ?? raw?.singleTripFlight ?? raw?.flightsRoundTrip ?? raw?.flightsAnnualRoundTrip ?? raw?.annualRoundTripFlight);
+            const roundTrip = Math.max(region.floor, Math.round(aiRoundTrip || costs.flights || region.floor));
+            costs.flights = roundTrip;
+
+            const carRentalUseful = includeCarRental && shouldIncludeCarRental(raw);
+            if (!carRentalUseful) costs.carRental = 0;
+            const explicitTripCosts = {
+                tripHousingCost: numberOrZero(raw?.tripHousingCost ?? raw?.housingTripCost ?? raw?.accommodationTripCost),
+                tripFoodCost: numberOrZero(raw?.tripFoodCost ?? raw?.foodTripCost),
+            };
+
+            const livingMonthly = COST_KEYS
+                .filter(({ key }) => key !== 'flights' && key !== 'carRental')
+                .reduce((sum, { key }) => sum + costs[key], 0);
+            const livingDailyCost = livingMonthly > 0 ? Math.ceil(tripLivingCost(costs, selectedTier, requestedDays, explicitTripCosts) / requestedDays) : 0;
+            const stayCost = tripLivingCost(costs, selectedTier, requestedDays, explicitTripCosts);
+            const carRentalCost = carRentalUseful ? Math.max(0, Math.round(costs.carRental || 0)) : 0;
+            const carRentalIncluded = carRentalUseful && carRentalCost > 0;
+            costs.carRental = carRentalCost;
+            const fullTripCost = stayCost + roundTrip + carRentalCost;
+            if (availableAmount && fullTripCost > availableAmount) overBudgetCount += 1;
+            const carDailyCost = carRentalIncluded && requestedCarDays > 0 ? Math.ceil(carRentalCost / requestedCarDays) : 0;
+            let daysAffordable = 0;
+            for (let d = 1; d <= requestedDays; d += 1) {
+                const carDaysForStay = carRentalIncluded ? Math.min(d, requestedCarDays) : 0;
+                const proportionalExplicit = {
+                    tripHousingCost: explicitTripCosts.tripHousingCost ? Math.round(explicitTripCosts.tripHousingCost * (d / requestedDays)) : 0,
+                    tripFoodCost: explicitTripCosts.tripFoodCost ? Math.round(explicitTripCosts.tripFoodCost * (d / requestedDays)) : 0,
+                };
+                const candidateCost = roundTrip + tripLivingCost(costs, selectedTier, d, proportionalExplicit) + carDailyCost * carDaysForStay;
+                if (candidateCost <= availableAmount) daysAffordable = d;
+            }
+            const monthFits = availableAmount ? fullTripCost <= availableAmount : true;
+            const affordableTripCost = monthFits
+                ? fullTripCost
+                : (daysAffordable > 0 ? roundTrip + tripLivingCost(costs, selectedTier, daysAffordable, {
+                    tripHousingCost: explicitTripCosts.tripHousingCost ? Math.round(explicitTripCosts.tripHousingCost * (daysAffordable / requestedDays)) : 0,
+                    tripFoodCost: explicitTripCosts.tripFoodCost ? Math.round(explicitTripCosts.tripFoodCost * (daysAffordable / requestedDays)) : 0,
+                }) + carDailyCost * Math.min(daysAffordable, requestedCarDays) : 0);
+            const displayDailyCost = monthFits
+                ? Math.ceil(fullTripCost / requestedDays)
+                : (daysAffordable > 0 ? Math.ceil(affordableTripCost / daysAffordable) : 0);
+            const defaultHousingType = isHe
+                ? (selectedTier === 'expensive' ? 'דירה איכותית במיקום מרכזי' : selectedTier === 'cheap' ? 'דירה צנועה או סטודיו באזור בטוח' : 'דירת חדר נוחה להשכרה ארוכה')
+                : (selectedTier === 'expensive' ? 'high-quality apartment in a central area' : selectedTier === 'cheap' ? 'modest apartment or studio in a safe area' : 'comfortable long-term one-bedroom apartment');
+            return {
+                city: raw?.city || '',
+                country: raw?.country || '',
+                countryCode: raw?.countryCode || raw?.country_code || '',
+                countryEn: raw?.countryEn || raw?.countryEnglish || '',
+                flag: raw?.flag || '🌍',
+                note: raw?.note || '',
+                total: affordableTripCost,
+                fullTripCost,
+                livingMonthly,
+                tripDays: requestedDays,
+                tier: selectedTier,
+                includeCarRental: carRentalIncluded,
+                carRentalRequested: includeCarRental,
+                carRentalDays: carRentalIncluded ? requestedCarDays : 0,
+                carRentalUseful,
+                carRentalToggleable: carRentalIncluded,
+                carRentalOriginalCost: carRentalCost,
+                carRentalOriginalDays: carRentalIncluded ? requestedCarDays : 0,
+                costs,
+                tripHousingCost: Math.round(explicitTripCosts.tripHousingCost || 0),
+                tripFoodCost: Math.round(explicitTripCosts.tripFoodCost || 0),
+                housingType: raw?.housingType || raw?.accommodationType || defaultHousingType,
+                housingLevel: raw?.housingLevel || raw?.housingStandard || (isHe ? TIER_META[selectedTier]?.labelHe : TIER_META[selectedTier]?.labelEn),
+                flightRoundTrip: roundTrip,
+                airfareTypicalRange: region.typical,
+                livingDailyCost,
+                dailyCost: displayDailyCost,
+                daysAffordable,
+                monthFits,
+            };
+            }).filter(loc => loc.monthFits || loc.daysAffordable > 0);
+            const target = Math.max(0, Math.round(numberOrZero(dailyTarget)));
+            const relevant = target > 0
+                ? normalizedLocations.filter(loc => loc.dailyCost <= target)
+                : normalizedLocations;
+            const withinTripBudget = normalizedLocations.filter(loc =>
+                loc.monthFits && !relevant.includes(loc)
+            );
+            const close = target > 0
+                ? normalizedLocations.filter(loc =>
+                    loc.dailyCost > target
+                    && loc.dailyCost <= Math.ceil(target * 1.15)
+                    && !withinTripBudget.includes(loc)
+                )
+                : [];
+            const pool = relevant.length >= 4
+                ? [...relevant, ...withinTripBudget]
+                : [...relevant, ...withinTripBudget, ...close];
+            return pool
+                .sort((a, b) => {
+                    const aTier = a.dailyCost <= target ? 0 : a.monthFits ? 1 : 2;
+                    const bTier = b.dailyCost <= target ? 0 : b.monthFits ? 1 : 2;
+                    if (aTier !== bTier) return aTier - bTier;
+                    if (b.daysAffordable !== a.daysAffordable) return b.daysAffordable - a.daysAffordable;
+                    return a.dailyCost - b.dailyCost;
+                });
+        })(),
+        ...(overBudgetCount > 0 && availableAmount ? {
+            budgetNote: data?.budgetNote || (isHe
+                ? `${overBudgetCount} הצעות לא נכנסות לחודש מלא כולל טיסה; מוצג כמה לילות כן נכנסים בתקציב.`
+                : `${overBudgetCount} suggested location(s) do not fit a full month including flight; affordable nights are shown.`),
+        } : {}),
+    };
+}
+
+function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCost, monthlySavingsAmount, withdrawalMonthlyAmount, year, currency, isHe, isLight, aiProvider, aiModel, apiKeyOverride }) {
+    const { dragStyle, onDragMouseDown } = useDraggable(isOpen, { constrainToViewport: true, viewportMargin: 16 });
+    const [tier, setTier] = useState(null);
+    const [tripDaysInput, setTripDaysInput] = useState('');
+    const [includeMonthlySavings, setIncludeMonthlySavings] = useState(false);
+    const [includeCarRental, setIncludeCarRental] = useState(false);
+    const [carRentalDaysInput, setCarRentalDaysInput] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [replacingLocation, setReplacingLocation] = useState(false);
+    const [deletedLocations, setDeletedLocations] = useState([]);
+    const [parsed, setParsed] = useState(null);
+    const [error, setError] = useState(null);
+    const [openCards, setOpenCards] = useState(new Set());
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = prev; };
+    }, [isOpen]);
+
+    const toggleCard = i => setOpenCards(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n; });
+
+    const fmtAmt = v => {
+        const abs = Math.abs(v || 0);
+        if (abs >= 1_000_000) return `${currency}${(abs / 1_000_000).toFixed(1)}M`;
+        if (abs >= 1_000) return `${currency}${(abs / 1000).toFixed(1)}K`;
+        return `${currency}${Math.round(abs).toLocaleString()}`;
+    };
+    const fmtTripSummary = loc => {
+        const amount = fmtAmt(loc.total);
+        if (loc.monthFits) return isHe ? `${loc.tripDays} לילות · ${amount}` : `${amount} / ${loc.tripDays} nights`;
+        return isHe ? `${loc.daysAffordable} לילות · ${amount}` : `${amount} / ${loc.daysAffordable} nights`;
+    };
+    const withdrawalDailyBudget = Math.ceil(Math.max(0, numberOrZero(withdrawalMonthlyAmount)) / DEFAULT_TRIP_DAYS);
+    const monthlySavingsBudget = Math.max(0, Math.round(numberOrZero(monthlySavingsAmount)));
+    const tripBudgetForDays = useCallback((daysValue) => {
+        const days = normalizeTripDays(daysValue);
+        const baseBudget = withdrawalDailyBudget > 0 ? withdrawalDailyBudget * days : normalizeTripBudget('', availableAmount);
+        return Math.max(0, baseBudget + (includeMonthlySavings ? monthlySavingsBudget : 0));
+    }, [availableAmount, includeMonthlySavings, monthlySavingsBudget, withdrawalDailyBudget]);
+
+    const toggleLocationCarRental = useCallback((idx) => {
+        setParsed(prev => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                locations: (prev.locations || []).map((loc, i) => {
+                    if (i !== idx) return loc;
+                    if (!loc.carRentalOriginalCost) return loc;
+                    return recalcLocationTrip(loc, tripBudgetForDays(loc.tripDays), !loc.includeCarRental);
+                }),
+            };
+        });
+    }, [tripBudgetForDays]);
+
+    const fetchReplacementLocation = useCallback(async (selectedTier, excludedLocations) => {
+        const tripDays = normalizeTripDays(tripDaysInput);
+        const carRentalDays = normalizeCarRentalDays(carRentalDaysInput, tripDays);
+        const tripBudget = tripBudgetForDays(tripDays);
+        const dailyWithdrawalTarget = Math.ceil(Math.max(0, numberOrZero(withdrawalMonthlyAmount)) / DEFAULT_TRIP_DAYS);
+        const tierHe = { cheap: 'זולה', medium: 'בינונית', expensive: 'יוקרתית' }[selectedTier];
+        const tierEn = { cheap: 'budget-friendly', medium: 'moderate', expensive: 'premium' }[selectedTier];
+        const amtStr = `${currency}${Math.round(tripBudget).toLocaleString()}`;
+        const nowYear = new Date().getFullYear();
+        const yearCtxHe = year > nowYear
+            ? `שנת יעד: ${year} (בעוד ${year - nowYear} שנים). הצמד עלויות לשנה זו עם אינפלציה צפויה.`
+            : `שנת הפניה: ${year}.`;
+        const yearCtxEn = year > nowYear
+            ? `Target year: ${year} (${year - nowYear} years from now). Adjust costs for expected inflation.`
+            : `Reference year: ${year}.`;
+        const carCtxHe = includeCarRental ? ` שקול שכירת רכב ל-${carRentalDays} ימים רק אם זה באמת מועיל ליעד; אם העיר פקוקה/עירונית עם תחבורה טובה החזר carRental=0.` : ' אל תכלול שכירת רכב.';
+        const carCtxEn = includeCarRental ? ` Consider car rental for ${carRentalDays} days only if it is genuinely useful for the destination; for dense city stays with good transport return carRental=0.` : ' Do not include car rental.';
+        const nearbyCtxHe = tripDays < 10
+            ? 'מאחר שהשהייה פחות מ-10 ימים, הצע יעדים קרובים בלבד: מזרח תיכון, צפון אפריקה ואירופה קרובה (יוון, קפריסין, טורקיה, איטליה, ספרד, פורטוגל, איחוד האמירויות).'
+            : 'הצע יעדים מכל העולם, מאזורים שונים ככל האפשר.';
+        const nearbyCtxEn = tripDays < 10
+            ? 'Since the stay is under 10 days, suggest only nearby destinations: Middle East, North Africa, and close Europe (Greece, Cyprus, Turkey, Italy, Spain, Portugal, UAE).'
+            : 'Suggest destinations from any region worldwide.';
+        const excludedText = excludedLocations
+            .map(loc => `${loc.city || ''}${loc.country ? `, ${loc.country}` : ''}`.trim())
+            .filter(Boolean)
+            .join('; ');
+        const schema = `{"budgetFits":"cheap|medium|expensive","budgetNote":"one sentence","locations":[{"city":"","country":"","countryCode":"ISO 3166 alpha-2 country code in English letters","countryEn":"country name in English","flag":"🏳","total":0,"note":"one sentence","housingType":"apartment/hotel/private room/guesthouse etc.","housingLevel":"short standard/location description","tripHousingCost":0,"tripFoodCost":0,"flightRoundTrip":0,"costs":{"rent":0,"food":0,"transport":0,"entertainment":0,"flights":0,"carRental":0,"other":0}}]}`;
+        const systemPrompt = `You are a global cost-of-living advisor. Respond ONLY with valid JSON, no markdown, no explanation outside the JSON.\n${COST_OF_LIVING_PRICE_CONTEXT}`;
+        const userMsg = isHe
+            ? `${yearCtxHe} תקציב לטיול: ${amtStr}. תקציב יומי לפי המשיכה שלי: ${currency}${dailyWithdrawalTarget}. משך שהייה לבדיקה: ${tripDays} לילות. מצא 12 ערים חלופיות לאורח חיים ${tierHe}. ${nearbyCtxHe} קודם חפש יעדים שבהם העלות היומית הכוללת נמוכה או שווה לתקציב היומי לפי המשיכה; רק אם אין מספיק, הצע יעדים שקרובים אליו ולא רחוקים מדי. חשב את רמת המחיה לפי השוק המקומי של כל יעד. בחר דיור שמתאים למשך: לכמה לילות השתמש במלון/חדר/גסטהאוס/דירה קצרה לפי הרמה, ולשהייה חודשית בדירה חודשית. החזר tripHousingCost ו-tripFoodCost לתקופה המבוקשת. פרט ב-housingLevel וב-note את ההנחות שמצדיקות את הרמה. ${carCtxHe} אסור להציע אף אחד מהיעדים האלה: ${excludedText || 'אין'}. החזר רק JSON בסכמה: ${schema}. שמות והערות בעברית.`
+            : `${yearCtxEn} Trip budget: ${amtStr}. My daily budget from monthly withdrawal: ${currency}${dailyWithdrawalTarget}. Stay length to evaluate: ${tripDays} nights. Suggest 12 replacement cities for a ${tierEn} lifestyle. ${nearbyCtxEn} First prioritize destinations where total daily trip cost is at or below my daily withdrawal budget; only if there are not enough, include close options that are not far above it. Price the lifestyle tier relative to each destination's local market. Choose accommodation suitable for the duration: hotel/private room/guesthouse/short-stay apartment for short trips, monthly apartment for month stays. Return tripHousingCost and tripFoodCost for the requested stay. In housingLevel and note, explain the assumptions that justify the tier.${carCtxEn} Do not suggest any of these locations: ${excludedText || 'none'}. Return ONLY JSON matching schema: ${schema}.`;
+        const fallbackMsg = isHe
+            ? `החזר JSON בלבד. מצא 8 ערים חלופיות לאורח חיים ${tierHe}, ${tripDays} לילות, תקציב ${amtStr}. ${nearbyCtxHe} החזר tripHousingCost ו-tripFoodCost לתקופה, עם דיור מתאים למשך. אל תציע: ${excludedText || 'אין'}. סכימה: ${schema}`
+            : `Return JSON only. Suggest 8 replacement cities for a ${tierEn} lifestyle, ${tripDays} nights, budget ${amtStr}. ${nearbyCtxEn} Return tripHousingCost and tripFoodCost for the stay, with duration-appropriate accommodation. Exclude: ${excludedText || 'none'}. Schema: ${schema}`;
+        const normalized = normalizeLocationSuggestions(
+            await getParsedAiJson(
+                [{ role: 'user', content: userMsg }],
+                systemPrompt,
+                aiProvider,
+                aiModel,
+                apiKeyOverride,
+                [{ role: 'user', content: fallbackMsg }]
+            ),
+            selectedTier,
+            tripBudget,
+            isHe,
+            tripDays,
+            includeCarRental,
+            carRentalDays,
+            dailyWithdrawalTarget
+        );
+        const excludedKeys = new Set(excludedLocations.map(locationKeyFor).filter(Boolean));
+        const replacement = (normalized.locations || []).find(loc => !excludedKeys.has(locationKeyFor(loc)));
+        if (!replacement) throw new Error('No non-duplicate replacement returned');
+        return replacement;
+    }, [withdrawalMonthlyAmount, year, currency, isHe, aiProvider, aiModel, apiKeyOverride, tripDaysInput, includeCarRental, carRentalDaysInput, tripBudgetForDays]);
+
+    const deleteLocation = useCallback(async (idx) => {
+        if (!parsed?.locations?.[idx] || !tier || replacingLocation) return;
+        const removed = parsed.locations[idx];
+        const remaining = parsed.locations.filter((_, i) => i !== idx);
+        const excluded = [...deletedLocations, removed, ...remaining];
+        setDeletedLocations(prev => [...prev, removed]);
+        setParsed(prev => prev ? { ...prev, locations: remaining } : prev);
+        setOpenCards(new Set());
+        setReplacingLocation(true);
+        try {
+            const replacement = await fetchReplacementLocation(tier, excluded);
+            if (replacement) {
+                setParsed(prev => {
+                    if (!prev) return prev;
+                    const existingKeys = new Set((prev.locations || []).map(locationKeyFor).filter(Boolean));
+                    if (existingKeys.has(locationKeyFor(replacement))) return prev;
+                    return {
+                        ...prev,
+                        locations: [...(prev.locations || []), replacement].sort((a, b) => {
+                            if (b.daysAffordable !== a.daysAffordable) return b.daysAffordable - a.daysAffordable;
+                            return a.dailyCost - b.dailyCost;
+                        }),
+                    };
+                });
+            }
+        } catch {
+            setError(isHe ? 'היעד נמחק, אבל לא הצלחתי להביא חלופה כרגע' : 'Location removed, but no replacement could be loaded right now');
+        } finally {
+            setReplacingLocation(false);
+        }
+    }, [parsed, tier, replacingLocation, deletedLocations, fetchReplacementLocation, isHe]);
+
+    const fetchSuggestions = useCallback(async (selectedTier) => {
+        if (!selectedTier) {
+            setError(isHe ? 'בחר רמת מחיה לפני החיפוש' : 'Choose a lifestyle level before searching');
+            return;
+        }
+        setTier(selectedTier);
+        setLoading(true);
+        setReplacingLocation(false);
+        setDeletedLocations([]);
+        setParsed(null);
+        setError(null);
+        setOpenCards(new Set());
+        const tripDays = normalizeTripDays(tripDaysInput);
+        const carRentalDays = normalizeCarRentalDays(carRentalDaysInput, tripDays);
+        const tripBudget = tripBudgetForDays(tripDays);
+        const dailyWithdrawalTarget = Math.ceil(Math.max(0, numberOrZero(withdrawalMonthlyAmount)) / DEFAULT_TRIP_DAYS);
+        const tierHe = { cheap: 'זולה', medium: 'בינונית', expensive: 'יוקרתית' }[selectedTier];
+        const tierEn = { cheap: 'budget-friendly', medium: 'moderate', expensive: 'premium' }[selectedTier];
+        const amtStr = `${currency}${Math.round(tripBudget).toLocaleString()}`;
+        const nowYear = new Date().getFullYear();
+        const yearCtxHe = year > nowYear
+            ? `שנת יעד: ${year} (בעוד ${year - nowYear} שנים). הצמד עלויות לשנה זו עם אינפלציה צפויה.`
+            : `שנת הפניה: ${year}.`;
+        const yearCtxEn = year > nowYear
+            ? `Target year: ${year} (${year - nowYear} years from now). Adjust costs for expected inflation.`
+            : `Reference year: ${year}.`;
+        const systemPrompt = `You are a global cost-of-living advisor. Respond ONLY with valid JSON, no markdown, no explanation outside the JSON.\n${COST_OF_LIVING_PRICE_CONTEXT}`;
+        const carCtxHe = includeCarRental ? ` שקול שכירת רכב ל-${carRentalDays} ימים רק אם זה באמת מועיל ליעד; אם העיר פקוקה/עירונית עם תחבורה טובה החזר carRental=0.` : ' אל תכלול שכירת רכב.';
+        const carCtxEn = includeCarRental ? ` Consider car rental for ${carRentalDays} days only if it is genuinely useful for the destination; for dense city stays with good transport return carRental=0.` : ' Do not include car rental.';
+        const nearbyCtxHe = tripDays < 10
+            ? 'מאחר שהשהייה פחות מ-10 ימים, הצע יעדים קרובים בלבד: מזרח תיכון, צפון אפריקה ואירופה קרובה (יוון, קפריסין, טורקיה, איטליה, ספרד, פורטוגל, איחוד האמירויות).'
+            : 'הצע יעדים מכל העולם, מאזורים שונים ככל האפשר.';
+        const nearbyCtxEn = tripDays < 10
+            ? 'Since the stay is under 10 days, suggest only nearby destinations: Middle East, North Africa, and close Europe (Greece, Cyprus, Turkey, Italy, Spain, Portugal, UAE).'
+            : 'Suggest destinations from any region worldwide.';
+        const schema = `{"budgetFits":"cheap|medium|expensive","budgetNote":"one sentence","locations":[{"city":"","country":"","countryCode":"ISO 3166 alpha-2 country code in English letters","countryEn":"country name in English","flag":"🏳","total":0,"note":"one sentence","housingType":"apartment/hotel/private room/guesthouse etc.","housingLevel":"short standard/location description","tripHousingCost":0,"tripFoodCost":0,"flightRoundTrip":0,"costs":{"rent":0,"food":0,"transport":0,"entertainment":0,"flights":0,"carRental":0,"other":0}}]}`;
+        const userMsg = isHe
+            ? `${yearCtxHe} תקציב לטיול: ${amtStr}. תקציב יומי לפי המשיכה שלי: ${currency}${dailyWithdrawalTarget}. משך שהייה לבדיקה: ${tripDays} לילות. הצע 8 ערים לאורח חיים ${tierHe}. ${nearbyCtxHe} קודם חפש יעדים שבהם העלות היומית הכוללת נמוכה או שווה לתקציב היומי לפי המשיכה; רק אם אין מספיק, הצע יעדים שקרובים אליו ולא רחוקים מדי. חשב את הרמה לפי השוק המקומי של כל יעד: דיור, מיקום, אוכל, תחבורה ובילויים חייבים לשקף את הרמה שנבחרה בעיר הזו. בחר דיור שמתאים למשך: לכמה לילות מלון/חדר/גסטהאוס/דירה קצרה לפי הרמה, ולחודש דירה חודשית. החזר tripHousingCost ו-tripFoodCost לתקופה המבוקשת. פרט ב-housingLevel וב-note את ההנחות שמצדיקות את הרמה. ${carCtxHe} כלול יעדים שנכנסים בתקציב וגם יעדים יקרים יותר שמתאימים לפחות לילות. החזר JSON בלבד בסכמה: ${schema}. budgetFits = הרמה שהתקציב הזה מאפשר באופן כללי. הערות ושם עיר/מדינה/הערה בעברית.`
+            : `${yearCtxEn} Trip budget: ${amtStr}. My daily budget from monthly withdrawal: ${currency}${dailyWithdrawalTarget}. Stay length to evaluate: ${tripDays} nights. Suggest 8 cities for a ${tierEn} lifestyle. ${nearbyCtxEn} First prioritize destinations where total daily trip cost is at or below my daily withdrawal budget; only if there are not enough, include close options that are not far above it. Price the tier relative to each destination's local market: housing, neighborhood, food, transport and entertainment must reflect the selected tier in that city. Choose accommodation suitable for the duration: hotel/private room/guesthouse/short-stay apartment for short trips, monthly apartment for month stays. Return tripHousingCost and tripFoodCost for the requested stay. In housingLevel and note, explain the assumptions that justify the tier.${carCtxEn} Include options that fit and more expensive options that fit fewer nights. Return ONLY JSON matching schema: ${schema}. budgetFits = overall tier this budget supports globally.`;
+        const fallbackMsg = isHe
+            ? `החזר JSON בלבד, בלי טקסט נוסף. הצע 8 ערים לאורח חיים ${tierHe}, ${tripDays} לילות, תקציב ${amtStr}. ${nearbyCtxHe} החזר tripHousingCost ו-tripFoodCost לתקופה, עם דיור מתאים למשך. כל המחירים בשקלים. סכימה: ${schema}`
+            : `Return JSON only, no extra text. Suggest 8 cities for a ${tierEn} lifestyle, ${tripDays} nights, budget ${amtStr}. ${nearbyCtxEn} Return tripHousingCost and tripFoodCost for the stay, with duration-appropriate accommodation. All prices in ILS. Schema: ${schema}`;
+        try {
+            setParsed(normalizeLocationSuggestions(
+                await getParsedAiJson(
+                    [{ role: 'user', content: userMsg }],
+                    systemPrompt,
+                    aiProvider,
+                    aiModel,
+                    apiKeyOverride,
+                    [{ role: 'user', content: fallbackMsg }]
+                ),
+                selectedTier,
+                tripBudget,
+                isHe,
+                tripDays,
+                includeCarRental,
+                carRentalDays,
+                dailyWithdrawalTarget
+            ));
+        } catch (err) {
+            console.error('Location suggestions failed', err);
+            setError(aiErrorMessage(err, isHe));
+        } finally {
+            setLoading(false);
+        }
+    }, [withdrawalMonthlyAmount, year, currency, isHe, aiProvider, aiModel, apiKeyOverride, tripDaysInput, includeCarRental, carRentalDaysInput, tripBudgetForDays]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        setTier(null);
+        setParsed(null);
+        setError(null);
+        setReplacingLocation(false);
+        setDeletedLocations([]);
+        setIncludeMonthlySavings(false);
+        setOpenCards(new Set());
+    }, [isOpen]);
+
+    if (!isOpen) return null;
+
+    const fitsColorMap = { green: isLight ? 'bg-green-50 border-green-200 text-green-700' : 'bg-green-500/10 border-green-500/30 text-green-400', blue: isLight ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-blue-500/10 border-blue-500/30 text-blue-400', purple: isLight ? 'bg-purple-50 border-purple-200 text-purple-700' : 'bg-purple-500/10 border-purple-500/30 text-purple-400' };
+
+    return createPortal(
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+            <div data-draggable-modal className={`relative w-full max-w-lg max-h-[calc(100vh-2rem)] flex flex-col rounded-2xl shadow-2xl overflow-hidden ${isLight ? 'bg-white' : ''}`} style={dragStyle} dir={isHe ? 'rtl' : 'ltr'}>
+                {!isLight && <><div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-indigo-900" /><div className="absolute inset-0 bg-white/5" /></>}
+                {/* Header */}
+                <div className={`relative z-10 flex items-center gap-3 px-5 py-4 border-b shrink-0 cursor-grab active:cursor-grabbing ${isLight ? 'border-slate-200' : 'border-white/10'}`} onMouseDown={onDragMouseDown}>
+                    <div className={`p-1.5 rounded-lg shrink-0 ${isLight ? 'bg-indigo-50 text-indigo-600' : 'bg-indigo-500/20 text-indigo-400'}`}><Globe size={16} /></div>
+                    <div className="flex-1 min-w-0">
+                        <div className={`font-bold text-sm ${isLight ? 'text-slate-800' : 'text-white'}`}>{isHe ? 'מקומות מגורים מומלצים' : 'Recommended Living Locations'}</div>
+                        <div className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                            {isHe ? 'פנוי למחיה: ' : 'Available: '}<span dir={isHe ? 'rtl' : 'ltr'}>{fmtAmt(availableAmount)}<span className="font-normal opacity-60">{isHe ? '/חו׳' : '/mo'}</span></span>{year && <span className="ms-1.5 opacity-60">· {year}</span>}
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => fetchSuggestions(tier)}
+                        onMouseDown={e => e.stopPropagation()}
+                        disabled={!tier || loading}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-45 disabled:cursor-not-allowed shrink-0 ${isLight ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-indigo-500 text-white hover:bg-indigo-400'}`}
+                    >
+                        {loading ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
+                        {isHe ? 'חפש' : 'Search'}
+                    </button>
+                    <button onClick={onClose} onMouseDown={e => e.stopPropagation()} className={`p-1.5 rounded-lg transition-colors shrink-0 ${isLight ? 'hover:bg-slate-100 text-slate-400' : 'hover:bg-white/10 text-gray-400'}`}><X size={16} /></button>
+                </div>
+                {/* Tier tabs */}
+                <div className={`relative z-10 px-5 py-3 border-b shrink-0 space-y-3 ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
+                    <div className="flex gap-2">
+                    {Object.entries(TIER_META).map(([id, meta]) => {
+                        const active = tier === id;
+                        const activeClass = meta.color === 'green' ? 'bg-green-500 text-white' : meta.color === 'blue' ? 'bg-blue-500 text-white' : 'bg-purple-500 text-white';
+                        return (
+                            <button key={id} onClick={() => { setTier(id); setError(null); }} disabled={loading}
+                                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 ${active ? activeClass : isLight ? 'bg-slate-100 text-slate-500 hover:bg-slate-200' : 'bg-white/5 text-gray-400 hover:bg-white/10'}`}>
+                                {isHe ? meta.labelHe : meta.labelEn}
+                            </button>
+                        );
+                    })}
+                    </div>
+                    <div className="grid grid-cols-5 gap-2">
+                        <label className={`min-w-0 rounded-lg px-2.5 py-1.5 ${isLight ? 'bg-slate-50 border border-slate-200' : 'bg-white/5 border border-white/10'}`}>
+                            <span className={`block text-[10px] mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'מס׳ לילות' : 'Nights'}</span>
+                            <input
+                                type="number"
+                                min="1"
+                                max="30"
+                                value={tripDaysInput}
+                                onChange={e => setTripDaysInput(e.target.value)}
+                                placeholder="30"
+                                className={`w-full bg-transparent outline-none text-sm font-semibold ${isLight ? 'text-slate-800 placeholder:text-slate-400' : 'text-white placeholder:text-gray-500'}`}
+                            />
+                        </label>
+                        <div className={`min-w-0 rounded-lg px-2.5 py-1.5 ${isLight ? 'bg-slate-50 border border-slate-200' : 'bg-white/5 border border-white/10'}`}>
+                            <span className={`block text-[10px] mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'תקציב מחושב' : 'Auto budget'}</span>
+                            <div className={`w-full text-sm font-semibold truncate ${isLight ? 'text-slate-800' : 'text-white'}`} dir={isHe ? 'rtl' : 'ltr'}>
+                                {fmtAmt(tripBudgetForDays(tripDaysInput))}
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setIncludeMonthlySavings(v => !v)}
+                            disabled={monthlySavingsBudget <= 0}
+                            title={isHe ? `הוסף חיסכון חודשי: ${fmtAmt(monthlySavingsBudget)}` : `Add monthly savings: ${fmtAmt(monthlySavingsBudget)}`}
+                            className={`min-w-0 rounded-lg px-2.5 py-1.5 border flex items-center justify-center gap-1.5 text-start transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${includeMonthlySavings
+                                ? (isLight ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-amber-500/15 border-amber-400/30 text-amber-200')
+                                : (isLight ? 'bg-slate-50 border-slate-200 text-slate-500' : 'bg-white/5 border-white/10 text-gray-400')}`}
+                        >
+                            <PiggyBank size={14} className="shrink-0" />
+                            <span className="text-xs font-semibold truncate">{isHe ? 'חיסכון' : 'Savings'}</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setIncludeCarRental(v => !v)}
+                                className={`min-w-0 rounded-lg px-2.5 py-1.5 border flex items-center justify-center gap-1.5 text-start transition-colors ${includeCarRental
+                                    ? (isLight ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-emerald-500/15 border-emerald-400/30 text-emerald-200')
+                                    : (isLight ? 'bg-slate-50 border-slate-200 text-slate-500' : 'bg-white/5 border-white/10 text-gray-400')}`}
+                            >
+                            <Car size={14} className="shrink-0" />
+                            <span className="text-xs font-semibold">{isHe ? 'שקול רכב' : 'Consider car'}</span>
+                        </button>
+                            <label className={`min-w-0 rounded-lg px-2.5 py-1.5 border ${includeCarRental ? (isLight ? 'bg-emerald-50 border-emerald-200' : 'bg-emerald-500/10 border-emerald-400/20') : (isLight ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white/5 border-white/10 opacity-60')}`}>
+                                <span className={`block text-[10px] mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'ימי רכב' : 'Car days'}</span>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max={normalizeTripDays(tripDaysInput)}
+                                    value={carRentalDaysInput}
+                                    onChange={e => setCarRentalDaysInput(e.target.value)}
+                                    disabled={!includeCarRental}
+                                    placeholder={isHe ? 'כל התקופה' : 'Full stay'}
+                                    className={`w-full bg-transparent outline-none text-sm font-semibold disabled:cursor-not-allowed ${isLight ? 'text-slate-800 placeholder:text-slate-400' : 'text-white placeholder:text-gray-500'}`}
+                                />
+                            </label>
+                    </div>
+                </div>
+                {/* Body */}
+                <div className="relative z-10 overflow-y-auto custom-scrollbar scrollbar-right p-4 flex-1 space-y-3">
+                    {loading && (
+                        <div className="flex flex-col items-center justify-center py-12 gap-3">
+                            <Loader2 size={24} className={`animate-spin ${isLight ? 'text-indigo-500' : 'text-indigo-400'}`} />
+                            <p className={`text-sm ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'מחפש המלצות...' : 'Finding recommendations...'}</p>
+                        </div>
+                    )}
+                    {error && <p className={`text-sm text-center py-8 ${isLight ? 'text-red-500' : 'text-red-400'}`}>{error}</p>}
+                    {!parsed && !loading && !error && (
+                        <div className={`text-center py-12 px-4 rounded-xl border border-dashed ${isLight ? 'border-slate-200 text-slate-500' : 'border-white/10 text-gray-400'}`}>
+                            <Search size={22} className="mx-auto mb-3 opacity-60" />
+                            <p className="text-sm font-semibold">{isHe ? 'בחר רמת מחיה ולחץ חפש' : 'Choose a lifestyle level and search'}</p>
+                            <p className="text-xs mt-1 opacity-75">{isHe ? 'אפשר להגביל לילות/תקציב ולהוסיף שכירת רכב לפני החיפוש.' : 'You can limit nights/budget and add car rental before searching.'}</p>
+                        </div>
+                    )}
+                    {parsed && !loading && (<>
+                        {/* Budget assessment banner */}
+                        {parsed.budgetNote && (
+                            <div className={`rounded-xl px-4 py-2.5 border text-xs ${fitsColorMap[(TIER_META[parsed.budgetFits] || TIER_META.medium).color]}`}>
+                                <span className="opacity-85">{parsed.budgetNote}</span>
+                            </div>
+                        )}
+                        {replacingLocation && (
+                            <div className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 border text-xs ${isLight ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-indigo-500/10 border-indigo-400/25 text-indigo-200'}`}>
+                                <Loader2 size={13} className="animate-spin" />
+                                <span>{isHe ? 'מחפש יעד חלופי...' : 'Finding a replacement location...'}</span>
+                            </div>
+                        )}
+                        {/* Location cards */}
+                        {(parsed.locations || []).map((loc, i) => {
+                            const open = openCards.has(i);
+                            const palette = LOCATION_CARD_STYLES[i % LOCATION_CARD_STYLES.length];
+                            const cardClass = isLight ? palette.card.light : palette.card.dark;
+                            const chipClass = isLight ? palette.chip.light : palette.chip.dark;
+                            const initials = countryInitials(loc);
+                            const flagUrl = flagImageUrlFor(loc);
+                            const tripCostView = tripBreakdownFor(loc);
+                            const actualDailyCost = Math.ceil(Math.max(0, numberOrZero(userMonthlyCost)) / DEFAULT_TRIP_DAYS);
+                            const withdrawalDailyCost = Math.ceil(Math.max(0, numberOrZero(withdrawalMonthlyAmount)) / DEFAULT_TRIP_DAYS);
+                            const actualDailyDiff = actualDailyCost - (loc.dailyCost || 0);
+                            const withdrawalDailyDiff = withdrawalDailyCost - (loc.dailyCost || 0);
+                            return (
+                                <div key={`${loc.city}-${i}`} className={`rounded-xl border overflow-hidden shadow-sm ${cardClass}`}>
+                                    <div
+                                        role="button"
+                                        tabIndex={0}
+                                        className="w-full flex items-center gap-2 px-4 py-3 cursor-pointer"
+                                        onClick={() => toggleCard(i)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault();
+                                                toggleCard(i);
+                                            }
+                                        }}
+                                    >
+                                        <span className={`shrink-0 rounded-full w-9 h-9 inline-flex items-center justify-center text-[11px] font-semibold leading-none tracking-normal ${chipClass}`}>
+                                            {initials}
+                                        </span>
+                                        <div className="flex-1 flex items-baseline gap-1.5 min-w-0 overflow-hidden">
+                                            <span className={`font-semibold text-sm truncate ${isLight ? 'text-slate-800' : 'text-white'}`}>{loc.city}</span>
+                                            <span className={`text-xs shrink-0 inline-flex items-center gap-2 ${isLight ? 'text-slate-400' : 'text-gray-400'}`}>
+                                                <span>{loc.country}</span>
+                                                {flagUrl && (
+                                                    <img
+                                                        src={flagUrl}
+                                                        alt=""
+                                                        className="w-5 h-3.5 rounded-[2px] object-cover shadow-sm"
+                                                        loading="lazy"
+                                                    />
+                                                )}
+                                            </span>
+                                        </div>
+                                        <span className={`${isHe ? 'order-2' : 'order-1'} text-sm font-normal shrink-0 ${isLight ? 'text-slate-700' : 'text-white'} ${isHe ? 'text-right' : 'text-left'}`} dir={isHe ? 'rtl' : 'ltr'}>{fmtTripSummary(loc)}</span>
+                                        {withdrawalDailyCost > 0 && (
+                                            <span
+                                                className={`${isHe ? 'order-1' : 'order-2'} shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${withdrawalDailyDiff >= 0
+                                                    ? (isLight ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-green-500/15 text-green-200 border border-green-400/20')
+                                                    : (isLight ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-red-500/15 text-red-200 border border-red-400/20')}`}
+                                                title={isHe ? 'הפרש מול תקציב יומי לפי המשיכה החודשית' : 'Difference vs daily budget from monthly withdrawal'}
+                                                dir={isHe ? 'rtl' : 'ltr'}
+                                            >
+                                                {withdrawalDailyDiff >= 0 ? '+' : '-'}{fmtAmt(Math.abs(withdrawalDailyDiff))}
+                                            </span>
+                                        )}
+                                        {loc.carRentalOriginalCost > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    toggleLocationCarRental(i);
+                                                }}
+                                                className={`${isHe ? 'order-0' : 'order-3'} shrink-0 inline-flex items-center justify-center p-0.5 transition-colors ${loc.includeCarRental
+                                                    ? (isLight ? 'text-emerald-700 hover:text-emerald-800' : 'text-emerald-200 hover:text-emerald-100')
+                                                    : (isLight ? 'text-slate-400 hover:text-slate-600' : 'text-gray-500 hover:text-gray-300')}`}
+                                                title={loc.includeCarRental
+                                                    ? (isHe ? 'בטל עלות שכירת רכב' : 'Remove car rental cost')
+                                                    : (isHe ? 'החזר עלות שכירת רכב' : 'Restore car rental cost')}
+                                                aria-label={loc.includeCarRental
+                                                    ? (isHe ? 'בטל עלות שכירת רכב' : 'Remove car rental cost')
+                                                    : (isHe ? 'החזר עלות שכירת רכב' : 'Restore car rental cost')}
+                                            >
+                                                <Car size={13} />
+                                            </button>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                deleteLocation(i);
+                                            }}
+                                            disabled={replacingLocation}
+                                            className={`order-4 shrink-0 inline-flex items-center justify-center p-0.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${isLight ? 'text-slate-400 hover:text-red-600' : 'text-gray-500 hover:text-red-300'}`}
+                                            title={isHe ? 'מחק יעד והבא חלופה' : 'Remove and replace location'}
+                                            aria-label={isHe ? 'מחק יעד והבא חלופה' : 'Remove and replace location'}
+                                        >
+                                            <Trash2 size={13} />
+                                        </button>
+                                        {open ? <ChevronUp size={13} className={`order-5 shrink-0 ${isLight ? 'text-slate-400' : 'text-gray-500'}`} /> : <ChevronDown size={13} className={`order-5 shrink-0 ${isLight ? 'text-slate-400' : 'text-gray-500'}`} />}
+                                    </div>
+                                    {open && (
+                                        <div className={`px-4 pb-3 border-t space-y-1.5 ${isLight ? 'border-slate-100' : 'border-white/10'}`}>
+                                            {loc.note && <p className={`text-[11px] pt-2.5 pb-0.5 leading-relaxed ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{loc.note}</p>}
+                                            {(loc.housingType || loc.housingLevel) && (
+                                                <div className={`text-[11px] pt-2.5 pb-0.5 leading-relaxed ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                                                    <span className="font-semibold">{isHe ? 'דיור: ' : 'Housing: '}</span>
+                                                    {[loc.housingType, loc.housingLevel].filter(Boolean).join(' · ')}
+                                                </div>
+                                            )}
+                                            <div className="grid grid-cols-2 gap-1.5 pt-1.5">
+                                                <div className={`rounded-md px-2 py-1.5 ${isLight ? 'bg-white/75 ring-1 ring-white/80' : 'bg-black/15 ring-1 ring-white/10'} ${isHe ? 'text-right' : 'text-left'}`} dir={isHe ? 'rtl' : 'ltr'}>
+                                                    <div className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'עלות ללילה' : 'Nightly cost'}</div>
+                                                    <div className={`text-xs font-bold ${isLight ? 'text-slate-700' : 'text-gray-200'}`} dir={isHe ? 'rtl' : 'ltr'}>{fmtAmt(loc.dailyCost)}</div>
+                                                </div>
+                                                <div className={`rounded-md px-2 py-1.5 ${isLight ? 'bg-white/75 ring-1 ring-white/80' : 'bg-black/15 ring-1 ring-white/10'} ${isHe ? 'text-right' : 'text-left'}`} dir={isHe ? 'rtl' : 'ltr'}>
+                                                    <div className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{loc.includeCarRental ? (isHe ? 'כולל טיסה ורכב' : 'Incl. flight + car') : (isHe ? 'כולל טיסה' : 'Incl. flight')}</div>
+                            <div className={`text-xs font-bold ${loc.monthFits ? (isLight ? 'text-green-700' : 'text-green-300') : (isLight ? 'text-amber-700' : 'text-amber-300')}`}>
+                                {loc.monthFits ? (isHe ? `${loc.tripDays} לילות נכנסים` : `${loc.tripDays} nights fit`) : (isHe ? `${loc.daysAffordable} לילות` : `${loc.daysAffordable} nights`)}
+                            </div>
+                            {loc.includeCarRental && (
+                                <div className={`text-[10px] mt-0.5 ${isLight ? 'text-emerald-600' : 'text-emerald-300'}`}>
+                                    {isHe ? `רכב ${loc.carRentalDays} ימים` : `Car ${loc.carRentalDays} days`}
+                                </div>
+                            )}
+                                                </div>
+                                            </div>
+                                            <div className={`grid grid-cols-2 gap-1.5 rounded-lg px-2 py-2 border ${isLight ? 'bg-white/65 border-white/80' : 'bg-black/10 border-white/10'}`} dir={isHe ? 'rtl' : 'ltr'}>
+                                                <div className={isHe ? 'text-right' : 'text-left'}>
+                                                    <div className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'עלות יומית יעד' : 'Destination daily'}</div>
+                                                    <div className={`text-xs font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`} dir={isHe ? 'rtl' : 'ltr'}>{fmtAmt(loc.dailyCost)}</div>
+                                                </div>
+                                                <div className={isHe ? 'text-right' : 'text-left'}>
+                                                    <div className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'הוצאה יומית שלי' : 'My actual daily'}</div>
+                                                    <div className={`text-xs font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`} dir={isHe ? 'rtl' : 'ltr'}>{fmtAmt(actualDailyCost)}</div>
+                                                </div>
+                                                <div className={isHe ? 'text-right' : 'text-left'}>
+                                                    <div className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'תקציב יומי ממשיכה' : 'Daily from withdrawal'}</div>
+                                                    <div className={`text-xs font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`} dir={isHe ? 'rtl' : 'ltr'}>{fmtAmt(withdrawalDailyCost)}</div>
+                                                </div>
+                                                <div className={isHe ? 'text-right' : 'text-left'}>
+                                                    <div className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'הפרש מול הוצאה' : 'Vs actual'}</div>
+                                                    <div className={`text-xs font-semibold ${actualDailyDiff >= 0 ? (isLight ? 'text-green-700' : 'text-green-300') : (isLight ? 'text-red-600' : 'text-red-300')}`} dir={isHe ? 'rtl' : 'ltr'}>
+                                                        {actualDailyDiff >= 0 ? '+' : '-'}{fmtAmt(Math.abs(actualDailyDiff))}
+                                                    </div>
+                                                </div>
+                                                <div className={isHe ? 'text-right' : 'text-left'}>
+                                                    <div className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'הפרש מול משיכה' : 'Vs withdrawal'}</div>
+                                                    <div className={`text-xs font-semibold ${withdrawalDailyDiff >= 0 ? (isLight ? 'text-blue-700' : 'text-blue-300') : (isLight ? 'text-amber-700' : 'text-amber-300')}`} dir={isHe ? 'rtl' : 'ltr'}>
+                                                        {withdrawalDailyDiff >= 0 ? '+' : '-'}{fmtAmt(Math.abs(withdrawalDailyDiff))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className={`pt-2 text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                                {isHe
+                                                    ? `פירוט לתקופה: ${tripCostView.nights} לילות. דיור מחושב כלינה קצרה; שאר המחיה יחסית לחודש מלא.`
+                                                    : `Trip-period breakdown: ${tripCostView.nights} nights. Housing uses short-stay pricing; other living costs are prorated from a full month.`}
+                                            </div>
+                                            <div className="space-y-1 pt-1">
+                                                {COST_KEYS.map(({ key, labelHe, labelEn }) => {
+                                                    const val = tripCostView.breakdown?.[key];
+                                                    if (!val) return null;
+                                                    const lbl = <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? labelHe : labelEn}</span>;
+                                                    const amt = <span className={`text-xs font-medium tabular-nums ${isLight ? 'text-slate-700' : 'text-gray-200'}`} dir="ltr">{fmtAmt(val)}</span>;
+                                                    return (
+                                                        <div key={key} className="flex items-center justify-between gap-4">
+                                                            {isHe ? <>{lbl}{amt}</> : <>{lbl}{amt}</>}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                            <div className={`flex items-center justify-between gap-4 px-3 py-2 mt-1.5 rounded-lg border ${isLight ? 'bg-slate-900/5 border-slate-900/10' : 'bg-white/10 border-white/15'}`}>
+                                                <span className={`text-xs font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
+                                                    {loc.monthFits
+                                                        ? (isHe ? `סה״כ ${loc.tripDays} לילות כולל טיסה${loc.includeCarRental ? ' ורכב' : ''}` : `${loc.tripDays} nights incl. flight${loc.includeCarRental ? ' + car' : ''}`)
+                                                        : (isHe ? `סה״כ ${loc.daysAffordable} לילות כולל טיסה${loc.includeCarRental ? ' ורכב' : ''}` : `${loc.daysAffordable} nights incl. flight${loc.includeCarRental ? ' + car' : ''}`)}
+                                                </span>
+                                                <span className={`text-sm font-bold ${isLight ? 'text-slate-800' : 'text-white'}`} dir="ltr">{fmtAmt(loc.total)}</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </>)}
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+}
+
+// ─── Fixed vs Variable analysis modal ────────────────────────────────────────
+const CURRENT_YEAR = new Date().getFullYear();
+
+function FixedVarModal({ isOpen, onClose, items, isHe, isLight, currency, monthlyIncome, maxYear, initialYear, aiProvider, aiModel, apiKeyOverride }) {
+    const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
+    const [selectedYear, setSelectedYear] = useState(CURRENT_YEAR);
+    const [showLocations, setShowLocations] = useState(false);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = prev; };
+    }, [isOpen]);
+
+    useEffect(() => { if (isOpen) setSelectedYear(initialYear ?? CURRENT_YEAR); }, [isOpen]);
+
+    const monthlyForYear = useCallback((item, year) => {
+        if (item.type === 'loan') {
+            return (item.tracks || [])
+                .filter(tr => trackActiveInYear(tr, year))
+                .reduce((s, tr) => s + (tr.amount || 0), 0);
+        }
+        return item.frequency === 'annual' ? (item.amount || 0) / 12 : (item.amount || 0);
+    }, []);
+
+    const { fixedGroups, varGroups, fixedTotal, variableTotal } = useMemo(() => {
+        if (!isOpen) return { fixedGroups: [], varGroups: [], fixedTotal: 0, variableTotal: 0 };
+        const fixed = [], variable = [];
+        items.filter(it => it.enabled !== false).forEach(it => {
+            const monthly = monthlyForYear(it, selectedYear);
+            if (monthly <= 0) return;
+            (effectiveIsFixed(it) ? fixed : variable).push({ ...it, monthly });
+        });
+        const group = list => {
+            const map = {};
+            list.forEach(it => {
+                const cat = CATEGORIES.find(c => c.id === it.categoryId) || { id: it.categoryId, icon: '📋', labelHe: it.categoryId, labelEn: it.categoryId };
+                if (!map[cat.id]) map[cat.id] = { cat, items: [], total: 0 };
+                map[cat.id].items.push(it);
+                map[cat.id].total += it.monthly;
+            });
+            return Object.values(map).sort((a, b) => b.total - a.total);
+        };
+        return {
+            fixedGroups: group(fixed),
+            varGroups: group(variable),
+            fixedTotal: fixed.reduce((s, it) => s + it.monthly, 0),
+            variableTotal: variable.reduce((s, it) => s + it.monthly, 0),
+        };
+    }, [isOpen, items, selectedYear, monthlyForYear]);
+
+    const [openCats, setOpenCats] = useState(() => new Set());
+    useEffect(() => { if (isOpen) setOpenCats(new Set()); }, [isOpen]);
+    const toggleCat = id => setOpenCats(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+    if (!isOpen) return null;
+
+    const total = fixedTotal + variableTotal;
+    const fixedPct = total > 0 ? Math.round(fixedTotal / total * 100) : 0;
+    const fmt = v => {
+        const abs = Math.abs(v);
+        if (abs >= 1_000_000) return `${currency}${(abs / 1_000_000).toFixed(1)}M`;
+        if (abs >= 1_000) return `${currency}${(abs / 1000).toFixed(abs >= 100_000 ? 0 : 1)}K`;
+        return `${currency}${Math.round(abs).toLocaleString()}`;
+    };
+
+    const renderSection = ({ groups, total: sTotal, Icon, iconColor, label, cardBg, totalColor, sectionKey }) => (
+        <div>
+            <div className="flex items-center gap-2 mb-2.5">
+                <Icon size={12} className={iconColor} />
+                <h3 className={`text-xs font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>{label}</h3>
+                <span className={`ms-auto text-xs font-bold ${totalColor}`} dir={isHe ? 'rtl' : 'ltr'}>{fmt(sTotal)}<span className={`text-[10px] font-normal ms-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? '/חו׳' : '/mo'}</span></span>
+            </div>
+            <div className="space-y-1.5">
+                {groups.map(({ cat, items: catItems, total: catTotal }) => {
+                    const key = `${sectionKey}:${cat.id}`;
+                    const open = openCats.has(key);
+                    return (
+                        <div key={cat.id} className={`rounded-lg overflow-hidden ${cardBg}`}>
+                            <button
+                                className="w-full flex items-center justify-between px-3 py-2"
+                                onClick={() => toggleCat(key)}
+                            >
+                                <span className={`text-[11px] font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                                    {cat.icon} {isHe ? cat.labelHe : cat.labelEn}
+                                    <span className={`ms-1.5 text-[10px] font-normal ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>({catItems.length})</span>
+                                </span>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <span className={`text-[11px] font-bold ${totalColor}`} dir="ltr">{fmt(catTotal)}</span>
+                                    {open
+                                        ? <ChevronUp size={11} className={isLight ? 'text-slate-400' : 'text-gray-500'} />
+                                        : <ChevronDown size={11} className={isLight ? 'text-slate-400' : 'text-gray-500'} />}
+                                </div>
+                            </button>
+                            {open && (
+                                <div className={`px-3 pb-2 space-y-0.5 border-t ${isLight ? 'border-slate-100' : 'border-white/10'}`}>
+                                    {catItems.map(it => (
+                                        <div key={it.id} className="flex items-center justify-between pt-1.5">
+                                            <span className={`text-[10px] truncate me-2 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{it.label}</span>
+                                            <span className={`text-[10px] font-medium shrink-0 ${isLight ? 'text-slate-600' : 'text-gray-300'}`} dir="ltr">{fmt(it.monthly)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+
+    const available = monthlyIncome - fixedTotal;
+    return (
+      <>
+        {createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div
+                className={`relative w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl border shadow-2xl overflow-hidden ${isLight ? 'bg-white border-slate-300 text-slate-800' : 'border-white/30 text-white'}`}
+                style={dragStyle}
+                dir={isHe ? 'rtl' : 'ltr'}
+            >
+                {!isLight && (<><div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" /><div className="absolute inset-0 bg-white/10" /></>)}
+
+                {/* Header */}
+                <div className={`relative z-10 flex items-center gap-3 px-5 py-4 border-b shrink-0 cursor-grab active:cursor-grabbing ${isLight ? 'border-slate-200' : 'border-white/10'}`} onMouseDown={onDragMouseDown}>
+                    <div className={`p-1.5 rounded-lg shrink-0 ${isLight ? 'bg-orange-50 text-orange-600' : 'bg-orange-500/20 text-orange-400'}`}><Lock size={16} /></div>
+                    <span className={`font-bold text-base flex-1 min-w-0 truncate ${isLight ? 'text-slate-800' : 'text-white'}`}>
+                        {isHe ? 'הוצאות קבועות מול משתנות' : 'Fixed vs Variable Expenses'}
+                    </span>
+                    {/* Year navigation */}
+                    <div className="flex items-center gap-1 shrink-0" onMouseDown={e => e.stopPropagation()}>
+                        <button
+                            onClick={() => setSelectedYear(y => y <= CURRENT_YEAR ? maxYear : y - 1)}
+                            className={`p-1 rounded transition-colors ${isLight ? 'hover:bg-slate-100 text-slate-500' : 'hover:bg-white/10 text-gray-400'}`}
+                        ><ChevronUp size={14} /></button>
+                        <span className={`text-sm font-semibold tabular-nums w-10 text-center ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{selectedYear}</span>
+                        <button
+                            onClick={() => setSelectedYear(y => y >= maxYear ? CURRENT_YEAR : y + 1)}
+                            className={`p-1 rounded transition-colors ${isLight ? 'hover:bg-slate-100 text-slate-500' : 'hover:bg-white/10 text-gray-400'}`}
+                        ><ChevronDown size={14} /></button>
+                    </div>
+                    <button onClick={onClose} onMouseDown={e => e.stopPropagation()} className={`p-1.5 rounded-lg transition-colors shrink-0 ${isLight ? 'hover:bg-slate-100 text-slate-400' : 'hover:bg-white/10 text-gray-400'}`}>
+                        <X size={16} />
+                    </button>
+                </div>
+
+                {/* Body */}
+                <div className="relative z-10 overflow-y-auto custom-scrollbar scrollbar-right p-5 space-y-5">
+                    {total === 0 ? (
+                        <p className={`text-center py-8 text-sm ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                            {isHe ? 'אין הוצאות פעילות להצגה' : 'No active expenses to display'}
+                        </p>
+                    ) : (<>
+                        {/* Summary */}
+                        <div className={`rounded-xl p-4 ${isLight ? 'bg-slate-50 border border-slate-200' : 'bg-white/5 border border-white/10'}`}>
+                            {/* Bar — LTR: orange=fixed on left, blue=variable on right, proportional */}
+                            <div className="flex w-full h-2.5 rounded-full overflow-hidden mb-3" dir="ltr">
+                                <div className="h-full bg-orange-500 transition-all" style={{ width: `${fixedPct}%` }} />
+                                <div className="h-full bg-blue-500 flex-1" />
+                            </div>
+                            {/* Data columns — LTR layout: fixed anchored left, variable anchored right */}
+                            <div className="flex items-start" dir="ltr">
+                                {/* Fixed — left-aligned */}
+                                <div className="flex-1 text-left">
+                                    <div className="flex items-center gap-1.5 mb-1">
+                                        <Lock size={11} className={isLight ? 'text-orange-500' : 'text-orange-400'} />
+                                        <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'קבוע' : 'Fixed'}</span>
+                                        <span className={`text-[10px] font-bold ${isLight ? 'text-orange-600' : 'text-orange-400'}`}>{fixedPct}%</span>
+                                    </div>
+                                    <div className={`text-xl font-bold leading-tight ${isLight ? 'text-slate-800' : 'text-white'}`} dir={isHe ? 'rtl' : 'ltr'}>
+                                        {fmt(fixedTotal)}<span className={`text-[10px] font-normal ms-1 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? '/חו׳' : '/mo'}</span>
+                                    </div>
+                                </div>
+                                {/* Variable — right-aligned */}
+                                <div className="flex-1 text-right">
+                                    <div className="flex items-center justify-end gap-1.5 mb-1">
+                                        <span className={`text-[10px] font-bold ${isLight ? 'text-blue-600' : 'text-blue-400'}`}>{100 - fixedPct}%</span>
+                                        <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'משתנה' : 'Variable'}</span>
+                                        <Unlock size={11} className={isLight ? 'text-blue-500' : 'text-blue-400'} />
+                                    </div>
+                                    {(() => {
+                                        const spare = monthlyIncome > 0 ? monthlyIncome - fixedTotal - variableTotal : null;
+                                        const spareOk = spare !== null && spare >= 0;
+                                        const varSpan = (
+                                            <span className={`text-xl font-bold leading-tight ${isLight ? 'text-slate-800' : 'text-white'}`} dir={isHe ? 'rtl' : 'ltr'}>
+                                                {fmt(variableTotal)}<span className={`text-[10px] font-normal ms-1 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? '/חו׳' : '/mo'}</span>
+                                            </span>
+                                        );
+                                        const spareSpan = spare !== null ? (
+                                            <span className={`text-sm font-bold ${spareOk ? (isLight ? 'text-green-600' : 'text-green-400') : (isLight ? 'text-red-500' : 'text-red-400')}`} dir={isHe ? 'rtl' : 'ltr'}>
+                                                {spareOk ? '+' : ''}{fmt(spare)}<span className={`text-[10px] font-normal ms-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? '/חו׳' : '/mo'}</span>
+                                            </span>
+                                        ) : null;
+                                        return (
+                                            <div className="flex items-baseline justify-end gap-2">
+                                                {isHe ? <>{spareSpan}{varSpan}</> : <>{varSpan}{spareSpan}</>}
+                                            </div>
+                                        );
+                                    })()}
+                                    {monthlyIncome > 0 && (() => {
+                                        const available = monthlyIncome - fixedTotal;
+                                        const label = <span className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'פנוי למחיה' : 'Available'}</span>;
+                                        const amount = <span className={`text-base font-bold ${isLight ? 'text-sky-600' : 'text-sky-400'}`} dir={isHe ? 'rtl' : 'ltr'}>{fmt(available)}<span className={`text-[10px] font-normal ms-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? '/חו׳' : '/mo'}</span></span>;
+                                        const globeBtn = (
+                                            <button onClick={() => setShowLocations(true)} title={isHe ? 'המלצות מגורים' : 'Living suggestions'}
+                                                className={`p-0.5 rounded transition-colors shrink-0 ${isLight ? 'text-indigo-400 hover:text-indigo-600' : 'text-indigo-400 hover:text-indigo-300'}`}>
+                                                <Globe size={13} />
+                                            </button>
+                                        );
+                                        return (
+                                            <div className={`mt-2 pt-2 border-t flex items-center justify-end gap-1.5 ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
+                                                {isHe ? <>{globeBtn}{amount}{label}</> : <>{amount}{label}{globeBtn}</>}
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            </div>
+                        </div>
+
+                        {fixedGroups.length > 0 && renderSection({
+                            groups: fixedGroups, total: fixedTotal,
+                            Icon: Lock, iconColor: isLight ? 'text-orange-500' : 'text-orange-400',
+                            label: isHe ? 'הוצאות קבועות' : 'Fixed Expenses',
+                            cardBg: isLight ? 'bg-orange-50 border border-orange-100' : 'bg-orange-500/10 border border-orange-500/15',
+                            totalColor: isLight ? 'text-orange-600' : 'text-orange-400',
+                            sectionKey: 'fixed',
+                        })}
+
+                        {varGroups.length > 0 && renderSection({
+                            groups: varGroups, total: variableTotal,
+                            Icon: Unlock, iconColor: isLight ? 'text-blue-500' : 'text-blue-400',
+                            label: isHe ? 'הוצאות משתנות' : 'Variable Expenses',
+                            cardBg: isLight ? 'bg-blue-50 border border-blue-100' : 'bg-blue-500/10 border border-blue-500/15',
+                            totalColor: isLight ? 'text-blue-600' : 'text-blue-400',
+                            sectionKey: 'var',
+                        })}
+
+                    </>)}
+                </div>
+            </div>
+        </div>,
+        document.body
+    )}
+    <LocationSuggestModal
+        isOpen={showLocations}
+        onClose={() => setShowLocations(false)}
+        availableAmount={available}
+        userMonthlyCost={total}
+        monthlySavingsAmount={Math.max(0, monthlyIncome - total)}
+        withdrawalMonthlyAmount={monthlyIncome}
+        year={selectedYear}
+        currency={currency}
+        isHe={isHe}
+        isLight={isLight}
+        aiProvider={aiProvider}
+        aiModel={aiModel}
+        apiKeyOverride={apiKeyOverride}
+    />
+  </>
+);
+}
+
 // Budget is stored globally in Firestore per user — not per-profile.
 // setInputs is only called when the user explicitly clicks "adopt as income target".
 export default function BudgetPlanner({ inputs, setInputs, results, t, language, isLight, aiProvider, aiModel, apiKeyOverride }) {
@@ -1985,6 +3384,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const { dragStyle: aiDragStyle, onDragMouseDown: onAiDragMouseDown } = useDraggable(aiModalOpen);
     const [searchQuery, setSearchQuery] = useState('');
     const [showStats, setShowStats] = useState(false);
+    const [showFixedVar, setShowFixedVar] = useState(false);
     const [sliderConsumed, setSliderConsumed] = useState(0);
     const currentYear = new Date().getFullYear();
     const retirementEndYear = currentYear + Math.max(0, Math.round(
@@ -3208,6 +4608,13 @@ Gap vs target and what can be optimized.`;
                 >
                     <BarChart3 size={14} />
                 </button>
+                <button
+                    onClick={() => setShowFixedVar(true)}
+                    title={isHe ? 'קבוע מול משתנה' : 'Fixed vs Variable'}
+                    className={`shrink-0 p-2 rounded-xl border transition-colors ${isLight ? 'bg-orange-50 border-orange-200 text-orange-600 hover:bg-orange-100 hover:border-orange-300' : 'bg-orange-500/20 border-orange-500/40 text-orange-400 hover:bg-orange-500/30'}`}
+                >
+                    <Lock size={14} />
+                </button>
                 {retirementAdj && (
                     <button
                         onClick={() => setShowRetirementMode(v => !v)}
@@ -3472,6 +4879,20 @@ Gap vs target and what can be optimized.`;
             retirementAdj={retirementAdj}
             showRetirementMode={showRetirementMode}
             setShowRetirementMode={setShowRetirementMode}
+        />
+        <FixedVarModal
+            isOpen={showFixedVar}
+            onClose={() => setShowFixedVar(false)}
+            items={items}
+            isHe={isHe}
+            isLight={isLight}
+            currency={currency}
+            monthlyIncome={parseFloat(inputs?.monthlyNetIncomeDesired) || 0}
+            maxYear={retirementEndYear}
+            initialYear={selectedYear}
+            aiProvider={aiProvider}
+            aiModel={aiModel}
+            apiKeyOverride={apiKeyOverride}
         />
         </>
     );
