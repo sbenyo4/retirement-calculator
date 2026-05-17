@@ -309,6 +309,32 @@ export async function setSmartAlerts(uid, alerts) {
     await setDoc(smartAlertsRef(uid), { alerts, updatedAt: Date.now() });
 }
 
+// ─── Trip Plans ────────────────────────────────────────────────────
+
+function tripPlansRef(uid) {
+    return userDoc(uid, 'data', 'tripPlans');
+}
+
+export async function getTripPlans(uid) {
+    const snap = await getDoc(tripPlansRef(uid));
+    return snap.exists() ? (snap.data().plans || []) : [];
+}
+
+export async function saveTripPlan(uid, plan) {
+    const snap = await getDoc(tripPlansRef(uid));
+    const plans = snap.exists() ? (snap.data().plans || []) : [];
+    const idx = plans.findIndex(p => p.id === plan.id);
+    const updated = idx >= 0 ? plans.map(p => p.id === plan.id ? plan : p) : [...plans, plan];
+    await setDoc(tripPlansRef(uid), { plans: stripUndefinedDeep(updated), updatedAt: Date.now() });
+}
+
+export async function deleteTripPlan(uid, planId) {
+    const snap = await getDoc(tripPlansRef(uid));
+    if (!snap.exists()) return;
+    const plans = (snap.data().plans || []).filter(p => p.id !== planId);
+    await setDoc(tripPlansRef(uid), { plans, updatedAt: Date.now() });
+}
+
 // ─── Rate Limit ────────────────────────────────────────────────────
 
 export async function getRateLimitData(uid) {

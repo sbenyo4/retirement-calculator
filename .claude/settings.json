@@ -16,7 +16,10 @@
       "Bash(grep -rn src= src/components/*.jsx)",
       "Bash(grep -rn \"type=\"\"number\"\"\" src/components/*.jsx)",
       "Bash(grep -rn \"import.*useState\\\\|import.*useEffect\" src/components/*.jsx src/hooks/*.js)",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(npx tsc *)",
+      "Bash(npm install *)",
+      "Bash(npm list *)"
     ]
   }
 }
