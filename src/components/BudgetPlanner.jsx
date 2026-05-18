@@ -1994,15 +1994,29 @@ const COST_KEYS = [
     { key: 'other',         labelHe: 'אחרים',    labelEn: 'Other'         },
 ];
 const PLAN_COST_KEYS = [
-    { key: 'flights',       labelHe: 'טיסות',     labelEn: 'Flights'        },
-    { key: 'housing',       labelHe: 'לינה',       labelEn: 'Housing'        },
-    { key: 'food',          labelHe: 'אוכל',       labelEn: 'Food'           },
-    { key: 'transport',     labelHe: 'תחבורה',     labelEn: 'Transport'      },
-    { key: 'entertainment', labelHe: 'בילויים',    labelEn: 'Entertainment'  },
-    { key: 'carRental',     labelHe: 'שכירת רכב',  labelEn: 'Car rental'     },
-    { key: 'fuel',          labelHe: 'דלק',        labelEn: 'Fuel'           },
-    { key: 'other',         labelHe: 'אחרים',      labelEn: 'Other'          },
+    { key: 'flights',       labelHe: 'טיסות',        labelEn: 'Flights'        },
+    { key: 'housing',       labelHe: 'לינה',          labelEn: 'Housing'        },
+    { key: 'food',          labelHe: 'אוכל',          labelEn: 'Food'           },
+    { key: 'transport',     labelHe: 'תחבורה',        labelEn: 'Transport'      },
+    { key: 'entertainment', labelHe: 'בילויים',       labelEn: 'Entertainment'  },
+    { key: 'carRental',     labelHe: 'שכירת רכב',     labelEn: 'Car rental'     },
+    { key: 'fuel',          labelHe: 'דלק',           labelEn: 'Fuel'           },
+    { key: 'insurance',     labelHe: 'ביטוח נסיעות',  labelEn: 'Travel insurance'},
+    { key: 'esim',          labelHe: 'eSIM / אינטרנט', labelEn: 'eSIM / Internet'},
+    { key: 'other',         labelHe: 'אחרים',         labelEn: 'Other'          },
 ];
+const TIP_META = {
+    currency:    { icon: '💱', he: 'מטבע',            en: 'Currency'         },
+    electricity: { icon: '🔌', he: 'חשמל ושקעים',     en: 'Electricity'      },
+    clothing:    { icon: '👕', he: 'ביגוד',            en: 'Clothing'         },
+    health:      { icon: '💊', he: 'בריאות',           en: 'Health'           },
+    customs:     { icon: '🤝', he: 'תרבות ונימוסים',  en: 'Customs & Culture'},
+    transport:   { icon: '🚌', he: 'תחבורה מקומית',   en: 'Getting Around'   },
+    language:    { icon: '🗣️', he: 'שפה',             en: 'Language'         },
+    safety:      { icon: '🛡️', he: 'בטיחות',          en: 'Safety'           },
+    visa:        { icon: '🛂', he: 'ויזה וכניסה',      en: 'Visa & Entry'     },
+    other:       { icon: '📌', he: 'כללי',             en: 'General'          },
+};
 const WORLD_ATLAS_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
 let _worldCache = null;
 let _worldPromise = null;
@@ -2078,6 +2092,24 @@ function FlagBadge({ code, isLight }) {
                 alt={code}
                 style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
             />
+        </span>
+    );
+}
+
+function PlanFlags({ codes, isLight, showShape = false }) {
+    const valid = (codes || []).filter(c => c && c.length === 2);
+    if (valid.length === 0) return null;
+    if (valid.length === 1) {
+        return (
+            <>
+                <FlagBadge code={valid[0]} isLight={isLight} />
+                {showShape && <CountryShape code={valid[0]} size={28} isLight={isLight} />}
+            </>
+        );
+    }
+    return (
+        <span className="inline-flex items-center gap-1 shrink-0">
+            {valid.slice(0, 3).map(c => <FlagBadge key={c} code={c} isLight={isLight} />)}
         </span>
     );
 }
@@ -2263,6 +2295,8 @@ function parseAiJsonObject(reply) {
     }
     const jsonText = text
         .slice(start, end + 1)
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+        .replace(/[\r\n]/g, ' ')
         .replace(/,\s*([}\]])/g, '$1');
     return JSON.parse(jsonText);
 }
@@ -2685,7 +2719,9 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
     const [savingPlan, setSavingPlan] = useState(false);
     const [planSaved, setPlanSaved] = useState(false);
     const [showSavedPlans, setShowSavedPlans] = useState(false);
-    const [costBreakdownOpen, setCostBreakdownOpen] = useState(false);
+    const [planSort, setPlanSort] = useState({ key: 'createdAt', dir: 'desc' });
+    const [loadedPlanId, setLoadedPlanId] = useState(null);
+    const [openSection, setOpenSection] = useState(null);
     const [daysFromMonthsInput, setDaysFromMonthsInput] = useState('');
     const [nightsOverride, setNightsOverride] = useState(null);
     const { currentUser } = useAuth();
@@ -2834,14 +2870,14 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         const nowYear = new Date().getFullYear();
         const yearCtxHe = `שנת הפניה: ${nowYear}.`;
         const yearCtxEn = `Reference year: ${nowYear}.`;
-        const schema = `{"title":"short name: main city/country · N days e.g. בנגקוק · 10 ימים","countryCode":"ISO 3166-1 alpha-2 e.g. PT TH US JP FR","summary":"short itinerary description","level":"cheap|medium|expensive — infer from the request or the prices chosen","nights":0,"bestMonths":"e.g. Apr–Oct (shoulder season: good weather, lower prices)","note":"key pricing assumptions including fuel price per litre if car used","costs":{"flights":0,"housing":0,"food":0,"transport":0,"entertainment":0,"carRental":0,"fuel":0,"other":0},"total":0}`;
+        const schema = `{"title":"1 country: main city · N nights e.g. בנגקוק · 10 ימים; 2 countries: CountryA + CountryB · N nights e.g. תאילנד + קמבודיה · 14 ימים; 3+ countries: region/continent · N nights e.g. דרום-מזרח אסיה · 21 ימים","countryCode":"primary destination ISO alpha-2 e.g. PT TH JP","countryCodes":["XX","YY"],"summary":"1–2 sentence overview of the trip","itinerary":[{"segment":"e.g. Days 1–3","place":"city or area","plan":"2–3 sentences: where to stay, key activities, highlights"}],"tips":[{"cat":"currency|electricity|clothing|health|customs|transport|language|safety|visa|other","text":"concise practical tip"}],"level":"cheap|medium|expensive — infer from the request or the prices chosen","nights":0,"bestMonths":"e.g. Apr–Oct (shoulder season: good weather, lower prices)","note":"key pricing assumptions including fuel price per litre if car used","costs":{"flights":0,"housing":0,"food":0,"transport":0,"entertainment":0,"carRental":0,"fuel":0,"insurance":0,"esim":0,"other":0},"total":0}`;
         const liveRates = await fetchIlsRates();
         const ratesLine = liveRates
             ? `Live exchange rates (fetched now): 1 USD = ${liveRates.USD} ILS, 1 EUR = ${liveRates.EUR} ILS, 1 GBP = ${liveRates.GBP} ILS, 1 THB = ${liveRates.THB} ILS, 1 JPY = ${liveRates.JPY} ILS, 1 CAD = ${liveRates.CAD} ILS, 1 AUD = ${liveRates.AUD} ILS. Use these exact rates for all conversions.`
             : `Fallback exchange rates: 1 USD = 3.65 ILS, 1 EUR = 4.0 ILS, 1 GBP = 4.7 ILS, 1 THB = 0.10 ILS, 1 JPY = 0.024 ILS.`;
         const systemPrompt = `You are a global travel cost advisor. Respond ONLY with valid JSON, no markdown, no explanation outside the JSON. All prices must be grounded in real, current market data for the destination. Before returning numbers, verify each figure against known benchmarks: typical Airbnb/hotel rates, Skyscanner flight ranges from TLV, local food costs, and official or widely-reported fuel prices. Do not round to suspiciously even numbers or guess — use realistic estimates a real traveler would encounter in ${new Date().getFullYear()}. For routes under 5 hours from TLV (all of Europe, Middle East, Turkey, North Africa, Cyprus) price non-stop flights only.\n${ratesLine}\n${COST_OF_LIVING_PRICE_CONTEXT}`;
-        const userMsgHe = `${yearCtxHe} בקשת הנסיעה: "${tripRequest}". חשב עלויות ריאליסטיות ומדויקות בשקלים (ILS) לטיול המבוקש כולו — המספרים חייבים לשקף מחירי שוק אמיתיים של ${nowYear}, לא הערכות עגולות. countryCode = קוד ISO 3166-1 alpha-2 של מדינת היעד הראשית (לדוגמה: PT לפורטוגל, TH לתאילנד, JP ליפן) — חובה למלא 2 אותיות באנגלית. flights = כרטיס טיסה הלוך-חזור מ-TLV לאדם ללא עצירה אם הטיסה קצרה מ-5 שעות. housing = עלות לינה כוללת לכל הלילות (לא מחיר ללילה). food/transport/entertainment/other = עלות כוללת לכל הטיול. carRental = עלות שכירת הרכב בלבד (ללא דלק). fuel = עלות דלק מחושבת לפי מחיר הדלק המקומי האמיתי במדינת היעד וצריכה משוערת לפי ק"מ מתוכנן. אם לא התבקש רכב, fuel=0. total = סכום כל הקטגוריות. level = רמת הנסיעה כפי שביקשתי או שהסקת (cheap/medium/expensive). bestMonths = החודשים המומלצים לנסיעה עם הסבר קצר (מזג אוויר/מחיר/עומס). note = הנחות תמחור קצרות בלבד — ללא אזכור אינפלציה, ללא שנים עתידיות. ציין רק מחיר דלק לליטר אם השתמשת בו. החזר JSON בלבד: ${schema}. title, summary, bestMonths ו-note בעברית.`;
-        const userMsgEn = `${yearCtxEn} Trip request: "${tripRequest}". Calculate accurate, realistic costs in ILS (Israeli shekels) for the full trip — numbers must reflect real ${nowYear} market prices, not round guesses. countryCode = ISO 3166-1 alpha-2 code of the main destination country (e.g. PT for Portugal, TH for Thailand, JP for Japan) — required, exactly 2 uppercase letters. flights = round-trip non-stop airfare from TLV per person (non-stop for routes under 5 hours). housing = total accommodation cost for all nights (not per night). food/transport/entertainment/other = total cost for the entire trip. carRental = car rental cost only (excluding fuel). fuel = fuel cost calculated using the destination country's real local fuel price per litre and estimated mileage for the trip; if no car requested, fuel=0. total = sum of all categories. level = trip level as requested or inferred (cheap/medium/expensive). bestMonths = recommended travel months with a short reason (weather/price/crowds). note = brief pricing assumptions only — no mention of inflation, no future years. Include fuel price per litre if used. Return ONLY JSON: ${schema}.`;
+        const userMsgHe = `${yearCtxHe} בקשת הנסיעה: "${tripRequest}". חשב עלויות ריאליסטיות ומדויקות בשקלים (ILS) לטיול המבוקש כולו — המספרים חייבים לשקף מחירי שוק אמיתיים של ${nowYear}, לא הערכות עגולות. countryCode = קוד ISO alpha-2 של מדינת היעד הראשית. countryCodes = מערך JSON עם קודי ISO alpha-2 לכל מדינות היעד (לדוגמה: ["TH","KH"] לתאילנד + קמבודיה) — אם מדינה אחת, החזר מערך עם איבר אחד. flights = כרטיס טיסה הלוך-חזור מ-TLV לאדם ללא עצירה אם הטיסה קצרה מ-5 שעות. housing = עלות לינה כוללת לכל הלילות (לא מחיר ללילה). food/transport/entertainment/other = עלות כוללת לכל הטיול. carRental = עלות שכירת הרכב בלבד (ללא דלק). fuel = עלות דלק מחושבת לפי מחיר הדלק המקומי האמיתי במדינת היעד וצריכה משוערת לפי ק"מ מתוכנן. אם לא התבקש רכב, fuel=0. insurance = עלות ביטוח נסיעות מציאותית לאזרח ישראלי לאותה תקופה ויעד. esim = עלות eSIM או כרטיס SIM מקומי לאינטרנט לאורך הנסיעה. total = סכום כל הקטגוריות. level = רמת הנסיעה כפי שביקשתי או שהסקת (cheap/medium/expensive). bestMonths = החודשים המומלצים לנסיעה עם הסבר קצר (מזג אוויר/מחיר/עומס). note = הנחות תמחור קצרות בלבד — ללא אזכור אינפלציה, ללא שנים עתידיות. ציין רק מחיר דלק לליטר אם השתמשת בו. itinerary = מערך של שלבי הטיול לפי סדר כרונולוגי — כל שלב עם segment (ימים, למשל "ימים 1–3"), place (שם המקום), plan (2-3 משפטים: לינה, פעילויות, אטרקציות). כסה את כל הלילות בצורה מאוזנת. tips = מערך של 6-9 טיפים מעשיים ליעד — כל טיפ עם cat (אחד מ: currency, electricity, clothing, health, customs, transport, language, safety, visa, other) ו-text (משפט קצר ומעשי בעברית). חובה לכלול: מטבע (שם, המרה משקל), חשמל (סוג שקע, מתח, האם צריך מתאם), ביגוד (לפי עונה ותרבות), ויזה לאזרח ישראלי, ועוד נושאים רלוונטיים. החזר JSON בלבד: ${schema}. title, summary, itinerary, bestMonths, tips ו-note בעברית.`;
+        const userMsgEn = `${yearCtxEn} Trip request: "${tripRequest}". Calculate accurate, realistic costs in ILS (Israeli shekels) for the full trip — numbers must reflect real ${nowYear} market prices, not round guesses. countryCode = ISO alpha-2 code of the primary destination. countryCodes = JSON array of ISO alpha-2 codes for ALL destination countries (e.g. ["TH","KH"] for Thailand + Cambodia; for a single country use a one-element array). flights = round-trip non-stop airfare from TLV per person (non-stop for routes under 5 hours). housing = total accommodation cost for all nights (not per night). food/transport/entertainment/other = total cost for the entire trip. carRental = car rental cost only (excluding fuel). fuel = fuel cost calculated using the destination country's real local fuel price per litre and estimated mileage for the trip; if no car requested, fuel=0. insurance = realistic travel insurance cost for an Israeli citizen for that duration and destination. esim = cost of an eSIM or local SIM card for internet connectivity throughout the trip. total = sum of all categories. level = trip level as requested or inferred (cheap/medium/expensive). bestMonths = recommended travel months with a short reason (weather/price/crowds). note = brief pricing assumptions only — no mention of inflation, no future years. itinerary = chronological array of trip segments — each with segment (days range e.g. "Days 1–3"), place (city/area name), plan (2–3 sentences: accommodation type, key activities, highlights). Cover all nights proportionally. tips = array of 6–9 practical destination tips — each with cat (one of: currency, electricity, clothing, health, customs, transport, language, safety, visa, other) and text (short, actionable sentence in English). Must include: currency (name, approx rate from ILS), electricity (plug type, voltage, adapter needed?), clothing (season/dress code), visa for Israeli passport holders, and other relevant topics. Include fuel price per litre if used. Return ONLY JSON: ${schema}.`;
         const geminiKey = aiProvider === 'gemini'
             ? (apiKeyOverride?.trim() || import.meta.env.VITE_GEMINI_API_KEY?.trim())
             : null;
@@ -2877,36 +2913,59 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         };
 
         try {
-            const [r1, r2] = await Promise.all([runOnce(), runOnceWithGrounding()]);
+            const [s1, s2] = await Promise.allSettled([runOnce(), runOnceWithGrounding()]);
+            const r1raw = s1.status === 'fulfilled' ? s1.value : null;
+            const r2raw = s2.status === 'fulfilled' ? s2.value : null;
+            const r1 = r1raw || r2raw;
+            const r2 = r2raw || r1raw;
+            if (!r1) throw (s1.reason ?? s2.reason ?? new Error('Both AI calls returned invalid JSON'));
             fixTotal(r1); fixTotal(r2);
 
             const avgCost = key => Math.round((numberOrZero(r1.costs?.[key]) + numberOrZero(r2.costs?.[key])) / 2);
             const costs = Object.fromEntries(
-                ['flights','housing','food','transport','entertainment','carRental','fuel','other'].map(k => [k, avgCost(k)])
+                ['flights','housing','food','transport','entertainment','carRental','fuel','insurance','esim','other'].map(k => [k, avgCost(k)])
             );
             const nights = Math.round((numberOrZero(r1.nights) + numberOrZero(r2.nights)) / 2);
             const tripLevel = r1.level || r2.level || 'medium';
             const countryCode = r1.countryCode || r2.countryCode || '';
             const total = Object.values(costs).reduce((s, v) => s + v, 0);
 
+            const codes1 = Array.isArray(r1.countryCodes) ? r1.countryCodes : (r1.countryCode ? [r1.countryCode] : []);
+            const codes2 = Array.isArray(r2.countryCodes) ? r2.countryCodes : (r2.countryCode ? [r2.countryCode] : []);
+            const countryCodes = [...new Set([...codes1, ...codes2])]
+                .filter(c => typeof c === 'string' && /^[A-Za-z]{2}$/.test(c))
+                .map(c => c.toUpperCase());
+
+            const itinerary = Array.isArray(r1.itinerary) && r1.itinerary.length > 0
+                ? r1.itinerary
+                : (Array.isArray(r2.itinerary) && r2.itinerary.length > 0 ? r2.itinerary : null);
+            const tips = Array.isArray(r1.tips) && r1.tips.length > 0
+                ? r1.tips
+                : (Array.isArray(r2.tips) && r2.tips.length > 0 ? r2.tips : null);
+
             const result = {
                 ...r1,
                 nights,
                 costs,
                 total,
-                countryCode,
+                countryCode: countryCodes[0] || countryCode,
+                countryCodes: countryCodes.length > 0 ? countryCodes : (countryCode ? [countryCode] : []),
                 level: tripLevel,
                 bestMonths: r1.bestMonths || r2.bestMonths,
+                itinerary,
+                tips,
             };
             setPlannedTrip(result);
             setNightsOverride(null);
-            setCostBreakdownOpen(false);
+            setOpenSection(null);
+            const lp = savedPlans.find(p => p.id === loadedPlanId);
+            if (!lp || tripRequest.trim() !== lp.request?.trim()) setLoadedPlanId(null);
         } catch (err) {
             setPlanError(aiErrorMessage(err, isHe));
         } finally {
             setPlanLoading(false);
         }
-    }, [tripRequest, isHe, aiProvider, aiModel, apiKeyOverride]);
+    }, [tripRequest, isHe, aiProvider, aiModel, apiKeyOverride, loadedPlanId, savedPlans]);
 
     const savePlan = useCallback(async () => {
         if (!plannedTrip || !currentUser?.uid) return;
@@ -2916,7 +2975,8 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
             const dateLabel = new Date(now).toLocaleDateString(isHe ? 'he-IL' : 'en-IL', { month: 'short', year: 'numeric' });
             const title = plannedTrip.title || tripRequest.slice(0, 35);
             const countryCode = plannedTrip.countryCode || '';
-            const plan = { id: now.toString(), title, countryCode, dateLabel, request: tripRequest, result: plannedTrip, savedAt: now };
+            const countryCodes = plannedTrip.countryCodes?.length > 0 ? plannedTrip.countryCodes : (countryCode ? [countryCode] : []);
+            const plan = { id: now.toString(), title, countryCode, countryCodes, dateLabel, request: tripRequest, result: plannedTrip, savedAt: now };
             await saveTripPlan(currentUser.uid, plan);
             setSavedPlans(prev => [...prev, plan]);
             setPlanSaved(true);
@@ -2927,6 +2987,26 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
             setSavingPlan(false);
         }
     }, [plannedTrip, tripRequest, isHe, currentUser?.uid]);
+
+    const updatePlan = useCallback(async () => {
+        if (!plannedTrip || !loadedPlanId || !currentUser?.uid) return;
+        setSavingPlan(true);
+        try {
+            const existing = savedPlans.find(p => p.id === loadedPlanId);
+            if (!existing) return;
+            const countryCode = plannedTrip.countryCode || '';
+            const countryCodes = plannedTrip.countryCodes?.length > 0 ? plannedTrip.countryCodes : (countryCode ? [countryCode] : []);
+            const updated = { ...existing, title: plannedTrip.title || tripRequest.slice(0, 35), countryCode, countryCodes, request: tripRequest, result: plannedTrip };
+            await saveTripPlan(currentUser.uid, updated);
+            setSavedPlans(prev => prev.map(p => p.id === loadedPlanId ? updated : p));
+            setPlanSaved(true);
+            setTimeout(() => setPlanSaved(false), 2000);
+        } catch (err) {
+            console.error('Failed to update trip plan', err);
+        } finally {
+            setSavingPlan(false);
+        }
+    }, [plannedTrip, loadedPlanId, savedPlans, tripRequest, currentUser?.uid]);
 
     const deletePlan = useCallback(async (planId, e) => {
         e.stopPropagation();
@@ -2939,9 +3019,9 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         setTripRequest(plan.request);
         setPlannedTrip(plan.result);
         setNightsOverride(null);
-        setCostBreakdownOpen(false);
-        setPlanSaved(true);
-        setTimeout(() => setPlanSaved(false), 100);
+        setOpenSection(null);
+        setLoadedPlanId(plan.id);
+        setPlanSaved(false);
         setShowSavedPlans(false);
     }, []);
 
@@ -3044,7 +3124,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
     return createPortal(
         <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-            <div data-draggable-modal className={`relative w-full max-w-lg max-h-[calc(100vh-2rem)] flex flex-col rounded-2xl shadow-2xl overflow-hidden ${isLight ? 'bg-white' : ''}`} style={dragStyle} dir={isHe ? 'rtl' : 'ltr'}>
+            <div data-draggable-modal className={`relative w-full max-w-5xl h-[min(calc(100vh-2rem),680px)] flex flex-col rounded-2xl shadow-2xl overflow-hidden ${isLight ? 'bg-white' : ''}`} style={dragStyle} dir={isHe ? 'rtl' : 'ltr'}>
                 {!isLight && <><div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-indigo-900" /><div className="absolute inset-0 bg-white/5" /></>}
                 {/* Header */}
                 <div className={`relative z-10 flex items-center gap-3 px-5 py-4 border-b shrink-0 cursor-grab active:cursor-grabbing ${isLight ? 'border-slate-200' : 'border-white/10'}`} onMouseDown={onDragMouseDown}>
@@ -3159,8 +3239,9 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
 
                 </div>
                 {/* Body */}
-                <div className="relative z-10 overflow-y-auto custom-scrollbar scrollbar-right flex-1">
+                <div className="relative z-10 flex flex-col flex-1 min-h-0">
                 {mode === 'find' && (
+                <div className="overflow-y-auto custom-scrollbar scrollbar-right flex-1">
                 <div className="p-4 space-y-3">
                     {loading && (
                         <div className="flex flex-col items-center justify-center py-12 gap-3">
@@ -3365,9 +3446,12 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                         })}
                     </>)}
                 </div>
+                </div>
                 )}
                 {mode === 'plan' && (
-                <div className="p-4 space-y-3">
+                <div className="flex flex-1 min-h-0">
+                {/* Left: input + saved plans */}
+                <div className={`flex-1 min-w-0 border-e flex flex-col overflow-hidden p-4 gap-3 ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
                     <textarea
                         value={tripRequest}
                         onChange={e => setTripRequest(e.target.value)}
@@ -3387,38 +3471,84 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                 ? (isHe ? 'חשב מחדש' : 'Recalculate')
                                 : (isHe ? 'חשב עלות נסיעה' : 'Calculate trip cost')}
                         </button>
+                        {plannedTrip && loadedPlanId && (() => { const lp = savedPlans.find(p => p.id === loadedPlanId); return lp && (tripRequest !== lp.request || JSON.stringify(plannedTrip) !== JSON.stringify(lp.result)); })() && (
+                            <button
+                                onClick={updatePlan}
+                                disabled={savingPlan}
+                                title={isHe ? 'עדכן תוכנית קיימת' : 'Update existing plan'}
+                                className={`px-3 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-45 inline-flex items-center gap-1.5 ${planSaved
+                                    ? (isLight ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-green-500/15 text-green-300 border border-green-500/30')
+                                    : (isLight ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-200' : 'bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 border border-indigo-500/30')}`}
+                            >
+                                {savingPlan ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                                {planSaved ? (isHe ? '✓ עודכן' : '✓ Updated') : (isHe ? 'עדכן' : 'Update')}
+                            </button>
+                        )}
                         {plannedTrip && (
                             <button
                                 onClick={savePlan}
                                 disabled={savingPlan}
-                                title={isHe ? 'שמור תוכנית' : 'Save plan'}
-                                className={`px-3 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-45 inline-flex items-center gap-1.5 ${planSaved
+                                title={isHe ? 'שמור תוכנית חדשה' : 'Save as new plan'}
+                                className={`px-3 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-45 inline-flex items-center gap-1.5 ${planSaved && !loadedPlanId
                                     ? (isLight ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-green-500/15 text-green-300 border border-green-500/30')
                                     : (isLight ? 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200' : 'bg-white/5 text-gray-300 hover:bg-white/10 border border-white/10')}`}
                             >
                                 {savingPlan ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                                {planSaved ? (isHe ? '✓ נשמר' : '✓ Saved') : (isHe ? 'שמור' : 'Save')}
-                            </button>
-                        )}
-                        {savedPlans.length > 0 && (
-                            <button
-                                onClick={() => setShowSavedPlans(v => !v)}
-                                title={isHe ? 'תוכניות שמורות' : 'Saved plans'}
-                                className={`px-3 py-2 rounded-xl text-sm transition-colors inline-flex items-center gap-1.5 border ${showSavedPlans
-                                    ? (isLight ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30')
-                                    : (isLight ? 'bg-slate-100 text-slate-500 hover:bg-slate-200 border-slate-200' : 'bg-white/5 text-gray-400 hover:bg-white/10 border-white/10')}`}
-                            >
-                                <History size={14} />
-                                <span className="text-xs font-semibold">{savedPlans.length}</span>
+                                {isHe ? 'שמור' : 'Save'}
                             </button>
                         )}
                     </div>
-                    {showSavedPlans && savedPlans.length > 0 && (
-                        <div className={`rounded-xl border overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-white/5 border-white/10'}`}>
-                            <div className={`px-4 py-2 border-b ${isLight ? 'bg-slate-50 border-slate-100' : 'bg-white/5 border-white/10'}`}>
-                                <span className={`text-xs font-semibold ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'תוכניות שמורות' : 'Saved plans'}</span>
+                    {savedPlans.length > 0 && (
+                        <div className={`rounded-xl border flex-1 min-h-0 flex flex-col overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-white/5 border-white/10'}`}>
+                            <button
+                                type="button"
+                                onClick={() => setShowSavedPlans(v => !v)}
+                                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/5'}`}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <History size={13} className={isLight ? 'text-indigo-500' : 'text-indigo-400'} />
+                                    <span className={`text-xs font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>{isHe ? 'תוכניות שמורות' : 'Saved plans'}</span>
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isLight ? 'bg-indigo-100 text-indigo-600' : 'bg-indigo-500/20 text-indigo-300'}`}>{savedPlans.length}</span>
+                                </div>
+                                {showSavedPlans ? <ChevronUp size={13} className={isLight ? 'text-slate-400' : 'text-gray-500'} /> : <ChevronDown size={13} className={isLight ? 'text-slate-400' : 'text-gray-500'} />}
+                            </button>
+                            {showSavedPlans && (<div className={`border-t flex flex-col flex-1 min-h-0 ${isLight ? 'border-slate-100' : 'border-white/10'}`}>
+                            <div className={`flex items-center gap-1 px-3 py-1.5 border-b flex-wrap ${isLight ? 'border-slate-100 bg-slate-50' : 'border-white/5 bg-white/3'}`}>
+                                {[
+                                    { key: 'price',     he: 'מחיר',  en: 'Price'    },
+                                    { key: 'nights',    he: 'ימים',   en: 'Nights'   },
+                                    { key: 'level',     he: 'רמה',    en: 'Level'    },
+                                    { key: 'createdAt', he: 'תאריך',  en: 'Date'     },
+                                ].map(({ key, he, en }) => {
+                                    const active = planSort.key === key;
+                                    return (
+                                        <button
+                                            key={key}
+                                            type="button"
+                                            onClick={() => setPlanSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'createdAt' ? 'desc' : 'asc' })}
+                                            className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-colors ${active ? (isLight ? 'bg-indigo-100 text-indigo-600' : 'bg-indigo-500/25 text-indigo-300') : (isLight ? 'text-slate-400 hover:bg-slate-200' : 'text-gray-500 hover:bg-white/10')}`}
+                                        >
+                                            {isHe ? he : en}
+                                            {active && (planSort.dir === 'asc' ? <ChevronUp size={9} /> : <ChevronDown size={9} />)}
+                                        </button>
+                                    );
+                                })}
                             </div>
-                            {savedPlans.map(plan => {
+                            <div className="overflow-y-auto custom-scrollbar scrollbar-right flex-1 min-h-0">
+                            {(() => {
+                                const LEVEL_ORDER = { cheap: 1, medium: 2, expensive: 3 };
+                                return [...savedPlans].sort((a, b) => {
+                                    const d = planSort.dir === 'asc' ? 1 : -1;
+                                    if (planSort.key === 'price') {
+                                        const at = PLAN_COST_KEYS.reduce((s, { key }) => s + Math.max(0, numberOrZero(a.result?.costs?.[key])), 0);
+                                        const bt = PLAN_COST_KEYS.reduce((s, { key }) => s + Math.max(0, numberOrZero(b.result?.costs?.[key])), 0);
+                                        return d * (at - bt);
+                                    }
+                                    if (planSort.key === 'nights') return d * ((numberOrZero(a.result?.nights) || 0) - (numberOrZero(b.result?.nights) || 0));
+                                    if (planSort.key === 'level') return d * ((LEVEL_ORDER[a.result?.level] || 2) - (LEVEL_ORDER[b.result?.level] || 2));
+                                    return d * ((a.createdAt || 0) - (b.createdAt || 0));
+                                });
+                            })().map(plan => {
                                 const planTotal = PLAN_COST_KEYS.reduce((s, { key }) => s + Math.max(0, numberOrZero(plan.result?.costs?.[key])), 0);
                                 const savedLevelMap = {
                                     cheap:     { he: 'זול',     en: 'Budget',   cls: isLight ? 'bg-green-100 text-green-700' : 'bg-green-500/20 text-green-300' },
@@ -3430,10 +3560,12 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                 <button
                                     key={plan.id}
                                     onClick={() => loadPlan(plan)}
-                                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-start transition-colors border-b last:border-0 ${isLight ? 'hover:bg-slate-50 border-slate-100' : 'hover:bg-white/5 border-white/5'}`}
+                                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-start transition-colors border-b last:border-0 ${plan.id === loadedPlanId
+                                        ? (isLight ? 'bg-indigo-50 border-indigo-100' : 'bg-indigo-500/10 border-indigo-500/20')
+                                        : (isLight ? 'hover:bg-slate-50 border-slate-100' : 'hover:bg-white/5 border-white/5')}`}
                                 >
-                                    {plan.countryCode
-                                        ? <><FlagBadge code={plan.countryCode} isLight={isLight} /><CountryShape code={plan.countryCode} size={24} isLight={isLight} /></>
+                                    {(plan.countryCodes?.length > 0 || plan.countryCode)
+                                        ? <PlanFlags codes={plan.countryCodes || (plan.countryCode ? [plan.countryCode] : [])} isLight={isLight} showShape={(plan.countryCodes?.length ?? 1) === 1} />
                                         : <Route size={13} className={`shrink-0 ${isLight ? 'text-violet-500' : 'text-violet-400'}`} />}
                                     <div className="flex-1 min-w-0">
                                         <p className={`text-xs font-semibold truncate ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
@@ -3458,8 +3590,14 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                 </button>
                                 );
                             })}
+                            </div>
                         </div>
+                        )}
+                    </div>
                     )}
+                </div>
+                {/* Right: results */}
+                <div className="flex-1 min-w-0 overflow-hidden flex flex-col p-4 gap-3">
                     {planLoading && (
                         <div className="flex flex-col items-center justify-center py-8 gap-3">
                             <Loader2 size={22} className={`animate-spin ${isLight ? 'text-violet-500' : 'text-violet-400'}`} />
@@ -3500,9 +3638,37 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                             };
                             const planLevel = levelMeta[plannedTrip.level];
                         return (<>
-                            {plannedTrip.summary && (
-                                <div className={`rounded-xl px-4 py-3 border text-sm leading-relaxed ${isLight ? 'bg-slate-50 border-slate-200 text-slate-700' : 'bg-white/5 border-white/10 text-gray-200'}`}>
-                                    {plannedTrip.summary}
+                            {(plannedTrip.summary || plannedTrip.itinerary) && (
+                                <div className={`${openSection === 'itinerary' ? 'flex-1 min-h-0 flex flex-col' : 'shrink-0'} rounded-xl border overflow-hidden ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'}`}>
+                                    <button
+                                        type="button"
+                                        onClick={() => plannedTrip.itinerary && setOpenSection(v => v === 'itinerary' ? null : 'itinerary')}
+                                        className={`w-full flex items-start gap-3 px-4 py-3 text-start ${plannedTrip.itinerary ? (isLight ? 'hover:bg-slate-100' : 'hover:bg-white/5') : ''} transition-colors`}
+                                    >
+                                        <span className="shrink-0 mt-0.5 text-base">🗺️</span>
+                                        <p className={`flex-1 text-sm leading-relaxed ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
+                                            {plannedTrip.summary}
+                                        </p>
+                                        {plannedTrip.itinerary && (
+                                            <span className={`shrink-0 mt-1 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                                {openSection === 'itinerary'
+                                                    ? <ChevronUp size={14} />
+                                                    : <ChevronDown size={14} />}
+                                            </span>
+                                        )}
+                                    </button>
+                                    {openSection === 'itinerary' && plannedTrip.itinerary && (
+                                        <div className={`flex-1 min-h-0 border-t px-4 py-3 space-y-3 overflow-y-auto custom-scrollbar scrollbar-right ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
+                                            {plannedTrip.itinerary.map((seg, i) => (
+                                                <div key={i} className="space-y-0.5">
+                                                    <p className={`text-[11px] font-bold ${isLight ? 'text-violet-600' : 'text-violet-300'}`}>
+                                                        {seg.segment}{seg.place ? ` — ${seg.place}` : ''}
+                                                    </p>
+                                                    <p className={`text-xs leading-relaxed ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>{seg.plan}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                             {plannedTrip.bestMonths && (
@@ -3514,15 +3680,46 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                     </div>
                                 </div>
                             )}
-                            <div className={`rounded-xl border overflow-hidden ${isLight ? 'bg-white border-violet-200' : 'bg-white/5 border-violet-500/25'}`}>
+                            {plannedTrip.tips?.length > 0 && (
+                                <div className={`${openSection === 'tips' ? 'flex-1 min-h-0 flex flex-col' : 'shrink-0'} rounded-xl border overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-white/5 border-white/10'}`}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setOpenSection(v => v === 'tips' ? null : 'tips')}
+                                        className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/5'}`}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm">💡</span>
+                                            <span className={`text-xs font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>{isHe ? 'טיפים למסע' : 'Travel tips'}</span>
+                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isLight ? 'bg-slate-100 text-slate-500' : 'bg-white/10 text-gray-400'}`}>{plannedTrip.tips.length}</span>
+                                        </div>
+                                        {openSection === 'tips' ? <ChevronUp size={13} className={isLight ? 'text-slate-400' : 'text-gray-500'} /> : <ChevronDown size={13} className={isLight ? 'text-slate-400' : 'text-gray-500'} />}
+                                    </button>
+                                    {openSection === 'tips' && (
+                                        <div className={`flex-1 min-h-0 border-t divide-y overflow-y-auto custom-scrollbar scrollbar-right ${isLight ? 'border-slate-100 divide-slate-100' : 'border-white/10 divide-white/5'}`}>
+                                            {plannedTrip.tips.map((tip, i) => {
+                                                const meta = TIP_META[tip.cat] || TIP_META.other;
+                                                return (
+                                                    <div key={i} className="flex items-start gap-3 px-4 py-2.5">
+                                                        <span className="text-base shrink-0 mt-0.5">{meta.icon}</span>
+                                                        <div className="min-w-0">
+                                                            <p className={`text-[10px] font-bold uppercase tracking-wide mb-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? meta.he : meta.en}</p>
+                                                            <p className={`text-xs leading-relaxed ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{tip.text}</p>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            <div className={`${openSection === 'costs' ? 'flex-1 min-h-0 flex flex-col' : 'shrink-0'} rounded-xl border overflow-hidden ${isLight ? 'bg-white border-violet-200' : 'bg-white/5 border-violet-500/25'}`}>
                                 <button
                                     type="button"
-                                    onClick={() => setCostBreakdownOpen(v => !v)}
+                                    onClick={() => setOpenSection(v => v === 'costs' ? null : 'costs')}
                                     className={`w-full flex items-center justify-between px-4 py-3 transition-colors ${isLight ? 'bg-violet-50 hover:bg-violet-100' : 'bg-violet-500/10 hover:bg-violet-500/15'}`}
                                 >
                                     <div className="flex items-center gap-2">
-                                        <FlagBadge code={plannedTrip.countryCode} isLight={isLight} />
-                                        <CountryShape code={plannedTrip.countryCode} size={28} isLight={isLight} />
+                                        <PlanFlags codes={plannedTrip.countryCodes || (plannedTrip.countryCode ? [plannedTrip.countryCode] : [])} isLight={isLight} showShape={(plannedTrip.countryCodes?.length ?? 1) === 1} />
                                         <span className={`text-xs font-bold tracking-wide uppercase ${isLight ? 'text-violet-600' : 'text-violet-300'}`}>{isHe ? 'פירוט עלויות' : 'Cost breakdown'}</span>
                                         {planLevel && (
                                             <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${planLevel.cls}`}>
@@ -3531,14 +3728,14 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                         )}
                                     </div>
                                     <div className="flex items-center gap-2.5">
-                                        {!costBreakdownOpen && <span className={`text-sm font-bold tabular-nums ${isLight ? 'text-violet-700' : 'text-violet-200'}`} dir="ltr">{fmtAmt(tripCost)}</span>}
-                                        {costBreakdownOpen
+                                        {openSection !== 'costs' && <span className={`text-sm font-bold tabular-nums ${isLight ? 'text-violet-700' : 'text-violet-200'}`} dir="ltr">{fmtAmt(tripCost)}</span>}
+                                        {openSection === 'costs'
                                             ? <ChevronUp size={14} className={isLight ? 'text-violet-400' : 'text-violet-400'} />
                                             : <ChevronDown size={14} className={isLight ? 'text-violet-400' : 'text-violet-400'} />}
                                     </div>
                                 </button>
-                                {costBreakdownOpen && (<>
-                                    <div className="px-4 pt-3 pb-2 space-y-2">
+                                {openSection === 'costs' && (<div className="flex flex-col flex-1 min-h-0">
+                                    <div className="flex-1 min-h-0 px-4 pt-3 pb-2 space-y-2 overflow-y-auto custom-scrollbar scrollbar-right">
                                         {PLAN_COST_KEYS.map(({ key, labelHe, labelEn }) => {
                                             const val = scaledCosts[key];
                                             if (!val) return null;
@@ -3563,90 +3760,121 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                         <span className="text-sm font-bold text-white">{isHe ? 'סה״כ' : 'Total'}</span>
                                         <span className="text-base font-black text-white tabular-nums" dir="ltr">{fmtAmt(tripCost)}</span>
                                     </div>
-                                </>)}
+                                </div>)}
                             </div>
-                            <div className={`rounded-xl border px-4 py-3 space-y-2 ${surplus >= 0 ? (isLight ? 'bg-green-50 border-green-200' : 'bg-green-500/10 border-green-500/25') : (isLight ? 'bg-indigo-50 border-indigo-200' : 'bg-indigo-500/10 border-indigo-500/25')}`}>
-                                <p className={`text-xs font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{isHe ? 'ניתוח חיסכון' : 'Savings analysis'}</p>
-                                <div className="flex items-center justify-between gap-2">
-                                    <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
-                                        {isHe ? `חיסכון מ-${nights} ימים` : `${nights} days saved`}
-                                        {' '}<span className={`opacity-50 text-[10px]`} dir="ltr">({fmtAmt(variableDailyCost)}{isHe ? '/יום' : '/day'})</span>
-                                    </span>
-                                    <span className={`text-xs font-semibold tabular-nums shrink-0 ${isLight ? 'text-green-700' : 'text-green-300'}`} dir="ltr">+{fmtAmt(daysAwaySavings)}</span>
-                                </div>
-                                {monthlySavingsBudget > 0 ? (
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
-                                            {isHe ? `חיסכון × ${monthsToSave} חודשים` : `${monthsToSave} months saving`}
-                                            {' '}<span className={`opacity-50 text-[10px]`} dir="ltr">({fmtAmt(monthlySavingsBudget)}{isHe ? '/חו׳' : '/mo'})</span>
-                                        </span>
-                                        <span className={`text-xs font-semibold tabular-nums shrink-0 ${isLight ? 'text-amber-700' : 'text-amber-300'}`} dir="ltr">+{fmtAmt(monthlySavingsTotal)}</span>
+                            <div className={`${openSection === 'savings' ? 'flex-1 min-h-0' : 'shrink-0'} flex flex-col rounded-xl border overflow-hidden ${surplus >= 0 ? (isLight ? 'bg-green-50 border-green-200' : 'bg-green-500/10 border-green-500/25') : (isLight ? 'bg-indigo-50 border-indigo-200' : 'bg-indigo-500/10 border-indigo-500/25')}`}>
+                                <button
+                                    type="button"
+                                    onClick={() => setOpenSection(v => v === 'savings' ? null : 'savings')}
+                                    className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors ${surplus >= 0 ? (isLight ? 'hover:bg-green-100/80' : 'hover:bg-green-500/15') : (isLight ? 'hover:bg-indigo-100/80' : 'hover:bg-indigo-500/15')}`}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm">💰</span>
+                                        <span className={`text-xs font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>{isHe ? 'ניתוח חיסכון' : 'Savings analysis'}</span>
                                     </div>
-                                ) : (
-                                    <p className={`text-xs ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'הגדר חיסכון חודשי לחישוב מלא' : 'Set monthly savings for full calculation'}</p>
-                                )}
-                                <div className={`pt-2 mt-1 border-t space-y-1.5 ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
-                                    <div className="flex items-center justify-between">
-                                        <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'עלות הטיול' : 'Trip cost'}</span>
-                                        <span className={`text-xs font-semibold tabular-nums ${isLight ? 'text-slate-700' : 'text-gray-200'}`} dir="ltr">{fmtAmt(tripCost)}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                        <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'סה״כ נצבר' : 'Total accumulated'}</span>
-                                        <span className={`text-xs font-semibold tabular-nums ${isLight ? 'text-slate-700' : 'text-gray-200'}`} dir="ltr">{fmtAmt(totalAccumulated)}</span>
-                                    </div>
-                                    <div className={`flex items-center justify-between pt-1.5 border-t ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
-                                        <span className={`text-sm font-bold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{isHe ? 'הפרש' : 'Difference'}</span>
-                                        <span className={`text-sm font-black tabular-nums ${surplus >= 0 ? (isLight ? 'text-green-700' : 'text-green-300') : (isLight ? 'text-rose-600' : 'text-rose-300')}`} dir="ltr">
-                                            {surplus >= 0 ? '+' : ''}{fmtAmt(surplus)}
-                                        </span>
-                                    </div>
-                                </div>
-                                {monthlySavingsBudget > 0 && (() => {
-                                    const mInput = Math.max(1, parseInt(daysFromMonthsInput) || 1);
-                                    const perNight = nights > 0 ? tripCost / nights : 0;
-                                    const flightCost = numberOrZero(plannedTrip.costs?.flights);
-                                    const perNightVar = nights > 0 ? (tripCost - flightCost) / nights : 0;
-                                    const budgetForDays = mInput * monthlySavingsBudget;
-                                    const daysAffordable = perNightVar > 0
-                                        ? Math.floor(Math.max(0, budgetForDays - flightCost) / perNightVar)
-                                        : (perNight > 0 ? Math.floor(budgetForDays / perNight) : 0);
-                                    return (
-                                        <div className={`mt-2 pt-2 border-t flex items-center gap-2 ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
-                                            <span className={`text-xs shrink-0 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'ב-' : 'In '}</span>
-                                            <input
-                                                type="number" min="1" max="120"
-                                                value={daysFromMonthsInput}
-                                                onChange={e => setDaysFromMonthsInput(e.target.value)}
-                                                placeholder="?"
-                                                className={`w-12 text-center text-xs font-bold rounded-lg px-1 py-1 border outline-none ${isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-white/10 border-white/15 text-white'}`}
-                                            />
-                                            <span className={`text-xs shrink-0 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'חודשים' : 'months'}</span>
-                                            <span className={`text-xs shrink-0 opacity-40 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>|</span>
-                                            <input
-                                                type="number" min="1" max="365"
-                                                value={nights}
-                                                onChange={e => setNightsOverride(Math.max(1, parseInt(e.target.value) || 1))}
-                                                onKeyDown={e => {
-                                                    if (e.key === 'ArrowUp') { e.preventDefault(); setNightsOverride(n => Math.min(365, (n ?? nights) + 1)); }
-                                                    if (e.key === 'ArrowDown') { e.preventDefault(); setNightsOverride(n => Math.max(1, (n ?? nights) - 1)); }
-                                                }}
-                                                className={`w-12 text-center text-xs font-bold rounded-lg px-1 py-1 border outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-white/10 border-white/15 text-white'}`}
-                                            />
-                                            <span className={`text-xs shrink-0 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'לילות' : 'nights'}</span>
-                                            {daysFromMonthsInput && (
-                                                <span className={`text-xs font-bold ms-auto ${daysAffordable >= nights ? (isLight ? 'text-green-700' : 'text-green-300') : (isLight ? 'text-amber-700' : 'text-amber-300')}`}>
-                                                    → {daysAffordable} {isHe ? 'לילות' : 'nights'}
+                                    <div className="flex items-center gap-2">
+                                        {openSection !== 'savings' && (
+                                            <div className="flex items-center gap-2">
+                                                {monthlySavingsBudget > 0 && monthsToSave > 0 && (
+                                                    <span className={`text-xs font-bold tabular-nums ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                        {monthsToSave}{isHe ? ' חו׳' : ' mo'}
+                                                    </span>
+                                                )}
+                                                <span className={`text-xs tabular-nums ${surplus >= 0 ? (isLight ? 'text-green-700' : 'text-green-300') : (isLight ? 'text-rose-600' : 'text-rose-300')}`} dir="ltr">
+                                                    {surplus >= 0 ? '+' : ''}{fmtAmt(surplus)}
                                                 </span>
-                                            )}
+                                            </div>
+                                        )}
+                                        {openSection === 'savings'
+                                            ? <ChevronUp size={13} className={isLight ? 'text-slate-400' : 'text-gray-500'} />
+                                            : <ChevronDown size={13} className={isLight ? 'text-slate-400' : 'text-gray-500'} />}
+                                    </div>
+                                </button>
+                                {openSection === 'savings' && (
+                                    <div className={`flex-1 min-h-0 border-t px-4 py-3 space-y-2 overflow-y-auto custom-scrollbar scrollbar-right ${surplus >= 0 ? (isLight ? 'border-green-200' : 'border-green-500/25') : (isLight ? 'border-indigo-200' : 'border-indigo-500/25')}`}>
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                {isHe ? `חיסכון מ-${nights} ימים` : `${nights} days saved`}
+                                                {' '}<span className={`opacity-50 text-[10px]`} dir="ltr">({fmtAmt(variableDailyCost)}{isHe ? '/יום' : '/day'})</span>
+                                            </span>
+                                            <span className={`text-xs font-semibold tabular-nums shrink-0 ${isLight ? 'text-green-700' : 'text-green-300'}`} dir="ltr">+{fmtAmt(daysAwaySavings)}</span>
                                         </div>
-                                    );
-                                })()}
-                                {plannedTrip.note && (
-                                    <p className={`text-[11px] pt-1 opacity-70 leading-relaxed ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>{plannedTrip.note}</p>
+                                        {monthlySavingsBudget > 0 ? (
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                    {isHe ? `חיסכון × ${monthsToSave} חודשים` : `${monthsToSave} months saving`}
+                                                    {' '}<span className={`opacity-50 text-[10px]`} dir="ltr">({fmtAmt(monthlySavingsBudget)}{isHe ? '/חו׳' : '/mo'})</span>
+                                                </span>
+                                                <span className={`text-xs font-semibold tabular-nums shrink-0 ${isLight ? 'text-amber-700' : 'text-amber-300'}`} dir="ltr">+{fmtAmt(monthlySavingsTotal)}</span>
+                                            </div>
+                                        ) : (
+                                            <p className={`text-xs ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'הגדר חיסכון חודשי לחישוב מלא' : 'Set monthly savings for full calculation'}</p>
+                                        )}
+                                        <div className={`pt-2 mt-1 border-t space-y-1.5 ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
+                                            <div className="flex items-center justify-between">
+                                                <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'עלות הטיול' : 'Trip cost'}</span>
+                                                <span className={`text-xs font-semibold tabular-nums ${isLight ? 'text-slate-700' : 'text-gray-200'}`} dir="ltr">{fmtAmt(tripCost)}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                                <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'סה״כ נצבר' : 'Total accumulated'}</span>
+                                                <span className={`text-xs font-semibold tabular-nums ${isLight ? 'text-slate-700' : 'text-gray-200'}`} dir="ltr">{fmtAmt(totalAccumulated)}</span>
+                                            </div>
+                                            <div className={`flex items-center justify-between pt-1.5 border-t ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
+                                                <span className={`text-sm font-bold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{isHe ? 'הפרש' : 'Difference'}</span>
+                                                <span className={`text-sm font-black tabular-nums ${surplus >= 0 ? (isLight ? 'text-green-700' : 'text-green-300') : (isLight ? 'text-rose-600' : 'text-rose-300')}`} dir="ltr">
+                                                    {surplus >= 0 ? '+' : ''}{fmtAmt(surplus)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        {monthlySavingsBudget > 0 && (() => {
+                                            const mInput = Math.max(1, parseInt(daysFromMonthsInput) || 1);
+                                            const perNight = nights > 0 ? tripCost / nights : 0;
+                                            const flightCost = numberOrZero(plannedTrip.costs?.flights);
+                                            const perNightVar = nights > 0 ? (tripCost - flightCost) / nights : 0;
+                                            const budgetForDays = mInput * monthlySavingsBudget;
+                                            const daysAffordable = perNightVar > 0
+                                                ? Math.floor(Math.max(0, budgetForDays - flightCost) / perNightVar)
+                                                : (perNight > 0 ? Math.floor(budgetForDays / perNight) : 0);
+                                            return (
+                                                <div className={`mt-2 pt-2 border-t flex items-center gap-2 ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
+                                                    <span className={`text-xs shrink-0 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'ב-' : 'In '}</span>
+                                                    <input
+                                                        type="number" min="1" max="120"
+                                                        value={daysFromMonthsInput}
+                                                        onChange={e => setDaysFromMonthsInput(e.target.value)}
+                                                        placeholder="?"
+                                                        className={`w-12 text-center text-xs font-bold rounded-lg px-1 py-1 border outline-none ${isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-white/10 border-white/15 text-white'}`}
+                                                    />
+                                                    <span className={`text-xs shrink-0 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'חודשים' : 'months'}</span>
+                                                    <span className={`text-xs shrink-0 opacity-40 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>|</span>
+                                                    <input
+                                                        type="number" min="1" max="365"
+                                                        value={nights}
+                                                        onChange={e => setNightsOverride(Math.max(1, parseInt(e.target.value) || 1))}
+                                                        onKeyDown={e => {
+                                                            if (e.key === 'ArrowUp') { e.preventDefault(); setNightsOverride(n => Math.min(365, (n ?? nights) + 1)); }
+                                                            if (e.key === 'ArrowDown') { e.preventDefault(); setNightsOverride(n => Math.max(1, (n ?? nights) - 1)); }
+                                                        }}
+                                                        className={`w-12 text-center text-xs font-bold rounded-lg px-1 py-1 border outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-white/10 border-white/15 text-white'}`}
+                                                    />
+                                                    <span className={`text-xs shrink-0 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'לילות' : 'nights'}</span>
+                                                    {daysFromMonthsInput && (
+                                                        <span className={`text-xs font-bold ms-auto ${daysAffordable >= nights ? (isLight ? 'text-green-700' : 'text-green-300') : (isLight ? 'text-amber-700' : 'text-amber-300')}`}>
+                                                            → {daysAffordable} {isHe ? 'לילות' : 'nights'}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
+                                        {plannedTrip.note && (
+                                            <p className={`text-[11px] pt-1 opacity-70 leading-relaxed ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>{plannedTrip.note}</p>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                         </>);
                     })()}
+                </div>
                 </div>
                 )}
                 </div>
