@@ -1985,13 +1985,15 @@ function CategorySection({ category, items, isHe, isLight, currency, t, open, on
 // ─── Location suggestions modal ───────────────────────────────────────────────
 
 const COST_KEYS = [
-    { key: 'rent',          labelHe: 'דיור',     labelEn: 'Housing'       },
-    { key: 'food',          labelHe: 'אוכל',     labelEn: 'Food'          },
-    { key: 'transport',     labelHe: 'תחבורה',   labelEn: 'Transport'     },
-    { key: 'entertainment', labelHe: 'בילויים',  labelEn: 'Entertainment' },
+    { key: 'rent',          labelHe: 'דיור',           labelEn: 'Housing'          },
+    { key: 'food',          labelHe: 'אוכל',           labelEn: 'Food'             },
+    { key: 'transport',     labelHe: 'תחבורה',         labelEn: 'Transport'        },
+    { key: 'entertainment', labelHe: 'בילויים',        labelEn: 'Entertainment'    },
     { key: 'flights',       labelHe: 'טיסה לטיול בודד', labelEn: 'Flight for one trip' },
-    { key: 'carRental',     labelHe: 'שכירת רכב', labelEn: 'Car rental'    },
-    { key: 'other',         labelHe: 'אחרים',    labelEn: 'Other'         },
+    { key: 'carRental',     labelHe: 'שכירת רכב',      labelEn: 'Car rental'       },
+    { key: 'insurance',     labelHe: 'ביטוח נסיעות',   labelEn: 'Travel insurance' },
+    { key: 'esim',          labelHe: 'eSIM / אינטרנט', labelEn: 'eSIM / Internet'  },
+    { key: 'other',         labelHe: 'אחרים',          labelEn: 'Other'            },
 ];
 const PLAN_COST_KEYS = [
     { key: 'flights',       labelHe: 'טיסות',        labelEn: 'Flights'        },
@@ -2198,7 +2200,7 @@ The selected lifestyle tier must be based on the local market of each city, not 
 For each location, costs.rent, food, transport, entertainment and other must all match the selected tier. In housingType/housingLevel and note, briefly describe the assumptions that justify the tier and trip length, such as hotel/private room/apartment, central vs non-central area, mostly local food vs frequent restaurants, and public transport vs taxis.
 For the chosen tier, choose cities where the requested stay length including one round-trip flight is plausible within the budget if possible. If not possible, return the closest realistic options and explain the mismatch in budgetNote.
 Return 8 diverse city options across different regions when possible, mixing places that fit the budget and aspirational places that may only fit for a shorter stay.
-total must equal monthly living costs only: rent + food + transport + entertainment + other. The app will add costs.flights, tripHousingCost/tripFoodCost when relevant, and costs.carRental to check whether the trip fits the budget.
+total must equal monthly living costs only: rent + food + transport + entertainment + other. The app will add costs.flights, tripHousingCost/tripFoodCost when relevant, costs.carRental, costs.insurance, and costs.esim to check whether the trip fits the budget. costs.insurance and costs.esim are one-time per-trip costs, not monthly.
 `;
 
 const TIER_PRICE_FLOORS = {
@@ -2239,7 +2241,7 @@ function normalizeCarRentalDays(value, tripDays) {
 }
 
 function normalizeTierLivingCost(key, value, selectedTier) {
-    if (key === 'flights' || key === 'carRental') return value;
+    if (key === 'flights' || key === 'carRental' || key === 'insurance' || key === 'esim') return Math.max(0, Math.round(value || 0));
     const raw = Math.max(0, Math.round(value || 0));
     if (!raw) return 0;
     const floor = TIER_PRICE_FLOORS[selectedTier]?.[key] ?? 0;
@@ -2277,9 +2279,18 @@ function nonHousingDailyCost(costs) {
 }
 
 function tripLivingCost(costs, selectedTier, nights, explicit = {}) {
+    const transport = explicit.tripTransportCost > 0
+        ? Math.round(explicit.tripTransportCost)
+        : Math.ceil((costs?.transport || 0) / DEFAULT_TRIP_DAYS) * nights;
+    const entertainment = explicit.tripEntertainmentCost > 0
+        ? Math.round(explicit.tripEntertainmentCost)
+        : Math.ceil((costs?.entertainment || 0) / DEFAULT_TRIP_DAYS) * nights;
+    const other = explicit.tripOtherCost > 0
+        ? Math.round(explicit.tripOtherCost)
+        : Math.ceil((costs?.other || 0) / DEFAULT_TRIP_DAYS) * nights;
     return tripHousingCostFor({ ...explicit, costs }, selectedTier, nights)
         + tripFoodCostFor({ ...explicit, costs }, nights)
-        + nonHousingDailyCost(costs) * nights;
+        + transport + entertainment + other;
 }
 
 function parseAiJsonObject(reply) {
@@ -2382,7 +2393,13 @@ function recalcLocationTrip(loc, availableAmount, useCar) {
     const selectedTier = loc.tier || 'medium';
     const tripDays = loc.tripDays || DEFAULT_TRIP_DAYS;
     const roundTrip = loc.flightRoundTrip || costs.flights || 0;
-    const explicitTripCosts = { tripHousingCost: loc.tripHousingCost, tripFoodCost: loc.tripFoodCost };
+    const explicitTripCosts = {
+        tripHousingCost: loc.tripHousingCost,
+        tripFoodCost: loc.tripFoodCost,
+        tripTransportCost: loc.tripTransportCost,
+        tripEntertainmentCost: loc.tripEntertainmentCost,
+        tripOtherCost: loc.tripOtherCost,
+    };
     const stayCost = tripLivingCost(costs, selectedTier, tripDays, explicitTripCosts);
     const fullTripCost = stayCost + roundTrip + carRentalCost;
     const carDailyCost = useCar && carRentalDays > 0 ? Math.ceil(carRentalCost / carRentalDays) : 0;
@@ -2393,17 +2410,23 @@ function recalcLocationTrip(loc, availableAmount, useCar) {
         const proportionalExplicit = {
             tripHousingCost: loc.tripHousingCost ? Math.round(loc.tripHousingCost * (d / tripDays)) : 0,
             tripFoodCost: loc.tripFoodCost ? Math.round(loc.tripFoodCost * (d / tripDays)) : 0,
+            tripTransportCost: loc.tripTransportCost ? Math.round(loc.tripTransportCost * (d / tripDays)) : 0,
+            tripEntertainmentCost: loc.tripEntertainmentCost ? Math.round(loc.tripEntertainmentCost * (d / tripDays)) : 0,
+            tripOtherCost: loc.tripOtherCost ? Math.round(loc.tripOtherCost * (d / tripDays)) : 0,
         };
         const candidateCost = roundTrip + tripLivingCost(costs, selectedTier, d, proportionalExplicit) + carDailyCost * carDaysForStay;
         if (candidateCost <= availableAmount) daysAffordable = d;
     }
 
-    const monthFits = availableAmount ? fullTripCost <= availableAmount : true;
+    const monthFits = availableAmount ? fullTripCost <= availableAmount * 1.05 : true;
     const affordableTripCost = monthFits
         ? fullTripCost
         : (daysAffordable > 0 ? roundTrip + tripLivingCost(costs, selectedTier, daysAffordable, {
             tripHousingCost: loc.tripHousingCost ? Math.round(loc.tripHousingCost * (daysAffordable / tripDays)) : 0,
             tripFoodCost: loc.tripFoodCost ? Math.round(loc.tripFoodCost * (daysAffordable / tripDays)) : 0,
+            tripTransportCost: loc.tripTransportCost ? Math.round(loc.tripTransportCost * (daysAffordable / tripDays)) : 0,
+            tripEntertainmentCost: loc.tripEntertainmentCost ? Math.round(loc.tripEntertainmentCost * (daysAffordable / tripDays)) : 0,
+            tripOtherCost: loc.tripOtherCost ? Math.round(loc.tripOtherCost * (daysAffordable / tripDays)) : 0,
         }) + carDailyCost * Math.min(daysAffordable, carRentalDays) : 0);
     const dailyCost = monthFits
         ? Math.ceil(fullTripCost / tripDays)
@@ -2431,23 +2454,34 @@ function tripBreakdownFor(loc) {
     const nights = getLocationTripNights(loc);
     const breakdown = {};
     const requestedNights = loc?.tripDays || nights || DEFAULT_TRIP_DAYS;
-    breakdown.rent = tripHousingCostFor({
+    breakdown.housing = tripHousingCostFor({
         costs,
         tripHousingCost: loc?.tripHousingCost && nights !== requestedNights
             ? Math.round(loc.tripHousingCost * (nights / requestedNights))
             : loc?.tripHousingCost,
     }, loc?.tier || 'medium', nights);
+    breakdown.fuel = 0;
     breakdown.food = tripFoodCostFor({
         costs,
         tripFoodCost: loc?.tripFoodCost && nights !== requestedNights
             ? Math.round(loc.tripFoodCost * (nights / requestedNights))
             : loc?.tripFoodCost,
     }, nights);
+    const explicitVariableCosts = {
+        transport: loc?.tripTransportCost,
+        entertainment: loc?.tripEntertainmentCost,
+        other: loc?.tripOtherCost,
+    };
     ['transport', 'entertainment', 'other'].forEach((key) => {
-        breakdown[key] = Math.ceil((costs[key] || 0) / DEFAULT_TRIP_DAYS) * nights;
+        const explicit = explicitVariableCosts[key];
+        breakdown[key] = explicit > 0
+            ? Math.round(explicit * (nights / requestedNights))
+            : Math.ceil((costs[key] || 0) / DEFAULT_TRIP_DAYS) * nights;
     });
     breakdown.flights = costs.flights || 0;
     breakdown.carRental = loc?.includeCarRental ? (costs.carRental || 0) : 0;
+    breakdown.insurance = costs.insurance || 0;
+    breakdown.esim = costs.esim || 0;
     return { nights, breakdown };
 }
 
@@ -2595,17 +2629,21 @@ function normalizeLocationSuggestions(data, selectedTier, availableAmount, isHe,
             const explicitTripCosts = {
                 tripHousingCost: numberOrZero(raw?.tripHousingCost ?? raw?.housingTripCost ?? raw?.accommodationTripCost),
                 tripFoodCost: numberOrZero(raw?.tripFoodCost ?? raw?.foodTripCost),
+                tripTransportCost: numberOrZero(raw?.tripTransportCost),
+                tripEntertainmentCost: numberOrZero(raw?.tripEntertainmentCost),
+                tripOtherCost: numberOrZero(raw?.tripOtherCost),
             };
 
             const livingMonthly = COST_KEYS
-                .filter(({ key }) => key !== 'flights' && key !== 'carRental')
+                .filter(({ key }) => key !== 'flights' && key !== 'carRental' && key !== 'insurance' && key !== 'esim')
                 .reduce((sum, { key }) => sum + costs[key], 0);
             const livingDailyCost = livingMonthly > 0 ? Math.ceil(tripLivingCost(costs, selectedTier, requestedDays, explicitTripCosts) / requestedDays) : 0;
             const stayCost = tripLivingCost(costs, selectedTier, requestedDays, explicitTripCosts);
             const carRentalCost = carRentalUseful ? Math.max(0, Math.round(costs.carRental || 0)) : 0;
             const carRentalIncluded = carRentalUseful && carRentalCost > 0;
             costs.carRental = carRentalCost;
-            const fullTripCost = stayCost + roundTrip + carRentalCost;
+            const fixedTripExtras = (costs.insurance || 0) + (costs.esim || 0);
+            const fullTripCost = stayCost + roundTrip + carRentalCost + fixedTripExtras;
             if (availableAmount && fullTripCost > availableAmount) overBudgetCount += 1;
             const carDailyCost = carRentalIncluded && requestedCarDays > 0 ? Math.ceil(carRentalCost / requestedCarDays) : 0;
             let daysAffordable = 0;
@@ -2614,17 +2652,23 @@ function normalizeLocationSuggestions(data, selectedTier, availableAmount, isHe,
                 const proportionalExplicit = {
                     tripHousingCost: explicitTripCosts.tripHousingCost ? Math.round(explicitTripCosts.tripHousingCost * (d / requestedDays)) : 0,
                     tripFoodCost: explicitTripCosts.tripFoodCost ? Math.round(explicitTripCosts.tripFoodCost * (d / requestedDays)) : 0,
+                    tripTransportCost: explicitTripCosts.tripTransportCost ? Math.round(explicitTripCosts.tripTransportCost * (d / requestedDays)) : 0,
+                    tripEntertainmentCost: explicitTripCosts.tripEntertainmentCost ? Math.round(explicitTripCosts.tripEntertainmentCost * (d / requestedDays)) : 0,
+                    tripOtherCost: explicitTripCosts.tripOtherCost ? Math.round(explicitTripCosts.tripOtherCost * (d / requestedDays)) : 0,
                 };
-                const candidateCost = roundTrip + tripLivingCost(costs, selectedTier, d, proportionalExplicit) + carDailyCost * carDaysForStay;
+                const candidateCost = roundTrip + tripLivingCost(costs, selectedTier, d, proportionalExplicit) + carDailyCost * carDaysForStay + fixedTripExtras;
                 if (candidateCost <= availableAmount) daysAffordable = d;
             }
-            const monthFits = availableAmount ? fullTripCost <= availableAmount : true;
+            const monthFits = availableAmount ? fullTripCost <= availableAmount * 1.05 : true;
             const affordableTripCost = monthFits
                 ? fullTripCost
                 : (daysAffordable > 0 ? roundTrip + tripLivingCost(costs, selectedTier, daysAffordable, {
                     tripHousingCost: explicitTripCosts.tripHousingCost ? Math.round(explicitTripCosts.tripHousingCost * (daysAffordable / requestedDays)) : 0,
                     tripFoodCost: explicitTripCosts.tripFoodCost ? Math.round(explicitTripCosts.tripFoodCost * (daysAffordable / requestedDays)) : 0,
-                }) + carDailyCost * Math.min(daysAffordable, requestedCarDays) : 0);
+                    tripTransportCost: explicitTripCosts.tripTransportCost ? Math.round(explicitTripCosts.tripTransportCost * (daysAffordable / requestedDays)) : 0,
+                    tripEntertainmentCost: explicitTripCosts.tripEntertainmentCost ? Math.round(explicitTripCosts.tripEntertainmentCost * (daysAffordable / requestedDays)) : 0,
+                    tripOtherCost: explicitTripCosts.tripOtherCost ? Math.round(explicitTripCosts.tripOtherCost * (daysAffordable / requestedDays)) : 0,
+                }) + carDailyCost * Math.min(daysAffordable, requestedCarDays) + fixedTripExtras : 0);
             const displayDailyCost = monthFits
                 ? Math.ceil(fullTripCost / requestedDays)
                 : (daysAffordable > 0 ? Math.ceil(affordableTripCost / daysAffordable) : 0);
@@ -2653,6 +2697,9 @@ function normalizeLocationSuggestions(data, selectedTier, availableAmount, isHe,
                 costs,
                 tripHousingCost: Math.round(explicitTripCosts.tripHousingCost || 0),
                 tripFoodCost: Math.round(explicitTripCosts.tripFoodCost || 0),
+                tripTransportCost: Math.round(explicitTripCosts.tripTransportCost || 0),
+                tripEntertainmentCost: Math.round(explicitTripCosts.tripEntertainmentCost || 0),
+                tripOtherCost: Math.round(explicitTripCosts.tripOtherCost || 0),
                 housingType: raw?.housingType || raw?.accommodationType || defaultHousingType,
                 housingLevel: raw?.housingLevel || raw?.housingStandard || (isHe ? TIER_META[selectedTier]?.labelHe : TIER_META[selectedTier]?.labelEn),
                 flightRoundTrip: roundTrip,
@@ -2710,7 +2757,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
     const [deletedLocations, setDeletedLocations] = useState([]);
     const [parsed, setParsed] = useState(null);
     const [error, setError] = useState(null);
-    const [openCards, setOpenCards] = useState(new Set());
+    const [openCard, setOpenCard] = useState(null);
     const [tripRequest, setTripRequest] = useState('');
     const [plannedTrip, setPlannedTrip] = useState(null);
     const [planLoading, setPlanLoading] = useState(false);
@@ -2733,7 +2780,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         return () => { document.body.style.overflow = prev; };
     }, [isOpen]);
 
-    const toggleCard = i => setOpenCards(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n; });
+    const toggleCard = i => setOpenCard(prev => prev === i ? null : i);
 
     const fmtAmt = v => {
         const abs = Math.abs(v || 0);
@@ -2795,15 +2842,15 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
             .map(loc => `${loc.city || ''}${loc.country ? `, ${loc.country}` : ''}`.trim())
             .filter(Boolean)
             .join('; ');
-        const schema = `{"budgetFits":"cheap|medium|expensive","budgetNote":"one sentence","locations":[{"city":"","country":"","countryCode":"ISO 3166 alpha-2 country code in English letters","countryEn":"country name in English","flag":"🏳","total":0,"note":"one sentence","housingType":"apartment/hotel/private room/guesthouse etc.","housingLevel":"short standard/location description","tripHousingCost":0,"tripFoodCost":0,"flightRoundTrip":0,"costs":{"rent":0,"food":0,"transport":0,"entertainment":0,"flights":0,"carRental":0,"other":0}}]}`;
+        const schema = `{"budgetFits":"cheap|medium|expensive","budgetNote":"one sentence","locations":[{"city":"","country":"","countryCode":"ISO 3166 alpha-2 country code in English letters","countryEn":"country name in English","flag":"🏳","total":0,"note":"one sentence","housingType":"apartment/hotel/private room/guesthouse etc.","housingLevel":"short standard/location description","tripHousingCost":0,"tripFoodCost":0,"tripTransportCost":0,"tripEntertainmentCost":0,"tripOtherCost":0,"flightRoundTrip":0,"costs":{"rent":0,"food":0,"transport":0,"entertainment":0,"flights":0,"carRental":0,"insurance":0,"esim":0,"other":0}}]}`;
         const liveRates = await fetchIlsRates();
         const ratesLine = liveRates
             ? `Live exchange rates (fetched now): 1 USD = ${liveRates.USD} ILS, 1 EUR = ${liveRates.EUR} ILS, 1 GBP = ${liveRates.GBP} ILS, 1 THB = ${liveRates.THB} ILS, 1 JPY = ${liveRates.JPY} ILS, 1 CAD = ${liveRates.CAD} ILS, 1 AUD = ${liveRates.AUD} ILS. Use these exact rates for all conversions.`
             : `Fallback exchange rates: 1 USD = 3.65 ILS, 1 EUR = 4.0 ILS, 1 GBP = 4.7 ILS, 1 THB = 0.10 ILS, 1 JPY = 0.024 ILS.`;
-        const systemPrompt = `You are a global cost-of-living advisor. Respond ONLY with valid JSON, no markdown, no explanation outside the JSON.\n${ratesLine}\n${COST_OF_LIVING_PRICE_CONTEXT}`;
+        const systemPrompt = `You are a global cost-of-living advisor. Respond ONLY with valid JSON, no markdown, no explanation outside the JSON. All prices must be grounded in real, current market data. Before returning numbers, verify each figure against known benchmarks: typical Airbnb/hotel/apartment rates, Skyscanner flight ranges from TLV, local food and transport costs. Do not use suspiciously round numbers or guesses — use realistic estimates a real traveler would encounter in ${nowYear}.\n${ratesLine}\n${COST_OF_LIVING_PRICE_CONTEXT}`;
         const userMsg = isHe
-            ? `${yearCtxHe} תקציב לטיול: ${amtStr}. תקציב יומי לפי המשיכה שלי: ${currency}${dailyWithdrawalTarget}. משך שהייה לבדיקה: ${tripDays} לילות. מצא 12 ערים חלופיות לאורח חיים ${tierHe}. ${nearbyCtxHe} קודם חפש יעדים שבהם העלות היומית הכוללת נמוכה או שווה לתקציב היומי לפי המשיכה; רק אם אין מספיק, הצע יעדים שקרובים אליו ולא רחוקים מדי. חשב את רמת המחיה לפי השוק המקומי של כל יעד. בחר דיור שמתאים למשך: לכמה לילות השתמש במלון/חדר/גסטהאוס/דירה קצרה לפי הרמה, ולשהייה חודשית בדירה חודשית. החזר tripHousingCost ו-tripFoodCost לתקופה המבוקשת. פרט ב-housingLevel וב-note את ההנחות שמצדיקות את הרמה. ${carCtxHe} אסור להציע אף אחד מהיעדים האלה: ${excludedText || 'אין'}. החזר רק JSON בסכמה: ${schema}. שמות והערות בעברית.`
-            : `${yearCtxEn} Trip budget: ${amtStr}. My daily budget from monthly withdrawal: ${currency}${dailyWithdrawalTarget}. Stay length to evaluate: ${tripDays} nights. Suggest 12 replacement cities for a ${tierEn} lifestyle. ${nearbyCtxEn} First prioritize destinations where total daily trip cost is at or below my daily withdrawal budget; only if there are not enough, include close options that are not far above it. Price the lifestyle tier relative to each destination's local market. Choose accommodation suitable for the duration: hotel/private room/guesthouse/short-stay apartment for short trips, monthly apartment for month stays. Return tripHousingCost and tripFoodCost for the requested stay. In housingLevel and note, explain the assumptions that justify the tier.${carCtxEn} Do not suggest any of these locations: ${excludedText || 'none'}. Return ONLY JSON matching schema: ${schema}.`;
+            ? `${yearCtxHe} תקציב לטיול: ${amtStr}. תקציב יומי לפי המשיכה שלי: ${currency}${dailyWithdrawalTarget}. משך שהייה לבדיקה: ${tripDays} לילות. מצא 12 ערים חלופיות לאורח חיים ${tierHe}. ${nearbyCtxHe} קודם חפש יעדים שבהם עלות הטיול הכוללת (כולל טיסות, לינה, אוכל, תחבורה, ביטוח ו-eSIM) נמוכה או שווה לתקציב, או עד 5% מעליו — אלה נחשבים "מתאימים לתקציב"; רק אם אין מספיק, הצע יעדים שחורגים יותר. חשב את רמת המחיה לפי השוק המקומי של כל יעד. בחר דיור שמתאים למשך: לכמה לילות השתמש במלון/חדר/גסטהאוס/דירה קצרה לפי הרמה, ולשהייה חודשית בדירה חודשית. החזר tripHousingCost ו-tripFoodCost לתקופה המבוקשת. פרט ב-housingLevel וב-note את ההנחות שמצדיקות את הרמה. ${carCtxHe} אסור להציע אף אחד מהיעדים האלה: ${excludedText || 'אין'}. החזר רק JSON בסכמה: ${schema}. שמות והערות בעברית.`
+            : `${yearCtxEn} Trip budget: ${amtStr}. My daily budget from monthly withdrawal: ${currency}${dailyWithdrawalTarget}. Stay length to evaluate: ${tripDays} nights. Suggest 12 replacement cities for a ${tierEn} lifestyle. ${nearbyCtxEn} First prioritize destinations where total trip cost (flights + accommodation + food + transport + insurance + eSIM) is at or below the budget, or up to 5% above it — these count as "fits the budget"; only if there are not enough such destinations, include options that exceed it further. Price the lifestyle tier relative to each destination's local market. Choose accommodation suitable for the duration: hotel/private room/guesthouse/short-stay apartment for short trips, monthly apartment for month stays. Return tripHousingCost and tripFoodCost for the requested stay. In housingLevel and note, explain the assumptions that justify the tier.${carCtxEn} Do not suggest any of these locations: ${excludedText || 'none'}. Return ONLY JSON matching schema: ${schema}.`;
         const fallbackMsg = isHe
             ? `החזר JSON בלבד. מצא 8 ערים חלופיות לאורח חיים ${tierHe}, ${tripDays} לילות, תקציב ${amtStr}. ${nearbyCtxHe} החזר tripHousingCost ו-tripFoodCost לתקופה, עם דיור מתאים למשך. אל תציע: ${excludedText || 'אין'}. סכימה: ${schema}`
             : `Return JSON only. Suggest 8 replacement cities for a ${tierEn} lifestyle, ${tripDays} nights, budget ${amtStr}. ${nearbyCtxEn} Return tripHousingCost and tripFoodCost for the stay, with duration-appropriate accommodation. Exclude: ${excludedText || 'none'}. Schema: ${schema}`;
@@ -2837,7 +2884,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         const excluded = [...deletedLocations, removed, ...remaining];
         setDeletedLocations(prev => [...prev, removed]);
         setParsed(prev => prev ? { ...prev, locations: remaining } : prev);
-        setOpenCards(new Set());
+        setOpenCard(null);
         setReplacingLocation(true);
         try {
             const replacement = await fetchReplacementLocation(tier, excluded);
@@ -3036,7 +3083,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         setDeletedLocations([]);
         setParsed(null);
         setError(null);
-        setOpenCards(new Set());
+        setOpenCard(null);
         const tripDays = normalizeTripDays(tripDaysInput);
         const carRentalDays = normalizeCarRentalDays(carRentalDaysInput, tripDays);
         const tripBudget = tripBudgetForDays(tripDays);
@@ -3055,7 +3102,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         const ratesLine = liveRates
             ? `Live exchange rates (fetched now): 1 USD = ${liveRates.USD} ILS, 1 EUR = ${liveRates.EUR} ILS, 1 GBP = ${liveRates.GBP} ILS, 1 THB = ${liveRates.THB} ILS, 1 JPY = ${liveRates.JPY} ILS, 1 CAD = ${liveRates.CAD} ILS, 1 AUD = ${liveRates.AUD} ILS. Use these exact rates for all conversions.`
             : `Fallback exchange rates: 1 USD = 3.65 ILS, 1 EUR = 4.0 ILS, 1 GBP = 4.7 ILS, 1 THB = 0.10 ILS, 1 JPY = 0.024 ILS.`;
-        const systemPrompt = `You are a global cost-of-living advisor. Respond ONLY with valid JSON, no markdown, no explanation outside the JSON.\n${ratesLine}\n${COST_OF_LIVING_PRICE_CONTEXT}`;
+        const systemPrompt = `You are a global cost-of-living advisor. Respond ONLY with valid JSON, no markdown, no explanation outside the JSON. All prices must be grounded in real, current market data. Before returning numbers, verify each figure against known benchmarks: typical Airbnb/hotel/apartment rates, Skyscanner flight ranges from TLV, local food and transport costs. Do not use suspiciously round numbers or guesses — use realistic estimates a real traveler would encounter in ${nowYear}.\n${ratesLine}\n${COST_OF_LIVING_PRICE_CONTEXT}`;
         const carCtxHe = includeCarRental ? ` שקול שכירת רכב ל-${carRentalDays} ימים רק אם זה באמת מועיל ליעד; אם העיר פקוקה/עירונית עם תחבורה טובה החזר carRental=0.` : ' אל תכלול שכירת רכב.';
         const carCtxEn = includeCarRental ? ` Consider car rental for ${carRentalDays} days only if it is genuinely useful for the destination; for dense city stays with good transport return carRental=0.` : ' Do not include car rental.';
         const nearbyCtxHe = tripDays < 10
@@ -3064,13 +3111,13 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         const nearbyCtxEn = tripDays < 10
             ? 'Since the stay is under 10 days, suggest only nearby destinations: Middle East, North Africa, and close Europe (Greece, Cyprus, Turkey, Italy, Spain, Portugal, UAE).'
             : 'Suggest destinations from any region worldwide.';
-        const schema = `{"budgetFits":"cheap|medium|expensive","budgetNote":"one sentence","locations":[{"city":"","country":"","countryCode":"ISO 3166 alpha-2 country code in English letters","countryEn":"country name in English","flag":"🏳","total":0,"note":"one sentence","housingType":"apartment/hotel/private room/guesthouse etc.","housingLevel":"short standard/location description","tripHousingCost":0,"tripFoodCost":0,"flightRoundTrip":0,"costs":{"rent":0,"food":0,"transport":0,"entertainment":0,"flights":0,"carRental":0,"other":0}}]}`;
+        const schema = `{"budgetFits":"cheap|medium|expensive","budgetNote":"one sentence","locations":[{"city":"","country":"","countryCode":"ISO 3166 alpha-2 country code in English letters","countryEn":"country name in English","flag":"🏳","total":0,"note":"one sentence","housingType":"apartment/hotel/private room/guesthouse etc.","housingLevel":"short standard/location description","tripHousingCost":0,"tripFoodCost":0,"tripTransportCost":0,"tripEntertainmentCost":0,"tripOtherCost":0,"flightRoundTrip":0,"costs":{"rent":0,"food":0,"transport":0,"entertainment":0,"flights":0,"carRental":0,"insurance":0,"esim":0,"other":0}}]}`;
         const userMsg = isHe
-            ? `${yearCtxHe} תקציב לטיול: ${amtStr}. תקציב יומי לפי המשיכה שלי: ${currency}${dailyWithdrawalTarget}. משך שהייה לבדיקה: ${tripDays} לילות. הצע 8 ערים לאורח חיים ${tierHe}. ${nearbyCtxHe} קודם חפש יעדים שבהם העלות היומית הכוללת נמוכה או שווה לתקציב היומי לפי המשיכה; רק אם אין מספיק, הצע יעדים שקרובים אליו ולא רחוקים מדי. חשב את הרמה לפי השוק המקומי של כל יעד: דיור, מיקום, אוכל, תחבורה ובילויים חייבים לשקף את הרמה שנבחרה בעיר הזו. בחר דיור שמתאים למשך: לכמה לילות מלון/חדר/גסטהאוס/דירה קצרה לפי הרמה, ולחודש דירה חודשית. החזר tripHousingCost ו-tripFoodCost לתקופה המבוקשת. פרט ב-housingLevel וב-note את ההנחות שמצדיקות את הרמה. ${carCtxHe} כלול יעדים שנכנסים בתקציב וגם יעדים יקרים יותר שמתאימים לפחות לילות. החזר JSON בלבד בסכמה: ${schema}. budgetFits = הרמה שהתקציב הזה מאפשר באופן כללי. הערות ושם עיר/מדינה/הערה בעברית.`
-            : `${yearCtxEn} Trip budget: ${amtStr}. My daily budget from monthly withdrawal: ${currency}${dailyWithdrawalTarget}. Stay length to evaluate: ${tripDays} nights. Suggest 8 cities for a ${tierEn} lifestyle. ${nearbyCtxEn} First prioritize destinations where total daily trip cost is at or below my daily withdrawal budget; only if there are not enough, include close options that are not far above it. Price the tier relative to each destination's local market: housing, neighborhood, food, transport and entertainment must reflect the selected tier in that city. Choose accommodation suitable for the duration: hotel/private room/guesthouse/short-stay apartment for short trips, monthly apartment for month stays. Return tripHousingCost and tripFoodCost for the requested stay. In housingLevel and note, explain the assumptions that justify the tier.${carCtxEn} Include options that fit and more expensive options that fit fewer nights. Return ONLY JSON matching schema: ${schema}. budgetFits = overall tier this budget supports globally.`;
+            ? `${yearCtxHe} תקציב לטיול: ${amtStr}. תקציב יומי לפי המשיכה שלי: ${currency}${dailyWithdrawalTarget}. משך שהייה לבדיקה: ${tripDays} לילות. הצע 8 ערים לאורח חיים ${tierHe}. ${nearbyCtxHe} קודם חפש יעדים שבהם עלות הטיול הכוללת (כולל טיסות, לינה, אוכל, תחבורה, ביטוח ו-eSIM) נמוכה או שווה לתקציב, או עד 5% מעליו — אלה נחשבים "מתאימים לתקציב"; רק אם אין מספיק, הצע יעדים שחורגים יותר. חשב את הרמה לפי השוק המקומי של כל יעד: דיור, מיקום, אוכל, תחבורה ובילויים חייבים לשקף את הרמה שנבחרה בעיר הזו. בחר דיור שמתאים למשך: לכמה לילות מלון/חדר/גסטהאוס/דירה קצרה לפי הרמה, ולחודש דירה חודשית. החזר tripHousingCost = עלות לינה כוללת לכל התקופה (לא ללילה), tripFoodCost = עלות אוכל כוללת לכל התקופה, tripTransportCost = עלות תחבורה כוללת לכל התקופה (מוניות, אוטובוסים, כרטיסיות, טיולים), tripEntertainmentCost = עלות בילויים ואטרקציות כוללת, tripOtherCost = הוצאות אחרות כוללות. כל ה-trip... הם עבור התקופה המבוקשת, כפי שתייר ישראלי יוציא בפועל. פרט ב-housingLevel וב-note את ההנחות שמצדיקות את הרמה. costs.insurance = עלות ביטוח נסיעות לאזרח ישראלי לאותה תקופה ויעד (עלות חד-פעמית לטיול). costs.esim = עלות eSIM או SIM מקומי לאינטרנט לאורך הטיול (עלות חד-פעמית לטיול). ${carCtxHe} כלול יעדים שנכנסים בתקציב וגם יעדים יקרים יותר שמתאימים לפחות לילות. החזר JSON בלבד בסכמה: ${schema}. budgetFits = הרמה שהתקציב הזה מאפשר באופן כללי. הערות ושם עיר/מדינה/הערה בעברית.`
+            : `${yearCtxEn} Trip budget: ${amtStr}. My daily budget from monthly withdrawal: ${currency}${dailyWithdrawalTarget}. Stay length to evaluate: ${tripDays} nights. Suggest 8 cities for a ${tierEn} lifestyle. ${nearbyCtxEn} First prioritize destinations where total trip cost (flights + accommodation + food + transport + insurance + eSIM) is at or below the budget, or up to 5% above it — these count as "fits the budget"; only if there are not enough such destinations, include options that exceed it further. Price the tier relative to each destination's local market: housing, neighborhood, food, transport and entertainment must reflect the selected tier in that city. Choose accommodation suitable for the duration: hotel/private room/guesthouse/short-stay apartment for short trips, monthly apartment for month stays. Return tripHousingCost = total accommodation for all nights (not per night), tripFoodCost = total food cost for the entire stay, tripTransportCost = total transport for the trip (taxis, buses, metro passes, day trips), tripEntertainmentCost = total entertainment and attractions for the stay, tripOtherCost = total other expenses. All trip* values must reflect actual tourist spending for an Israeli traveler. In housingLevel and note, explain the assumptions that justify the tier.${carCtxEn} costs.insurance = travel insurance cost for an Israeli citizen for that trip duration and destination (one-time per-trip cost). costs.esim = eSIM or local SIM card cost for internet connectivity throughout the trip (one-time per-trip cost). Include options that fit and more expensive options that fit fewer nights. Return ONLY JSON matching schema: ${schema}. budgetFits = overall tier this budget supports globally.`;
         const fallbackMsg = isHe
-            ? `החזר JSON בלבד, בלי טקסט נוסף. הצע 8 ערים לאורח חיים ${tierHe}, ${tripDays} לילות, תקציב ${amtStr}. ${nearbyCtxHe} החזר tripHousingCost ו-tripFoodCost לתקופה, עם דיור מתאים למשך. כל המחירים בשקלים. סכימה: ${schema}`
-            : `Return JSON only, no extra text. Suggest 8 cities for a ${tierEn} lifestyle, ${tripDays} nights, budget ${amtStr}. ${nearbyCtxEn} Return tripHousingCost and tripFoodCost for the stay, with duration-appropriate accommodation. All prices in ILS. Schema: ${schema}`;
+            ? `החזר JSON בלבד, בלי טקסט נוסף. הצע 8 ערים לאורח חיים ${tierHe}, ${tripDays} לילות, תקציב ${amtStr}. ${nearbyCtxHe} החזר tripHousingCost, tripFoodCost, tripTransportCost, tripEntertainmentCost, tripOtherCost כעלויות כוללות לתקופה. כל המחירים בשקלים. סכימה: ${schema}`
+            : `Return JSON only, no extra text. Suggest 8 cities for a ${tierEn} lifestyle, ${tripDays} nights, budget ${amtStr}. ${nearbyCtxEn} Return tripHousingCost, tripFoodCost, tripTransportCost, tripEntertainmentCost, tripOtherCost as total costs for the entire stay. All prices in ILS. Schema: ${schema}`;
         try {
             setParsed(normalizeLocationSuggestions(
                 await getParsedAiJson(
@@ -3106,7 +3153,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         setReplacingLocation(false);
         setDeletedLocations([]);
         setIncludeMonthlySavings(false);
-        setOpenCards(new Set());
+        setOpenCard(null);
         setTripRequest('');
         setPlannedTrip(null);
         setPlanError(null);
@@ -3272,7 +3319,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                         )}
                         {/* Location cards */}
                         {(parsed.locations || []).map((loc, i) => {
-                            const open = openCards.has(i);
+                            const open = openCard === i;
                             const palette = LOCATION_CARD_STYLES[i % LOCATION_CARD_STYLES.length];
                             const cardClass = isLight ? palette.card.light : palette.card.dark;
                             const chipClass = isLight ? palette.chip.light : palette.chip.dark;
@@ -3326,26 +3373,46 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                                 {withdrawalDailyDiff >= 0 ? '+' : '-'}{fmtAmt(Math.abs(withdrawalDailyDiff))}
                                             </span>
                                         )}
-                                        {loc.carRentalOriginalCost > 0 && (
-                                            <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    toggleLocationCarRental(i);
-                                                }}
-                                                className={`${isHe ? 'order-0' : 'order-3'} shrink-0 inline-flex items-center justify-center p-0.5 transition-colors ${loc.includeCarRental
-                                                    ? (isLight ? 'text-emerald-700 hover:text-emerald-800' : 'text-emerald-200 hover:text-emerald-100')
-                                                    : (isLight ? 'text-slate-400 hover:text-slate-600' : 'text-gray-500 hover:text-gray-300')}`}
-                                                title={loc.includeCarRental
-                                                    ? (isHe ? 'בטל עלות שכירת רכב' : 'Remove car rental cost')
-                                                    : (isHe ? 'החזר עלות שכירת רכב' : 'Restore car rental cost')}
-                                                aria-label={loc.includeCarRental
-                                                    ? (isHe ? 'בטל עלות שכירת רכב' : 'Remove car rental cost')
-                                                    : (isHe ? 'החזר עלות שכירת רכב' : 'Restore car rental cost')}
-                                            >
-                                                <Car size={13} />
-                                            </button>
-                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                toggleLocationCarRental(i);
+                                            }}
+                                            disabled={!loc.carRentalOriginalCost}
+                                            className={`${isHe ? 'order-0' : 'order-3'} shrink-0 inline-flex items-center justify-center rounded p-0.5 transition-colors disabled:opacity-25 disabled:cursor-not-allowed ${loc.includeCarRental
+                                                ? (isLight ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-emerald-500/25 text-emerald-200 hover:bg-emerald-500/35')
+                                                : (isLight ? 'text-slate-400 hover:text-slate-600' : 'text-gray-500 hover:text-gray-300')}`}
+                                            title={loc.carRentalOriginalCost
+                                                ? (loc.includeCarRental ? (isHe ? 'בטל שכירת רכב' : 'Remove car rental') : (isHe ? 'הוסף שכירת רכב' : 'Add car rental'))
+                                                : (isHe ? 'שכירת רכב לא רלוונטית ליעד זה' : 'Car rental not relevant for this destination')}
+                                            aria-label={loc.carRentalOriginalCost
+                                                ? (loc.includeCarRental ? (isHe ? 'בטל שכירת רכב' : 'Remove car rental') : (isHe ? 'הוסף שכירת רכב' : 'Add car rental'))
+                                                : (isHe ? 'שכירת רכב לא רלוונטית' : 'Car rental not relevant')}
+                                        >
+                                            <Car size={13} />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                const nights = loc.monthFits ? loc.tripDays : (loc.daysAffordable || loc.tripDays);
+                                                const tierHe = { cheap: 'זולה', medium: 'בינונית', expensive: 'יוקרתית' }[loc.tier] || 'בינונית';
+                                                const tierEn = { cheap: 'budget', medium: 'moderate', expensive: 'premium' }[loc.tier] || 'moderate';
+                                                const carHe = loc.includeCarRental ? ` עם רכב שכור ל-${loc.carRentalDays} ימים` : '';
+                                                const carEn = loc.includeCarRental ? `, with rental car for ${loc.carRentalDays} days` : '';
+                                                const req = isHe
+                                                    ? `${nights} ימים ב${loc.city}, ${loc.country}, רמה ${tierHe}${carHe}`
+                                                    : `${nights} days in ${loc.city}, ${loc.country}, ${tierEn} level${carEn}`;
+                                                setTripRequest(req);
+                                                setMode('plan');
+                                            }}
+                                            className={`${isHe ? 'order-0' : 'order-3'} shrink-0 inline-flex items-center justify-center p-0.5 transition-colors ${isLight ? 'text-violet-400 hover:text-violet-600' : 'text-violet-400 hover:text-violet-200'}`}
+                                            title={isHe ? 'תכנן נסיעה ליעד זה' : 'Plan a trip to this destination'}
+                                            aria-label={isHe ? 'תכנן נסיעה ליעד זה' : 'Plan a trip to this destination'}
+                                        >
+                                            <Route size={13} />
+                                        </button>
                                         <button
                                             type="button"
                                             onClick={(e) => {
@@ -3415,29 +3482,37 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                             </div>
                                             <div className={`pt-2 text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
                                                 {isHe
-                                                    ? `פירוט לתקופה: ${tripCostView.nights} לילות. דיור מחושב כלינה קצרה; שאר המחיה יחסית לחודש מלא.`
-                                                    : `Trip-period breakdown: ${tripCostView.nights} nights. Housing uses short-stay pricing; other living costs are prorated from a full month.`}
+                                                    ? `פירוט לתקופה: ${tripCostView.nights} לילות. כל הסכומים הם הוצאות כוללות לטיול.`
+                                                    : `Trip-period breakdown: ${tripCostView.nights} nights. All amounts are total trip costs.`}
                                             </div>
-                                            <div className="space-y-1 pt-1">
-                                                {COST_KEYS.map(({ key, labelHe, labelEn }) => {
+                                            <div className="space-y-2 pt-1">
+                                                {PLAN_COST_KEYS.map(({ key, labelHe, labelEn }) => {
                                                     const val = tripCostView.breakdown?.[key];
                                                     if (!val) return null;
-                                                    const lbl = <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? labelHe : labelEn}</span>;
-                                                    const amt = <span className={`text-xs font-medium tabular-nums ${isLight ? 'text-slate-700' : 'text-gray-200'}`} dir="ltr">{fmtAmt(val)}</span>;
+                                                    const pct = loc.total > 0 ? Math.round(val / loc.total * 100) : 0;
                                                     return (
-                                                        <div key={key} className="flex items-center justify-between gap-4">
-                                                            {isHe ? <>{lbl}{amt}</> : <>{lbl}{amt}</>}
+                                                        <div key={key} className="space-y-0.5">
+                                                            <div className="flex items-center justify-between">
+                                                                <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? labelHe : labelEn}</span>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className={`text-[10px] tabular-nums ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{pct}%</span>
+                                                                    <span className={`text-xs font-semibold tabular-nums ${isLight ? 'text-slate-700' : 'text-gray-200'}`} dir="ltr">{fmtAmt(val)}</span>
+                                                                </div>
+                                                            </div>
+                                                            <div className={`h-1 rounded-full overflow-hidden ${isLight ? 'bg-slate-100' : 'bg-white/10'}`}>
+                                                                <div className={`h-full rounded-full ${isLight ? 'bg-violet-400' : 'bg-violet-500'}`} style={{ width: `${pct}%` }} />
+                                                            </div>
                                                         </div>
                                                     );
                                                 })}
                                             </div>
-                                            <div className={`flex items-center justify-between gap-4 px-3 py-2 mt-1.5 rounded-lg border ${isLight ? 'bg-slate-900/5 border-slate-900/10' : 'bg-white/10 border-white/15'}`}>
-                                                <span className={`text-xs font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
+                                            <div className={`flex items-center justify-between px-3 py-2 mt-1.5 ${isLight ? 'bg-violet-600' : 'bg-violet-600/80'}`}>
+                                                <span className="text-xs font-bold text-white">
                                                     {loc.monthFits
-                                                        ? (isHe ? `סה״כ ${loc.tripDays} לילות כולל טיסה${loc.includeCarRental ? ' ורכב' : ''}` : `${loc.tripDays} nights incl. flight${loc.includeCarRental ? ' + car' : ''}`)
-                                                        : (isHe ? `סה״כ ${loc.daysAffordable} לילות כולל טיסה${loc.includeCarRental ? ' ורכב' : ''}` : `${loc.daysAffordable} nights incl. flight${loc.includeCarRental ? ' + car' : ''}`)}
+                                                        ? (isHe ? `סה״כ ${loc.tripDays} לילות` : `${loc.tripDays} nights total`)
+                                                        : (isHe ? `סה״כ ${loc.daysAffordable} לילות` : `${loc.daysAffordable} nights total`)}
                                                 </span>
-                                                <span className={`text-sm font-bold ${isLight ? 'text-slate-800' : 'text-white'}`} dir="ltr">{fmtAmt(loc.total)}</span>
+                                                <span className="text-sm font-black text-white tabular-nums" dir="ltr">{fmtAmt(loc.total)}</span>
                                             </div>
                                         </div>
                                     )}
