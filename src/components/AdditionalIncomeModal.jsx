@@ -227,7 +227,18 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                             >
                                 {isRTL ? (
                                     <>
-                                        <span className={`${isLight ? 'text-green-500' : 'text-green-500'} font-medium`}>{`+${currency}${tpl.amount.toLocaleString()}${tpl.durationYears ? `·${tpl.durationYears}ש׳` : ''}`}</span>
+                                        <span className={`${isLight ? 'text-green-500' : 'text-green-500'} font-medium inline-flex items-center gap-0.5`}>
+                                            <span>{`+${currency}${tpl.amount.toLocaleString()}`}</span>
+                                            {tpl.durationYears && (
+                                                <>
+                                                    <span>·</span>
+                                                    <span className="inline-flex flex-row items-center" dir="ltr">
+                                                        <span>ש׳</span>
+                                                        <span>{tpl.durationYears}</span>
+                                                    </span>
+                                                </>
+                                            )}
+                                        </span>
                                         <span>{tpl.labelHe}</span>
                                         <span>{tpl.emoji}</span>
                                     </>
