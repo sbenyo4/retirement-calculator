@@ -878,17 +878,22 @@ export default function InputForm({
                         </div>
                         <div className="grid grid-cols-3 gap-1">
                             {[
-                                { id: WITHDRAWAL_STRATEGIES.FIXED, label: t('withdrawalFixed') },
-                                { id: WITHDRAWAL_STRATEGIES.FOUR_PERCENT, label: t('withdrawalFourPercent') },
-                                { id: WITHDRAWAL_STRATEGIES.PERCENTAGE, label: t('withdrawalPercentage') },
-                                { id: WITHDRAWAL_STRATEGIES.DYNAMIC, label: t('withdrawalDynamic') },
-                                { id: WITHDRAWAL_STRATEGIES.INTEREST_ONLY, label: t('withdrawalInterestOnly') },
-                                { id: WITHDRAWAL_STRATEGIES.GUARDRAILS, label: t('withdrawalGuardrails') },
-                                { id: WITHDRAWAL_STRATEGIES.VPW, label: t('withdrawalVpw') },
-                                { id: WITHDRAWAL_STRATEGIES.CAPE, label: t('withdrawalCape') }
+                                { id: WITHDRAWAL_STRATEGIES.FIXED, label: t('withdrawalFixed'), desc: t('withdrawalFixedDesc') },
+                                { id: WITHDRAWAL_STRATEGIES.FOUR_PERCENT, label: t('withdrawalFourPercent'), desc: t('withdrawalFourPercentDesc') },
+                                { id: WITHDRAWAL_STRATEGIES.PERCENTAGE, label: t('withdrawalPercentage'), desc: t('withdrawalPercentageDesc') },
+                                { id: WITHDRAWAL_STRATEGIES.DYNAMIC, label: t('withdrawalDynamic'), desc: t('withdrawalDynamicDesc') },
+                                { id: WITHDRAWAL_STRATEGIES.INTEREST_ONLY, label: t('withdrawalInterestOnly'), desc: t('withdrawalInterestOnlyDesc') },
+                                { id: WITHDRAWAL_STRATEGIES.GUARDRAILS, label: t('withdrawalGuardrails'), desc: t('withdrawalGuardrailsDesc') },
+                                { id: WITHDRAWAL_STRATEGIES.VPW, label: t('withdrawalVpw'), desc: t('withdrawalVpwDesc') },
+                                {
+                                    id: WITHDRAWAL_STRATEGIES.CAPE,
+                                    label: t('withdrawalCape'),
+                                    desc: `${t('withdrawalCapeDesc')}${capeRatio ? ` — CAPE: ${Number(capeRatio).toFixed(1)}${capeIsLive ? '' : ' (est.)'} → ${(Math.max(0.025, 0.5 / capeRatio + 0.015) * 100).toFixed(1)}%/yr` : ''}`
+                                }
                             ].map(strategy => (
                                 <button
                                     key={strategy.id}
+                                    title={strategy.desc}
                                     onClick={() => setInputs(prev => ({ ...prev, withdrawalStrategy: strategy.id, variableRatesEnabled: false }))}
                                     className={`px-2 py-1.5 rounded-lg text-[10px] md:text-xs font-medium transition-all ${!inputs.variableRatesEnabled && (inputs.withdrawalStrategy || WITHDRAWAL_STRATEGIES.FIXED) === strategy.id
                                         ? 'bg-emerald-600 text-white shadow-md'
@@ -901,6 +906,7 @@ export default function InputForm({
                             {/* Variable Rates Trigger (In Grid) */}
                             <button
                                 onClick={() => setInputs(prev => ({ ...prev, variableRatesEnabled: true, withdrawalStrategy: WITHDRAWAL_STRATEGIES.FIXED }))}
+                                title={t('variableRatesDesc')}
                                 className={`px-2 py-1.5 rounded-lg text-[10px] md:text-xs font-medium transition-all ${inputs.variableRatesEnabled
                                     ? 'bg-blue-600 text-white shadow-md'
                                     : (isLight ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-white/5 text-gray-400 hover:bg-white/10')
