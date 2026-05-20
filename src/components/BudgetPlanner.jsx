@@ -574,7 +574,7 @@ function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRa
     // Clamp slider when data changes (e.g. budget edited) so it stays in range
     useEffect(() => {
         if (savingsSliderData) setSliderConsumed(v => Math.min(v, savingsSliderData.totalSavings));
-    }, [savingsSliderData]);
+    }, [savingsSliderData, setSliderConsumed]);
 
     const doughnutOptions = useMemo(() => ({
         responsive: true,
@@ -2394,6 +2394,14 @@ function tripLivingCost(costs, selectedTier, nights, explicit = {}) {
 }
 
 function parseAiJsonObject(reply) {
+    const stripJsonControlChars = (value) => value
+        .split('')
+        .filter((char) => {
+            const code = char.charCodeAt(0);
+            return code === 0x09 || code === 0x0A || code === 0x0D || code >= 0x20;
+        })
+        .join('');
+
     const text = String(reply || '')
         .replace(/^\uFEFF/, '')
         .replace(/```json\s*/gi, '')
@@ -2404,9 +2412,7 @@ function parseAiJsonObject(reply) {
     if (start < 0 || end <= start) {
         throw new Error('AI response did not include a JSON object');
     }
-    const jsonText = text
-        .slice(start, end + 1)
-        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+    const jsonText = stripJsonControlChars(text.slice(start, end + 1))
         .replace(/[\r\n]/g, ' ')
         .replace(/,\s*([}\]])/g, '$1');
     return JSON.parse(jsonText);
@@ -3272,7 +3278,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         } finally {
             setSavingPlan(false);
         }
-    }, [plannedTrip, loadedPlanId, savedPlans, tripRequest, currentUser?.uid]);
+    }, [plannedTrip, loadedPlanId, savedPlans, tripRequest, isHe, currentUser?.uid]);
 
     const deletePlan = useCallback(async (planId, e) => {
         e.stopPropagation();
@@ -4381,7 +4387,7 @@ function FixedVarModal({ isOpen, onClose, items, isHe, isLight, currency, monthl
         return () => { document.body.style.overflow = prev; };
     }, [isOpen]);
 
-    useEffect(() => { if (isOpen) setSelectedYear(initialYear ?? CURRENT_YEAR); }, [isOpen]);
+    useEffect(() => { if (isOpen) setSelectedYear(initialYear ?? CURRENT_YEAR); }, [isOpen, initialYear]);
 
     const monthlyForYear = useCallback((item, year) => {
         if (item.type === 'loan') {
@@ -5607,7 +5613,28 @@ Gap vs target and what can be optimized.`;
         } finally {
             setAiLoading(false);
         }
-    }, [aiProvider, aiModel, apiKeyOverride, items, displayItems, target, totalMonthly, householdSize, isHe, uid, selectedYear]);
+    }, [
+        aiProvider,
+        aiModel,
+        apiKeyOverride,
+        items,
+        displayItems,
+        target,
+        totalMonthly,
+        householdSize,
+        isHe,
+        uid,
+        selectedYear,
+        inputs.currentAge,
+        inputs.retirementStartAge,
+        inputs.retirementEndAge,
+        results?.balanceAtRetirement,
+        results?.balanceAtEnd,
+        results?.initialNetWithdrawal,
+        results?.requiredCapitalAtRetirement,
+        results?.surplus,
+        results?.ranOutAtAge,
+    ]);
 
     const pct = target > 0 ? Math.min(totalMonthly / target, 1.5) : 0;
     const projectedPct = target > 0 ? Math.min(totalProjectedMonthly / target, 1.5) : 0;

@@ -1,6 +1,6 @@
 
 import { EVENT_TYPES } from '../../constants.js';
-import { getMonthFromDate, getMonthlyAmount, getMonthlyRateForMonth } from './helpers.js';
+import { getCalendarYearForMonth, getMonthFromDate, getMonthlyAmount, getMonthlyRateForMonth } from './helpers.js';
 
 /**
  * Logic for initializing and managing buckets.
@@ -23,6 +23,7 @@ export function calculatePrePassRequiredCapital({
     monthsInRetirement,
     lifeEvents,
     monthlyNetIncomeDesired,
+    yearlyIncomeOverrides = {},
     bucketSafeRate,
     taxRateDecimal,
     profitRatioAtRetirement,
@@ -56,6 +57,11 @@ export function calculatePrePassRequiredCapital({
     // end-boundary logic identical to isEventActive (currentMonth <= endMonth).
     for (let j = 1; j <= monthsInRetirement; j++) {
         const currentSimMonth = monthsToRetirement + j;
+        const currentYear = getCalendarYearForMonth(currentSimMonth, startYear, startMonth);
+        const overrideIncome = parseFloat(yearlyIncomeOverrides?.[currentYear]);
+        const targetMonthlyIncome = !isNaN(overrideIncome) && overrideIncome > 0
+            ? overrideIncome
+            : monthlyNetIncomeDesired;
 
         // Per-month safe rate using the same lookup as decumulation.js (supports variable rates)
         const monthlyRate = getMonthlyRateForMonth(currentSimMonth, startYear, variableRatesEnabled, safeVariableRates, bucketSafeRate, startMonth);
@@ -88,7 +94,7 @@ export function calculatePrePassRequiredCapital({
         });
 
         // Calculate Net Need for this month
-        const monthlyNetNeed = Math.max(0, monthlyNetIncomeDesired + ppActiveExpense - ppActiveIncome);
+        const monthlyNetNeed = Math.max(0, targetMonthlyIncome + ppActiveExpense - ppActiveIncome);
         const monthlyGrossNeed = monthlyNetNeed * grossUpFactor_j;
 
         // Discount to T=0 of Retirement at pre-tax safe rate

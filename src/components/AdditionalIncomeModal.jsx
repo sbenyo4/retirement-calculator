@@ -185,35 +185,48 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
     return createPortal(
         <div className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" style={overlayStyle}>
             <div
-                className={`w-full max-w-md rounded-2xl shadow-2xl ${isLight ? 'bg-white' : 'bg-gray-900 border border-white/10'}`}
+                data-draggable-modal
+                className={`relative w-full max-w-md max-h-[85vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden ${
+                    isLight ? 'bg-white ring-1 ring-gray-300' : 'ring-1 ring-white/30'
+                }`}
                 style={dragStyle}
                 dir={isRTL ? 'rtl' : 'ltr'}
                 onMouseDown={bringToFront}
             >
+                {!isLight && (
+                    <>
+                        <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" />
+                        <div className="absolute inset-0 bg-white/10" />
+                    </>
+                )}
                 {/* Header — drag handle */}
                 <div
-                    className={`flex items-center justify-between p-4 border-b cursor-grab active:cursor-grabbing select-none ${isLight ? 'border-gray-200' : 'border-white/10'}`}
+                    className={`relative z-10 flex items-center justify-between p-4 border-b cursor-grab active:cursor-grabbing select-none ${
+                        isLight ? 'border-gray-200' : 'border-white/10'
+                    }`}
                     onMouseDown={onDragMouseDown}
                 >
-                    <div className="flex items-center gap-2">
-                        <TrendingUp size={16} className="text-green-400" />
-                        <span className={`font-semibold text-sm ${isLight ? 'text-gray-900' : 'text-white'}`}>
+                    <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${isLight ? 'bg-emerald-100 text-emerald-600' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                            <TrendingUp size={20} />
+                        </div>
+                        <h2 className={`text-lg font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>
                             {t('additionalIncome')}
-                        </span>
+                        </h2>
                     </div>
-                    <button onClick={onClose} className={`p-1 rounded-lg transition-colors ${isLight ? 'hover:bg-gray-100 text-gray-500' : 'hover:bg-white/10 text-gray-400'}`}>
-                        <X size={16} />
+                    <button onClick={onClose} className={`p-1 rounded-lg transition-colors ${isLight ? 'hover:bg-slate-100 text-slate-500' : 'hover:bg-white/10 text-gray-400'}`}>
+                        <X size={20} />
                     </button>
                 </div>
 
                 {/* Description */}
-                <div className={`px-4 pt-3 pb-1 text-xs ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                <div className={`relative z-10 px-4 pt-3 pb-1 text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                     {t('additionalIncomeDesc')}
                 </div>
 
                 {/* Templates */}
-                <div className="px-4 pb-2">
-                    <div className={`flex items-center gap-1.5 mb-1.5 text-[10px] font-semibold uppercase tracking-wide ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
+                <div className="relative z-10 px-4 pb-2">
+                    <div className={`flex items-center gap-1.5 mb-1.5 text-[10px] font-semibold uppercase tracking-wide ${isLight ? 'text-slate-400' : 'text-gray-400'}`}>
                         <Zap size={10} />
                         {isRTL ? 'תבניות מהירות' : 'Quick templates'}
                     </div>
@@ -223,11 +236,13 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                                 key={tpl.labelEn}
                                 onClick={() => addFromTemplate(tpl)}
                                 dir="ltr"
-                                className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border transition-colors ${isLight ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100' : 'bg-green-900/10 border-green-500/25 text-green-400 hover:bg-green-900/20'}`}
+                                className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border transition-colors ${
+                                    isLight ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100' : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300 hover:bg-emerald-500/20'
+                                }`}
                             >
                                 {isRTL ? (
                                     <>
-                                        <span className={`${isLight ? 'text-green-500' : 'text-green-500'} font-medium inline-flex items-center gap-0.5`}>
+                                        <span className={`${isLight ? 'text-emerald-600' : 'text-emerald-300'} font-medium inline-flex items-center gap-0.5`}>
                                             <span>{`+${currency}${tpl.amount.toLocaleString()}`}</span>
                                             {tpl.durationYears && (
                                                 <>
@@ -246,7 +261,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                                     <>
                                         <span>{tpl.emoji}</span>
                                         <span>{tpl.labelEn}</span>
-                                        <span className={`${isLight ? 'text-green-500' : 'text-green-500'} font-medium`}>{`+${currency}${tpl.amount.toLocaleString()}${tpl.durationYears ? `·${tpl.durationYears}y` : ''}`}</span>
+                                        <span className={`${isLight ? 'text-emerald-600' : 'text-emerald-300'} font-medium`}>{`+${currency}${tpl.amount.toLocaleString()}${tpl.durationYears ? `·${tpl.durationYears}y` : ''}`}</span>
                                     </>
                                 )}
                             </button>
@@ -255,7 +270,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                 </div>
 
                 {/* Entries */}
-                <div className="p-4 flex flex-col gap-2 max-h-72 overflow-y-auto custom-scrollbar">
+                <div className="relative z-10 p-4 flex flex-col gap-2 overflow-y-auto custom-scrollbar">
                     {entries.length === 0 && (
                         <div className={`text-xs text-center py-4 ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
                             {t('noAdditionalIncome')}
@@ -263,7 +278,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                     )}
 
                     {entries.map((entry) => (
-                        <div key={entry.id} className={`flex flex-col gap-1.5 p-2 rounded-xl transition-opacity ${entry.enabled === false ? 'opacity-40' : ''} ${isLight ? 'bg-gray-50 border border-gray-200' : 'bg-white/5 border border-white/10'}`}>
+                        <div key={entry.id} className={`flex flex-col gap-1.5 p-2 rounded-xl transition-opacity ${entry.enabled === false ? 'opacity-40' : ''} ${isLight ? 'bg-slate-50 border border-slate-200' : 'bg-white/5 border border-white/10'}`}>
                             {/* Fields row — unchanged widths */}
                             <div className="flex items-end gap-2">
                                 {/* From year */}
@@ -369,11 +384,11 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                 </div>
 
                 {/* Footer */}
-                <div className={`flex items-center justify-between p-4 border-t gap-2 ${isLight ? 'border-gray-200' : 'border-white/10'}`}>
+                <div className={`relative z-10 flex items-center justify-between p-4 border-t gap-2 ${isLight ? 'border-slate-200 bg-slate-50' : 'border-white/10 bg-white/5'}`}>
                     <button
                         onClick={addEntry}
                         className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${
-                            isLight ? 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100' : 'bg-green-900/20 text-green-400 border border-green-500/30 hover:bg-green-900/30'
+                            isLight ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100' : 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/20'
                         }`}
                     >
                         <Plus size={13} />

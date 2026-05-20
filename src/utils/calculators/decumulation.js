@@ -32,8 +32,21 @@ export function calculateDecumulation({
         safeVariableRates = {},
         surplusVariableRates = {},
         additionalYearlyIncome = [],
+        yearlyIncomeOverrides = {},
         capeRatio = 33.5
     } = inputs;
+
+    const incomeOverrideByYear = {};
+    if (yearlyIncomeOverrides && typeof yearlyIncomeOverrides === 'object') {
+        Object.entries(yearlyIncomeOverrides).forEach(([year, amount]) => {
+            const parsedYear = parseInt(year);
+            const parsedAmount = parseFloat(amount);
+            if (parsedYear > 0 && !isNaN(parsedAmount) && parsedAmount > 0) {
+                incomeOverrideByYear[parsedYear] = parsedAmount;
+            }
+        });
+    }
+    const getTargetIncomeForYear = (year) => incomeOverrideByYear[year] || monthlyNetIncomeDesired;
 
     // Pre-build calendar-year → monthly income map for O(1) lookup in the hot loop
     const additionalIncomeByYear = {};
@@ -69,6 +82,7 @@ export function calculateDecumulation({
     const fourPercentMonthly = (balanceAtRetirement * 0.04) / 12;
     let dynamicBaseWithdrawal = monthlyNetIncomeDesired;
     let dynamicAnnualGrowth = 1; // cumulative (1+r) product over the current 12-month window
+    let previousTargetMonthlyIncome = monthlyNetIncomeDesired;
 
     // Guardrails (Guyton-Klinger): track portfolio withdrawal rate vs initial
     let guardrailsBaseWithdrawal = monthlyNetIncomeDesired;
@@ -106,6 +120,7 @@ export function calculateDecumulation({
             monthsInRetirement,
             lifeEvents,
             monthlyNetIncomeDesired,
+            yearlyIncomeOverrides: incomeOverrideByYear,
             bucketSafeRate,
             taxRateDecimal,
             profitRatioAtRetirement,
@@ -138,6 +153,14 @@ export function calculateDecumulation({
 
     for (let i = 1; i <= monthsInRetirement; i++) {
         currentMonth++;
+        const calYear = getCalendarYearForMonth(currentMonth, startYear, startMonth);
+        const targetMonthlyIncome = getTargetIncomeForYear(calYear);
+        if (Math.abs(targetMonthlyIncome - previousTargetMonthlyIncome) > 0.001 && previousTargetMonthlyIncome > 0) {
+            const targetRatio = targetMonthlyIncome / previousTargetMonthlyIncome;
+            dynamicBaseWithdrawal *= targetRatio;
+            guardrailsBaseWithdrawal *= targetRatio;
+            previousTargetMonthlyIncome = targetMonthlyIncome;
+        }
         const monthlyRate = getMonthlyRateForMonth(currentMonth, startYear, variableRatesEnabled, variableRates, annualReturnRate, startMonth);
 
         // Apply life events for this month during retirement
@@ -303,8 +326,8 @@ export function calculateDecumulation({
                     // so strong multi-year returns actually result in higher sustainable withdrawals.
                     // Floor stays as a living-expense guarantee (70% of initial desired).
                     const portfolioScaledMax = (currentBalance * 0.05) / 12;
-                    const maxWithdrawal = Math.max(monthlyNetIncomeDesired * 1.5, portfolioScaledMax);
-                    const minWithdrawal = monthlyNetIncomeDesired * 0.7;
+                    const maxWithdrawal = Math.max(targetMonthlyIncome * 1.5, portfolioScaledMax);
+                    const minWithdrawal = targetMonthlyIncome * 0.7;
 
                     if (yearlyReturnRate > expectedReturn + threshold) {
                         dynamicBaseWithdrawal = Math.min(dynamicBaseWithdrawal * 1.1, maxWithdrawal);
@@ -358,7 +381,7 @@ export function calculateDecumulation({
             }
             case WITHDRAWAL_STRATEGIES.FIXED:
             default:
-                netWithdrawal = monthlyNetIncomeDesired;
+                netWithdrawal = targetMonthlyIncome;
                 break;
         }
 
@@ -366,7 +389,6 @@ export function calculateDecumulation({
         netWithdrawal -= activeIncomeAdjustment;
 
         if (hasAdditionalIncome) {
-            const calYear = getCalendarYearForMonth(currentMonth, startYear, startMonth);
             netWithdrawal -= (additionalIncomeByYear[calYear] || 0);
         }
 
@@ -474,7 +496,7 @@ export function calculateDecumulation({
 
 
         // Required Capital PV Calculation
-        let monthlyNeed = monthlyNetIncomeDesired + activeExpenseAdjustment - activeIncomeAdjustment;
+        let monthlyNeed = targetMonthlyIncome + activeExpenseAdjustment - activeIncomeAdjustment;
 
         lifeEvents.forEach((e, idx) => {
             if (!e.enabled) return;

@@ -142,6 +142,28 @@ export const normalizeInputs = (data) => {
         normalized.additionalYearlyIncome = [];
     }
 
+    // 8. Normalize yearly income overrides.
+    // Only keep years with a positive value that differs from the base income.
+    if (normalized.yearlyIncomeOverrides && typeof normalized.yearlyIncomeOverrides === 'object') {
+        const baseIncome = parseFloat(normalized.monthlyNetIncomeDesired) || 0;
+        const yearlyIncomeOverrides = {};
+        Object.entries(normalized.yearlyIncomeOverrides).forEach(([year, amount]) => {
+            const parsedYear = parseInt(year);
+            const parsedAmount = parseFloat(amount);
+            if (
+                parsedYear > 0 &&
+                !isNaN(parsedAmount) &&
+                parsedAmount > 0 &&
+                Math.abs(parsedAmount - baseIncome) > 0.001
+            ) {
+                yearlyIncomeOverrides[parsedYear] = parsedAmount;
+            }
+        });
+        normalized.yearlyIncomeOverrides = yearlyIncomeOverrides;
+    } else {
+        normalized.yearlyIncomeOverrides = {};
+    }
+
     return normalized;
 };
 

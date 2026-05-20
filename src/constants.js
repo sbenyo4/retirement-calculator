@@ -32,6 +32,7 @@ export const DEFAULT_INPUTS = {
     withdrawalStrategy: 'fixed',
     withdrawalPercentage: 4,
     additionalYearlyIncome: [],
+    yearlyIncomeOverrides: {},
     scenarioEnabled: false,
     scenario: {
         type: 'crash',

@@ -11,6 +11,7 @@ import LifeEventsManager from './LifeEventsManager';
 import VariableRatesModal from './VariableRatesModal';
 import ScenarioModal from './ScenarioModal';
 import { AdditionalIncomeModal } from './AdditionalIncomeModal';
+import { IncomeScheduleModal } from './IncomeScheduleModal';
 
 export default function InputForm({
     inputs,
@@ -66,6 +67,7 @@ export default function InputForm({
     const [showApiKey, setShowApiKey] = useState(false);
     const [promptText, setPromptText] = useState(null);
     const [showAdditionalIncome, setShowAdditionalIncome] = useState(false);
+    const [showIncomeSchedule, setShowIncomeSchedule] = useState(false);
     const [showVariableRates, setShowVariableRates] = useState(false);
     const [activeVRType, setActiveVRType] = useState('accumulation'); // 'accumulation' | 'safe' | 'surplus'
     const [showScenario, setShowScenario] = useState(false);
@@ -184,6 +186,25 @@ export default function InputForm({
     const currentYear = new Date().getFullYear();
     const startYear = getProjectedYearUtil(inputs.retirementStartAge, inputs.currentAge, inputs.birthdate, isAgeManual);
     const endYear = getProjectedYearUtil(inputs.retirementEndAge, inputs.currentAge, inputs.birthdate, isAgeManual);
+    const hasIncomeOverrides = useMemo(() => (
+        inputs.yearlyIncomeOverrides &&
+        typeof inputs.yearlyIncomeOverrides === 'object' &&
+        Object.keys(inputs.yearlyIncomeOverrides).length > 0
+    ), [inputs.yearlyIncomeOverrides]);
+    const averageYearlyIncomeOverride = useMemo(() => {
+        if (!hasIncomeOverrides) return null;
+        const from = Number.isFinite(startYear) ? startYear : currentYear;
+        const to = Number.isFinite(endYear) && endYear >= from ? endYear : from;
+        const base = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
+        let sum = 0;
+        let count = 0;
+        for (let year = from; year <= to; year++) {
+            const override = parseFloat(inputs.yearlyIncomeOverrides?.[year]);
+            sum += (!isNaN(override) && override > 0) ? override : base;
+            count++;
+        }
+        return count > 0 ? sum / count : base;
+    }, [currentYear, endYear, hasIncomeOverrides, inputs.monthlyNetIncomeDesired, inputs.yearlyIncomeOverrides, startYear]);
 
     // Auto-regenerate variable rates (balanced) when the target rate changes
     const prevRatesRef = useRef({});
@@ -639,6 +660,17 @@ export default function InputForm({
                             endAction={
                                 <div className="flex h-full">
                                     <button
+                                        onClick={() => setShowIncomeSchedule(true)}
+                                        title={language === 'he' ? 'הכנסה לפי שנים' : 'Income by year'}
+                                        className={`p-1 h-full flex items-center justify-center transition-colors ${
+                                            hasIncomeOverrides
+                                                ? 'text-amber-400 hover:text-amber-300'
+                                                : (isLight ? 'text-gray-400 hover:text-gray-600' : 'text-gray-500 hover:text-gray-300')
+                                        }`}
+                                    >
+                                        <Calendar size={14} />
+                                    </button>
+                                    <button
                                         onClick={() => setShowAdditionalIncome(true)}
                                         title={t('additionalIncome')}
                                         className={`p-1 h-full flex items-center justify-center transition-colors ${
@@ -652,7 +684,7 @@ export default function InputForm({
                                 </div>
                             }
                             value={
-                                goalSeekWithdrawal != null
+                                goalSeekWithdrawal != null || (hasIncomeOverrides && averageYearlyIncomeOverride != null)
                                     ? ''
                                     : (!inputs.variableRatesEnabled && (
                                         inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FOUR_PERCENT ||
@@ -664,7 +696,7 @@ export default function InputForm({
                                         : inputs.monthlyNetIncomeDesired
                             }
                             onChange={handleChange}
-                            prefix={goalSeekWithdrawal != null ? null : currency}
+                            prefix={(goalSeekWithdrawal != null || (hasIncomeOverrides && averageYearlyIncomeOverride != null)) ? null : currency}
                             icon={<Wallet size={14} className="text-green-400" />}
                             extraLabel={grossWithdrawal ? `(${t('gross')}: ${formatCurrency(grossWithdrawal)})` : null}
                             disabled={
@@ -690,7 +722,21 @@ export default function InputForm({
                                         </span>
                                     </div>
                                 );
-                            })() : null}
+                            })() : (hasIncomeOverrides && averageYearlyIncomeOverride != null ? (() => {
+                                const desired = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
+                                const diff = averageYearlyIncomeOverride - desired;
+                                const isPositive = diff >= 0;
+                                return (
+                                    <div className="flex items-center gap-1 w-full text-xs truncate" style={{ direction: language === 'he' ? 'rtl' : 'ltr' }}>
+                                        <span className={isLight ? 'text-gray-900' : 'text-white'}>{formatCurrency(averageYearlyIncomeOverride)}</span>
+                                        <span className={isLight ? 'text-gray-400' : 'text-gray-500'}>→</span>
+                                        <span className={isLight ? 'text-gray-400' : 'text-gray-500'}>{formatCurrency(desired)}</span>
+                                        <span className={`font-medium ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                                            ({isPositive ? '+' : ''}{formatCurrency(diff)})
+                                        </span>
+                                    </div>
+                                );
+                            })() : null)}
                         />
                         <InputGroup language={language}
                             label={t('inflationRate')}
@@ -974,6 +1020,16 @@ export default function InputForm({
                 t={t}
                 language={language}
                 currency={currency}
+            />
+            <IncomeScheduleModal
+                isOpen={showIncomeSchedule}
+                onClose={() => setShowIncomeSchedule(false)}
+                inputs={inputs}
+                setInputs={setInputs}
+                language={language}
+                currency={currency}
+                startYear={startYear}
+                endYear={endYear}
             />
 
             {/* Prompt Preview Overlay */}

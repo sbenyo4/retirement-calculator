@@ -33,7 +33,7 @@ export function calculateRetirementProjection(inputs, t = null) {
     // Parse Inputs safely
     const parsedInputs = Object.fromEntries(
         Object.entries(inputs).map(([k, v]) => {
-            if (k === 'variableRates' || k === 'variableRatesEnabled' || k === 'lifeEvents' || k === 'enableBuckets' || k === 'withdrawalStrategy' || k === 'safeVariableRates' || k === 'surplusVariableRates' || k === 'targetEndBalance' || k === 'fourPercentMode' || k === 'language' || k === 'additionalYearlyIncome' || k === 'capeRatio' || k === 'scenarioEnabled' || k === 'scenario' || k === 'pensionIncomeSources' || k === 'manualAge' || k === 'birthdate' || k === 'fiscalParameters') return [k, v];
+            if (k === 'variableRates' || k === 'variableRatesEnabled' || k === 'lifeEvents' || k === 'enableBuckets' || k === 'withdrawalStrategy' || k === 'safeVariableRates' || k === 'surplusVariableRates' || k === 'targetEndBalance' || k === 'fourPercentMode' || k === 'language' || k === 'additionalYearlyIncome' || k === 'yearlyIncomeOverrides' || k === 'capeRatio' || k === 'scenarioEnabled' || k === 'scenario' || k === 'pensionIncomeSources' || k === 'manualAge' || k === 'birthdate' || k === 'fiscalParameters') return [k, v];
             return [k, parseFloat(v) || 0];
         })
     );
@@ -118,6 +118,23 @@ export function calculateRetirementProjection(inputs, t = null) {
 
     const monthsInRetirement = (retirementEndAge - retirementStartAge) * 12;
 
+    const yearlyIncomeOverrides = parsedInputs.yearlyIncomeOverrides && typeof parsedInputs.yearlyIncomeOverrides === 'object'
+        ? parsedInputs.yearlyIncomeOverrides
+        : {};
+    const averageMonthlyNetIncomeDesired = (() => {
+        if (!yearlyIncomeOverrides || Object.keys(yearlyIncomeOverrides).length === 0 || monthsInRetirement <= 0) {
+            return monthlyNetIncomeDesired;
+        }
+        let total = 0;
+        for (let i = 1; i <= monthsInRetirement; i++) {
+            const monthIndex = lastMonthIndex + i;
+            const year = getCalendarYearForMonth(monthIndex, startYear, startMonth);
+            const override = parseFloat(yearlyIncomeOverrides[year]);
+            total += (!isNaN(override) && override > 0) ? override : monthlyNetIncomeDesired;
+        }
+        return total / monthsInRetirement;
+    })();
+
     // Build adjusted inputs for decumulation with real rates
     const realInputs = {
         ...parsedInputs,
@@ -184,7 +201,7 @@ export function calculateRetirementProjection(inputs, t = null) {
     const statsResult = calculateStatistics({
         balanceAtRetirement,
         requiredCapitalAtRetirement: decumResult.requiredCapitalPV,
-        monthlyNetIncomeDesired,
+        monthlyNetIncomeDesired: averageMonthlyNetIncomeDesired,
         monthlyContribution,
         annualReturnRate: effectiveAccumRate, // Accumulation Rate (for PV to today)
         retirementAnnualReturnRate: effectiveRetirementRate, // Decumulation Rate (for Perpetuity threshold)

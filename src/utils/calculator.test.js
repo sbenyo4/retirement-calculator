@@ -47,6 +47,24 @@ describe('calculateRetirementProjection', () => {
         });
     });
 
+    describe('yearly income overrides', () => {
+        it('uses a changed income amount for the matching retirement year', () => {
+            const firstRetirementYear = new Date().getFullYear() + 20;
+            const result = calculateRetirementProjection({
+                ...baseInputs,
+                taxRate: 0,
+                yearlyIncomeOverrides: {
+                    [firstRetirementYear]: 8000
+                }
+            });
+
+            expect(result.initialNetWithdrawal).toBeCloseTo(8000, 0);
+            expect(result.requiredCapitalAtRetirement).toBeGreaterThan(
+                calculateRetirementProjection({ ...baseInputs, taxRate: 0 }).requiredCapitalAtRetirement
+            );
+        });
+    });
+
     describe('surplus and deficit', () => {
         it('should have surplus when savings are high', () => {
             const highSavingsInputs = {
