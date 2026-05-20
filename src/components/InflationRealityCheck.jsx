@@ -32,7 +32,7 @@ export function InflationModal({ isOpen, onClose, t, language }) {
         {
             id: 'coffee',
             icon: Coffee,
-            currentPrice: 5,
+            currentPrice: { en: 5, he: 18 },
             color: 'text-amber-600',
             bgColor: 'bg-amber-100',
             darkColor: 'text-amber-400',
@@ -41,7 +41,7 @@ export function InflationModal({ isOpen, onClose, t, language }) {
         {
             id: 'bread',
             icon: ShoppingCart,
-            currentPrice: 4,
+            currentPrice: { en: 4, he: 15 },
             color: 'text-yellow-600',
             bgColor: 'bg-yellow-100',
             darkColor: 'text-yellow-400',
@@ -50,7 +50,7 @@ export function InflationModal({ isOpen, onClose, t, language }) {
         {
             id: 'movie',
             icon: Ticket,
-            currentPrice: 15,
+            currentPrice: { en: 15, he: 45 },
             color: 'text-purple-600',
             bgColor: 'bg-purple-100',
             darkColor: 'text-purple-400',
@@ -59,7 +59,7 @@ export function InflationModal({ isOpen, onClose, t, language }) {
         {
             id: 'beer',
             icon: Beer,
-            currentPrice: 8,
+            currentPrice: { en: 8, he: 30 },
             color: 'text-orange-600',
             bgColor: 'bg-orange-100',
             darkColor: 'text-orange-400',
@@ -68,7 +68,7 @@ export function InflationModal({ isOpen, onClose, t, language }) {
         {
             id: 'car',
             icon: Car,
-            currentPrice: 35000,
+            currentPrice: { en: 35000, he: 135000 },
             color: 'text-blue-600',
             bgColor: 'bg-blue-100',
             darkColor: 'text-blue-400',
@@ -77,7 +77,7 @@ export function InflationModal({ isOpen, onClose, t, language }) {
         {
             id: 'vacation',
             icon: Plane,
-            currentPrice: 5000,
+            currentPrice: { en: 5000, he: 18000 },
             color: 'text-emerald-600',
             bgColor: 'bg-emerald-100',
             darkColor: 'text-emerald-400',
@@ -91,24 +91,17 @@ export function InflationModal({ isOpen, onClose, t, language }) {
 
         return items.map(item => ({
             ...item,
-            futurePrice: item.currentPrice * Math.pow(1 + r, n)
+            displayPrice: item.currentPrice[language === 'he' ? 'he' : 'en'],
+            futurePrice: item.currentPrice[language === 'he' ? 'he' : 'en'] * Math.pow(1 + r, n)
         }));
-    }, [items, rate, years]);
+    }, [items, language, rate, years]);
 
     const formatPrice = (price) => {
-        let value = price;
-        let currency = 'USD';
-
-        if (language === 'he') {
-            currency = 'ILS';
-            value = price * 3.8;
-        }
-
         return new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
             style: 'currency',
-            currency: currency,
+            currency: language === 'he' ? 'ILS' : 'USD',
             maximumFractionDigits: 0
-        }).format(value);
+        }).format(price);
     };
 
     if (!isOpen) return null;
@@ -194,7 +187,7 @@ export function InflationModal({ isOpen, onClose, t, language }) {
                                 className={`relative group overflow-hidden rounded-xl border p-4 transition-all hover:scale-105 hover:shadow-xl ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/5'}`}
                             >
                                 <div className={`absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isLight ? 'bg-slate-200 text-slate-600' : 'bg-black/30 text-gray-400'}`}>
-                                    x{(item.futurePrice / item.currentPrice).toFixed(1)}
+                                    x{(item.futurePrice / item.displayPrice).toFixed(1)}
                                 </div>
 
                                 <div className={`mb-3 w-10 h-10 rounded-lg flex items-center justify-center ${isLight ? `${item.bgColor} ${item.color}` : `${item.darkBgColor} ${item.darkColor}`}`}>
@@ -207,7 +200,7 @@ export function InflationModal({ isOpen, onClose, t, language }) {
 
                                 <div className="space-y-1">
                                     <div className={`text-xs ${isLight ? 'text-slate-400' : 'text-gray-500'} line-through`}>
-                                        {formatPrice(item.currentPrice)}
+                                        {formatPrice(item.displayPrice)}
                                     </div>
                                     <div className={`text-lg font-bold ${isLight ? 'text-slate-800' : 'text-white'}`}>
                                         {formatPrice(item.futurePrice)}

@@ -55,11 +55,20 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
         return new Date().getFullYear() + Math.max(0, Math.round(yearsLeft));
     })();
 
+    const retirementEndYear = (() => {
+        const endAge = parseFloat(inputs.retirementEndAge) || 90;
+        if (inputs.birthdate) {
+            return new Date(inputs.birthdate).getFullYear() + Math.floor(endAge);
+        }
+        const yearsToEnd = endAge - (parseFloat(inputs.currentAge) || 30);
+        return new Date().getFullYear() + Math.max(0, Math.round(yearsToEnd));
+    })();
+
     const allEntriesValid = entries.every(e => {
         const yr = parseInt(e.startYear);
         const endYr = e.endYear ? parseInt(e.endYear) : null;
-        return yr >= 2000 && yr <= 2100
-            && (endYr === null || (endYr >= yr && endYr <= 2100))
+        return yr >= retirementYear && yr <= retirementEndYear
+            && (endYr === null || (endYr >= yr && endYr <= retirementEndYear))
             && parseFloat(e.monthlyAmount) > 0;
     });
     const hasChanges = JSON.stringify(entries.map(e => ({
@@ -213,14 +222,22 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                             <button
                                 key={tpl.labelEn}
                                 onClick={() => addFromTemplate(tpl)}
+                                dir="ltr"
                                 className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border transition-colors ${isLight ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100' : 'bg-green-900/10 border-green-500/25 text-green-400 hover:bg-green-900/20'}`}
                             >
-                                <span>{tpl.emoji}</span>
-                                <span>{isRTL ? tpl.labelHe : tpl.labelEn}</span>
-                                <span className={`${isLight ? 'text-green-500' : 'text-green-500'} font-medium`} dir="ltr">
-                                    +{currency}{tpl.amount.toLocaleString()}
-                                    {tpl.durationYears ? `·${tpl.durationYears}y` : ''}
-                                </span>
+                                {isRTL ? (
+                                    <>
+                                        <span className={`${isLight ? 'text-green-500' : 'text-green-500'} font-medium`}>{`+${currency}${tpl.amount.toLocaleString()}${tpl.durationYears ? `·${tpl.durationYears}ש׳` : ''}`}</span>
+                                        <span>{tpl.labelHe}</span>
+                                        <span>{tpl.emoji}</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span>{tpl.emoji}</span>
+                                        <span>{tpl.labelEn}</span>
+                                        <span className={`${isLight ? 'text-green-500' : 'text-green-500'} font-medium`}>{`+${currency}${tpl.amount.toLocaleString()}${tpl.durationYears ? `·${tpl.durationYears}y` : ''}`}</span>
+                                    </>
+                                )}
                             </button>
                         ))}
                     </div>
@@ -243,16 +260,17 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                                     <span className={`h-7 flex items-start text-[10px] leading-tight ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>{t('incomeEntryFrom')}</span>
                                     <input
                                         type="number"
+                                        dir="ltr"
                                         className={inputCls}
                                         value={entry.startYear}
-                                        min={2000}
-                                        max={2100}
+                                        min={retirementYear}
+                                        max={retirementEndYear}
                                         onChange={e => updateEntry(entry.id, 'startYear', e.target.value)}
                                         onKeyDown={e => {
                                             if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
                                                 e.preventDefault();
                                                 const cur = parseInt(entry.startYear) || retirementYear;
-                                                updateEntry(entry.id, 'startYear', e.key === 'ArrowUp' ? cur + 1 : Math.max(2000, cur - 1));
+                                                updateEntry(entry.id, 'startYear', e.key === 'ArrowUp' ? Math.min(retirementEndYear, cur + 1) : Math.max(retirementYear, cur - 1));
                                             }
                                         }}
                                     />
@@ -265,15 +283,19 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                                     <span className={`h-7 flex items-start text-[10px] leading-tight ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>{t('incomeEntryTo')}</span>
                                     <input
                                         type="number"
+                                        dir="ltr"
                                         className={inputCls}
                                         placeholder={String(entry.startYear || '')}
                                         value={entry.endYear ?? ''}
+                                        min={entry.startYear || new Date().getFullYear()}
+                                        max={retirementEndYear}
                                         onChange={e => updateEntry(entry.id, 'endYear', e.target.value === '' ? null : e.target.value)}
                                         onKeyDown={e => {
                                             if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
                                                 e.preventDefault();
                                                 const cur = parseInt(entry.endYear) || parseInt(entry.startYear) || retirementYear;
-                                                updateEntry(entry.id, 'endYear', e.key === 'ArrowUp' ? cur + 1 : Math.max(2000, cur - 1));
+                                                const minY = parseInt(entry.startYear) || new Date().getFullYear();
+                                                updateEntry(entry.id, 'endYear', e.key === 'ArrowUp' ? Math.min(retirementEndYear, cur + 1) : Math.max(minY, cur - 1));
                                             }
                                         }}
                                     />
@@ -288,6 +310,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                                         </span>
                                         <input
                                             type="number"
+                                            dir="ltr"
                                             className={`${inputCls} ${isRTL ? 'pr-6' : 'pl-6'}`}
                                             value={entry.monthlyAmount}
                                             min={0}
@@ -299,6 +322,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                                 {/* Toggle */}
                                 <button
                                     onClick={() => updateEntry(entry.id, 'enabled', entry.enabled === false)}
+                                    title={entry.enabled === false ? (isRTL ? 'הפעל' : 'Enable') : (isRTL ? 'השבת' : 'Disable')}
                                     className="p-0.5 transition-colors"
                                 >
                                     {entry.enabled === false
@@ -307,6 +331,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                                 </button>
                                 <button
                                     onClick={() => removeEntry(entry.id)}
+                                    title={isRTL ? 'הסר' : 'Remove'}
                                     className={`p-1 rounded transition-colors ${isLight ? 'text-red-400 hover:text-red-600 hover:bg-red-50' : 'text-red-400 hover:text-red-300 hover:bg-red-900/20'}`}
                                 >
                                     <Trash2 size={13} />
@@ -321,7 +346,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                                         const impact = balanceImpacts[entry.id];
                                         const positive = impact >= 0;
                                         return (
-                                            <span className={`font-medium text-xs ${positive ? 'text-emerald-400' : 'text-red-400'}`}>
+                                            <span dir="ltr" className={`font-medium text-xs tabular-nums ${positive ? 'text-emerald-400' : 'text-red-400'}`}>
                                                 {positive ? '+' : ''}{fmt(impact, language)}
                                             </span>
                                         );

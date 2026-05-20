@@ -2116,6 +2116,53 @@ function PlanFlags({ codes, isLight, showShape = false }) {
     );
 }
 
+const WORLD_REGIONS = [
+    { id: 'all',      he: 'כל העולם',  en: 'Worldwide' },
+    { id: 'europe',   he: 'אירופה',    en: 'Europe', sub: [
+        { id: 'eu-west',    he: 'מערב',         en: 'West EU' },
+        { id: 'eu-south',   he: 'דרום / ים תיכון', en: 'S. Europe' },
+        { id: 'eu-central', he: 'מרכז',          en: 'Central EU' },
+        { id: 'eu-east',    he: 'מזרח / בלקן',  en: 'E. Europe' },
+        { id: 'eu-north',   he: 'צפון / סקנדינביה', en: 'Scandinavia' },
+    ]},
+    { id: 'asia',     he: 'אסיה',      en: 'Asia', sub: [
+        { id: 'east-asia',       he: 'מזרח אסיה',       en: 'East Asia' },
+        { id: 'southeast-asia',  he: 'דרום-מזרח אסיה',  en: 'SE Asia' },
+        { id: 'south-asia',      he: 'דרום אסיה',        en: 'South Asia' },
+        { id: 'middle-east',     he: 'מזרח תיכון',       en: 'Middle East' },
+        { id: 'central-asia',    he: 'מרכז אסיה',        en: 'Central Asia' },
+    ]},
+    { id: 'americas', he: 'אמריקה',    en: 'Americas', sub: [
+        { id: 'north-america',   he: 'צפון אמריקה',      en: 'N. America' },
+        { id: 'latin-america',   he: 'אמריקה לטינית',    en: 'L. America' },
+        { id: 'caribbean',       he: 'קריביים',           en: 'Caribbean' },
+    ]},
+    { id: 'africa',   he: 'אפריקה',    en: 'Africa' },
+    { id: 'oceania',  he: 'אוקיאניה',  en: 'Oceania' },
+];
+
+const REGION_PROMPT = {
+    all:               { he: null, en: null },
+    europe:            { he: 'הצע יעדים מאירופה בלבד. פרש את גבולות האזור לפי הגדרה גיאוגרפית מקובלת ועדכנית, בלי להסתמך על רשימת מדינות קבועה.', en: 'Suggest destinations from Europe only. Interpret the region using a current standard geographic definition, without relying on a fixed country list.' },
+    'eu-west':         { he: 'הצע יעדים ממערב אירופה בלבד. הגדר את הגבולות לפי החלוקה הגיאוגרפית המקובלת של מערב אירופה, והסק בעצמך אילו מדינות וערים נכללות.', en: 'Suggest Western Europe destinations only. Define the boundary by the standard geographic concept of Western Europe and infer included countries and cities yourself.' },
+    'eu-south':        { he: 'הצע יעדים מדרום אירופה / אגן הים התיכון בלבד. התייחס לקו החוף, האיים והאזורים העירוניים הרלוונטיים סביב הים התיכון ובדרום אירופה לפי הבנה גיאוגרפית עדכנית. החזר מגוון רחב ולא פחות מ-12 אפשרויות אם יש מחירי טיסות ישירות זמינים. אל תעצור אחרי 2-3 יעדים שמתאימים לתקציב; אם יעד חורג, החזר אותו עם פחות לילות משתלמים.', en: 'Suggest Southern Europe / Mediterranean-basin destinations only. Use current geographic understanding of the coastline, islands, and relevant city regions around the Mediterranean and Southern Europe. Return broad variety and at least 12 options when direct flight prices are available. Do not stop after 2-3 budget-fitting destinations; if a destination exceeds the budget, return it with fewer affordable nights.' },
+    'eu-central':      { he: 'הצע יעדים ממרכז אירופה בלבד. הגדר את הגבולות לפי החלוקה הגיאוגרפית המקובלת של מרכז אירופה, והסק בעצמך אילו מדינות וערים נכללות.', en: 'Suggest Central Europe destinations only. Define the boundary by the standard geographic concept of Central Europe and infer included countries and cities yourself.' },
+    'eu-east':         { he: 'הצע יעדים ממזרח אירופה / הבלקן בלבד. הגדר את הגבולות לפי החלוקה הגיאוגרפית והאזורית המקובלת, והסק בעצמך אילו מדינות וערים נכללות.', en: 'Suggest Eastern Europe / Balkans destinations only. Define the boundary by standard geographic and regional usage and infer included countries and cities yourself.' },
+    'eu-north':        { he: 'הצע יעדים מצפון אירופה / סקנדינביה בלבד. הגדר את הגבולות לפי החלוקה הגיאוגרפית המקובלת של צפון אירופה, והסק בעצמך אילו מדינות וערים נכללות.', en: 'Suggest Northern Europe / Scandinavia destinations only. Define the boundary by the standard geographic concept of Northern Europe and infer included countries and cities yourself.' },
+    asia:              { he: 'הצע יעדים מאסיה בלבד. פרש את גבולות האזור לפי הגדרה גיאוגרפית מקובלת ועדכנית, בלי להסתמך על רשימת מדינות קבועה.', en: 'Suggest destinations from Asia only. Interpret the region using a current standard geographic definition, without relying on a fixed country list.' },
+    'east-asia':       { he: 'הצע יעדים ממזרח אסיה בלבד. הגדר את הגבולות לפי החלוקה הגיאוגרפית המקובלת של מזרח אסיה, והסק בעצמך אילו מדינות וערים נכללות.', en: 'Suggest East Asia destinations only. Define the boundary by the standard geographic concept of East Asia and infer included countries and cities yourself.' },
+    'southeast-asia':  { he: 'הצע יעדים מדרום-מזרח אסיה בלבד. הגדר את הגבולות לפי החלוקה הגיאוגרפית המקובלת של דרום-מזרח אסיה, והסק בעצמך אילו מדינות וערים נכללות.', en: 'Suggest Southeast Asia destinations only. Define the boundary by the standard geographic concept of Southeast Asia and infer included countries and cities yourself.' },
+    'south-asia':      { he: 'הצע יעדים מדרום אסיה בלבד. הגדר את הגבולות לפי החלוקה הגיאוגרפית המקובלת של דרום אסיה, והסק בעצמך אילו מדינות וערים נכללות.', en: 'Suggest South Asia destinations only. Define the boundary by the standard geographic concept of South Asia and infer included countries and cities yourself.' },
+    'middle-east':     { he: 'הצע יעדים מהמזרח התיכון בלבד. הגדר את הגבולות לפי שימוש גיאוגרפי ואזורי מקובל ועדכני, והסק בעצמך אילו מדינות וערים נכללות.', en: 'Suggest Middle East destinations only. Define the boundary by current standard geographic and regional usage and infer included countries and cities yourself.' },
+    'central-asia':    { he: 'הצע יעדים ממרכז אסיה בלבד. הגדר את הגבולות לפי החלוקה הגיאוגרפית המקובלת של מרכז אסיה, והסק בעצמך אילו מדינות וערים נכללות.', en: 'Suggest Central Asia destinations only. Define the boundary by the standard geographic concept of Central Asia and infer included countries and cities yourself.' },
+    americas:          { he: 'הצע יעדים מאמריקה בלבד. פרש את גבולות האזור לפי הגדרה גיאוגרפית מקובלת ועדכנית, בלי להסתמך על רשימת מדינות קבועה.', en: 'Suggest destinations from the Americas only. Interpret the region using a current standard geographic definition, without relying on a fixed country list.' },
+    'north-america':   { he: 'הצע יעדים מצפון אמריקה בלבד. הגדר את הגבולות לפי החלוקה הגיאוגרפית המקובלת של צפון אמריקה, והסק בעצמך אילו מדינות וערים נכללות.', en: 'Suggest North America destinations only. Define the boundary by the standard geographic concept of North America and infer included countries and cities yourself.' },
+    'latin-america':   { he: 'הצע יעדים מאמריקה הלטינית בלבד. הגדר את הגבולות לפי שימוש גיאוגרפי, לשוני ותרבותי מקובל, והסק בעצמך אילו מדינות וערים נכללות.', en: 'Suggest Latin America destinations only. Define the boundary by standard geographic, linguistic, and cultural usage and infer included countries and cities yourself.' },
+    caribbean:         { he: 'הצע יעדים מהקריביים בלבד. הגדר את הגבולות לפי האזור הימי והאיים הקריביים המקובלים, והסק בעצמך אילו מדינות, טריטוריות וערים נכללות.', en: 'Suggest Caribbean destinations only. Define the boundary by the standard Caribbean sea/island region and infer included countries, territories, and cities yourself.' },
+    africa:            { he: 'הצע יעדים מאפריקה בלבד. פרש את גבולות האזור לפי הגדרה גיאוגרפית מקובלת ועדכנית, בלי להסתמך על רשימת מדינות קבועה.', en: 'Suggest destinations from Africa only. Interpret the region using a current standard geographic definition, without relying on a fixed country list.' },
+    oceania:           { he: 'הצע יעדים מאוקיאניה בלבד. הגדר את הגבולות לפי החלוקה הגיאוגרפית המקובלת של אוקיאניה והאוקיינוס השקט, והסק בעצמך אילו מדינות, טריטוריות וערים נכללות.', en: 'Suggest Oceania destinations only. Define the boundary by the standard geographic concept of Oceania and the Pacific region and infer included countries, territories, and cities yourself.' },
+};
+
 const TIER_META = {
     cheap:     { labelHe: 'זול',    labelEn: 'Budget',  color: 'green'  },
     medium:    { labelHe: 'בינוני', labelEn: 'Medium',  color: 'blue'   },
@@ -2151,36 +2198,82 @@ const LOCATION_CARD_STYLES = [
 
 let _ilsRatesCache = null;
 let _ilsRatesCacheTime = 0;
+function ilsRatesFromUsdRates(rates, meta = {}) {
+    const usdIls = Number(rates?.ILS);
+    if (!Number.isFinite(usdIls) || usdIls <= 0) return null;
+    const rateFor = code => {
+        const perUsd = Number(rates?.[code]);
+        return Number.isFinite(perUsd) && perUsd > 0 ? +(usdIls / perUsd).toFixed(code === 'JPY' || code === 'THB' || code === 'TRY' || code === 'INR' || code === 'ZAR' ? 4 : 3) : null;
+    };
+    return {
+        USD: +usdIls.toFixed(3),
+        EUR: rateFor('EUR'),
+        GBP: rateFor('GBP'),
+        THB: rateFor('THB'),
+        JPY: rateFor('JPY'),
+        CAD: rateFor('CAD'),
+        AUD: rateFor('AUD'),
+        TRY: rateFor('TRY'),
+        INR: rateFor('INR'),
+        SGD: rateFor('SGD'),
+        ZAR: rateFor('ZAR'),
+        source: meta.source || '',
+        asOf: meta.asOf || '',
+        fetchedAt: new Date().toISOString(),
+    };
+}
+
 async function fetchIlsRates() {
     const now = Date.now();
     if (_ilsRatesCache && now - _ilsRatesCacheTime < 3_600_000) return _ilsRatesCache;
-    try {
-        const resp = await fetch('https://api.frankfurter.app/latest?from=USD');
-        const data = await resp.json();
-        const usdIls = data.rates?.ILS;
-        if (!usdIls) return null;
-        const r = data.rates;
-        _ilsRatesCache = {
-            USD: +usdIls.toFixed(3),
-            EUR: +(usdIls / r.EUR).toFixed(3),
-            GBP: +(usdIls / r.GBP).toFixed(3),
-            THB: +(usdIls / r.THB).toFixed(4),
-            JPY: +(usdIls / r.JPY).toFixed(4),
-            CAD: +(usdIls / r.CAD).toFixed(3),
-            AUD: +(usdIls / r.AUD).toFixed(3),
-        };
-        _ilsRatesCacheTime = now;
-        return _ilsRatesCache;
-    } catch {
-        return null;
+    const providers = [
+        {
+            source: 'Frankfurter',
+            url: 'https://api.frankfurter.app/latest?from=USD',
+            parse: data => ilsRatesFromUsdRates(data?.rates, { source: 'Frankfurter', asOf: data?.date || '' }),
+        },
+        {
+            source: 'Open Exchange Rates mirror',
+            url: 'https://open.er-api.com/v6/latest/USD',
+            parse: data => ilsRatesFromUsdRates(data?.rates, {
+                source: 'open.er-api.com',
+                asOf: data?.time_last_update_utc || data?.time_last_update_unix || '',
+            }),
+        },
+    ];
+    for (const provider of providers) {
+        try {
+            const resp = await fetch(provider.url, { cache: 'no-store' });
+            if (!resp.ok) continue;
+            const parsed = provider.parse(await resp.json());
+            if (!parsed) continue;
+            _ilsRatesCache = parsed;
+            _ilsRatesCacheTime = now;
+            return _ilsRatesCache;
+        } catch {
+            // Try the next live-rate provider.
+        }
     }
+    return null;
+}
+
+function ratesLineFor(liveRates) {
+    if (!liveRates) {
+        return 'Live exchange rates could not be fetched by the app. Do not use stale or hardcoded exchange rates. Prefer sources that display ILS directly; if a source displays another currency, use a current exchange-rate source and return that source/date in flightConversionRateSource and flightConversionRateDate.';
+    }
+    const optional = [
+        liveRates.TRY ? `1 TRY = ${liveRates.TRY} ILS` : null,
+        liveRates.INR ? `1 INR = ${liveRates.INR} ILS` : null,
+        liveRates.SGD ? `1 SGD = ${liveRates.SGD} ILS` : null,
+        liveRates.ZAR ? `1 ZAR = ${liveRates.ZAR} ILS` : null,
+    ].filter(Boolean).join(', ');
+    return `Live exchange rates (${liveRates.source || 'live provider'}${liveRates.asOf ? `, as of ${liveRates.asOf}` : ''}, fetched now): 1 USD = ${liveRates.USD} ILS, 1 EUR = ${liveRates.EUR} ILS, 1 GBP = ${liveRates.GBP} ILS, 1 THB = ${liveRates.THB} ILS, 1 JPY = ${liveRates.JPY} ILS, 1 CAD = ${liveRates.CAD} ILS, 1 AUD = ${liveRates.AUD} ILS${optional ? `, ${optional}` : ''}. Use these exact live rates for all conversions and set flightConversionRateSource="${liveRates.source || 'live provider'}" and flightConversionRateDate="${liveRates.asOf || liveRates.fetchedAt || ''}".`;
 }
 
 
 const COST_OF_LIVING_PRICE_CONTEXT = `
 Use real market ranges and return every numeric amount in Israeli shekels (ILS/NIS), not USD/EUR/THB.
-Currency anchors will be injected with live rates before this prompt; use them precisely when converting prices. Do not confuse local currency with shekels. Cheap long-haul airfare is never a few hundred shekels; convert local prices before returning JSON.
-Non-stop flight minimums from TLV (round-trip, economy, per person): short regional (Cyprus, Greece, Turkey ≤2h) 900–1,600 ILS; European capitals (Berlin, Paris, Rome, Amsterdam, Vienna, Madrid etc., 3–5h non-stop) minimum 1,400 ILS, typically 1,600–2,400 ILS; long-haul (Asia, Americas) 2,500–6,000 ILS. Never return a European non-stop flight below 1,400 ILS.
+Currency rates will be injected with live rates before this prompt; use them precisely when converting prices. Do not confuse local currency with shekels. Never return a flight price in local currency units as if it were shekels.
 costs.rent is HOUSING: a realistic monthly housing cost for the selected lifestyle tier. Add housingType and housingLevel to explain whether this is an apartment, serviced apartment, hotel/guesthouse, and what standard/location it assumes.
 For the requested trip length, also return tripHousingCost and tripFoodCost when possible:
 - For short stays (1-14 nights), tripHousingCost should be the actual total accommodation cost for those nights, using realistic short-stay options for the tier: hostel/private room/simple guesthouse/budget hotel/short-stay apartment as appropriate. Do not derive it only by dividing monthly rent by 30.
@@ -2188,10 +2281,19 @@ For the requested trip length, also return tripHousingCost and tripFoodCost when
 - For 28+ nights, monthly apartment rent can be appropriate.
 - tripFoodCost should reflect the requested trip length and tier: groceries/local meals for budget, mixed groceries/restaurants for moderate, more restaurants for premium. Do not simply divide monthly food if the trip length implies tourist eating patterns.
 Food, transport, entertainment and other in costs should still be monthly living costs.
-costs.flights is NOT monthly. It must be the current economy round-trip airfare for ONE TRIP from Tel Aviv (TLV) to the nearest practical airport, per adult, in ILS.
+costs.flights is NOT monthly. It must be the DIRECT/NON-STOP round-trip airfare for ONE TRIP from Tel Aviv (TLV) to the nearest practical airport, per adult, in ILS. All flight prices must be for direct flights only, with zero stops/connections. Match airfare class to the lifestyle tier: budget-friendly = cheapest available direct economy; moderate = standard direct economy; premium = direct premium economy or business class where available.
 flightRoundTrip must equal costs.flights.
-If car rental is requested, treat it as "consider car rental", not mandatory. Set costs.carRental to 0 when a car is not useful for that destination (dense/traffic-heavy cities, strong public transport, high parking cost, unsafe driving, or mostly city stay). Add car rental only for places where it materially improves the trip, such as island/coastal/rural destinations, road-trip bases, or spread-out areas. Examples: use 0 for Bangkok city; consider a car for Larnaca/Cyprus day trips. When included, costs.carRental must be a realistic total car rental cost for the requested car days in ILS, including basic insurance and local taxes. If car rental is not requested, return 0.
-If airfare is uncertain, use these 2026 round-trip anchors from TLV (per person, economy): nearby Middle East/Cyprus ILS 900-1,800; Europe non-stop (3-5h, e.g. Berlin/Paris/Rome/Amsterdam) minimum 1,400 ILS, typical 1,600-2,400 ILS; North Africa/Caucasus ILS 1,000-2,200; Gulf/Central Asia ILS 1,200-3,200; South/East/Southeast Asia ILS 2,500-5,500; Africa beyond North Africa ILS 2,500-6,000; North America ILS 3,000-6,500; Latin America/Australia/New Zealand ILS 4,500-9,000. For European non-stop flights, never go below 1,400 ILS.
+For flights, use current live search results from real booking/metasearch/airline sites with the "direct/non-stop only" filter enabled. Return flightSourceName, flightSourceUrl, flightOriginalPrice, flightOriginalCurrency, flightConversionRate, flightConversionRateSource, and flightConversionRateDate. Convert flightOriginalPrice × flightConversionRate to ILS and set both flightRoundTrip and costs.flights to that rounded ILS value. If the source already prices in ILS, use flightOriginalCurrency="ILS", flightConversionRate=1, flightConversionRateSource=flightSourceName, and flightConversionRateDate=current source date. Do not invent a price when you cannot ground it in a current direct-flight source.
+For accommodation, use current listings or current hotel/apartment search results appropriate to the requested tier and stay length. Return accommodationSourceName, accommodationSourceUrl, accommodationOriginalPrice, accommodationOriginalCurrency, accommodationConversionRate, accommodationConversionRateSource, and accommodationConversionRateDate. accommodationOriginalPrice must be the total stay price for all requested nights, not nightly. Convert it to ILS and set tripHousingCost to that rounded total.
+For car rental, when included, use a current rental search result or rental company listing for the requested destination and rental days. Return carRentalSourceName, carRentalSourceUrl, carRentalOriginalPrice, carRentalOriginalCurrency, carRentalConversionRate, carRentalConversionRateSource, and carRentalConversionRateDate. carRentalOriginalPrice must be the total rental price for all requested car-rental days including basic insurance and local taxes, not daily. Convert it to ILS and set costs.carRental to that rounded total.
+Price verification is mandatory before returning JSON:
+- Verify flight prices against at least two current sources when possible (for example a metasearch result plus airline/OTA result). If only one source is accessible, cross-check that route, direct-only filter, round-trip/per-person scope, and currency are explicit.
+- Reject prices that are one-way fares, include stops, omit taxes/fees, use an unconverted foreign currency, or look like EUR/USD/local-currency values copied into ILS.
+- Recalculate conversion manually from flightOriginalPrice × flightConversionRate and ensure it matches flightRoundTrip and costs.flights within rounding.
+- Verify accommodation and car rental against current market listings or widely used travel cost sources. Recalculate accommodationOriginalPrice × accommodationConversionRate and carRentalOriginalPrice × carRentalConversionRate where relevant, and make sure totals match tripHousingCost and costs.carRental within rounding.
+- In note, briefly mention what was verified (for example direct round-trip flight source, currency conversion, accommodation basis). Do not expose chain-of-thought; just state the checked assumptions.
+flightHours = one-way direct flight duration in hours from TLV (Ben Gurion) to the nearest main airport. Use real scheduled flight times, not estimates. Return as a number (e.g. 4 for 4 hours, 3.5 for 3h30m).
+If car rental is requested, treat it as "consider car rental", not mandatory. Set costs.carRental to 0 when a car is not useful for that destination (dense/traffic-heavy cities, strong public transport, high parking cost, unsafe driving, or mostly city stay). Add car rental only for places where it materially improves the trip, such as island/coastal/rural destinations, road-trip bases, or spread-out areas. When included, costs.carRental must be a realistic total car rental cost for the requested car days in ILS, including basic insurance and local taxes. If car rental is not requested, return 0.
 Lifestyle tiers:
 - budget-friendly: a solo traveler on a tight but comfortable budget — not backpacker extreme. Housing = a private single room (not a dorm): budget hotel, simple guesthouse, or a small private room in a hostel/B&B — clean and safe but basic, non-central location is fine. No shared dorms, no self-catering apartments. Food = a genuine mix of street food, local market stalls, and cheap sit-down local restaurants — not cooking at home, but also not tourist restaurants or cafes. Expect meals that a local on a budget would eat. Transport = public transport and walking; occasional cheap local taxi when necessary. Entertainment = low-cost or free local activities, a few inexpensive attractions. Other = bare essentials. This tier should feel budget-conscious but real and enjoyable, not ascetic.
 - moderate: normal comfortable long-stay standard for that specific destination. Housing = comfortable private one-bedroom/studio or serviced apartment in a convenient but not top luxury area, with reliable internet/utilities. Food = groceries plus regular cafes/restaurants, including some international options. Transport = good public transport plus occasional taxis/rideshare. Entertainment = regular gym/cafes/activities and a few paid attractions. Other = comfortable routine expenses and small buffers. This tier should feel practical and comfortable, not premium.
@@ -2244,8 +2346,7 @@ function normalizeTierLivingCost(key, value, selectedTier) {
     if (key === 'flights' || key === 'carRental' || key === 'insurance' || key === 'esim') return Math.max(0, Math.round(value || 0));
     const raw = Math.max(0, Math.round(value || 0));
     if (!raw) return 0;
-    const floor = TIER_PRICE_FLOORS[selectedTier]?.[key] ?? 0;
-    return Math.max(floor, raw);
+    return raw;
 }
 
 function housingNightlyCost(costs, selectedTier, nights) {
@@ -2253,8 +2354,7 @@ function housingNightlyCost(costs, selectedTier, nights) {
     const monthlyNightly = monthlyRent > 0 ? monthlyRent / DEFAULT_TRIP_DAYS : 0;
     if (nights <= 14) {
         const factor = SHORT_STAY_HOUSING_FACTOR[selectedTier] ?? SHORT_STAY_HOUSING_FACTOR.medium;
-        const floor = SHORT_STAY_HOUSING_MIN_NIGHTLY[selectedTier] ?? SHORT_STAY_HOUSING_MIN_NIGHTLY.medium;
-        return Math.max(floor, Math.ceil(monthlyNightly * factor));
+        return Math.ceil(monthlyNightly * factor);
     }
     if (nights <= 21) return Math.ceil(monthlyNightly * 1.55);
     return Math.ceil(monthlyNightly);
@@ -2327,6 +2427,39 @@ async function getParsedAiJson(messages, systemPrompt, aiProvider, aiModel, apiK
     }
 }
 
+async function getParsedGroundedAiJson(messages, systemPrompt, aiProvider, aiModel, apiKeyOverride, fallbackMessages = null) {
+    const envKey = aiProvider === 'gemini' ? 'VITE_GEMINI_API_KEY' : null;
+    const geminiKey = aiProvider === 'gemini'
+        ? (apiKeyOverride?.trim() || (envKey ? import.meta.env[envKey]?.trim() : ''))
+        : '';
+    const supportsGrounding = !!geminiKey && /gemini-2|gemini-exp/.test(aiModel);
+    if (!supportsGrounding) {
+        return getParsedAiJson(messages, systemPrompt, aiProvider, aiModel, apiKeyOverride, fallbackMessages);
+    }
+    const runGrounded = async (msgs) => {
+        const { GoogleGenerativeAI } = await import('@google/generative-ai');
+        const genAI = new GoogleGenerativeAI(geminiKey);
+        const model = genAI.getGenerativeModel({
+            model: aiModel,
+            tools: [{ googleSearch: {} }],
+            systemInstruction: systemPrompt,
+        });
+        const result = await model.generateContent(msgs.map(m => `${m.role}: ${m.content}`).join('\n\n'));
+        return parseAiJsonObject(result.response.text());
+    };
+    try {
+        return await runGrounded(messages);
+    } catch (firstError) {
+        if (!fallbackMessages) throw firstError;
+        try {
+            return await runGrounded(fallbackMessages);
+        } catch (secondError) {
+            secondError.message = `${secondError.message || 'Grounded AI JSON failed'}; first attempt: ${firstError.message || firstError}`;
+            throw secondError;
+        }
+    }
+}
+
 function aiErrorMessage(err, isHe) {
     const raw = String(err?.message || err || '');
     if (/missing api key/i.test(raw)) return isHe ? 'חסר API key לספק ה-AI שנבחר' : 'Missing API key for the selected AI provider';
@@ -2338,38 +2471,48 @@ function aiErrorMessage(err, isHe) {
 
 const AIRFARE_REGIONS = [
     {
-        floor: 4000,
-        typical: [4000, 8500],
+        minTripDays: 14,
+        flightHours: [14, 20],
         re: /(argentina|buenos aires|chile|santiago|peru|lima|brazil|rio|sao paulo|colombia|bogota|ecuador|uruguay|montevideo|australia|sydney|melbourne|new zealand|auckland|wellington|fiji|tahiti)/,
     },
     {
-        floor: 2600,
-        typical: [2600, 6000],
+        minTripDays: 10,
+        flightHours: [11, 15],
         re: /(usa|united states|canada|toronto|vancouver|montreal|new york|miami|los angeles|san francisco|chicago|boston|washington|seattle|mexico|cancun|mexico city)/,
     },
     {
-        floor: 2500,
-        typical: [2500, 6000],
+        minTripDays: 10,
+        flightHours: [8, 11],
         re: /(south africa|cape town|johannesburg|kenya|nairobi|tanzania|zanzibar|ethiopia|ghana|senegal|mauritius|seychelles|uganda|rwanda|namibia|botswana)/,
     },
     {
-        floor: 2200,
-        typical: [2200, 5500],
+        minTripDays: 7,
+        flightHours: [8, 12],
         re: /(thailand|bangkok|chiang mai|phuket|vietnam|hanoi|ho chi minh|da nang|bali|indonesia|malaysia|kuala lumpur|philippines|manila|singapore|cambodia|laos|japan|tokyo|osaka|korea|seoul|china|beijing|shanghai|hong kong|taiwan|taipei|india|delhi|mumbai|goa|sri lanka|colombo|nepal|kathmandu)/,
     },
     {
-        floor: 1200,
-        typical: [1200, 3200],
+        minTripDays: 4,
+        flightHours: [3, 6],
         re: /(uae|dubai|abu dhabi|qatar|doha|bahrain|oman|muscat|saudi|riyadh|jeddah|uzbekistan|tashkent|kazakhstan|almaty|azerbaijan|baku|armenia|yerevan)/,
     },
     {
-        floor: 900,
-        typical: [900, 2800],
-        re: /(greece|athens|cyprus|larnaca|paphos|portugal|lisbon|porto|spain|madrid|barcelona|italy|rome|milan|france|paris|germany|berlin|munich|austria|vienna|netherlands|amsterdam|belgium|brussels|switzerland|zurich|poland|warsaw|krakow|hungary|budapest|czech|prague|romania|bucharest|bulgaria|sofia|serbia|belgrade|croatia|zagreb|montenegro|albania|georgia|tbilisi|morocco|marrakesh|casablanca|egypt|cairo|tunisia)/,
+        minTripDays: 2,
+        flightHours: [1, 3],
+        re: /(cyprus|larnaca|paphos)/,
     },
     {
-        floor: 700,
-        typical: [700, 1800],
+        minTripDays: 3,
+        flightHours: [2.5, 3.5],
+        re: /(greece|athens|crete|rhodes|thessaloniki)/,
+    },
+    {
+        minTripDays: 3,
+        flightHours: [3, 5],
+        re: /(portugal|lisbon|porto|spain|madrid|barcelona|italy|rome|milan|france|paris|germany|berlin|munich|austria|vienna|netherlands|amsterdam|belgium|brussels|switzerland|zurich|poland|warsaw|krakow|hungary|budapest|czech|prague|romania|bucharest|bulgaria|sofia|serbia|belgrade|croatia|zagreb|montenegro|albania|georgia|tbilisi|morocco|marrakesh|casablanca|egypt|cairo|tunisia)/,
+    },
+    {
+        minTripDays: 2,
+        flightHours: [1, 3],
         re: /(jordan|amman|turkey|istanbul|antalya)/,
     },
 ];
@@ -2392,7 +2535,8 @@ function recalcLocationTrip(loc, availableAmount, useCar) {
 
     const selectedTier = loc.tier || 'medium';
     const tripDays = loc.tripDays || DEFAULT_TRIP_DAYS;
-    const roundTrip = loc.flightRoundTrip || costs.flights || 0;
+    const roundTrip = normalizeRoundTripAirfare(loc.flightRoundTrip, costs.flights);
+    costs.flights = roundTrip;
     const explicitTripCosts = {
         tripHousingCost: loc.tripHousingCost,
         tripFoodCost: loc.tripFoodCost,
@@ -2596,12 +2740,20 @@ function locationKeyFor(loc) {
 
 function airfareRegionFor(loc) {
     const text = `${loc?.city || ''} ${loc?.country || ''}`.toLowerCase();
-    return AIRFARE_REGIONS.find(region => region.re.test(text)) || { floor: 1200, typical: [1200, 3500] };
+    return AIRFARE_REGIONS.find(region => region.re.test(text)) || { minTripDays: 3, flightHours: [3, 5] };
+}
+
+function normalizeRoundTripAirfare(rawAirfare, costsAirfare) {
+    return Math.max(0, Math.round(numberOrZero(rawAirfare) || numberOrZero(costsAirfare) || 0));
+}
+
+function flightHoursLabel(loc) {
+    const [min, max] = airfareRegionFor(loc).flightHours || [3, 5];
+    return min === max ? `${min}h` : `${min}-${max}h`;
 }
 
 function normalizeLocationSuggestions(data, selectedTier, availableAmount, isHe, tripDays, includeCarRental, carRentalDaysInput, dailyTarget = 0) {
     const locations = Array.isArray(data?.locations) ? data.locations : [];
-    const floors = TIER_PRICE_FLOORS[selectedTier] || TIER_PRICE_FLOORS.medium;
     const requestedDays = normalizeTripDays(tripDays);
     const requestedCarDays = includeCarRental ? normalizeCarRentalDays(carRentalDaysInput, requestedDays) : 0;
     let overBudgetCount = 0;
@@ -2615,13 +2767,9 @@ function normalizeLocationSuggestions(data, selectedTier, availableAmount, isHe,
                 costs[key] = normalizeTierLivingCost(key, numberOrZero(raw?.costs?.[key]), selectedTier);
             });
 
-            Object.entries(floors).forEach(([key, floor]) => {
-                if (costs[key] > 0 && costs[key] < floor) costs[key] = floor;
-            });
-
             const region = airfareRegionFor(raw);
             const aiRoundTrip = numberOrZero(raw?.flightRoundTrip ?? raw?.singleTripFlight ?? raw?.flightsRoundTrip ?? raw?.flightsAnnualRoundTrip ?? raw?.annualRoundTripFlight);
-            const roundTrip = Math.max(region.floor, Math.round(aiRoundTrip || costs.flights || region.floor));
+            const roundTrip = normalizeRoundTripAirfare(aiRoundTrip, costs.flights);
             costs.flights = roundTrip;
 
             const carRentalUseful = includeCarRental && shouldIncludeCarRental(raw);
@@ -2703,34 +2851,39 @@ function normalizeLocationSuggestions(data, selectedTier, availableAmount, isHe,
                 housingType: raw?.housingType || raw?.accommodationType || defaultHousingType,
                 housingLevel: raw?.housingLevel || raw?.housingStandard || (isHe ? TIER_META[selectedTier]?.labelHe : TIER_META[selectedTier]?.labelEn),
                 flightRoundTrip: roundTrip,
-                airfareTypicalRange: region.typical,
+                flightHours: numberOrZero(raw?.flightHours) || 0,
+                flightSourceName: raw?.flightSourceName || raw?.flightSource || raw?.flightProvider || '',
+                flightSourceUrl: raw?.flightSourceUrl || raw?.flightUrl || '',
+                flightOriginalPrice: numberOrZero(raw?.flightOriginalPrice ?? raw?.flightPriceOriginal),
+                flightOriginalCurrency: raw?.flightOriginalCurrency || raw?.flightCurrency || '',
+                flightConversionRate: numberOrZero(raw?.flightConversionRate ?? raw?.conversionRate),
+                flightConversionRateSource: raw?.flightConversionRateSource || raw?.conversionRateSource || '',
+                flightConversionRateDate: raw?.flightConversionRateDate || raw?.conversionRateDate || '',
+                accommodationSourceName: raw?.accommodationSourceName || raw?.housingSourceName || raw?.hotelSourceName || '',
+                accommodationSourceUrl: raw?.accommodationSourceUrl || raw?.housingSourceUrl || raw?.hotelSourceUrl || '',
+                accommodationOriginalPrice: numberOrZero(raw?.accommodationOriginalPrice ?? raw?.housingOriginalPrice ?? raw?.hotelOriginalPrice),
+                accommodationOriginalCurrency: raw?.accommodationOriginalCurrency || raw?.housingOriginalCurrency || raw?.hotelOriginalCurrency || '',
+                accommodationConversionRate: numberOrZero(raw?.accommodationConversionRate ?? raw?.housingConversionRate ?? raw?.hotelConversionRate),
+                accommodationConversionRateSource: raw?.accommodationConversionRateSource || raw?.housingConversionRateSource || raw?.hotelConversionRateSource || '',
+                accommodationConversionRateDate: raw?.accommodationConversionRateDate || raw?.housingConversionRateDate || raw?.hotelConversionRateDate || '',
+                carRentalSourceName: raw?.carRentalSourceName || raw?.rentalCarSourceName || '',
+                carRentalSourceUrl: raw?.carRentalSourceUrl || raw?.rentalCarSourceUrl || '',
+                carRentalOriginalPrice: numberOrZero(raw?.carRentalOriginalPrice ?? raw?.rentalCarOriginalPrice),
+                carRentalOriginalCurrency: raw?.carRentalOriginalCurrency || raw?.rentalCarOriginalCurrency || '',
+                carRentalConversionRate: numberOrZero(raw?.carRentalConversionRate ?? raw?.rentalCarConversionRate),
+                carRentalConversionRateSource: raw?.carRentalConversionRateSource || raw?.rentalCarConversionRateSource || '',
+                carRentalConversionRateDate: raw?.carRentalConversionRateDate || raw?.rentalCarConversionRateDate || '',
+                minTripDays: region.minTripDays || 2,
                 livingDailyCost,
                 dailyCost: displayDailyCost,
                 daysAffordable,
                 monthFits,
             };
-            }).filter(loc => loc.monthFits || loc.daysAffordable > 0);
-            const target = Math.max(0, Math.round(numberOrZero(dailyTarget)));
-            const relevant = target > 0
-                ? normalizedLocations.filter(loc => loc.dailyCost <= target)
-                : normalizedLocations;
-            const withinTripBudget = normalizedLocations.filter(loc =>
-                loc.monthFits && !relevant.includes(loc)
-            );
-            const close = target > 0
-                ? normalizedLocations.filter(loc =>
-                    loc.dailyCost > target
-                    && loc.dailyCost <= Math.ceil(target * 1.15)
-                    && !withinTripBudget.includes(loc)
-                )
-                : [];
-            const pool = relevant.length >= 4
-                ? [...relevant, ...withinTripBudget]
-                : [...relevant, ...withinTripBudget, ...close];
-            return pool
+            }).filter(loc => (loc.monthFits || loc.daysAffordable > 0) && requestedDays >= loc.minTripDays);
+            return normalizedLocations
                 .sort((a, b) => {
-                    const aTier = a.dailyCost <= target ? 0 : a.monthFits ? 1 : 2;
-                    const bTier = b.dailyCost <= target ? 0 : b.monthFits ? 1 : 2;
+                    const aTier = a.monthFits ? 0 : 1;
+                    const bTier = b.monthFits ? 0 : 1;
                     if (aTier !== bTier) return aTier - bTier;
                     if (b.daysAffordable !== a.daysAffordable) return b.daysAffordable - a.daysAffordable;
                     return a.dailyCost - b.dailyCost;
@@ -2744,12 +2897,36 @@ function normalizeLocationSuggestions(data, selectedTier, availableAmount, isHe,
     };
 }
 
+function sourceMetaForCost(item, key) {
+    const prefix = key === 'flights'
+        ? 'flight'
+        : key === 'housing'
+            ? 'accommodation'
+            : key === 'carRental'
+                ? 'carRental'
+                : '';
+    if (!prefix) return null;
+    const name = item?.[`${prefix}SourceName`];
+    if (!name) return null;
+    return {
+        name,
+        url: item?.[`${prefix}SourceUrl`] || '',
+        originalPrice: numberOrZero(item?.[`${prefix}OriginalPrice`]),
+        originalCurrency: item?.[`${prefix}OriginalCurrency`] || '',
+        conversionRateSource: item?.[`${prefix}ConversionRateSource`] || '',
+        conversionRateDate: item?.[`${prefix}ConversionRateDate`] || '',
+    };
+}
+
 function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCost, monthlySavingsAmount, withdrawalMonthlyAmount, year, currency, isHe, isLight, aiProvider, aiModel, apiKeyOverride }) {
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen, { constrainToViewport: true, viewportMargin: 16 });
     const [mode, setMode] = useState('find');
     const [tier, setTier] = useState(null);
     const [tripDaysInput, setTripDaysInput] = useState('');
     const [includeMonthlySavings, setIncludeMonthlySavings] = useState(false);
+    const [savingsMonths, setSavingsMonths] = useState(1);
+    const [customBudget, setCustomBudget] = useState('');
+    const [selectedRegions, setSelectedRegions] = useState(new Set());
     const [includeCarRental, setIncludeCarRental] = useState(false);
     const [carRentalDaysInput, setCarRentalDaysInput] = useState('');
     const [loading, setLoading] = useState(false);
@@ -2797,9 +2974,10 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
     const monthlySavingsBudget = Math.max(0, Math.round(numberOrZero(monthlySavingsAmount)));
     const variableDailyCost = Math.ceil(Math.max(0, availableAmount - monthlySavingsBudget) / DEFAULT_TRIP_DAYS);
     const tripBudgetForDays = useCallback((daysValue) => {
+        if (!includeMonthlySavings && parseFloat(customBudget) > 0) return parseFloat(customBudget);
         const days = normalizeTripDays(daysValue);
-        return Math.max(0, variableDailyCost * days + (includeMonthlySavings ? monthlySavingsBudget : 0));
-    }, [variableDailyCost, includeMonthlySavings, monthlySavingsBudget]);
+        return Math.max(0, variableDailyCost * days + (includeMonthlySavings ? monthlySavingsBudget * savingsMonths : 0));
+    }, [variableDailyCost, includeMonthlySavings, monthlySavingsBudget, savingsMonths, customBudget]);
 
     const toggleLocationCarRental = useCallback((idx) => {
         setParsed(prev => {
@@ -2832,30 +3010,32 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
             : `Reference year: ${year}.`;
         const carCtxHe = includeCarRental ? ` שקול שכירת רכב ל-${carRentalDays} ימים רק אם זה באמת מועיל ליעד; אם העיר פקוקה/עירונית עם תחבורה טובה החזר carRental=0.` : ' אל תכלול שכירת רכב.';
         const carCtxEn = includeCarRental ? ` Consider car rental for ${carRentalDays} days only if it is genuinely useful for the destination; for dense city stays with good transport return carRental=0.` : ' Do not include car rental.';
-        const nearbyCtxHe = tripDays < 10
-            ? 'מאחר שהשהייה פחות מ-10 ימים, הצע יעדים קרובים בלבד: מזרח תיכון, צפון אפריקה ואירופה קרובה (יוון, קפריסין, טורקיה, איטליה, ספרד, פורטוגל, איחוד האמירויות).'
-            : 'הצע יעדים מכל העולם, מאזורים שונים ככל האפשר.';
-        const nearbyCtxEn = tripDays < 10
-            ? 'Since the stay is under 10 days, suggest only nearby destinations: Middle East, North Africa, and close Europe (Greece, Cyprus, Turkey, Italy, Spain, Portugal, UAE).'
-            : 'Suggest destinations from any region worldwide.';
+        const regionTextsHe = [...selectedRegions].map(id => REGION_PROMPT[id]?.he).filter(Boolean);
+        const regionTextsEn = [...selectedRegions].map(id => REGION_PROMPT[id]?.en).filter(Boolean);
+        const nearbyCtxHe = regionTextsHe.length ? regionTextsHe.join(' ') : (tripDays < 10
+            ? 'מאחר שהשהייה פחות מ-10 ימים, הצע יעדים קרובים בלבד לפי זמן טיסה ישירה סביר מ-TLV: מזרח תיכון, צפון אפריקה ואירופה קרובה. הסק בעצמך אילו מדינות וערים נכללות לפי גיאוגרפיה וזמינות טיסות ישירות, בלי רשימת מדינות קבועה.'
+            : 'הצע יעדים מכל העולם, מאזורים שונים ככל האפשר.');
+        const nearbyCtxEn = regionTextsEn.length ? regionTextsEn.join(' ') : (tripDays < 10
+            ? 'Since the stay is under 10 days, suggest only nearby destinations by reasonable direct-flight time from TLV: Middle East, North Africa, and nearby Europe. Infer included countries and cities yourself from geography and direct-flight availability, without a fixed country list.'
+            : 'Suggest destinations from any region worldwide.');
+        const nearbyCtxForPrompt = isHe ? nearbyCtxHe : nearbyCtxEn;
         const excludedText = excludedLocations
             .map(loc => `${loc.city || ''}${loc.country ? `, ${loc.country}` : ''}`.trim())
             .filter(Boolean)
             .join('; ');
-        const schema = `{"budgetFits":"cheap|medium|expensive","budgetNote":"one sentence","locations":[{"city":"","country":"","countryCode":"ISO 3166 alpha-2 country code in English letters","countryEn":"country name in English","flag":"🏳","total":0,"note":"one sentence","housingType":"apartment/hotel/private room/guesthouse etc.","housingLevel":"short standard/location description","tripHousingCost":0,"tripFoodCost":0,"tripTransportCost":0,"tripEntertainmentCost":0,"tripOtherCost":0,"flightRoundTrip":0,"costs":{"rent":0,"food":0,"transport":0,"entertainment":0,"flights":0,"carRental":0,"insurance":0,"esim":0,"other":0}}]}`;
+        const schema = `{"budgetFits":"cheap|medium|expensive","budgetNote":"one sentence","locations":[{"city":"localized city name: Hebrew when UI is Hebrew, English when UI is English","country":"localized country name: Hebrew when UI is Hebrew, English when UI is English","countryCode":"ISO 3166 alpha-2 country code in English letters","countryEn":"country name in English for technical lookup","flag":"🏳","total":0,"note":"localized one sentence","housingType":"localized accommodation type","housingLevel":"localized short standard/location description","tripHousingCost":0,"tripFoodCost":0,"tripTransportCost":0,"tripEntertainmentCost":0,"tripOtherCost":0,"flightRoundTrip":0,"flightHours":0,"flightSourceName":"","flightSourceUrl":"","flightOriginalPrice":0,"flightOriginalCurrency":"","flightConversionRate":0,"flightConversionRateSource":"","flightConversionRateDate":"","accommodationSourceName":"","accommodationSourceUrl":"","accommodationOriginalPrice":0,"accommodationOriginalCurrency":"","accommodationConversionRate":0,"accommodationConversionRateSource":"","accommodationConversionRateDate":"","carRentalSourceName":"","carRentalSourceUrl":"","carRentalOriginalPrice":0,"carRentalOriginalCurrency":"","carRentalConversionRate":0,"carRentalConversionRateSource":"","carRentalConversionRateDate":"","costs":{"rent":0,"food":0,"transport":0,"entertainment":0,"flights":0,"carRental":0,"insurance":0,"esim":0,"other":0}}]}`;
+        const replacementSearchCount = 12;
         const liveRates = await fetchIlsRates();
-        const ratesLine = liveRates
-            ? `Live exchange rates (fetched now): 1 USD = ${liveRates.USD} ILS, 1 EUR = ${liveRates.EUR} ILS, 1 GBP = ${liveRates.GBP} ILS, 1 THB = ${liveRates.THB} ILS, 1 JPY = ${liveRates.JPY} ILS, 1 CAD = ${liveRates.CAD} ILS, 1 AUD = ${liveRates.AUD} ILS. Use these exact rates for all conversions.`
-            : `Fallback exchange rates: 1 USD = 3.65 ILS, 1 EUR = 4.0 ILS, 1 GBP = 4.7 ILS, 1 THB = 0.10 ILS, 1 JPY = 0.024 ILS.`;
-        const systemPrompt = `You are a global cost-of-living advisor. Respond ONLY with valid JSON, no markdown, no explanation outside the JSON. All prices must be grounded in real, current market data. Before returning numbers, verify each figure against known benchmarks: typical Airbnb/hotel/apartment rates, Skyscanner flight ranges from TLV, local food and transport costs. Do not use suspiciously round numbers or guesses — use realistic estimates a real traveler would encounter in ${nowYear}.\n${ratesLine}\n${COST_OF_LIVING_PRICE_CONTEXT}`;
+        const ratesLine = ratesLineFor(liveRates);
+        const systemPrompt = `You are a global cost-of-living advisor. Respond ONLY with valid JSON, no markdown, no explanation outside the JSON. All prices must be grounded in current real-world sources. For flights, use live booking/metasearch/airline results from TLV and return the source and original currency fields. Before returning numbers, verify each figure against current source data: accommodation sites, flight sites, local food and transport costs. Treat price verification as a required validation step: direct round-trip scope, taxes/fees, currency conversion, and total-vs-nightly accommodation must be checked before JSON output. Do not use suspiciously round numbers or guesses — use realistic estimates a real traveler would encounter in ${nowYear}.\n${ratesLine}\n${COST_OF_LIVING_PRICE_CONTEXT}`;
         const userMsg = isHe
-            ? `${yearCtxHe} תקציב לטיול: ${amtStr}. תקציב יומי לפי המשיכה שלי: ${currency}${dailyWithdrawalTarget}. משך שהייה לבדיקה: ${tripDays} לילות. מצא 12 ערים חלופיות לאורח חיים ${tierHe}. ${nearbyCtxHe} קודם חפש יעדים שבהם עלות הטיול הכוללת (כולל טיסות, לינה, אוכל, תחבורה, ביטוח ו-eSIM) נמוכה או שווה לתקציב, או עד 5% מעליו — אלה נחשבים "מתאימים לתקציב"; רק אם אין מספיק, הצע יעדים שחורגים יותר. חשב את רמת המחיה לפי השוק המקומי של כל יעד. בחר דיור שמתאים למשך: לכמה לילות השתמש במלון/חדר/גסטהאוס/דירה קצרה לפי הרמה, ולשהייה חודשית בדירה חודשית. החזר tripHousingCost ו-tripFoodCost לתקופה המבוקשת. פרט ב-housingLevel וב-note את ההנחות שמצדיקות את הרמה. ${carCtxHe} אסור להציע אף אחד מהיעדים האלה: ${excludedText || 'אין'}. החזר רק JSON בסכמה: ${schema}. שמות והערות בעברית.`
-            : `${yearCtxEn} Trip budget: ${amtStr}. My daily budget from monthly withdrawal: ${currency}${dailyWithdrawalTarget}. Stay length to evaluate: ${tripDays} nights. Suggest 12 replacement cities for a ${tierEn} lifestyle. ${nearbyCtxEn} First prioritize destinations where total trip cost (flights + accommodation + food + transport + insurance + eSIM) is at or below the budget, or up to 5% above it — these count as "fits the budget"; only if there are not enough such destinations, include options that exceed it further. Price the lifestyle tier relative to each destination's local market. Choose accommodation suitable for the duration: hotel/private room/guesthouse/short-stay apartment for short trips, monthly apartment for month stays. Return tripHousingCost and tripFoodCost for the requested stay. In housingLevel and note, explain the assumptions that justify the tier.${carCtxEn} Do not suggest any of these locations: ${excludedText || 'none'}. Return ONLY JSON matching schema: ${schema}.`;
+            ? `${yearCtxHe} תקציב לטיול: ${amtStr}. תקציב יומי לפי המשיכה שלי: ${currency}${dailyWithdrawalTarget}. משך שהייה לבדיקה: ${tripDays} לילות. החזר רשימה מלאה ככל האפשר של יעדים חלופיים לאורח חיים ${tierHe}, לפחות ${replacementSearchCount} ועד 25 יעדים שעומדים בתנאי האזור/טיסה/תקציב או נכנסים לפחות לחלק מהלילות. ${nearbyCtxForPrompt} כל שדות הטקסט הגלויים למשתמש חייבים להיכתב בעברית כבר בתשובת ה-JSON: city, country, note, housingType, housingLevel, budgetNote. אל תחזיר שמות ערים/מדינות באנגלית בשדות האלה. השדה countryEn בלבד חייב להישאר באנגלית לצורך זיהוי טכני. קודם חפש יעדים שבהם עלות הטיול הכוללת (כולל טיסות, לינה, אוכל, תחבורה, ביטוח ו-eSIM) נמוכה או שווה לתקציב, או עד 5% מעליו — אלה נחשבים "מתאימים לתקציב"; אם יש עוד יעדים באזור שחורגים יותר, החזר אותם עם מספר הלילות שנכנס בתקציב. אל תפסול יעד בגלל הפרש מהוצאה יומית; זה נתון תצוגה בלבד. חשב את רמת המחיה לפי השוק המקומי של כל יעד. בחר דיור שמתאים למשך: לכמה לילות השתמש במלון/חדר/גסטהאוס/דירה קצרה לפי הרמה, ולשהייה חודשית בדירה חודשית. החזר tripHousingCost ו-tripFoodCost לתקופה המבוקשת. פרט ב-housingLevel וב-note את ההנחות שמצדיקות את הרמה. ${carCtxHe} אסור להציע אף אחד מהיעדים האלה: ${excludedText || 'אין'}. החזר רק JSON בסכמה: ${schema}.`
+            : `${yearCtxEn} Trip budget: ${amtStr}. My daily budget from monthly withdrawal: ${currency}${dailyWithdrawalTarget}. Stay length to evaluate: ${tripDays} nights. Return the fullest practical list of replacement destinations for a ${tierEn} lifestyle, at least ${replacementSearchCount} and up to 25 destinations that meet the region/flight/budget conditions or fit at least some nights. ${nearbyCtxEn} Visible user-facing text fields must be in English in the JSON: city, country, note, housingType, housingLevel, budgetNote. countryEn must also remain English for technical lookup. First prioritize destinations where total trip cost (flights + accommodation + food + transport + insurance + eSIM) is at or below the budget, or up to 5% above it — these count as "fits the budget"; if there are more destinations in the region that exceed it further, return them with the number of affordable nights. Do not reject a destination because of daily-spend difference; that is display-only. Price the lifestyle tier relative to each destination's local market. Choose accommodation suitable for the duration: hotel/private room/guesthouse/short-stay apartment for short trips, monthly apartment for month stays. Return tripHousingCost and tripFoodCost for the requested stay. In housingLevel and note, explain the assumptions that justify the tier.${carCtxEn} Do not suggest any of these locations: ${excludedText || 'none'}. Return ONLY JSON matching schema: ${schema}.`;
         const fallbackMsg = isHe
-            ? `החזר JSON בלבד. מצא 8 ערים חלופיות לאורח חיים ${tierHe}, ${tripDays} לילות, תקציב ${amtStr}. ${nearbyCtxHe} החזר tripHousingCost ו-tripFoodCost לתקופה, עם דיור מתאים למשך. אל תציע: ${excludedText || 'אין'}. סכימה: ${schema}`
-            : `Return JSON only. Suggest 8 replacement cities for a ${tierEn} lifestyle, ${tripDays} nights, budget ${amtStr}. ${nearbyCtxEn} Return tripHousingCost and tripFoodCost for the stay, with duration-appropriate accommodation. Exclude: ${excludedText || 'none'}. Schema: ${schema}`;
+            ? `החזר JSON בלבד. החזר רשימה מלאה ככל האפשר, לפחות ${replacementSearchCount} ועד 25 יעדים חלופיים לאורח חיים ${tierHe}, ${tripDays} לילות, תקציב ${amtStr}. ${nearbyCtxForPrompt} city, country, note, housingType, housingLevel ו-budgetNote חייבים להיות בעברית בתשובת ה-JSON, לא באנגלית. רק countryEn באנגלית. החזר tripHousingCost ו-tripFoodCost לתקופה, עם דיור מתאים למשך. אל תציע: ${excludedText || 'אין'}. סכימה: ${schema}`
+            : `Return JSON only. Return the fullest practical list, at least ${replacementSearchCount} and up to 25 replacement destinations for a ${tierEn} lifestyle, ${tripDays} nights, budget ${amtStr}. ${nearbyCtxEn} Visible fields city, country, note, housingType, housingLevel and budgetNote must be in English. Return tripHousingCost and tripFoodCost for the stay, with duration-appropriate accommodation. Exclude: ${excludedText || 'none'}. Schema: ${schema}`;
         const normalized = normalizeLocationSuggestions(
-            await getParsedAiJson(
+            await getParsedGroundedAiJson(
                 [{ role: 'user', content: userMsg }],
                 systemPrompt,
                 aiProvider,
@@ -2875,7 +3055,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         const replacement = (normalized.locations || []).find(loc => !excludedKeys.has(locationKeyFor(loc)));
         if (!replacement) throw new Error('No non-duplicate replacement returned');
         return replacement;
-    }, [withdrawalMonthlyAmount, year, currency, isHe, aiProvider, aiModel, apiKeyOverride, tripDaysInput, includeCarRental, carRentalDaysInput, tripBudgetForDays]);
+    }, [withdrawalMonthlyAmount, year, currency, isHe, aiProvider, aiModel, apiKeyOverride, tripDaysInput, includeCarRental, carRentalDaysInput, tripBudgetForDays, selectedRegions]);
 
     const deleteLocation = useCallback(async (idx) => {
         if (!parsed?.locations?.[idx] || !tier || replacingLocation) return;
@@ -2917,14 +3097,18 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         const nowYear = new Date().getFullYear();
         const yearCtxHe = `שנת הפניה: ${nowYear}.`;
         const yearCtxEn = `Reference year: ${nowYear}.`;
-        const schema = `{"title":"1 country: main city · N nights e.g. בנגקוק · 10 ימים; 2 countries: CountryA + CountryB · N nights e.g. תאילנד + קמבודיה · 14 ימים; 3+ countries: region/continent · N nights e.g. דרום-מזרח אסיה · 21 ימים","countryCode":"primary destination ISO alpha-2 e.g. PT TH JP","countryCodes":["XX","YY"],"summary":"1–2 sentence overview of the trip","itinerary":[{"segment":"e.g. Days 1–3","place":"city or area","plan":"2–3 sentences: where to stay, key activities, highlights"}],"tips":[{"cat":"currency|electricity|clothing|health|customs|transport|language|safety|visa|other","text":"concise practical tip"}],"level":"cheap|medium|expensive — infer from the request or the prices chosen","nights":0,"bestMonths":"e.g. Apr–Oct (shoulder season: good weather, lower prices)","note":"key pricing assumptions including fuel price per litre if car used","costs":{"flights":0,"housing":0,"food":0,"transport":0,"entertainment":0,"carRental":0,"fuel":0,"insurance":0,"esim":0,"other":0},"total":0}`;
+        const savingsCtxHe = monthlySavingsBudget > 0
+            ? ` מידע פיננסי: חיסכון חודשי = ${currency}${Math.round(monthlySavingsBudget).toLocaleString()} לחודש; חיסכון משתנה יומי (הוצאות שנחסכות בזמן הנסיעה) = ${currency}${variableDailyCost.toLocaleString()} ליום. אם הבקשה מציינת תקציב בחודשי חיסכון (כגון "2 חודשי חיסכון" או "תקציב של 3 חודשים"), חשב: (מספר החודשים × חיסכון חודשי) + (מספר הלילות × חיסכון יומי), ותכנן בתוך סכום זה בדיוק — אל תחרוג ממנו.`
+            : '';
+        const savingsCtxEn = monthlySavingsBudget > 0
+            ? ` Financial context: monthly savings = ${currency}${Math.round(monthlySavingsBudget).toLocaleString()}/month; daily variable savings (expenses saved while traveling) = ${currency}${variableDailyCost.toLocaleString()}/day. If the request specifies a savings-based budget (e.g. "2 months savings"), compute: (months × monthly savings) + (nights × daily savings). Plan the trip within that exact total — do not exceed it.`
+            : '';
+        const schema = `{"title":"1 country: main city · N nights e.g. בנגקוק · 10 ימים; 2 countries: CountryA + CountryB · N nights e.g. תאילנד + קמבודיה · 14 ימים; 3+ countries: region/continent · N nights e.g. דרום-מזרח אסיה · 21 ימים","countryCode":"primary destination ISO alpha-2 e.g. PT TH JP","countryCodes":["XX","YY"],"summary":"1–2 sentence overview of the trip","itinerary":[{"segment":"e.g. Days 1–3","place":"city or area","plan":"2–3 sentences: where to stay, key activities, highlights"}],"tips":[{"cat":"currency|electricity|clothing|health|customs|transport|language|safety|visa|other","text":"concise practical tip"}],"level":"cheap|medium|expensive — infer from the request or the prices chosen","nights":0,"bestMonths":"e.g. Apr–Oct (shoulder season: good weather, lower prices)","note":"key pricing assumptions including fuel price per litre if car used","flightSourceName":"","flightSourceUrl":"","flightOriginalPrice":0,"flightOriginalCurrency":"","flightConversionRate":0,"flightConversionRateSource":"","flightConversionRateDate":"","accommodationSourceName":"","accommodationSourceUrl":"","accommodationOriginalPrice":0,"accommodationOriginalCurrency":"","accommodationConversionRate":0,"accommodationConversionRateSource":"","accommodationConversionRateDate":"","carRentalSourceName":"","carRentalSourceUrl":"","carRentalOriginalPrice":0,"carRentalOriginalCurrency":"","carRentalConversionRate":0,"carRentalConversionRateSource":"","carRentalConversionRateDate":"","costs":{"flights":0,"housing":0,"food":0,"transport":0,"entertainment":0,"carRental":0,"fuel":0,"insurance":0,"esim":0,"other":0},"total":0}`;
         const liveRates = await fetchIlsRates();
-        const ratesLine = liveRates
-            ? `Live exchange rates (fetched now): 1 USD = ${liveRates.USD} ILS, 1 EUR = ${liveRates.EUR} ILS, 1 GBP = ${liveRates.GBP} ILS, 1 THB = ${liveRates.THB} ILS, 1 JPY = ${liveRates.JPY} ILS, 1 CAD = ${liveRates.CAD} ILS, 1 AUD = ${liveRates.AUD} ILS. Use these exact rates for all conversions.`
-            : `Fallback exchange rates: 1 USD = 3.65 ILS, 1 EUR = 4.0 ILS, 1 GBP = 4.7 ILS, 1 THB = 0.10 ILS, 1 JPY = 0.024 ILS.`;
-        const systemPrompt = `You are a global travel cost advisor. Respond ONLY with valid JSON, no markdown, no explanation outside the JSON. All prices must be grounded in real, current market data for the destination. Before returning numbers, verify each figure against known benchmarks: typical Airbnb/hotel rates, Skyscanner flight ranges from TLV, local food costs, and official or widely-reported fuel prices. Do not round to suspiciously even numbers or guess — use realistic estimates a real traveler would encounter in ${new Date().getFullYear()}. For routes under 5 hours from TLV (all of Europe, Middle East, Turkey, North Africa, Cyprus) price non-stop flights only.\n${ratesLine}\n${COST_OF_LIVING_PRICE_CONTEXT}`;
-        const userMsgHe = `${yearCtxHe} בקשת הנסיעה: "${tripRequest}". חשב עלויות ריאליסטיות ומדויקות בשקלים (ILS) לטיול המבוקש כולו — המספרים חייבים לשקף מחירי שוק אמיתיים של ${nowYear}, לא הערכות עגולות. countryCode = קוד ISO alpha-2 של מדינת היעד הראשית. countryCodes = מערך JSON עם קודי ISO alpha-2 לכל מדינות היעד (לדוגמה: ["TH","KH"] לתאילנד + קמבודיה) — אם מדינה אחת, החזר מערך עם איבר אחד. flights = כרטיס טיסה הלוך-חזור מ-TLV לאדם ללא עצירה אם הטיסה קצרה מ-5 שעות. housing = עלות לינה כוללת לכל הלילות (לא מחיר ללילה). food/transport/entertainment/other = עלות כוללת לכל הטיול. carRental = עלות שכירת הרכב בלבד (ללא דלק). fuel = עלות דלק מחושבת לפי מחיר הדלק המקומי האמיתי במדינת היעד וצריכה משוערת לפי ק"מ מתוכנן. אם לא התבקש רכב, fuel=0. insurance = עלות ביטוח נסיעות מציאותית לאזרח ישראלי לאותה תקופה ויעד. esim = עלות eSIM או כרטיס SIM מקומי לאינטרנט לאורך הנסיעה. total = סכום כל הקטגוריות. level = רמת הנסיעה כפי שביקשתי או שהסקת (cheap/medium/expensive). bestMonths = החודשים המומלצים לנסיעה עם הסבר קצר (מזג אוויר/מחיר/עומס). note = הנחות תמחור קצרות בלבד — ללא אזכור אינפלציה, ללא שנים עתידיות. ציין רק מחיר דלק לליטר אם השתמשת בו. itinerary = מערך של שלבי הטיול לפי סדר כרונולוגי — כל שלב עם segment (ימים, למשל "ימים 1–3"), place (שם המקום), plan (2-3 משפטים: לינה, פעילויות, אטרקציות). כסה את כל הלילות בצורה מאוזנת. tips = מערך של 6-9 טיפים מעשיים ליעד — כל טיפ עם cat (אחד מ: currency, electricity, clothing, health, customs, transport, language, safety, visa, other) ו-text (משפט קצר ומעשי בעברית). חובה לכלול: מטבע (שם, המרה משקל), חשמל (סוג שקע, מתח, האם צריך מתאם), ביגוד (לפי עונה ותרבות), ויזה לאזרח ישראלי, ועוד נושאים רלוונטיים. החזר JSON בלבד: ${schema}. title, summary, itinerary, bestMonths, tips ו-note בעברית.`;
-        const userMsgEn = `${yearCtxEn} Trip request: "${tripRequest}". Calculate accurate, realistic costs in ILS (Israeli shekels) for the full trip — numbers must reflect real ${nowYear} market prices, not round guesses. countryCode = ISO alpha-2 code of the primary destination. countryCodes = JSON array of ISO alpha-2 codes for ALL destination countries (e.g. ["TH","KH"] for Thailand + Cambodia; for a single country use a one-element array). flights = round-trip non-stop airfare from TLV per person (non-stop for routes under 5 hours). housing = total accommodation cost for all nights (not per night). food/transport/entertainment/other = total cost for the entire trip. carRental = car rental cost only (excluding fuel). fuel = fuel cost calculated using the destination country's real local fuel price per litre and estimated mileage for the trip; if no car requested, fuel=0. insurance = realistic travel insurance cost for an Israeli citizen for that duration and destination. esim = cost of an eSIM or local SIM card for internet connectivity throughout the trip. total = sum of all categories. level = trip level as requested or inferred (cheap/medium/expensive). bestMonths = recommended travel months with a short reason (weather/price/crowds). note = brief pricing assumptions only — no mention of inflation, no future years. itinerary = chronological array of trip segments — each with segment (days range e.g. "Days 1–3"), place (city/area name), plan (2–3 sentences: accommodation type, key activities, highlights). Cover all nights proportionally. tips = array of 6–9 practical destination tips — each with cat (one of: currency, electricity, clothing, health, customs, transport, language, safety, visa, other) and text (short, actionable sentence in English). Must include: currency (name, approx rate from ILS), electricity (plug type, voltage, adapter needed?), clothing (season/dress code), visa for Israeli passport holders, and other relevant topics. Include fuel price per litre if used. Return ONLY JSON: ${schema}.`;
+        const ratesLine = ratesLineFor(liveRates);
+        const systemPrompt = `You are a global travel cost advisor. Respond ONLY with valid JSON, no markdown, no explanation outside the JSON. All prices must be grounded in current real-world sources for the destination. For flights, use live booking/metasearch/airline results from TLV with direct/non-stop only filtering and return the source and original currency fields. Before returning numbers, verify each figure against current source data: accommodation sites, direct-flight sites, local food costs, and official or widely-reported fuel prices. Treat price verification as a required validation step: direct round-trip scope, taxes/fees, currency conversion, and total-vs-nightly accommodation must be checked before JSON output. Do not round to suspiciously even numbers or guess — use realistic estimates a real traveler would encounter in ${new Date().getFullYear()}.\n${ratesLine}\n${COST_OF_LIVING_PRICE_CONTEXT}`;
+        const userMsgHe = `${yearCtxHe} בקשת הנסיעה: "${tripRequest}".${savingsCtxHe} חשב עלויות ריאליסטיות ומדויקות בשקלים (ILS) לטיול המבוקש כולו — המספרים חייבים לשקף מחירי שוק אמיתיים של ${nowYear}, לא הערכות עגולות. countryCode = קוד ISO alpha-2 של מדינת היעד הראשית. countryCodes = מערך JSON עם קודי ISO alpha-2 לכל מדינות היעד (לדוגמה: ["TH","KH"] לתאילנד + קמבודיה) — אם מדינה אחת, החזר מערך עם איבר אחד. flights = כרטיס טיסה ישירה בלבד הלוך-חזור מ-TLV לאדם, ללא עצירות וללא קונקשנים, גם אם טיסה עם עצירה זולה יותר. housing = עלות לינה כוללת לכל הלילות (לא מחיר ללילה). food/transport/entertainment/other = עלות כוללת לכל הטיול. carRental = עלות שכירת הרכב בלבד (ללא דלק). fuel = עלות דלק מחושבת לפי מחיר הדלק המקומי האמיתי במדינת היעד וצריכה משוערת לפי ק"מ מתוכנן. אם לא התבקש רכב, fuel=0. insurance = עלות ביטוח נסיעות מציאותית לאזרח ישראלי לאותה תקופה ויעד. esim = עלות eSIM או כרטיס SIM מקומי לאינטרנט לאורך הנסיעה. total = סכום כל הקטגוריות. level = רמת הנסיעה כפי שביקשתי או שהסקת (cheap/medium/expensive). bestMonths = החודשים המומלצים לנסיעה עם הסבר קצר (מזג אוויר/מחיר/עומס). note = הנחות תמחור קצרות בלבד — ללא אזכור אינפלציה, ללא שנים עתידיות. ציין רק מחיר דלק לליטר אם השתמשת בו. itinerary = מערך של שלבי הטיול לפי סדר כרונולוגי — כל שלב עם segment (ימים, למשל "ימים 1–3"), place (שם המקום), plan (2-3 משפטים: לינה, פעילויות, אטרקציות). כסה את כל הלילות בצורה מאוזנת. tips = מערך של 6-9 טיפים מעשיים ליעד — כל טיפ עם cat (אחד מ: currency, electricity, clothing, health, customs, transport, language, safety, visa, other) ו-text (משפט קצר ומעשי בעברית). חובה לכלול: מטבע (שם, המרה משקל), חשמל (סוג שקע, מתח, האם צריך מתאם), ביגוד (לפי עונה ותרבות), ויזה לאזרח ישראלי, ועוד נושאים רלוונטיים. החזר JSON בלבד: ${schema}. title, summary, itinerary, bestMonths, tips ו-note בעברית.`;
+        const userMsgEn = `${yearCtxEn} Trip request: "${tripRequest}".${savingsCtxEn} Calculate accurate, realistic costs in ILS (Israeli shekels) for the full trip — numbers must reflect real ${nowYear} market prices, not round guesses. countryCode = ISO alpha-2 code of the primary destination. countryCodes = JSON array of ISO alpha-2 codes for ALL destination countries (e.g. ["TH","KH"] for Thailand + Cambodia; for a single country use a one-element array). flights = direct/non-stop round-trip airfare from TLV per person only, with zero stops/connections, even if connecting flights are cheaper. housing = total accommodation cost for all nights (not per night). food/transport/entertainment/other = total cost for the entire trip. carRental = car rental cost only (excluding fuel). fuel = fuel cost calculated using the destination country's real local fuel price per litre and estimated mileage for the trip; if no car requested, fuel=0. insurance = realistic travel insurance cost for an Israeli citizen for that duration and destination. esim = cost of an eSIM or local SIM card for internet connectivity throughout the trip. total = sum of all categories. level = trip level as requested or inferred (cheap/medium/expensive). bestMonths = recommended travel months with a short reason (weather/price/crowds). note = brief pricing assumptions only — no mention of inflation, no future years. itinerary = chronological array of trip segments — each with segment (days range e.g. "Days 1–3"), place (city/area name), plan (2–3 sentences: accommodation type, key activities, highlights). Cover all nights proportionally. tips = array of 6–9 practical destination tips — each with cat (one of: currency, electricity, clothing, health, customs, transport, language, safety, visa, other) and text (short, actionable sentence in English). Must include: currency (name, approx rate from ILS), electricity (plug type, voltage, adapter needed?), clothing (season/dress code), visa for Israeli passport holders, and other relevant topics. Include fuel price per litre if used. Return ONLY JSON: ${schema}.`;
         const geminiKey = aiProvider === 'gemini'
             ? (apiKeyOverride?.trim() || import.meta.env.VITE_GEMINI_API_KEY?.trim())
             : null;
@@ -2968,12 +3152,19 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
             if (!r1) throw (s1.reason ?? s2.reason ?? new Error('Both AI calls returned invalid JSON'));
             fixTotal(r1); fixTotal(r2);
 
-            const avgCost = key => Math.round((numberOrZero(r1.costs?.[key]) + numberOrZero(r2.costs?.[key])) / 2);
+            const groundedFlight = r2raw?.flightSourceName || r2raw?.flightSourceUrl || r2raw?.flightOriginalPrice
+                ? numberOrZero(r2raw?.costs?.flights)
+                : 0;
+            const avgCost = key => {
+                if (key === 'flights' && groundedFlight > 0) return Math.round(groundedFlight);
+                return Math.round((numberOrZero(r1.costs?.[key]) + numberOrZero(r2.costs?.[key])) / 2);
+            };
             const costs = Object.fromEntries(
                 ['flights','housing','food','transport','entertainment','carRental','fuel','insurance','esim','other'].map(k => [k, avgCost(k)])
             );
             const nights = Math.round((numberOrZero(r1.nights) + numberOrZero(r2.nights)) / 2);
             const tripLevel = r1.level || r2.level || 'medium';
+            costs.flights = normalizeRoundTripAirfare(costs.flights, 0);
             const countryCode = r1.countryCode || r2.countryCode || '';
             const total = Object.values(costs).reduce((s, v) => s + v, 0);
 
@@ -2999,6 +3190,27 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                 countryCodes: countryCodes.length > 0 ? countryCodes : (countryCode ? [countryCode] : []),
                 level: tripLevel,
                 bestMonths: r1.bestMonths || r2.bestMonths,
+                flightSourceName: r2raw?.flightSourceName || r1.flightSourceName || r2.flightSourceName || '',
+                flightSourceUrl: r2raw?.flightSourceUrl || r1.flightSourceUrl || r2.flightSourceUrl || '',
+                flightOriginalPrice: numberOrZero(r2raw?.flightOriginalPrice ?? r1.flightOriginalPrice ?? r2.flightOriginalPrice),
+                flightOriginalCurrency: r2raw?.flightOriginalCurrency || r1.flightOriginalCurrency || r2.flightOriginalCurrency || '',
+                flightConversionRate: numberOrZero(r2raw?.flightConversionRate ?? r1.flightConversionRate ?? r2.flightConversionRate),
+                flightConversionRateSource: r2raw?.flightConversionRateSource || r1.flightConversionRateSource || r2.flightConversionRateSource || '',
+                flightConversionRateDate: r2raw?.flightConversionRateDate || r1.flightConversionRateDate || r2.flightConversionRateDate || '',
+                accommodationSourceName: r2raw?.accommodationSourceName || r1.accommodationSourceName || r2.accommodationSourceName || '',
+                accommodationSourceUrl: r2raw?.accommodationSourceUrl || r1.accommodationSourceUrl || r2.accommodationSourceUrl || '',
+                accommodationOriginalPrice: numberOrZero(r2raw?.accommodationOriginalPrice ?? r1.accommodationOriginalPrice ?? r2.accommodationOriginalPrice),
+                accommodationOriginalCurrency: r2raw?.accommodationOriginalCurrency || r1.accommodationOriginalCurrency || r2.accommodationOriginalCurrency || '',
+                accommodationConversionRate: numberOrZero(r2raw?.accommodationConversionRate ?? r1.accommodationConversionRate ?? r2.accommodationConversionRate),
+                accommodationConversionRateSource: r2raw?.accommodationConversionRateSource || r1.accommodationConversionRateSource || r2.accommodationConversionRateSource || '',
+                accommodationConversionRateDate: r2raw?.accommodationConversionRateDate || r1.accommodationConversionRateDate || r2.accommodationConversionRateDate || '',
+                carRentalSourceName: r2raw?.carRentalSourceName || r1.carRentalSourceName || r2.carRentalSourceName || '',
+                carRentalSourceUrl: r2raw?.carRentalSourceUrl || r1.carRentalSourceUrl || r2.carRentalSourceUrl || '',
+                carRentalOriginalPrice: numberOrZero(r2raw?.carRentalOriginalPrice ?? r1.carRentalOriginalPrice ?? r2.carRentalOriginalPrice),
+                carRentalOriginalCurrency: r2raw?.carRentalOriginalCurrency || r1.carRentalOriginalCurrency || r2.carRentalOriginalCurrency || '',
+                carRentalConversionRate: numberOrZero(r2raw?.carRentalConversionRate ?? r1.carRentalConversionRate ?? r2.carRentalConversionRate),
+                carRentalConversionRateSource: r2raw?.carRentalConversionRateSource || r1.carRentalConversionRateSource || r2.carRentalConversionRateSource || '',
+                carRentalConversionRateDate: r2raw?.carRentalConversionRateDate || r1.carRentalConversionRateDate || r2.carRentalConversionRateDate || '',
                 itinerary,
                 tips,
             };
@@ -3012,7 +3224,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         } finally {
             setPlanLoading(false);
         }
-    }, [tripRequest, isHe, aiProvider, aiModel, apiKeyOverride, loadedPlanId, savedPlans]);
+    }, [tripRequest, isHe, aiProvider, aiModel, apiKeyOverride, loadedPlanId, savedPlans, monthlySavingsBudget, variableDailyCost, currency]);
 
     const savePlan = useCallback(async () => {
         if (!plannedTrip || !currentUser?.uid) return;
@@ -3020,7 +3232,10 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         try {
             const now = Date.now();
             const dateLabel = new Date(now).toLocaleDateString(isHe ? 'he-IL' : 'en-IL', { month: 'short', year: 'numeric' });
-            const title = plannedTrip.title || tripRequest.slice(0, 35);
+            const rawTitle = plannedTrip.title || tripRequest.slice(0, 35);
+            const title = plannedTrip.nights > 0
+                ? rawTitle.replace(/\d+\s*(?:ימים|לילות|days?|nights?)/i, `${plannedTrip.nights} ${isHe ? 'לילות' : 'nights'}`)
+                : rawTitle;
             const countryCode = plannedTrip.countryCode || '';
             const countryCodes = plannedTrip.countryCodes?.length > 0 ? plannedTrip.countryCodes : (countryCode ? [countryCode] : []);
             const plan = { id: now.toString(), title, countryCode, countryCodes, dateLabel, request: tripRequest, result: plannedTrip, savedAt: now };
@@ -3043,7 +3258,11 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
             if (!existing) return;
             const countryCode = plannedTrip.countryCode || '';
             const countryCodes = plannedTrip.countryCodes?.length > 0 ? plannedTrip.countryCodes : (countryCode ? [countryCode] : []);
-            const updated = { ...existing, title: plannedTrip.title || tripRequest.slice(0, 35), countryCode, countryCodes, request: tripRequest, result: plannedTrip };
+            const rawUpdTitle = plannedTrip.title || tripRequest.slice(0, 35);
+            const updTitle = plannedTrip.nights > 0
+                ? rawUpdTitle.replace(/\d+\s*(?:ימים|לילות|days?|nights?)/i, `${plannedTrip.nights} ${isHe ? 'לילות' : 'nights'}`)
+                : rawUpdTitle;
+            const updated = { ...existing, title: updTitle, countryCode, countryCodes, request: tripRequest, result: plannedTrip };
             await saveTripPlan(currentUser.uid, updated);
             setSavedPlans(prev => prev.map(p => p.id === loadedPlanId ? updated : p));
             setPlanSaved(true);
@@ -3099,35 +3318,38 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
             ? `Target year: ${year} (${year - nowYear} years from now). Adjust costs for expected inflation.`
             : `Reference year: ${year}.`;
         const liveRates = await fetchIlsRates();
-        const ratesLine = liveRates
-            ? `Live exchange rates (fetched now): 1 USD = ${liveRates.USD} ILS, 1 EUR = ${liveRates.EUR} ILS, 1 GBP = ${liveRates.GBP} ILS, 1 THB = ${liveRates.THB} ILS, 1 JPY = ${liveRates.JPY} ILS, 1 CAD = ${liveRates.CAD} ILS, 1 AUD = ${liveRates.AUD} ILS. Use these exact rates for all conversions.`
-            : `Fallback exchange rates: 1 USD = 3.65 ILS, 1 EUR = 4.0 ILS, 1 GBP = 4.7 ILS, 1 THB = 0.10 ILS, 1 JPY = 0.024 ILS.`;
-        const systemPrompt = `You are a global cost-of-living advisor. Respond ONLY with valid JSON, no markdown, no explanation outside the JSON. All prices must be grounded in real, current market data. Before returning numbers, verify each figure against known benchmarks: typical Airbnb/hotel/apartment rates, Skyscanner flight ranges from TLV, local food and transport costs. Do not use suspiciously round numbers or guesses — use realistic estimates a real traveler would encounter in ${nowYear}.\n${ratesLine}\n${COST_OF_LIVING_PRICE_CONTEXT}`;
+        const ratesLine = ratesLineFor(liveRates);
+        const systemPrompt = `You are a global cost-of-living advisor. Respond ONLY with valid JSON, no markdown, no explanation outside the JSON. All prices must be grounded in current real-world sources. For flights, use live booking/metasearch/airline results from TLV and return the source and original currency fields. Before returning numbers, verify each figure against current source data: accommodation sites, flight sites, local food and transport costs. Treat price verification as a required validation step: direct round-trip scope, taxes/fees, currency conversion, and total-vs-nightly accommodation must be checked before JSON output. Do not use suspiciously round numbers or guesses — use realistic estimates a real traveler would encounter in ${nowYear}.\n${ratesLine}\n${COST_OF_LIVING_PRICE_CONTEXT}`;
         const carCtxHe = includeCarRental ? ` שקול שכירת רכב ל-${carRentalDays} ימים רק אם זה באמת מועיל ליעד; אם העיר פקוקה/עירונית עם תחבורה טובה החזר carRental=0.` : ' אל תכלול שכירת רכב.';
         const carCtxEn = includeCarRental ? ` Consider car rental for ${carRentalDays} days only if it is genuinely useful for the destination; for dense city stays with good transport return carRental=0.` : ' Do not include car rental.';
-        const nearbyCtxHe = tripDays < 10
-            ? 'מאחר שהשהייה פחות מ-10 ימים, הצע יעדים קרובים בלבד: מזרח תיכון, צפון אפריקה ואירופה קרובה (יוון, קפריסין, טורקיה, איטליה, ספרד, פורטוגל, איחוד האמירויות).'
-            : 'הצע יעדים מכל העולם, מאזורים שונים ככל האפשר.';
-        const nearbyCtxEn = tripDays < 10
-            ? 'Since the stay is under 10 days, suggest only nearby destinations: Middle East, North Africa, and close Europe (Greece, Cyprus, Turkey, Italy, Spain, Portugal, UAE).'
-            : 'Suggest destinations from any region worldwide.';
-        const schema = `{"budgetFits":"cheap|medium|expensive","budgetNote":"one sentence","locations":[{"city":"","country":"","countryCode":"ISO 3166 alpha-2 country code in English letters","countryEn":"country name in English","flag":"🏳","total":0,"note":"one sentence","housingType":"apartment/hotel/private room/guesthouse etc.","housingLevel":"short standard/location description","tripHousingCost":0,"tripFoodCost":0,"tripTransportCost":0,"tripEntertainmentCost":0,"tripOtherCost":0,"flightRoundTrip":0,"costs":{"rent":0,"food":0,"transport":0,"entertainment":0,"flights":0,"carRental":0,"insurance":0,"esim":0,"other":0}}]}`;
+        const regionTextsHe = [...selectedRegions].map(id => REGION_PROMPT[id]?.he).filter(Boolean);
+        const regionTextsEn = [...selectedRegions].map(id => REGION_PROMPT[id]?.en).filter(Boolean);
+        const nearbyCtxHe = regionTextsHe.length ? regionTextsHe.join(' ') : (tripDays < 10
+            ? 'מאחר שהשהייה פחות מ-10 ימים, הצע יעדים קרובים בלבד לפי זמן טיסה ישירה סביר מ-TLV: מזרח תיכון, צפון אפריקה ואירופה קרובה. הסק בעצמך אילו מדינות וערים נכללות לפי גיאוגרפיה וזמינות טיסות ישירות, בלי רשימת מדינות קבועה.'
+            : 'הצע יעדים מכל העולם, מאזורים שונים ככל האפשר.');
+        const nearbyCtxEn = regionTextsEn.length ? regionTextsEn.join(' ') : (tripDays < 10
+            ? 'Since the stay is under 10 days, suggest only nearby destinations by reasonable direct-flight time from TLV: Middle East, North Africa, and nearby Europe. Infer included countries and cities yourself from geography and direct-flight availability, without a fixed country list.'
+            : 'Suggest destinations from any region worldwide.');
+        const nearbyCtxForPrompt = isHe ? nearbyCtxHe : nearbyCtxEn;
+        const schema = `{"budgetFits":"cheap|medium|expensive","budgetNote":"one sentence","locations":[{"city":"localized city name: Hebrew when UI is Hebrew, English when UI is English","country":"localized country name: Hebrew when UI is Hebrew, English when UI is English","countryCode":"ISO 3166 alpha-2 country code in English letters","countryEn":"country name in English for technical lookup","flag":"🏳","total":0,"note":"localized one sentence","housingType":"localized accommodation type","housingLevel":"localized short standard/location description","tripHousingCost":0,"tripFoodCost":0,"tripTransportCost":0,"tripEntertainmentCost":0,"tripOtherCost":0,"flightRoundTrip":0,"flightHours":0,"flightSourceName":"","flightSourceUrl":"","flightOriginalPrice":0,"flightOriginalCurrency":"","flightConversionRate":0,"flightConversionRateSource":"","flightConversionRateDate":"","accommodationSourceName":"","accommodationSourceUrl":"","accommodationOriginalPrice":0,"accommodationOriginalCurrency":"","accommodationConversionRate":0,"accommodationConversionRateSource":"","accommodationConversionRateDate":"","carRentalSourceName":"","carRentalSourceUrl":"","carRentalOriginalPrice":0,"carRentalOriginalCurrency":"","carRentalConversionRate":0,"carRentalConversionRateSource":"","carRentalConversionRateDate":"","costs":{"rent":0,"food":0,"transport":0,"entertainment":0,"flights":0,"carRental":0,"insurance":0,"esim":0,"other":0}}]}`;
+        const minimumLocationCount = 12;
         const userMsg = isHe
-            ? `${yearCtxHe} תקציב לטיול: ${amtStr}. תקציב יומי לפי המשיכה שלי: ${currency}${dailyWithdrawalTarget}. משך שהייה לבדיקה: ${tripDays} לילות. הצע 8 ערים לאורח חיים ${tierHe}. ${nearbyCtxHe} קודם חפש יעדים שבהם עלות הטיול הכוללת (כולל טיסות, לינה, אוכל, תחבורה, ביטוח ו-eSIM) נמוכה או שווה לתקציב, או עד 5% מעליו — אלה נחשבים "מתאימים לתקציב"; רק אם אין מספיק, הצע יעדים שחורגים יותר. חשב את הרמה לפי השוק המקומי של כל יעד: דיור, מיקום, אוכל, תחבורה ובילויים חייבים לשקף את הרמה שנבחרה בעיר הזו. בחר דיור שמתאים למשך: לכמה לילות מלון/חדר/גסטהאוס/דירה קצרה לפי הרמה, ולחודש דירה חודשית. החזר tripHousingCost = עלות לינה כוללת לכל התקופה (לא ללילה), tripFoodCost = עלות אוכל כוללת לכל התקופה, tripTransportCost = עלות תחבורה כוללת לכל התקופה (מוניות, אוטובוסים, כרטיסיות, טיולים), tripEntertainmentCost = עלות בילויים ואטרקציות כוללת, tripOtherCost = הוצאות אחרות כוללות. כל ה-trip... הם עבור התקופה המבוקשת, כפי שתייר ישראלי יוציא בפועל. פרט ב-housingLevel וב-note את ההנחות שמצדיקות את הרמה. costs.insurance = עלות ביטוח נסיעות לאזרח ישראלי לאותה תקופה ויעד (עלות חד-פעמית לטיול). costs.esim = עלות eSIM או SIM מקומי לאינטרנט לאורך הטיול (עלות חד-פעמית לטיול). ${carCtxHe} כלול יעדים שנכנסים בתקציב וגם יעדים יקרים יותר שמתאימים לפחות לילות. החזר JSON בלבד בסכמה: ${schema}. budgetFits = הרמה שהתקציב הזה מאפשר באופן כללי. הערות ושם עיר/מדינה/הערה בעברית.`
-            : `${yearCtxEn} Trip budget: ${amtStr}. My daily budget from monthly withdrawal: ${currency}${dailyWithdrawalTarget}. Stay length to evaluate: ${tripDays} nights. Suggest 8 cities for a ${tierEn} lifestyle. ${nearbyCtxEn} First prioritize destinations where total trip cost (flights + accommodation + food + transport + insurance + eSIM) is at or below the budget, or up to 5% above it — these count as "fits the budget"; only if there are not enough such destinations, include options that exceed it further. Price the tier relative to each destination's local market: housing, neighborhood, food, transport and entertainment must reflect the selected tier in that city. Choose accommodation suitable for the duration: hotel/private room/guesthouse/short-stay apartment for short trips, monthly apartment for month stays. Return tripHousingCost = total accommodation for all nights (not per night), tripFoodCost = total food cost for the entire stay, tripTransportCost = total transport for the trip (taxis, buses, metro passes, day trips), tripEntertainmentCost = total entertainment and attractions for the stay, tripOtherCost = total other expenses. All trip* values must reflect actual tourist spending for an Israeli traveler. In housingLevel and note, explain the assumptions that justify the tier.${carCtxEn} costs.insurance = travel insurance cost for an Israeli citizen for that trip duration and destination (one-time per-trip cost). costs.esim = eSIM or local SIM card cost for internet connectivity throughout the trip (one-time per-trip cost). Include options that fit and more expensive options that fit fewer nights. Return ONLY JSON matching schema: ${schema}. budgetFits = overall tier this budget supports globally.`;
+            ? `${yearCtxHe} תקציב לטיול: ${amtStr}. תקציב יומי לפי המשיכה שלי: ${currency}${dailyWithdrawalTarget}. משך שהייה לבדיקה: ${tripDays} לילות. החזר רשימה מלאה ככל האפשר, לפחות ${minimumLocationCount} ועד 25 ערים לאורח חיים ${tierHe}, שעומדות בתנאי האזור/טיסה/תקציב או נכנסות לפחות לחלק מהלילות. אם יש פחות מ-${minimumLocationCount} יעדים אמיתיים עם טיסות ישירות מ-TLV, החזר את כל מה שקיים והסבר ב-budgetNote. ${nearbyCtxForPrompt} כל שדות הטקסט הגלויים למשתמש חייבים להיות בעברית בתשובת ה-JSON: city, country, note, housingType, housingLevel, budgetNote. אל תחזיר שמות ערים/מדינות באנגלית בשדות האלה. השדה countryEn בלבד חייב להישאר באנגלית לצורך זיהוי טכני. קודם חפש יעדים שבהם עלות הטיול הכוללת (כולל טיסות, לינה, אוכל, תחבורה, ביטוח ו-eSIM) נמוכה או שווה לתקציב, או עד 5% מעליו — אלה נחשבים "מתאימים לתקציב"; אם יש יעדים נוספים באזור שחורגים יותר, החזר אותם עם מספר הלילות שנכנס בתקציב. אל תפסול יעד בגלל הפרש מהוצאה יומית; זה נתון תצוגה בלבד. חשב את הרמה לפי השוק המקומי של כל יעד: דיור, מיקום, אוכל, תחבורה ובילויים חייבים לשקף את הרמה שנבחרה בעיר הזו. בחר דיור שמתאים למשך: לכמה לילות מלון/חדר/גסטהאוס/דירה קצרה לפי הרמה, ולחודש דירה חודשית. החזר tripHousingCost = עלות לינה כוללת לכל התקופה (לא ללילה), tripFoodCost = עלות אוכל כוללת לכל התקופה, tripTransportCost = עלות תחבורה כוללת לכל התקופה (מוניות, אוטובוסים, כרטיסיות, טיולים), tripEntertainmentCost = עלות בילויים ואטרקציות כוללת, tripOtherCost = הוצאות אחרות כוללות. כל ה-trip... הם עבור התקופה המבוקשת, כפי שתייר ישראלי יוציא בפועל. פרט ב-housingLevel וב-note את ההנחות שמצדיקות את הרמה. costs.insurance = עלות ביטוח נסיעות לאזרח ישראלי לאותה תקופה ויעד (עלות חד-פעמית לטיול). costs.esim = עלות eSIM או SIM מקומי לאינטרנט לאורך הטיול (עלות חד-פעמית לטיול). ${carCtxHe} החזר JSON בלבד בסכמה: ${schema}. budgetFits = הרמה שהתקציב הזה מאפשר באופן כללי.`
+            : `${yearCtxEn} Trip budget: ${amtStr}. My daily budget from monthly withdrawal: ${currency}${dailyWithdrawalTarget}. Stay length to evaluate: ${tripDays} nights. Return the fullest practical list, at least ${minimumLocationCount} and up to 25 cities for a ${tierEn} lifestyle, that meet the region/flight/budget conditions or fit at least some nights. If fewer than ${minimumLocationCount} real destinations have direct flights from TLV, return every real option and explain it in budgetNote. ${nearbyCtxEn} Visible user-facing text fields must be in English in the JSON: city, country, note, housingType, housingLevel, budgetNote. You must return broad variety and not stop after 2-3 destinations. First prioritize destinations where total trip cost (flights + accommodation + food + transport + insurance + eSIM) is at or below the budget, or up to 5% above it — these count as "fits the budget"; if there are additional destinations in the region that exceed it further, return them with the number of affordable nights. Do not reject a destination because of daily-spend difference; that is display-only. Price the tier relative to each destination's local market: housing, neighborhood, food, transport and entertainment must reflect the selected tier in that city. Choose accommodation suitable for the duration: hotel/private room/guesthouse/short-stay apartment for short trips, monthly apartment for month stays. Return tripHousingCost = total accommodation for all nights (not per night), tripFoodCost = total food cost for the entire stay, tripTransportCost = total transport for the trip (taxis, buses, metro passes, day trips), tripEntertainmentCost = total entertainment and attractions for the stay, tripOtherCost = total other expenses. All trip* values must reflect actual tourist spending for an Israeli traveler. In housingLevel and note, explain the assumptions that justify the tier.${carCtxEn} costs.insurance = travel insurance cost for an Israeli citizen for that trip duration and destination (one-time per-trip cost). costs.esim = eSIM or local SIM card cost for internet connectivity throughout the trip (one-time per-trip cost). Return ONLY JSON matching schema: ${schema}. budgetFits = overall tier this budget supports globally.`;
         const fallbackMsg = isHe
-            ? `החזר JSON בלבד, בלי טקסט נוסף. הצע 8 ערים לאורח חיים ${tierHe}, ${tripDays} לילות, תקציב ${amtStr}. ${nearbyCtxHe} החזר tripHousingCost, tripFoodCost, tripTransportCost, tripEntertainmentCost, tripOtherCost כעלויות כוללות לתקופה. כל המחירים בשקלים. סכימה: ${schema}`
-            : `Return JSON only, no extra text. Suggest 8 cities for a ${tierEn} lifestyle, ${tripDays} nights, budget ${amtStr}. ${nearbyCtxEn} Return tripHousingCost, tripFoodCost, tripTransportCost, tripEntertainmentCost, tripOtherCost as total costs for the entire stay. All prices in ILS. Schema: ${schema}`;
+            ? `החזר JSON בלבד, בלי טקסט נוסף. החזר רשימה מלאה ככל האפשר, לפחות ${minimumLocationCount} ועד 25 ערים לאורח חיים ${tierHe}, ${tripDays} לילות, תקציב ${amtStr}. אם יש פחות מ-${minimumLocationCount} יעדים אמיתיים עם טיסות ישירות מ-TLV, החזר את כל מה שקיים. ${nearbyCtxForPrompt} city, country, note, housingType, housingLevel ו-budgetNote חייבים להיות בעברית בתשובת ה-JSON, לא באנגלית. רק countryEn באנגלית. החזר tripHousingCost, tripFoodCost, tripTransportCost, tripEntertainmentCost, tripOtherCost כעלויות כוללות לתקופה. כל המחירים בשקלים. סכימה: ${schema}`
+            : `Return JSON only, no extra text. Return the fullest practical list, at least ${minimumLocationCount} and up to 25 cities for a ${tierEn} lifestyle, ${tripDays} nights, budget ${amtStr}. If fewer than ${minimumLocationCount} real destinations have direct flights from TLV, return every real option. ${nearbyCtxEn} Visible fields city, country, note, housingType, housingLevel and budgetNote must be in English. Return tripHousingCost, tripFoodCost, tripTransportCost, tripEntertainmentCost, tripOtherCost as total costs for the entire stay. All prices in ILS. Schema: ${schema}`;
         try {
-            setParsed(normalizeLocationSuggestions(
-                await getParsedAiJson(
-                    [{ role: 'user', content: userMsg }],
-                    systemPrompt,
-                    aiProvider,
-                    aiModel,
-                    apiKeyOverride,
-                    [{ role: 'user', content: fallbackMsg }]
-                ),
+            let rawSuggestions = await getParsedGroundedAiJson(
+                [{ role: 'user', content: userMsg }],
+                systemPrompt,
+                aiProvider,
+                aiModel,
+                apiKeyOverride,
+                [{ role: 'user', content: fallbackMsg }]
+            );
+            let normalized = normalizeLocationSuggestions(
+                rawSuggestions,
                 selectedTier,
                 tripBudget,
                 isHe,
@@ -3135,14 +3357,91 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                 includeCarRental,
                 carRentalDays,
                 dailyWithdrawalTarget
-            ));
+            );
+            const mergeSuggestions = (...sets) => {
+                const merged = new Map();
+                sets.forEach(set => {
+                    (set?.locations || []).forEach(loc => {
+                        const key = locationKeyFor(loc);
+                        if (key && !merged.has(key)) merged.set(key, loc);
+                    });
+                });
+                return {
+                    ...rawSuggestions,
+                    budgetNote: sets.find(set => set?.budgetNote)?.budgetNote || rawSuggestions.budgetNote || '',
+                    locations: [...merged.values()],
+                };
+            };
+            if ((normalized.locations || []).length < minimumLocationCount) {
+                const coverageDirectives = isHe
+                    ? [
+                        'כסה יעדי חוף, איים וערי נופש בתוך האזור לפי גיאוגרפיה וזמינות טיסה ישירה.',
+                        'כסה ערים גדולות ושדות תעופה מרכזיים בתוך האזור לפי טיסות ישירות מ-TLV.',
+                        'כסה יעדים משניים, עונתיים וקצרים בתוך האזור שיכולים להתאים לתקציב או לחלק מהלילות.',
+                    ]
+                    : [
+                        'Cover coastal, island, and resort destinations within the region by geography and direct-flight availability.',
+                        'Cover major cities and hub airports within the region by direct flights from TLV.',
+                        'Cover secondary, seasonal, and short-break destinations within the region that can fit the budget or some nights.',
+                    ];
+                for (const directive of coverageDirectives) {
+                    const supplementMsg = isHe
+                        ? `החיפוש הקודם החזיר רק ${(normalized.locations || []).length} יעדים, וזה לא מספיק. בצע חיפוש מלא נוסף לאותו אזור גיאוגרפי ולאותו תקציב: ${amtStr}, ${tripDays} לילות, רמת חיים ${tierHe}. ${directive} ${nearbyCtxForPrompt} החזר לפחות ${minimumLocationCount} ועד 25 יעדים ב-locations[] אם יש מספיק יעדים אמיתיים עם טיסות ישירות מ-TLV. אם אין ${minimumLocationCount}, החזר את כל היעדים האמיתיים שמצאת. אל תשתמש ברשימת מדינות קבועה; הסק לבד את גבולות האזור לפי גיאוגרפיה וזמינות טיסות ישירות. אל תעצור ביעדים שמתאימים לגמרי לתקציב; אם יעד חורג, החזר אותו עם מספר הלילות שנכנס בתקציב. city, country, note, housingType, housingLevel ו-budgetNote חייבים להיות בעברית בתשובת ה-JSON, לא באנגלית. רק countryEn באנגלית. כל המחירים בשקלים, עם מקורות לטיסה/לינה/רכב כשיש רכב. סכימה: ${schema}`
+                        : `The previous search returned only ${(normalized.locations || []).length} destinations, which is not enough. Run another full search for the same geographic region and budget: ${amtStr}, ${tripDays} nights, ${tierEn} lifestyle. ${directive} ${nearbyCtxEn} Return at least ${minimumLocationCount} and up to 25 destinations in locations[] when enough real destinations have direct flights from TLV. If there are fewer than ${minimumLocationCount}, return every real destination found. Do not use a fixed country list; infer the region boundary from geography and direct-flight availability. Do not stop at fully budget-fitting destinations; if a destination exceeds the budget, return it with affordable nights. Visible fields city, country, note, housingType, housingLevel and budgetNote must be in English. All prices in ILS, with sources for flight/accommodation/car where applicable. Schema: ${schema}`;
+                    const supplemental = await getParsedGroundedAiJson(
+                        [{ role: 'user', content: supplementMsg }],
+                        systemPrompt,
+                        aiProvider,
+                        aiModel,
+                        apiKeyOverride
+                    ).catch(() => null);
+                    if (!supplemental?.locations?.length) continue;
+                    rawSuggestions = mergeSuggestions(rawSuggestions, supplemental);
+                    normalized = normalizeLocationSuggestions(
+                        rawSuggestions,
+                        selectedTier,
+                        tripBudget,
+                        isHe,
+                        tripDays,
+                        includeCarRental,
+                        carRentalDays,
+                        dailyWithdrawalTarget
+                    );
+                    if ((normalized.locations || []).length >= minimumLocationCount) break;
+                }
+                if ((normalized.locations || []).length < minimumLocationCount) {
+                    const merged = new Map();
+                    (rawSuggestions.locations || []).forEach(loc => {
+                        const key = locationKeyFor(loc);
+                        if (key && !merged.has(key)) merged.set(key, loc);
+                    });
+                    rawSuggestions = {
+                        ...rawSuggestions,
+                        budgetNote: rawSuggestions.budgetNote || (isHe
+                            ? `נמצאו ${merged.size} יעדים בלבד אחרי חיפוש מורחב עם טיסות ישירות ומקורות מחיר.`
+                            : `Found only ${merged.size} destinations after expanded direct-flight sourced search.`),
+                        locations: [...merged.values()],
+                    };
+                    normalized = normalizeLocationSuggestions(
+                        rawSuggestions,
+                        selectedTier,
+                        tripBudget,
+                        isHe,
+                        tripDays,
+                        includeCarRental,
+                        carRentalDays,
+                        dailyWithdrawalTarget
+                    );
+                }
+            }
+            setParsed(normalized);
         } catch (err) {
             console.error('Location suggestions failed', err);
             setError(aiErrorMessage(err, isHe));
         } finally {
             setLoading(false);
         }
-    }, [withdrawalMonthlyAmount, year, currency, isHe, aiProvider, aiModel, apiKeyOverride, tripDaysInput, includeCarRental, carRentalDaysInput, tripBudgetForDays]);
+    }, [withdrawalMonthlyAmount, year, currency, isHe, aiProvider, aiModel, apiKeyOverride, tripDaysInput, includeCarRental, carRentalDaysInput, tripBudgetForDays, selectedRegions]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -3153,6 +3452,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         setReplacingLocation(false);
         setDeletedLocations([]);
         setIncludeMonthlySavings(false);
+        setSelectedRegions(new Set());
         setOpenCard(null);
         setTripRequest('');
         setPlannedTrip(null);
@@ -3230,7 +3530,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                             );
                         })}
                         </div>
-                        <div className="grid grid-cols-5 gap-2">
+                        <div className="grid grid-cols-6 gap-2">
                             <label className={`min-w-0 rounded-lg px-2.5 py-1.5 ${isLight ? 'bg-slate-50 border border-slate-200' : 'bg-white/5 border border-white/10'}`}>
                                 <span className={`block text-[10px] mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'מס׳ לילות' : 'Nights'}</span>
                                 <input
@@ -3241,24 +3541,57 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                     className={`w-full bg-transparent outline-none text-sm font-semibold ${isLight ? 'text-slate-800 placeholder:text-slate-400' : 'text-white placeholder:text-gray-500'}`}
                                 />
                             </label>
-                            <div className={`min-w-0 rounded-lg px-2.5 py-1.5 ${isLight ? 'bg-slate-50 border border-slate-200' : 'bg-white/5 border border-white/10'}`}>
-                                <span className={`block text-[10px] mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'חיסכון ימים' : 'Days savings'}</span>
-                                <div className={`w-full text-sm font-semibold truncate ${isLight ? 'text-slate-800' : 'text-white'}`} dir={isHe ? 'rtl' : 'ltr'}>
-                                    {fmtAmt(tripBudgetForDays(tripDaysInput))}
-                                </div>
-                            </div>
+                            <label className={`min-w-0 rounded-lg px-2.5 py-1.5 border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'}`}>
+                                <span className={`block text-[10px] mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                    {includeMonthlySavings ? (isHe ? 'חיסכון ימים' : 'Days savings') : (isHe ? 'תקציב' : 'Budget')}
+                                </span>
+                                {includeMonthlySavings ? (() => {
+                                    const days = normalizeTripDays(tripDaysInput);
+                                    const monthlyPart = monthlySavingsBudget * savingsMonths;
+                                    const dailyPart = variableDailyCost * days;
+                                    return (
+                                        <div className="w-full text-right">
+                                            <div className={`text-sm font-semibold ${isLight ? 'text-slate-800' : 'text-white'}`} dir="ltr">
+                                                {fmtAmt(monthlyPart + dailyPart)}
+                                            </div>
+                                            <div className={`text-[9px] leading-tight mt-0.5 flex justify-end flex-wrap gap-x-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                <span dir="ltr">{fmtAmt(monthlyPart)}×{savingsMonths}{isHe ? 'ח\'' : 'mo'}</span>
+                                                <span>+</span>
+                                                <span dir="ltr">{fmtAmt(dailyPart)}×{days}{isHe ? 'י\'' : 'd'}</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })() : (
+                                    <input
+                                        type="number" min="0"
+                                        value={customBudget}
+                                        onChange={e => setCustomBudget(e.target.value)}
+                                        placeholder={fmtAmt(tripBudgetForDays(tripDaysInput))}
+                                        className={`w-full bg-transparent outline-none text-sm font-semibold ${isLight ? 'text-slate-800 placeholder:text-slate-400' : 'text-white placeholder:text-gray-500'}`}
+                                    />
+                                )}
+                            </label>
                             <button
                                 type="button"
                                 onClick={() => setIncludeMonthlySavings(v => !v)}
-                                disabled={monthlySavingsBudget <= 0}
-                                title={isHe ? `הוסף חיסכון חודשי: ${fmtAmt(monthlySavingsBudget)}` : `Add monthly savings: ${fmtAmt(monthlySavingsBudget)}`}
-                                className={`min-w-0 rounded-lg px-2.5 py-1.5 border flex items-center justify-center gap-1.5 text-start transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${includeMonthlySavings
+                                className={`min-w-0 rounded-lg px-2.5 py-1.5 border flex items-center justify-center gap-1.5 text-start transition-colors ${includeMonthlySavings
                                     ? (isLight ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-amber-500/15 border-amber-400/30 text-amber-200')
                                     : (isLight ? 'bg-slate-50 border-slate-200 text-slate-500' : 'bg-white/5 border-white/10 text-gray-400')}`}
                             >
                                 <PiggyBank size={14} className="shrink-0" />
-                                <span className="text-xs font-semibold truncate">{isHe ? 'חיסכון' : 'Savings'}</span>
+                                <span className="text-xs font-semibold">{isHe ? 'חיסכון' : 'Savings'}</span>
                             </button>
+                            <label className={`min-w-0 rounded-lg px-2.5 py-1.5 border ${includeMonthlySavings ? (isLight ? 'bg-amber-50 border-amber-200' : 'bg-amber-500/10 border-amber-400/20') : (isLight ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white/5 border-white/10 opacity-60')}`}>
+                                <span className={`block text-[10px] mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'חודשים' : 'Months'}</span>
+                                <input
+                                    type="number" min="1" max="24"
+                                    value={savingsMonths}
+                                    onChange={e => setSavingsMonths(Math.max(1, parseInt(e.target.value) || 1))}
+                                    onKeyDown={e => { if (e.key === 'ArrowUp') { e.preventDefault(); setSavingsMonths(v => Math.min(24, v + 1)); } else if (e.key === 'ArrowDown') { e.preventDefault(); setSavingsMonths(v => Math.max(1, v - 1)); } }}
+                                    disabled={!includeMonthlySavings}
+                                    className={`w-full bg-transparent outline-none text-sm font-semibold disabled:cursor-not-allowed ${isLight ? 'text-slate-800 placeholder:text-slate-400' : 'text-white placeholder:text-gray-500'}`}
+                                />
+                            </label>
                             <button
                                 type="button"
                                 onClick={() => setIncludeCarRental(v => !v)}
@@ -3272,16 +3605,59 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                             <label className={`min-w-0 rounded-lg px-2.5 py-1.5 border ${includeCarRental ? (isLight ? 'bg-emerald-50 border-emerald-200' : 'bg-emerald-500/10 border-emerald-400/20') : (isLight ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white/5 border-white/10 opacity-60')}`}>
                                 <span className={`block text-[10px] mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'ימי רכב' : 'Car days'}</span>
                                 <input
-                                    type="number" min="1"
-                                    max={normalizeTripDays(tripDaysInput)}
+                                    type="text" inputMode="numeric"
                                     value={carRentalDaysInput}
                                     onChange={e => setCarRentalDaysInput(e.target.value)}
+                                    onKeyDown={e => { const max = normalizeTripDays(tripDaysInput); if (e.key === 'ArrowUp') { e.preventDefault(); setCarRentalDaysInput(v => String(Math.min(max, (parseInt(v) || 0) + 1))); } else if (e.key === 'ArrowDown') { e.preventDefault(); setCarRentalDaysInput(v => String(Math.max(1, (parseInt(v) || 1) - 1))); } }}
                                     disabled={!includeCarRental}
                                     placeholder={isHe ? 'כל התקופה' : 'Full stay'}
                                     className={`w-full bg-transparent outline-none text-sm font-semibold disabled:cursor-not-allowed ${isLight ? 'text-slate-800 placeholder:text-slate-400' : 'text-white placeholder:text-gray-500'}`}
                                 />
-                            </label>
+            </label>
                         </div>
+                        {(() => {
+                            const toggle = id => setSelectedRegions(prev => {
+                                const n = new Set(prev);
+                                if (n.has(id)) {
+                                    n.delete(id);
+                                    const region = WORLD_REGIONS.find(r => r.id === id);
+                                    region?.sub?.forEach(s => n.delete(s.id));
+                                } else {
+                                    n.add(id);
+                                }
+                                return n;
+                            });
+                            const parentsWithSubs = WORLD_REGIONS.filter(r => r.sub && (selectedRegions.has(r.id) || r.sub.some(s => selectedRegions.has(s.id))));
+                            return (<>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {WORLD_REGIONS.map(r => {
+                                        const active = selectedRegions.has(r.id) || r.sub?.some(s => selectedRegions.has(s.id));
+                                        return (
+                                            <button key={r.id} type="button"
+                                                onClick={() => r.id === 'all' ? setSelectedRegions(new Set()) : toggle(r.id)}
+                                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${active
+                                                    ? (isLight ? 'bg-indigo-600 text-white' : 'bg-indigo-500 text-white')
+                                                    : (selectedRegions.size === 0 && r.id === 'all' ? (isLight ? 'bg-indigo-100 text-indigo-600' : 'bg-indigo-500/20 text-indigo-300') : (isLight ? 'bg-slate-100 text-slate-500 hover:bg-slate-200' : 'bg-white/5 text-gray-400 hover:bg-white/10'))}`}>
+                                                {isHe ? r.he : r.en}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                {parentsWithSubs.length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {parentsWithSubs.flatMap(parent => parent.sub.map(s => (
+                                            <button key={s.id} type="button"
+                                                onClick={() => toggle(s.id)}
+                                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${selectedRegions.has(s.id)
+                                                    ? (isLight ? 'bg-violet-600 text-white' : 'bg-violet-500 text-white')
+                                                    : (isLight ? 'bg-slate-100 text-slate-500 hover:bg-slate-200' : 'bg-white/5 text-gray-400 hover:bg-white/10')}`}>
+                                                {isHe ? s.he : s.en}
+                                            </button>
+                                        )))}
+                                    </div>
+                                )}
+                            </>);
+                        })()}
                     </>)}
 
                 </div>
@@ -3306,11 +3682,6 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                     )}
                     {parsed && !loading && (<>
                         {/* Budget assessment banner */}
-                        {parsed.budgetNote && (
-                            <div className={`rounded-xl px-4 py-2.5 border text-xs ${fitsColorMap[(TIER_META[parsed.budgetFits] || TIER_META.medium).color]}`}>
-                                <span className="opacity-85">{parsed.budgetNote}</span>
-                            </div>
-                        )}
                         {replacingLocation && (
                             <div className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 border text-xs ${isLight ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-indigo-500/10 border-indigo-400/25 text-indigo-200'}`}>
                                 <Loader2 size={13} className="animate-spin" />
@@ -3358,6 +3729,11 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                                         className="w-5 h-3.5 rounded-[2px] object-cover shadow-sm"
                                                         loading="lazy"
                                                     />
+                                                )}
+                                                {(loc.flightHours > 0 || airfareRegionFor(loc).flightHours) && (
+                                                    <span className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`} dir="ltr">
+                                                        ✈ {loc.flightHours > 0 ? `${loc.flightHours}h` : flightHoursLabel(loc)}
+                                                    </span>
                                                 )}
                                             </span>
                                         </div>
@@ -3490,6 +3866,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                                     const val = tripCostView.breakdown?.[key];
                                                     if (!val) return null;
                                                     const pct = loc.total > 0 ? Math.round(val / loc.total * 100) : 0;
+                                                    const sourceMeta = sourceMetaForCost(loc, key);
                                                     return (
                                                         <div key={key} className="space-y-0.5">
                                                             <div className="flex items-center justify-between">
@@ -3502,6 +3879,20 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                                             <div className={`h-1 rounded-full overflow-hidden ${isLight ? 'bg-slate-100' : 'bg-white/10'}`}>
                                                                 <div className={`h-full rounded-full ${isLight ? 'bg-violet-400' : 'bg-violet-500'}`} style={{ width: `${pct}%` }} />
                                                             </div>
+                                                            {sourceMeta && (
+                                                                <div className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                                                    {isHe ? 'מקור: ' : 'Source: '}
+                                                                    {sourceMeta.url
+                                                                        ? <a className="underline" href={sourceMeta.url} target="_blank" rel="noreferrer">{sourceMeta.name}</a>
+                                                                        : sourceMeta.name}
+                                                                    {sourceMeta.originalPrice > 0 && sourceMeta.originalCurrency && (
+                                                                        <span dir="ltr"> · {sourceMeta.originalPrice.toLocaleString()} {sourceMeta.originalCurrency}</span>
+                                                                    )}
+                                                                    {sourceMeta.conversionRateSource && (
+                                                                        <span> · {sourceMeta.conversionRateSource}{sourceMeta.conversionRateDate ? ` ${sourceMeta.conversionRateDate}` : ''}</span>
+                                                                    )}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     );
                                                 })}
@@ -3591,7 +3982,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                             <div className={`flex items-center gap-1 px-3 py-1.5 border-b flex-wrap ${isLight ? 'border-slate-100 bg-slate-50' : 'border-white/5 bg-white/3'}`}>
                                 {[
                                     { key: 'price',     he: 'מחיר',  en: 'Price'    },
-                                    { key: 'nights',    he: 'ימים',   en: 'Nights'   },
+                                    { key: 'nights',    he: 'לילות',  en: 'Nights'   },
                                     { key: 'level',     he: 'רמה',    en: 'Level'    },
                                     { key: 'createdAt', he: 'תאריך',  en: 'Date'     },
                                 ].map(({ key, he, en }) => {
@@ -3796,6 +4187,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                     <div className="flex items-center gap-2">
                                         <PlanFlags codes={plannedTrip.countryCodes || (plannedTrip.countryCode ? [plannedTrip.countryCode] : [])} isLight={isLight} showShape={(plannedTrip.countryCodes?.length ?? 1) === 1} />
                                         <span className={`text-xs font-bold tracking-wide uppercase ${isLight ? 'text-violet-600' : 'text-violet-300'}`}>{isHe ? 'פירוט עלויות' : 'Cost breakdown'}</span>
+                                        {nights > 0 && <span className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{nights} {isHe ? 'לילות' : 'nights'}</span>}
                                         {planLevel && (
                                             <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${planLevel.cls}`}>
                                                 {isHe ? planLevel.he : planLevel.en}
@@ -3815,6 +4207,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                             const val = scaledCosts[key];
                                             if (!val) return null;
                                             const pct = tripCost > 0 ? Math.round(val / tripCost * 100) : 0;
+                                            const sourceMeta = sourceMetaForCost(plannedTrip, key);
                                             return (
                                                 <div key={key} className="space-y-0.5">
                                                     <div className="flex items-center justify-between">
@@ -3827,6 +4220,20 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                                     <div className={`h-1 rounded-full overflow-hidden ${isLight ? 'bg-slate-100' : 'bg-white/10'}`}>
                                                         <div className={`h-full rounded-full ${isLight ? 'bg-violet-400' : 'bg-violet-500'}`} style={{ width: `${pct}%` }} />
                                                     </div>
+                                                    {sourceMeta && (
+                                                        <div className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                                            {isHe ? 'מקור: ' : 'Source: '}
+                                                            {sourceMeta.url
+                                                                ? <a className="underline" href={sourceMeta.url} target="_blank" rel="noreferrer">{sourceMeta.name}</a>
+                                                                : sourceMeta.name}
+                                                            {sourceMeta.originalPrice > 0 && sourceMeta.originalCurrency && (
+                                                                <span dir="ltr"> · {sourceMeta.originalPrice.toLocaleString()} {sourceMeta.originalCurrency}</span>
+                                                            )}
+                                                            {sourceMeta.conversionRateSource && (
+                                                                <span> · {sourceMeta.conversionRateSource}{sourceMeta.conversionRateDate ? ` ${sourceMeta.conversionRateDate}` : ''}</span>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             );
                                         })}
