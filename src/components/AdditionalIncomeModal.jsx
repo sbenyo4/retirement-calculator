@@ -46,38 +46,40 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
         }));
     }, [entries]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const retirementYear = (() => {
+    const retirementYear = useMemo(() => {
         const retAge = parseFloat(inputs.retirementStartAge) || 67;
         if (inputs.birthdate) {
             return new Date(inputs.birthdate).getFullYear() + Math.floor(retAge);
         }
         const yearsLeft = retAge - (parseFloat(inputs.currentAge) || 30);
         return new Date().getFullYear() + Math.max(0, Math.round(yearsLeft));
-    })();
+    }, [inputs.retirementStartAge, inputs.birthdate, inputs.currentAge]);
 
-    const retirementEndYear = (() => {
+    const retirementEndYear = useMemo(() => {
         const endAge = parseFloat(inputs.retirementEndAge) || 90;
         if (inputs.birthdate) {
             return new Date(inputs.birthdate).getFullYear() + Math.floor(endAge);
         }
         const yearsToEnd = endAge - (parseFloat(inputs.currentAge) || 30);
         return new Date().getFullYear() + Math.max(0, Math.round(yearsToEnd));
-    })();
+    }, [inputs.retirementEndAge, inputs.birthdate, inputs.currentAge]);
 
-    const allEntriesValid = entries.every(e => {
+    const allEntriesValid = useMemo(() => entries.every(e => {
         const yr = parseInt(e.startYear);
         const endYr = e.endYear ? parseInt(e.endYear) : null;
         return yr >= retirementYear && yr <= retirementEndYear
             && (endYr === null || (endYr >= yr && endYr <= retirementEndYear))
             && parseFloat(e.monthlyAmount) > 0;
-    });
-    const hasChanges = JSON.stringify(entries.map(e => ({
-        id: e.id, startYear: String(e.startYear), endYear: e.endYear ?? null,
-        monthlyAmount: String(e.monthlyAmount), enabled: e.enabled !== false
-    }))) !== JSON.stringify(initialEntriesRef.current.map(e => ({
-        id: e.id, startYear: String(e.startYear), endYear: e.endYear ?? null,
-        monthlyAmount: String(e.monthlyAmount), enabled: e.enabled !== false
-    })));
+    }), [entries, retirementYear, retirementEndYear]);
+
+    const hasChanges = useMemo(() => {
+        const normalize = list => list.map(e => ({
+            id: e.id, startYear: String(e.startYear), endYear: e.endYear ?? null,
+            monthlyAmount: String(e.monthlyAmount), enabled: e.enabled !== false,
+        }));
+        return JSON.stringify(normalize(entries)) !== JSON.stringify(normalize(initialEntriesRef.current));
+    }, [entries]);
+
     const canSave = allEntriesValid && hasChanges;
 
     // Stable fingerprint of inputs excluding additionalYearlyIncome — changes to that field
@@ -85,7 +87,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
     const inputsFingerprint = useMemo(() => {
         const { additionalYearlyIncome: _, ...rest } = inputs;
         return JSON.stringify(rest);
-    }, [inputs]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [inputs]);
 
     // Compute isolated impact per entry: run with only that entry vs. baseline (no entries)
     const balanceImpacts = useMemo(() => {
@@ -112,7 +114,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
             });
             return impacts;
         } catch { return {}; }
-    }, [entries, inputsFingerprint]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [entries, inputsFingerprint]);
 
     if (!isOpen) return null;
 

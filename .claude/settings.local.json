@@ -7,7 +7,12 @@
       "Bash(node:*)",
       "Bash(npx vite build)",
       "Bash(npx vitest run)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\sbeny\\\\.gemini\\\\antigravity-ide\\\\scratch\\\\retirement-calculator\\\\src\" -Recurse -File -Include \"*.jsx\", \"*.js\")",
+      "Bash(Select-Object FullName)",
+      "Bash(Format-List)",
+      "Bash(grep -E \"\\\\.\\(jsx|js\\)$\")",
+      "Bash(python3 -c ' *)"
     ]
   }
 }

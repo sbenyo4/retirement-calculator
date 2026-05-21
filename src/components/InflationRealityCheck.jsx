@@ -1,7 +1,16 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { createPortal } from 'react-dom';
 import { Coffee, Car, Plane, Ticket, ShoppingCart, Beer, X, Rocket } from 'lucide-react';
+
+const INFLATION_ITEMS = [
+    { id: 'coffee',   icon: Coffee,       currentPrice: { en: 5,     he: 18     }, color: 'text-amber-600',   bgColor: 'bg-amber-100',   darkColor: 'text-amber-400',   darkBgColor: 'bg-amber-900/30'   },
+    { id: 'bread',    icon: ShoppingCart, currentPrice: { en: 4,     he: 15     }, color: 'text-yellow-600',  bgColor: 'bg-yellow-100',  darkColor: 'text-yellow-400',  darkBgColor: 'bg-yellow-900/30'  },
+    { id: 'movie',    icon: Ticket,       currentPrice: { en: 15,    he: 45     }, color: 'text-purple-600',  bgColor: 'bg-purple-100',  darkColor: 'text-purple-400',  darkBgColor: 'bg-purple-900/30'  },
+    { id: 'beer',     icon: Beer,         currentPrice: { en: 8,     he: 30     }, color: 'text-orange-600',  bgColor: 'bg-orange-100',  darkColor: 'text-orange-400',  darkBgColor: 'bg-orange-900/30'  },
+    { id: 'car',      icon: Car,          currentPrice: { en: 35000, he: 135000 }, color: 'text-blue-600',    bgColor: 'bg-blue-100',    darkColor: 'text-blue-400',    darkBgColor: 'bg-blue-900/30'    },
+    { id: 'vacation', icon: Plane,        currentPrice: { en: 5000,  he: 18000  }, color: 'text-emerald-600', bgColor: 'bg-emerald-100', darkColor: 'text-emerald-400', darkBgColor: 'bg-emerald-900/30' },
+];
 
 export function InflationButton({ onClick, t }) {
     const { theme } = useTheme();
@@ -28,73 +37,16 @@ export function InflationModal({ isOpen, onClose, t, language }) {
     const [rate, setRate] = useState(2.5);
     const [years, setYears] = useState(10);
 
-    const items = useMemo(() => [
-        {
-            id: 'coffee',
-            icon: Coffee,
-            currentPrice: { en: 5, he: 18 },
-            color: 'text-amber-600',
-            bgColor: 'bg-amber-100',
-            darkColor: 'text-amber-400',
-            darkBgColor: 'bg-amber-900/30'
-        },
-        {
-            id: 'bread',
-            icon: ShoppingCart,
-            currentPrice: { en: 4, he: 15 },
-            color: 'text-yellow-600',
-            bgColor: 'bg-yellow-100',
-            darkColor: 'text-yellow-400',
-            darkBgColor: 'bg-yellow-900/30'
-        },
-        {
-            id: 'movie',
-            icon: Ticket,
-            currentPrice: { en: 15, he: 45 },
-            color: 'text-purple-600',
-            bgColor: 'bg-purple-100',
-            darkColor: 'text-purple-400',
-            darkBgColor: 'bg-purple-900/30'
-        },
-        {
-            id: 'beer',
-            icon: Beer,
-            currentPrice: { en: 8, he: 30 },
-            color: 'text-orange-600',
-            bgColor: 'bg-orange-100',
-            darkColor: 'text-orange-400',
-            darkBgColor: 'bg-orange-900/30'
-        },
-        {
-            id: 'car',
-            icon: Car,
-            currentPrice: { en: 35000, he: 135000 },
-            color: 'text-blue-600',
-            bgColor: 'bg-blue-100',
-            darkColor: 'text-blue-400',
-            darkBgColor: 'bg-blue-900/30'
-        },
-        {
-            id: 'vacation',
-            icon: Plane,
-            currentPrice: { en: 5000, he: 18000 },
-            color: 'text-emerald-600',
-            bgColor: 'bg-emerald-100',
-            darkColor: 'text-emerald-400',
-            darkBgColor: 'bg-emerald-900/30'
-        }
-    ], []);
-
     const projectedItems = useMemo(() => {
         const r = parseFloat(rate) / 100;
         const n = parseFloat(years);
 
-        return items.map(item => ({
+        return INFLATION_ITEMS.map(item => ({
             ...item,
             displayPrice: item.currentPrice[language === 'he' ? 'he' : 'en'],
             futurePrice: item.currentPrice[language === 'he' ? 'he' : 'en'] * Math.pow(1 + r, n)
         }));
-    }, [items, language, rate, years]);
+    }, [language, rate, years]);
 
     const formatPrice = (price) => {
         return new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
