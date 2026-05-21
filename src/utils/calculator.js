@@ -8,6 +8,7 @@ import { getCalendarYearForMonth } from './calculators/helpers.js';
 import { calculateIncomeAtAge, calculateNationalInsurance } from './pensionCalculator.js';
 import { mergeScenarioIntoRates } from './scenarioUtils.js';
 import { translations } from './translations.js';
+import { getMonthsBetweenAges } from './dateUtils.js';
 
 /**
  * Calculates the future value and required capital for retirement.
@@ -116,7 +117,8 @@ export function calculateRetirementProjection(inputs, t = null) {
 
     const { balanceAtRetirement, totalPrincipal, history: accumHistory, lastMonthIndex } = accumResult;
 
-    const monthsInRetirement = (retirementEndAge - retirementStartAge) * 12;
+    const monthsToRetirement = getMonthsBetweenAges(currentAge, retirementStartAge);
+    const monthsInRetirement = getMonthsBetweenAges(retirementStartAge, retirementEndAge);
 
     const yearlyIncomeOverrides = parsedInputs.yearlyIncomeOverrides && typeof parsedInputs.yearlyIncomeOverrides === 'object'
         ? parsedInputs.yearlyIncomeOverrides
@@ -206,7 +208,7 @@ export function calculateRetirementProjection(inputs, t = null) {
         annualReturnRate: effectiveAccumRate, // Accumulation Rate (for PV to today)
         retirementAnnualReturnRate: effectiveRetirementRate, // Decumulation Rate (for Perpetuity threshold)
         taxRateDecimal: taxRate / 100,
-        monthsToRetirement: (retirementStartAge - currentAge) * 12,
+        monthsToRetirement,
         monthsInRetirement,
         accumulatedWithdrawals: decumResult.accumulatedWithdrawals,
         totalNetWithdrawal: decumResult.totalNetWithdrawal

@@ -8,6 +8,7 @@ import { X, Dices, ArrowDown, Calculator, RotateCcw, TrendingUp, TrendingDown, S
 import { calculateRetirementProjection } from '../utils/calculator';
 import { formatCurrency as formatCurrencyUtil } from '../utils/formatters';
 import { generateRandomRates as generateRandomRatesUtil, applyBalancedSort } from '../utils/variableRatesUtils';
+import { getProjectedAgeDate } from '../utils/dateUtils';
 
 export default function VariableRatesModal({
     isOpen,
@@ -48,13 +49,14 @@ export default function VariableRatesModal({
     // Helper: Calculate months in year for weighting
     const getMonthsForYear = useCallback((year) => {
         const bDate = inputs?.birthDate || inputs?.birthdate;
+        const getTargetDate = (targetAge) => getProjectedAgeDate(targetAge, inputs?.currentAge, bDate, inputs?.manualAge);
 
         // 1. First Year of simulation
         if (year === startYear) {
-            // If this is also retirement start year, use birth month (retirement starts on birthday)
-            if (startYear === retirementStartYear && inputs && bDate) {
-                const birthMonth = new Date(bDate).getMonth(); // 0-11
-                return 12 - birthMonth; // Months remaining in year after birthday
+            // If this is also retirement start year, use the selected retirement month.
+            if (startYear === retirementStartYear && inputs) {
+                const retirementDate = getTargetDate(inputs.retirementStartAge);
+                if (retirementDate) return 12 - retirementDate.getMonth();
             }
             // Otherwise (accumulation phase), use current month
             const currentMonth = new Date().getMonth(); // 0-11
@@ -68,11 +70,9 @@ export default function VariableRatesModal({
             const isAccumulation = endYear < retirementStartYear;
             const targetAge = isAccumulation ? inputs.retirementStartAge : inputs.retirementEndAge;
 
-            if (inputs && bDate && targetAge) {
-                const birthMonth = new Date(bDate).getMonth();
-                const ageMonths = (parseFloat(targetAge) % 1) * 12;
-                const endMonthIndex = Math.floor((birthMonth + ageMonths) % 12);
-                return endMonthIndex + 1;
+            if (inputs && targetAge) {
+                const targetDate = getTargetDate(targetAge);
+                if (targetDate) return targetDate.getMonth() + 1;
             }
             return 12; // Fallback
         }
@@ -141,12 +141,13 @@ export default function VariableRatesModal({
 
     const getMonthName = (year) => {
         const bDate = inputs?.birthDate || inputs?.birthdate;
+        const getTargetDate = (targetAge) => getProjectedAgeDate(targetAge, inputs?.currentAge, bDate, inputs?.manualAge);
 
-        // Retirement Start Year - show birth month (retirement starts on birthday)
+        // Retirement Start Year - show selected retirement month
         // Check this FIRST, before startYear, because they might be the same
-        if (year === retirementStartYear && inputs && bDate) {
-            const birthMonth = new Date(bDate).getMonth();
-            return formatMonthName(birthMonth);
+        if (year === retirementStartYear && inputs) {
+            const retirementDate = getTargetDate(inputs.retirementStartAge);
+            if (retirementDate) return formatMonthName(retirementDate.getMonth());
         }
 
         // Start Year (accumulation phase only) - show current month
@@ -157,14 +158,12 @@ export default function VariableRatesModal({
         }
 
         // End Year - show end month based on target age
-        if (year === endYear && inputs && bDate) {
+        if (year === endYear && inputs) {
             const isAccumulation = endYear < retirementStartYear;
             const targetAge = isAccumulation ? inputs.retirementStartAge : inputs.retirementEndAge;
             if (targetAge) {
-                const birthMonth = new Date(bDate).getMonth();
-                const ageMonths = (parseFloat(targetAge) % 1) * 12;
-                const endMonthIndex = Math.floor((birthMonth + ageMonths) % 12);
-                return formatMonthName(endMonthIndex);
+                const targetDate = getTargetDate(targetAge);
+                if (targetDate) return formatMonthName(targetDate.getMonth());
             }
         }
         return '';

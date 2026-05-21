@@ -6,6 +6,7 @@ import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useDraggable } from '../hooks/useDraggable';
 import { calculateRetirementProjection } from '../utils/calculator';
 import { formatCurrency as fmt } from '../utils/formatters';
+import { getProjectedYear } from '../utils/dateUtils';
 
 export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, language, currency }) {
     const { theme } = useTheme();
@@ -48,21 +49,13 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
 
     const retirementYear = useMemo(() => {
         const retAge = parseFloat(inputs.retirementStartAge) || 67;
-        if (inputs.birthdate) {
-            return new Date(inputs.birthdate).getFullYear() + Math.floor(retAge);
-        }
-        const yearsLeft = retAge - (parseFloat(inputs.currentAge) || 30);
-        return new Date().getFullYear() + Math.max(0, Math.round(yearsLeft));
-    }, [inputs.retirementStartAge, inputs.birthdate, inputs.currentAge]);
+        return getProjectedYear(retAge, inputs.currentAge || 30, inputs.birthdate, inputs.manualAge);
+    }, [inputs.retirementStartAge, inputs.birthdate, inputs.currentAge, inputs.manualAge]);
 
     const retirementEndYear = useMemo(() => {
         const endAge = parseFloat(inputs.retirementEndAge) || 90;
-        if (inputs.birthdate) {
-            return new Date(inputs.birthdate).getFullYear() + Math.floor(endAge);
-        }
-        const yearsToEnd = endAge - (parseFloat(inputs.currentAge) || 30);
-        return new Date().getFullYear() + Math.max(0, Math.round(yearsToEnd));
-    }, [inputs.retirementEndAge, inputs.birthdate, inputs.currentAge]);
+        return getProjectedYear(endAge, inputs.currentAge || 30, inputs.birthdate, inputs.manualAge);
+    }, [inputs.retirementEndAge, inputs.birthdate, inputs.currentAge, inputs.manualAge]);
 
     const allEntriesValid = useMemo(() => entries.every(e => {
         const yr = parseInt(e.startYear);

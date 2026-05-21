@@ -9,6 +9,7 @@ import { EVENT_TYPES } from '../constants';
 import { calculateTimelineLayout } from '../utils/timelineLayout';
 import { useDeepCompareMemo } from '../hooks/useDeepCompare';
 import AddEventModal from './AddEventModal';
+import { getProjectedAgeDate } from '../utils/dateUtils';
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTHS_SHORT_HE = ['ינו', 'פבר', 'מרץ', 'אפר', 'מאי', 'יונ', 'יול', 'אוג', 'ספט', 'אוק', 'נוב', 'דצמ'];
@@ -216,8 +217,11 @@ export default function LifeEventsTimelineModal({
     const baseCurrentAge = Math.floor(currentAge);
 
     const targetEndAge = retirementEndAge || 95;
-    // FIXED: Add fractional year for birth month to ensure marker is included
-    const endYear = startYear + (targetEndAge - baseCurrentAge) + ((birthMonth || 12) / 12);
+    const targetEndDate = getProjectedAgeDate(targetEndAge, currentAge, birthDate);
+    // Include the projected target month so decimal end ages stay inside the timeline.
+    const endYear = targetEndDate
+        ? targetEndDate.getFullYear() + ((targetEndDate.getMonth() + 1) / 12)
+        : startYear + (targetEndAge - baseCurrentAge) + ((birthMonth || 12) / 12);
 
     const totalYears = Math.max(5, endYear - startYear);
 
@@ -244,11 +248,10 @@ export default function LifeEventsTimelineModal({
                 } else if (eventCopy.type === EVENT_TYPES.INCOME_CHANGE || eventCopy.type === EVENT_TYPES.EXPENSE_CHANGE) {
                     // Fallback to exactly retirementEndAge using Absolute Birth Year logic
                     // This matches the marker position exactly (BirthYear + Age)
-                    const bYear = birthDate
-                        ? new Date(birthDate).getFullYear()
-                        : Math.floor(startYear - currentAge);
-
-                    eventEndYear = bYear + retirementEndAge + ((birthMonth || 1) / 12);
+                    const retirementEndDate = getProjectedAgeDate(retirementEndAge, currentAge, birthDate);
+                    eventEndYear = retirementEndDate
+                        ? retirementEndDate.getFullYear() + ((retirementEndDate.getMonth() + 1) / 12)
+                        : endYear;
                 } else {
                     // One-time event
                     eventEndYear = eventStartYear;
@@ -312,10 +315,10 @@ export default function LifeEventsTimelineModal({
 
             // Ensure visualEndDate is populated for ALL recurring events without explicit end date
             if (!finalEndDate && (e.type === EVENT_TYPES.INCOME_CHANGE || e.type === EVENT_TYPES.EXPENSE_CHANGE)) {
-                finalEndDate = {
-                    year: Math.floor(finalEndYear),
-                    month: birthMonth
-                };
+                const retirementEndDate = getProjectedAgeDate(retirementEndAge, currentAge, birthDate);
+                finalEndDate = retirementEndDate
+                    ? { year: retirementEndDate.getFullYear(), month: retirementEndDate.getMonth() + 1 }
+                    : { year: Math.floor(finalEndYear), month: birthMonth };
                 finalEndYear = finalEndDate.year + (finalEndDate.month / 12);
             }
 
@@ -374,14 +377,10 @@ export default function LifeEventsTimelineModal({
         return { layoutEvents: eventsWithPos, totalHeight: totalH, outOfBoundsCount };
     }, [stableEvents, startYear, totalYears, endYear, isLight, retirementEndAge, currentAge, birthDate, birthMonth]);
 
-    const getSmartMarkerPos = (targetAge, forcedMonth = null) => {
-        // Calculate birth year accurately
-        const birthYear = birthDate
-            ? new Date(birthDate).getFullYear()
-            : Math.floor(startYear - currentAge);
-
-        const targetYearInt = birthYear + targetAge;
-        let month = forcedMonth || birthMonth;
+    const getSmartMarkerPos = (targetAge) => {
+        const targetDate = getProjectedAgeDate(targetAge, currentAge, birthDate);
+        const targetYearInt = targetDate?.getFullYear() || startYear;
+        const month = targetDate ? targetDate.getMonth() + 1 : birthMonth;
         const positionYear = targetYearInt + (month / 12);
         const displayLabel = formatDateShort({ year: targetYearInt, month: month });
         const leftPct = ((positionYear - startYear) / totalYears) * 100;
@@ -394,8 +393,8 @@ export default function LifeEventsTimelineModal({
         };
     };
 
-    const retirementStartMarker = getSmartMarkerPos(parseInt(retirementAge), birthMonth);
-    const retirementEndMarker = getSmartMarkerPos(parseInt(retirementEndAge), birthMonth);
+    const retirementStartMarker = getSmartMarkerPos(retirementAge);
+    const retirementEndMarker = getSmartMarkerPos(retirementEndAge);
 
     if (!isOpen) return null;
 

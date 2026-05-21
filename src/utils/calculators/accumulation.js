@@ -1,6 +1,7 @@
 
 import { EVENT_TYPES } from '../../constants.js';
 import { getMonthFromDate, getMonthlyAmount, getMonthlyRateForMonth } from './helpers.js';
+import { getMonthsBetweenAges } from '../dateUtils.js';
 
 /**
  * Calculates the accumulation phase (Now -> Retirement Start).
@@ -31,7 +32,7 @@ export function calculateAccumulation({
     startYear,
     startMonth
 }) {
-    const monthsToRetirement = (retirementStartAge - currentAge) * 12;
+    const monthsToRetirement = getMonthsBetweenAges(currentAge, retirementStartAge);
 
     let balance = currentSavings;
     let totalPrincipal = currentSavings; // Track principal for tax basis

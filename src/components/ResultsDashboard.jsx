@@ -450,8 +450,8 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
         };
 
         try {
-            const retirementYear = getProjectedYear(inputs.retirementStartAge, inputs.currentAge, inputs.birthdate);
-            const finalYear = getProjectedYear(inputs.retirementEndAge, inputs.currentAge, inputs.birthdate);
+            const retirementYear = getProjectedYear(inputs.retirementStartAge, inputs.currentAge, inputs.birthdate, inputs.manualAge);
+            const finalYear = getProjectedYear(inputs.retirementEndAge, inputs.currentAge, inputs.birthdate, inputs.manualAge);
             const currentYear = new Date().getFullYear();
 
             const buildScenario = (descending) => {
@@ -582,8 +582,8 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
         }
     };
 
-    const startYear = getProjectedYear(inputs.retirementStartAge, inputs.currentAge, inputs.birthdate);
-    const endYear = getProjectedYear(inputs.retirementEndAge, inputs.currentAge, inputs.birthdate);
+    const startYear = getProjectedYear(inputs.retirementStartAge, inputs.currentAge, inputs.birthdate, inputs.manualAge);
+    const endYear = getProjectedYear(inputs.retirementEndAge, inputs.currentAge, inputs.birthdate, inputs.manualAge);
 
     return (
         <div className="space-y-3 flex flex-col">

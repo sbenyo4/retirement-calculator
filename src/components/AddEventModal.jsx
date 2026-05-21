@@ -5,6 +5,7 @@ import { useThemeClasses } from '../hooks/useThemeClasses';
 import { EVENT_TYPES } from '../constants';
 import { X, DollarSign, Calendar, TrendingUp, TrendingDown, ChevronUp, ChevronDown, Trash2, Lock, LockOpen, Copy, RefreshCw } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
+import { getProjectedAgeDate } from '../utils/dateUtils';
 
 const MONTHS = [
     { value: 1, labelEn: 'January', labelHe: 'ינואר' },
@@ -56,13 +57,8 @@ export default function AddEventModal({
 
     // Returns { year, month } for a given target age, using birthDate if available
     const getDateAtAge = (targetAge) => {
-        if (birthDate?.year && birthDate?.month) {
-            return { year: parseInt(birthDate.year) + Math.floor(targetAge), month: parseInt(birthDate.month) };
-        }
-        // Fallback: add months from today
-        const monthsFromNow = Math.round((parseFloat(targetAge) - parseFloat(currentAge)) * 12);
-        const d = new Date();
-        d.setMonth(d.getMonth() + monthsFromNow);
+        const d = getProjectedAgeDate(targetAge, currentAge, birthDate);
+        if (!d) return { year: currentYear, month: currentMonth };
         return { year: d.getFullYear(), month: d.getMonth() + 1 };
     };
 
@@ -330,16 +326,10 @@ export default function AddEventModal({
                                                 type="button"
                                                 onClick={() => {
                                                     const rEndAge = parseFloat(retirementEndAge);
-                                                    const cAge = parseFloat(currentAge);
-                                                    if (isNaN(rEndAge) || isNaN(cAge)) return;
-
-                                                    const yearsRemaining = rEndAge - cAge;
-                                                    const monthsRemaining = Math.floor(yearsRemaining * 12);
-                                                    const targetDate = new Date();
-                                                    targetDate.setMonth(targetDate.getMonth() + monthsRemaining);
-
-                                                    setStartYear(targetDate.getFullYear());
-                                                    setStartMonth(targetDate.getMonth() + 1);
+                                                    if (isNaN(rEndAge)) return;
+                                                    const { year, month } = getDateAtAge(rEndAge);
+                                                    setStartYear(year);
+                                                    setStartMonth(month);
                                                     setLinkedTo('retirementEnd');
                                                 }}
                                                 className="text-[10px] text-blue-400 hover:text-blue-500 underline cursor-pointer transition-colors"

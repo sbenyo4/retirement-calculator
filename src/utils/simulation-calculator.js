@@ -1,5 +1,6 @@
 import { calculateRetirementProjection } from './calculator';
 import { getCalendarYearForMonth } from './calculators/helpers';
+import { getMonthsBetweenAges } from './dateUtils';
 
 export const SIMULATION_TYPES = {
     MONTE_CARLO: 'monte_carlo',
@@ -89,8 +90,8 @@ export function calculateSimulation(inputs, type) {
         const currentAge = parseFloat(inputs.currentAge);
         const retirementStartAge = parseFloat(inputs.retirementStartAge);
         const retirementEndAge = parseFloat(inputs.retirementEndAge);
-        const monthsToRetirement = Math.floor((retirementStartAge - currentAge) * 12);
-        const monthsInRetirement = Math.floor((retirementEndAge - retirementStartAge) * 12);
+        const monthsToRetirement = getMonthsBetweenAges(currentAge, retirementStartAge);
+        const monthsInRetirement = getMonthsBetweenAges(retirementStartAge, retirementEndAge);
         const startYear = new Date().getFullYear();
         const startMonth = new Date().getMonth() + 1;
         const uniqueYearsForRange = (fromMonth, toMonth) => {

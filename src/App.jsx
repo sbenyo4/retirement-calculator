@@ -17,6 +17,7 @@ import { IdleWarningModal } from './components/IdleWarningModal';
 import { ChatWidget } from './components/ChatWidget';
 import CommandPalette from './components/CommandPalette';
 import { useIdleTimer } from './hooks/useIdleTimer';
+import { getProjectedAgeDate } from './utils/dateUtils';
 
 // Lazy-loaded components (loaded only when needed)
 const ResultsDashboard = React.lazy(() => import('./components/ResultsDashboard').then(m => ({ default: m.ResultsDashboard })));
@@ -158,11 +159,10 @@ function MainApp() {
       const inp = memoizedDebouncedInputs || {};
       const currentAge = parseFloat(inp.currentAge) || null;
       const retirementStartAge = parseFloat(inp.retirementStartAge) || null;
-      const yearsToRetirement = (currentAge && retirementStartAge && retirementStartAge > currentAge)
-        ? retirementStartAge - currentAge : null;
-      const retirementDate = yearsToRetirement
-        ? new Date(Date.now() + yearsToRetirement * 365.25 * 24 * 3600 * 1000).toISOString()
+      const retirementTargetDate = (currentAge && retirementStartAge && retirementStartAge > currentAge)
+        ? getProjectedAgeDate(retirementStartAge, currentAge, inp.birthdate, inp.manualAge)
         : null;
+      const retirementDate = retirementTargetDate ? retirementTargetDate.toISOString() : null;
       sessionStorage.setItem('rc-calc-summary', JSON.stringify({
         balanceAtRetirement: results.balanceAtRetirement ?? null,
         balanceAtEnd: results.balanceAtEnd ?? null,
@@ -401,26 +401,6 @@ function MainApp() {
 
       if (!lifeEvents || lifeEvents.length === 0) return prev;
 
-      // Calculate birth month and year accurately
-      let birthMonth, birthYear;
-      const now = new Date();
-      const currentYear = now.getFullYear();
-
-      if (birthdate) {
-        const bd = new Date(birthdate);
-        birthYear = bd.getFullYear();
-        birthMonth = bd.getMonth() + 1;
-      } else {
-        // Infer based on current age
-        const currentMonth = now.getMonth() + 1;
-        const ageFraction = parseFloat(currentAge) % 1;
-        const monthsPassed = Math.round(ageFraction * 12);
-        let bm = currentMonth - monthsPassed;
-        if (bm <= 0) bm += 12;
-        birthMonth = bm;
-        birthYear = Math.floor(currentYear - parseFloat(currentAge));
-      }
-
       let hasChanges = false;
       const newEvents = lifeEvents.map(event => {
         if (!event.linkedTo) return event;
@@ -432,8 +412,10 @@ function MainApp() {
 
         if (isNaN(targetAge)) return event;
 
-        const newYear = Math.floor(birthYear + targetAge);
-        const newMonth = birthMonth;
+        const targetDate = getProjectedAgeDate(targetAge, currentAge, birthdate, prev.manualAge);
+        if (!targetDate) return event;
+        const newYear = targetDate.getFullYear();
+        const newMonth = targetDate.getMonth() + 1;
 
         // Check if change needed
         if (event.startDate.year !== newYear || event.startDate.month !== newMonth) {

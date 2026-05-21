@@ -1,5 +1,6 @@
 import { calculateRetirementProjection } from '../calculator';
 import { WITHDRAWAL_STRATEGIES } from '../../constants';
+import { getMonthsBetweenAges } from '../dateUtils';
 
 /**
  * Runs a full projection with an optional goal-seek pass for targetEndBalance.
@@ -25,7 +26,7 @@ export function runProjectionWithGoalSeek(inputs) {
     const isFixedStrategy = !inputs.withdrawalStrategy ||
         inputs.withdrawalStrategy === WITHDRAWAL_STRATEGIES.FIXED;
 
-    const retirementMonths = (retirementEnd - retirementStart) * 12;
+    const retirementMonths = getMonthsBetweenAges(retirementStart, retirementEnd);
 
     const shouldGoalSeek =
         isFixedStrategy &&

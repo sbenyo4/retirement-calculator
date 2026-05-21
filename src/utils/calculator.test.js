@@ -140,6 +140,37 @@ describe('calculateRetirementProjection', () => {
             expect(result.requiredCapitalAtRetirement).toBeGreaterThan(0);
         });
 
+        it('uses decimal retirement age as a monthly accumulation horizon', () => {
+            const result = calculateRetirementProjection({
+                ...baseInputs,
+                currentAge: 30,
+                retirementStartAge: 30.75,
+                retirementEndAge: 31,
+                currentSavings: 0,
+                monthlyContribution: 100,
+                monthlyNetIncomeDesired: 1000,
+                annualReturnRate: 0,
+                taxRate: 0
+            });
+
+            expect(result.balanceAtRetirement).toBe(900);
+        });
+
+        it('uses decimal end age as a monthly retirement horizon', () => {
+            const result = calculateRetirementProjection({
+                ...baseInputs,
+                retirementStartAge: 50,
+                retirementEndAge: 50.75,
+                currentSavings: 0,
+                monthlyContribution: 0,
+                monthlyNetIncomeDesired: 1000,
+                annualReturnRate: 0,
+                taxRate: 0
+            });
+
+            expect(result.requiredCapitalAtRetirement).toBe(9000);
+        });
+
         it('should handle string inputs (parseFloat conversion)', () => {
             const stringInputs = {
                 currentAge: '30',

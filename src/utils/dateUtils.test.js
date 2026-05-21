@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getProjectedYear } from './dateUtils';
+import { getMonthsBetweenAges, getProjectedAgeDate, getProjectedYear } from './dateUtils';
 
 describe('getProjectedYear', () => {
     it('returns null for null targetAge', () => {
@@ -44,8 +44,23 @@ describe('getProjectedYear', () => {
         expect(getProjectedYear(90, 35, '1990-06-01', false)).toBe(2080);
     });
 
+    it('uses the decimal age months when a birthdate projection crosses a calendar year', () => {
+        const projectedDate = getProjectedAgeDate(35.75, 35, '1990-06-01', false);
+
+        expect(projectedDate.getFullYear()).toBe(2026);
+        expect(projectedDate.getMonth() + 1).toBe(3);
+        expect(getProjectedYear(35.75, 35, '1990-06-01', false)).toBe(2026);
+    });
+
     it('ignores birthdate when isAgeManual is true', () => {
         const currentYear = new Date().getFullYear();
         expect(getProjectedYear(90, 35, '1990-06-01', true)).toBe(Math.floor(currentYear + 55));
+    });
+});
+
+describe('getMonthsBetweenAges', () => {
+    it('maps quarter-age fractions to whole months', () => {
+        expect(getMonthsBetweenAges(53, 53.75)).toBe(9);
+        expect(getMonthsBetweenAges(53.75, 54)).toBe(3);
     });
 });
