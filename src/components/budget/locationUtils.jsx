@@ -422,7 +422,7 @@ export function parseAiJsonObject(reply) {
         .join('');
 
     const text = String(reply || '')
-        .replace(/^﻿/, '')
+        .replace(/^\uFEFF/, '')
         .replace(/```json\s*/gi, '')
         .replace(/```\s*/g, '')
         .trim();

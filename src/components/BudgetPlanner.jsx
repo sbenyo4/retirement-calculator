@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell, Save, BarChart3, Calculator, RefreshCw, Copy, Undo2, Redo2, TrendingUp, Lock, Unlock, Globe, Car, PiggyBank, Route } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell, Save, Send, BarChart3, Calculator, RefreshCw, Copy, Undo2, Redo2, TrendingUp, Lock, Unlock, Globe, Car, PiggyBank, Route } from 'lucide-react';
 import { MaintenanceCalcPanel } from './MaintenanceCalcPanel';
 import { syncComponentReminders } from '../hooks/useReminders';
 import { InsightRenderer } from './budget/InsightRenderer';
@@ -24,6 +24,75 @@ import { geoMercator, geoPath as d3GeoPath } from 'd3-geo';
 import { useDraggable } from '../hooks/useDraggable';
 
 const SAVE_DEBOUNCE_MS = 1000;
+const DEFAULT_TRIP_PLAN_SORT = { key: 'createdAt', dir: 'desc' };
+const TRIP_PLAN_SORT_KEYS = new Set(['price', 'nights', 'level', 'createdAt']);
+
+function normalizeTripPlanSort(sort) {
+    if (!sort || !TRIP_PLAN_SORT_KEYS.has(sort.key)) return DEFAULT_TRIP_PLAN_SORT;
+    return {
+        key: sort.key,
+        dir: sort.dir === 'asc' ? 'asc' : 'desc'
+    };
+}
+
+const TRIP_PLAN_CHAT_LIMIT = 12;
+
+function buildTripPlanChatPrompt(plannedTrip, tripRequest, currency, isHe) {
+    return `You are a practical trip-planning advisor helping refine one planned trip.
+Answer in ${isHe ? 'Hebrew' : 'English'} with concise, specific advice about the trip and its destinations.
+The user may ask about cars, nearby places, food, route changes, attractions, day trips, timing, local logistics, or any trip detail.
+Use the plan context below. If an answer depends on live/current facts, say what should be verified before booking.
+Do not return JSON in the visible answer.
+When and only when the user explicitly asks to add, keep, save, or include advice in the plan, append one exact block at the very end on a new line:
+- Use itinerary for route details, must-see places, nearby places, attractions, day trips, restaurants to visit, or other content that belongs in trip details:
+%%TRIP_NOTE%%{"type":"itinerary","segment":"short trip-detail heading in ${isHe ? 'Hebrew' : 'English'}","place":"destination or area","text":"standalone trip-detail text in ${isHe ? 'Hebrew' : 'English'}"}%%ENDTRIPNOTE%%
+- Use tip only for practical advice such as packing, safety, etiquette, visa, transport guidance, money, or a car-rental rule of thumb:
+%%TRIP_NOTE%%{"type":"tip","text":"short standalone practical tip in ${isHe ? 'Hebrew' : 'English'}"}%%ENDTRIPNOTE%%
+Must-see places belong in itinerary, not tips. The text must be useful later inside the saved trip plan and must not mention this chat.
+
+Trip request:
+${tripRequest || ''}
+
+Trip plan:
+- Title: ${plannedTrip?.title || ''}
+- Summary: ${plannedTrip?.summary || ''}
+- Nights: ${plannedTrip?.nights || ''}
+- Level: ${plannedTrip?.level || ''}
+- Best months: ${plannedTrip?.bestMonths || ''}
+- Current note: ${plannedTrip?.note || ''}
+- Total cost currency: ${currency}
+- Route: ${(plannedTrip?.itinerary || []).map(seg => `${seg.segment || ''} ${seg.place || ''}: ${seg.plan || ''}`.trim()).join('\n') || 'None'}
+- Existing tips: ${(plannedTrip?.tips || []).map(tip => tip.text).join('\n') || 'None'}`;
+}
+
+function parseTripPlanChatReply(reply) {
+    const noteMatch = String(reply || '').match(/%%TRIP_NOTE%%([\s\S]*?)%%ENDTRIPNOTE%%/);
+    const cleanReply = String(reply || '').replace(/%%TRIP_NOTE%%[\s\S]*?%%ENDTRIPNOTE%%/, '').trim();
+    if (!noteMatch) return { cleanReply, planAddition: null };
+
+    try {
+        const parsed = JSON.parse(noteMatch[1].trim());
+        const text = typeof parsed?.text === 'string' ? parsed.text.trim() : '';
+        if (!text) return { cleanReply, planAddition: null };
+        if (parsed?.type === 'itinerary') {
+            return {
+                cleanReply,
+                planAddition: {
+                    type: 'itinerary',
+                    segment: typeof parsed.segment === 'string' ? parsed.segment.trim() : '',
+                    place: typeof parsed.place === 'string' ? parsed.place.trim() : '',
+                    text,
+                }
+            };
+        }
+        if (parsed?.type === 'tip') {
+            return { cleanReply, planAddition: { type: 'tip', text } };
+        }
+        return { cleanReply, planAddition: null };
+    } catch {
+        return { cleanReply, planAddition: null };
+    }
+}
 
 // ─── Category metadata ────────────────────────────────────────────────────────
 const CATEGORIES = [
@@ -241,7 +310,7 @@ function genId() {
 
 function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCost, monthlySavingsAmount, withdrawalMonthlyAmount, year, currency, isHe, isLight, aiProvider, aiModel, apiKeyOverride }) {
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen, { constrainToViewport: true, viewportMargin: 16 });
-    const [mode, setMode] = useState('find');
+    const [mode, setMode] = useState('plan');
     const [tier, setTier] = useState(null);
     const [tripDaysInput, setTripDaysInput] = useState('');
     const [includeMonthlySavings, setIncludeMonthlySavings] = useState(false);
@@ -264,7 +333,13 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
     const [savingPlan, setSavingPlan] = useState(false);
     const [planSaved, setPlanSaved] = useState(false);
     const [showSavedPlans, setShowSavedPlans] = useState(false);
-    const [planSort, setPlanSort] = useState({ key: 'createdAt', dir: 'desc' });
+    const [planSort, setPlanSort] = useState(DEFAULT_TRIP_PLAN_SORT);
+    const [tripChatOpen, setTripChatOpen] = useState(false);
+    const [tripChatMessages, setTripChatMessages] = useState([]);
+    const [tripChatInput, setTripChatInput] = useState('');
+    const [tripChatLoading, setTripChatLoading] = useState(false);
+    const [tripChatError, setTripChatError] = useState(null);
+    const [tripTipSearch, setTripTipSearch] = useState('');
     const [loadedPlanId, setLoadedPlanId] = useState(null);
     const [openSection, setOpenSection] = useState(null);
     const [daysFromMonthsInput, setDaysFromMonthsInput] = useState('');
@@ -536,6 +611,10 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                 tips,
             };
             setPlannedTrip(result);
+            setTripChatMessages([]);
+            setTripChatInput('');
+            setTripChatError(null);
+            setTripTipSearch('');
             setNightsOverride(null);
             setOpenSection(null);
             const lp = savedPlans.find(p => p.id === loadedPlanId);
@@ -602,14 +681,89 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         await deleteTripPlan(currentUser.uid, planId).catch(() => {});
     }, [currentUser?.uid]);
 
+    const updatePlanSort = useCallback((key) => {
+        setPlanSort(currentSort => {
+            const nextSort = currentSort.key === key
+                ? { key, dir: currentSort.dir === 'asc' ? 'desc' : 'asc' }
+                : { key, dir: key === 'createdAt' ? 'desc' : 'asc' };
+
+            if (currentUser?.uid) {
+                setUserSettings(currentUser.uid, { tripPlanSort: nextSort }).catch(() => {});
+            }
+
+            return nextSort;
+        });
+    }, [currentUser?.uid]);
+
+    const askTripChat = useCallback(async () => {
+        const question = tripChatInput.trim();
+        if (!plannedTrip || !question || tripChatLoading) return;
+
+        const nextMessages = [...tripChatMessages.slice(-TRIP_PLAN_CHAT_LIMIT), { role: 'user', content: question }];
+        setTripChatMessages(nextMessages);
+        setTripChatInput('');
+        setTripChatError(null);
+        setTripChatLoading(true);
+
+        try {
+            const contextMessages = nextMessages.map(({ role, content }) => ({ role, content }));
+            const reply = await getChatResponse(
+                contextMessages,
+                buildTripPlanChatPrompt(plannedTrip, tripRequest, currency, isHe),
+                aiProvider,
+                aiModel,
+                apiKeyOverride
+            );
+            const { cleanReply, planAddition } = parseTripPlanChatReply(reply);
+
+            if (planAddition) {
+                setPlannedTrip(currentPlan => {
+                    if (!currentPlan) return currentPlan;
+                    if (planAddition.type === 'itinerary') {
+                        const itineraryExists = (currentPlan.itinerary || []).some(seg => seg?.plan === planAddition.text);
+                        return itineraryExists
+                            ? currentPlan
+                            : {
+                                ...currentPlan,
+                                itinerary: [...(currentPlan.itinerary || []), {
+                                    segment: planAddition.segment || (isHe ? 'תוספת למסלול' : 'Plan addition'),
+                                    place: planAddition.place,
+                                    plan: planAddition.text,
+                                }]
+                            };
+                    }
+
+                    const tipExists = (currentPlan.tips || []).some(tip => tip?.text === planAddition.text);
+                    return tipExists
+                        ? currentPlan
+                        : { ...currentPlan, tips: [...(currentPlan.tips || []), { cat: 'other', text: planAddition.text }] };
+                });
+            }
+
+            setTripChatMessages(currentMessages => [...currentMessages.slice(-TRIP_PLAN_CHAT_LIMIT), {
+                role: 'assistant',
+                content: cleanReply,
+                addedToPlan: !!planAddition,
+            }]);
+        } catch (err) {
+            console.error('Trip plan chat failed', err);
+            setTripChatError(aiErrorMessage(err, isHe));
+        } finally {
+            setTripChatLoading(false);
+        }
+    }, [tripChatInput, plannedTrip, tripChatLoading, tripChatMessages, tripRequest, currency, isHe, aiProvider, aiModel, apiKeyOverride]);
+
     const loadPlan = useCallback((plan) => {
         setTripRequest(plan.request);
         setPlannedTrip(plan.result);
+        setTripChatMessages([]);
+        setTripChatInput('');
+        setTripChatError(null);
+        setTripTipSearch('');
         setNightsOverride(null);
         setOpenSection(null);
         setLoadedPlanId(plan.id);
         setPlanSaved(false);
-        setShowSavedPlans(false);
     }, []);
 
     const fetchSuggestions = useCallback(async (selectedTier) => {
@@ -766,7 +920,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
 
     useEffect(() => {
         if (!isOpen) return;
-        setMode('find');
+        setMode('plan');
         setTier(null);
         setParsed(null);
         setError(null);
@@ -780,10 +934,30 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         setPlanError(null);
         setPlanSaved(false);
         setShowSavedPlans(false);
-        if (currentUser?.uid) {
-            getTripPlans(currentUser.uid).then(plans => setSavedPlans(plans || [])).catch(() => {});
-        }
+        setTripChatOpen(false);
+        setTripChatMessages([]);
+        setTripChatInput('');
+        setTripChatError(null);
+        setTripTipSearch('');
+        if (!currentUser?.uid) return;
+
+        getTripPlans(currentUser.uid).then(plans => setSavedPlans(plans || [])).catch(() => {});
+        getUserSettings(currentUser.uid).then(settings => {
+            setPlanSort(normalizeTripPlanSort(settings?.tripPlanSort));
+        }).catch(() => {});
     }, [isOpen, currentUser?.uid]);
+
+    const filteredTripTips = useMemo(() => {
+        const tips = plannedTrip?.tips || [];
+        const query = tripTipSearch.trim().toLowerCase();
+        if (!query) return tips;
+
+        return tips.filter(tip => {
+            const meta = TIP_META[tip?.cat] || TIP_META.other;
+            const haystack = [tip?.text, meta.he, meta.en].filter(Boolean).join(' ').toLowerCase();
+            return haystack.includes(query);
+        });
+    }, [plannedTrip, tripTipSearch]);
 
     if (!isOpen) return null;
 
@@ -830,11 +1004,11 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                 <div className={`relative z-10 px-5 py-3 border-b shrink-0 space-y-3 ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
                     {/* Mode tabs */}
                     <div className={`flex gap-1 p-1 rounded-xl ${isLight ? 'bg-slate-100' : 'bg-white/5'}`}>
-                        <button onClick={() => setMode('find')} className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-colors ${mode === 'find' ? (isLight ? 'bg-white shadow-sm text-indigo-600' : 'bg-white/15 text-white') : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200')}`}>
-                            {isHe ? 'מצא יעדים' : 'Find destinations'}
-                        </button>
                         <button onClick={() => setMode('plan')} className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-colors ${mode === 'plan' ? (isLight ? 'bg-white shadow-sm text-violet-600' : 'bg-white/15 text-white') : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200')}`}>
                             {isHe ? 'תכנן נסיעה' : 'Plan a trip'}
+                        </button>
+                        <button onClick={() => setMode('find')} className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-colors ${mode === 'find' ? (isLight ? 'bg-white shadow-sm text-indigo-600' : 'bg-white/15 text-white') : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200')}`}>
+                            {isHe ? 'מצא יעדים' : 'Find destinations'}
                         </button>
                     </div>
 
@@ -1284,8 +1458,103 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                 {isHe ? 'שמור' : 'Save'}
                             </button>
                         )}
+                        {plannedTrip && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setTripChatOpen(open => !open);
+                                    setShowSavedPlans(false);
+                                }}
+                                title={isHe ? 'צ׳אט על הנסיעה' : 'Chat about this trip'}
+                                aria-label={isHe ? 'צ׳אט על הנסיעה' : 'Chat about this trip'}
+                                className={`px-3 py-2 rounded-xl text-sm font-semibold transition-colors inline-flex items-center border ${tripChatOpen
+                                    ? (isLight ? 'bg-violet-100 text-violet-700 border-violet-300' : 'bg-violet-500/20 text-violet-200 border-violet-400/30')
+                                    : (isLight ? 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200' : 'bg-white/5 text-gray-300 hover:bg-white/10 border-white/10')}`}
+                            >
+                                <MessageSquare size={14} />
+                            </button>
+                        )}
                     </div>
-                    {savedPlans.length > 0 && (
+                    {tripChatOpen && plannedTrip && (
+                        <div className={`rounded-xl border flex-1 min-h-0 flex flex-col overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-white/5 border-white/10'}`}>
+                            <div className={`flex items-center justify-between px-4 py-2.5 border-b ${isLight ? 'border-slate-100' : 'border-white/10'}`}>
+                                <div className="flex items-center gap-2">
+                                    <MessageSquare size={13} className={isLight ? 'text-violet-500' : 'text-violet-300'} />
+                                    <span className={`text-xs font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                                        {isHe ? 'צ׳אט על הנסיעה' : 'Trip chat'}
+                                    </span>
+                                </div>
+                                {tripChatMessages.length > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setTripChatMessages([]);
+                                            setTripChatError(null);
+                                        }}
+                                        title={isHe ? 'נקה צ׳אט' : 'Clear chat'}
+                                        className={`p-1 rounded transition-colors ${isLight ? 'text-slate-400 hover:bg-slate-100 hover:text-slate-600' : 'text-gray-500 hover:bg-white/10 hover:text-gray-300'}`}
+                                    >
+                                        <RotateCcw size={12} />
+                                    </button>
+                                )}
+                            </div>
+                            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar scrollbar-right px-3 py-2.5 space-y-2">
+                                {tripChatMessages.length === 0 && (
+                                    <p className={`text-xs leading-relaxed ${isLight ? 'text-slate-400' : 'text-gray-400'}`}>
+                                        {isHe
+                                            ? 'שאל על רכב, אוכל, מקומות בסביבה או בקש להוסיף המלצה לתוכנית.'
+                                            : 'Ask about cars, food, nearby places, or ask to add advice to this plan.'}
+                                    </p>
+                                )}
+                                {tripChatMessages.map((message, idx) => (
+                                    <div key={`${message.role}-${idx}`} className={`flex ${message.role === 'user' ? (isHe ? 'justify-start' : 'justify-end') : (isHe ? 'justify-end' : 'justify-start')}`}>
+                                        <div className={`max-w-[92%] rounded-xl px-3 py-2 text-xs whitespace-pre-wrap leading-relaxed ${message.role === 'user'
+                                            ? 'bg-violet-600 text-white'
+                                            : (isLight ? 'bg-slate-100 text-slate-700' : 'bg-black/25 text-gray-200')}`}>
+                                            {message.content}
+                                            {message.addedToPlan && (
+                                                <div className={`mt-1.5 pt-1.5 border-t text-[10px] font-semibold ${isLight ? 'border-slate-200 text-emerald-600' : 'border-white/10 text-emerald-300'}`}>
+                                                    {isHe ? 'נוסף לתוכנית' : 'Added to plan'}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                                {tripChatLoading && (
+                                    <div className={`flex items-center gap-1.5 text-xs ${isLight ? 'text-slate-400' : 'text-gray-400'}`}>
+                                        <Loader2 size={12} className="animate-spin" />
+                                        <span>{isHe ? 'חושב...' : 'Thinking...'}</span>
+                                    </div>
+                                )}
+                                {tripChatError && <p className={`text-xs ${isLight ? 'text-red-500' : 'text-red-300'}`}>{tripChatError}</p>}
+                            </div>
+                            <div className={`border-t p-2 flex items-end gap-2 ${isLight ? 'border-slate-100' : 'border-white/10'}`}>
+                                <textarea
+                                    value={tripChatInput}
+                                    onChange={e => setTripChatInput(e.target.value)}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                            e.preventDefault();
+                                            askTripChat();
+                                        }
+                                    }}
+                                    rows={1}
+                                    placeholder={isHe ? 'שאל שאלה...' : 'Ask a question...'}
+                                    className={`flex-1 max-h-20 resize-none rounded-lg border px-2.5 py-2 text-xs outline-none ${isLight ? 'bg-slate-50 border-slate-200 text-slate-800 placeholder:text-slate-400' : 'bg-black/20 border-white/10 text-white placeholder:text-gray-500'}`}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={askTripChat}
+                                    disabled={!tripChatInput.trim() || tripChatLoading}
+                                    title={isHe ? 'שלח' : 'Send'}
+                                    className={`w-8 h-8 shrink-0 rounded-lg inline-flex items-center justify-center transition-colors disabled:opacity-40 ${isLight ? 'bg-violet-600 text-white hover:bg-violet-700' : 'bg-violet-500 text-white hover:bg-violet-400'}`}
+                                >
+                                    <Send size={13} />
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                    {!tripChatOpen && savedPlans.length > 0 && (
                         <div className={`rounded-xl border flex-1 min-h-0 flex flex-col overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-white/5 border-white/10'}`}>
                             <button
                                 type="button"
@@ -1312,7 +1581,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                         <button
                                             key={key}
                                             type="button"
-                                            onClick={() => setPlanSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'createdAt' ? 'desc' : 'asc' })}
+                                            onClick={() => updatePlanSort(key)}
                                             className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-colors ${active ? (isLight ? 'bg-indigo-100 text-indigo-600' : 'bg-indigo-500/25 text-indigo-300') : (isLight ? 'text-slate-400 hover:bg-slate-200' : 'text-gray-500 hover:bg-white/10')}`}
                                         >
                                             {isHe ? he : en}
@@ -1333,7 +1602,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                     }
                                     if (planSort.key === 'nights') return d * ((numberOrZero(a.result?.nights) || 0) - (numberOrZero(b.result?.nights) || 0));
                                     if (planSort.key === 'level') return d * ((LEVEL_ORDER[a.result?.level] || 2) - (LEVEL_ORDER[b.result?.level] || 2));
-                                    return d * ((a.createdAt || 0) - (b.createdAt || 0));
+                                    return d * ((a.savedAt || a.createdAt || 0) - (b.savedAt || b.createdAt || 0));
                                 });
                             })().map(plan => {
                                 const planTotal = PLAN_COST_KEYS.reduce((s, { key }) => s + Math.max(0, numberOrZero(plan.result?.costs?.[key])), 0);
@@ -1469,21 +1738,55 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                             )}
                             {plannedTrip.tips?.length > 0 && (
                                 <div className={`${openSection === 'tips' ? 'flex-1 min-h-0 flex flex-col' : 'shrink-0'} rounded-xl border overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-white/5 border-white/10'}`}>
-                                    <button
-                                        type="button"
-                                        onClick={() => setOpenSection(v => v === 'tips' ? null : 'tips')}
-                                        className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/5'}`}
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-sm">💡</span>
-                                            <span className={`text-xs font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>{isHe ? 'טיפים למסע' : 'Travel tips'}</span>
-                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isLight ? 'bg-slate-100 text-slate-500' : 'bg-white/10 text-gray-400'}`}>{plannedTrip.tips.length}</span>
-                                        </div>
-                                        {openSection === 'tips' ? <ChevronUp size={13} className={isLight ? 'text-slate-400' : 'text-gray-500'} /> : <ChevronDown size={13} className={isLight ? 'text-slate-400' : 'text-gray-500'} />}
-                                    </button>
+                                    <div className={`flex items-center gap-2 px-2 py-1.5 transition-colors ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/5'}`}>
+                                        <button
+                                            type="button"
+                                            onClick={() => setOpenSection(v => v === 'tips' ? null : 'tips')}
+                                            className="min-w-0 flex-1 flex items-center gap-2 px-2 py-1"
+                                        >
+                                            <div className="min-w-0 flex items-center gap-2">
+                                                <span className="text-sm">💡</span>
+                                                <span className={`text-xs font-semibold truncate ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>{isHe ? 'טיפים למסע' : 'Travel tips'}</span>
+                                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isLight ? 'bg-slate-100 text-slate-500' : 'bg-white/10 text-gray-400'}`}>
+                                                    {tripTipSearch.trim() ? filteredTripTips.length : plannedTrip.tips.length}
+                                                </span>
+                                            </div>
+                                        </button>
+                                        {openSection === 'tips' && (
+                                            <div className={`w-36 max-w-[45%] shrink-0 flex items-center gap-1.5 rounded-lg px-2 py-1 border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-black/20 border-white/10'}`}>
+                                                <Search size={11} className={`shrink-0 ${isLight ? 'text-slate-400' : 'text-gray-500'}`} />
+                                                <input
+                                                    type="text"
+                                                    value={tripTipSearch}
+                                                    onChange={e => setTripTipSearch(e.target.value)}
+                                                    placeholder={isHe ? 'חפש טיפ...' : 'Search tips...'}
+                                                    className={`min-w-0 flex-1 bg-transparent text-[11px] outline-none placeholder:text-gray-400 ${isLight ? 'text-slate-700' : 'text-white'}`}
+                                                    dir={isHe ? 'rtl' : 'ltr'}
+                                                />
+                                                {tripTipSearch && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setTripTipSearch('')}
+                                                        title={isHe ? 'נקה חיפוש' : 'Clear search'}
+                                                        className={isLight ? 'text-slate-400 hover:text-slate-600' : 'text-gray-500 hover:text-gray-300'}
+                                                    >
+                                                        <X size={11} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => setOpenSection(v => v === 'tips' ? null : 'tips')}
+                                            aria-label={openSection === 'tips' ? (isHe ? 'סגור טיפים' : 'Close tips') : (isHe ? 'פתח טיפים' : 'Open tips')}
+                                            className={`shrink-0 p-1 rounded transition-colors ${isLight ? 'text-slate-400 hover:bg-slate-100' : 'text-gray-500 hover:bg-white/10'}`}
+                                        >
+                                            {openSection === 'tips' ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                        </button>
+                                    </div>
                                     {openSection === 'tips' && (
                                         <div className={`flex-1 min-h-0 border-t divide-y overflow-y-auto custom-scrollbar scrollbar-right ${isLight ? 'border-slate-100 divide-slate-100' : 'border-white/10 divide-white/5'}`}>
-                                            {plannedTrip.tips.map((tip, i) => {
+                                            {filteredTripTips.map((tip, i) => {
                                                 const meta = TIP_META[tip.cat] || TIP_META.other;
                                                 return (
                                                     <div key={i} className="flex items-start gap-3 px-4 py-2.5">
@@ -1495,6 +1798,11 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                                     </div>
                                                 );
                                             })}
+                                            {filteredTripTips.length === 0 && (
+                                                <p className={`px-4 py-4 text-xs text-center ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                                    {isHe ? 'לא נמצאו טיפים' : 'No tips found'}
+                                                </p>
+                                            )}
                                         </div>
                                     )}
                                 </div>

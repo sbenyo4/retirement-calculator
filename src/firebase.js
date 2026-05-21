@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence } from "firebase/auth";
+import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 // Firebase configuration using environment variables for security
@@ -25,10 +25,6 @@ if (missingKeys.length > 0) {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-
-// Force browser local persistence (session saved across refreshes and tab closure)
-// This applies globally to the auth instance immediately.
-setPersistence(auth, browserLocalPersistence).catch(console.error);
 
 export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
