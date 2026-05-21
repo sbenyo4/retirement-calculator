@@ -333,6 +333,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
     const [savingPlan, setSavingPlan] = useState(false);
     const [planSaved, setPlanSaved] = useState(false);
     const [showSavedPlans, setShowSavedPlans] = useState(false);
+    const [savedPlanSearch, setSavedPlanSearch] = useState('');
     const [planSort, setPlanSort] = useState(DEFAULT_TRIP_PLAN_SORT);
     const [tripChatOpen, setTripChatOpen] = useState(false);
     const [tripChatMessages, setTripChatMessages] = useState([]);
@@ -934,6 +935,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         setPlanError(null);
         setPlanSaved(false);
         setShowSavedPlans(false);
+        setSavedPlanSearch('');
         setTripChatOpen(false);
         setTripChatMessages([]);
         setTripChatInput('');
@@ -958,6 +960,33 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
             return haystack.includes(query);
         });
     }, [plannedTrip, tripTipSearch]);
+
+    const filteredSavedPlans = useMemo(() => {
+        const LEVEL_ORDER = { cheap: 1, medium: 2, expensive: 3 };
+        const queryTokens = savedPlanSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        const matchingPlans = queryTokens.length > 0
+            ? savedPlans.filter(plan => {
+                const haystack = [
+                    plan.title,
+                    plan.result?.title,
+                ].filter(Boolean).join(' ').toLowerCase();
+
+                return queryTokens.every(token => haystack.includes(token));
+            })
+            : savedPlans;
+
+        return [...matchingPlans].sort((a, b) => {
+            const d = planSort.dir === 'asc' ? 1 : -1;
+            if (planSort.key === 'price') {
+                const at = PLAN_COST_KEYS.reduce((s, { key }) => s + Math.max(0, numberOrZero(a.result?.costs?.[key])), 0);
+                const bt = PLAN_COST_KEYS.reduce((s, { key }) => s + Math.max(0, numberOrZero(b.result?.costs?.[key])), 0);
+                return d * (at - bt);
+            }
+            if (planSort.key === 'nights') return d * ((numberOrZero(a.result?.nights) || 0) - (numberOrZero(b.result?.nights) || 0));
+            if (planSort.key === 'level') return d * ((LEVEL_ORDER[a.result?.level] || 2) - (LEVEL_ORDER[b.result?.level] || 2));
+            return d * ((a.savedAt || a.createdAt || 0) - (b.savedAt || b.createdAt || 0));
+        });
+    }, [savedPlans, savedPlanSearch, planSort]);
 
     if (!isOpen) return null;
 
@@ -1569,6 +1598,28 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                 {showSavedPlans ? <ChevronUp size={13} className={isLight ? 'text-slate-400' : 'text-gray-500'} /> : <ChevronDown size={13} className={isLight ? 'text-slate-400' : 'text-gray-500'} />}
                             </button>
                             {showSavedPlans && (<div className={`border-t flex flex-col flex-1 min-h-0 ${isLight ? 'border-slate-100' : 'border-white/10'}`}>
+                            <div className={`px-3 pt-2 pb-1.5 border-b ${isLight ? 'border-slate-100 bg-slate-50' : 'border-white/5 bg-white/3'}`}>
+                                <label className={`relative flex items-center rounded-lg border ${isLight ? 'bg-white border-slate-200 text-slate-700 focus-within:border-indigo-300' : 'bg-black/20 border-white/10 text-gray-200 focus-within:border-indigo-400/50'}`}>
+                                    <Search size={12} className={`absolute ${isHe ? 'right-2.5' : 'left-2.5'} ${isLight ? 'text-slate-400' : 'text-gray-500'}`} />
+                                    <input
+                                        value={savedPlanSearch}
+                                        onChange={e => setSavedPlanSearch(e.target.value)}
+                                        placeholder={isHe ? 'חיפוש חופשי בתוכניות...' : 'Search saved plans...'}
+                                        className={`w-full rounded-lg bg-transparent py-1.5 text-xs outline-none ${isHe ? 'pr-8 pl-8' : 'pl-8 pr-8'} ${isLight ? 'placeholder:text-slate-400' : 'placeholder:text-gray-500'}`}
+                                    />
+                                    {savedPlanSearch && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setSavedPlanSearch('')}
+                                            title={isHe ? 'נקה חיפוש' : 'Clear search'}
+                                            aria-label={isHe ? 'נקה חיפוש' : 'Clear search'}
+                                            className={`absolute p-0.5 rounded ${isHe ? 'left-2' : 'right-2'} ${isLight ? 'text-slate-400 hover:bg-slate-100 hover:text-slate-600' : 'text-gray-500 hover:bg-white/10 hover:text-gray-300'}`}
+                                        >
+                                            <X size={11} />
+                                        </button>
+                                    )}
+                                </label>
+                            </div>
                             <div className={`flex items-center gap-1 px-3 py-1.5 border-b flex-wrap ${isLight ? 'border-slate-100 bg-slate-50' : 'border-white/5 bg-white/3'}`}>
                                 {[
                                     { key: 'price',     he: 'מחיר',  en: 'Price'    },
@@ -1591,20 +1642,12 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                 })}
                             </div>
                             <div className="overflow-y-auto custom-scrollbar scrollbar-right flex-1 min-h-0">
-                            {(() => {
-                                const LEVEL_ORDER = { cheap: 1, medium: 2, expensive: 3 };
-                                return [...savedPlans].sort((a, b) => {
-                                    const d = planSort.dir === 'asc' ? 1 : -1;
-                                    if (planSort.key === 'price') {
-                                        const at = PLAN_COST_KEYS.reduce((s, { key }) => s + Math.max(0, numberOrZero(a.result?.costs?.[key])), 0);
-                                        const bt = PLAN_COST_KEYS.reduce((s, { key }) => s + Math.max(0, numberOrZero(b.result?.costs?.[key])), 0);
-                                        return d * (at - bt);
-                                    }
-                                    if (planSort.key === 'nights') return d * ((numberOrZero(a.result?.nights) || 0) - (numberOrZero(b.result?.nights) || 0));
-                                    if (planSort.key === 'level') return d * ((LEVEL_ORDER[a.result?.level] || 2) - (LEVEL_ORDER[b.result?.level] || 2));
-                                    return d * ((a.savedAt || a.createdAt || 0) - (b.savedAt || b.createdAt || 0));
-                                });
-                            })().map(plan => {
+                            {filteredSavedPlans.length === 0 && (
+                                <div className={`px-4 py-5 text-center text-xs ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                    {isHe ? 'לא נמצאו תוכניות תואמות' : 'No matching saved plans'}
+                                </div>
+                            )}
+                            {filteredSavedPlans.map(plan => {
                                 const planTotal = PLAN_COST_KEYS.reduce((s, { key }) => s + Math.max(0, numberOrZero(plan.result?.costs?.[key])), 0);
                                 const savedLevelMap = {
                                     cheap:     { he: 'זול',     en: 'Budget',   cls: isLight ? 'bg-green-100 text-green-700' : 'bg-green-500/20 text-green-300' },
