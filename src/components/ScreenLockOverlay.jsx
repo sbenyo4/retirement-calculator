@@ -108,7 +108,7 @@ export function ScreenLockOverlay({ uid, t, onUnlock, onLogout }) {
                 ) : (
                     <form onSubmit={handleUnlock} className="space-y-3">
                         <label className="block">
-                            <span className={`mb-1 block text-sm font-medium ${isLight ? 'text-slate-600' : 'text-blue-100'}`}>
+                            <span className={`mb-1 block text-sm font-medium text-center ${isLight ? 'text-slate-600' : 'text-blue-100'}`}>
                                 {t('pinLabel')}
                             </span>
                             <input
