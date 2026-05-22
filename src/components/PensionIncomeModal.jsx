@@ -37,6 +37,7 @@ import {
     calculateIncomeAtAge,
     calculateRetirementIncomeSummary,
     createDefaultIncomeSources,
+    projectCurrentPensionSource,
     PENSION_TAX_BRACKETS
 } from '../utils/pensionCalculator';
 import { FiscalUpdateModal } from './FiscalUpdateModal';
@@ -78,13 +79,127 @@ const INCOME_TYPE_ICONS = {
     other: Coins
 };
 
+const CURRENT_ASSET_LABELS = {
+    pension: { he: 'פנסיה קיימת', en: 'Current Pension' },
+    provident: { he: 'גמל קיים', en: 'Current Provident Fund' },
+    severance: { he: 'פיצויים קיימים', en: 'Current Severance' }
+};
+
+const getCurrentAssetLabel = (kind, language) =>
+    CURRENT_ASSET_LABELS[kind]?.[language === 'he' ? 'he' : 'en'] || CURRENT_ASSET_LABELS.pension[language === 'he' ? 'he' : 'en'];
+
+function getTodayDateString() {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function formatCurrentAssetDate(dateString, language) {
+    if (!dateString) return '';
+
+    const [year, month, day] = String(dateString).split('-').map(Number);
+    const date = new Date(year, (month || 1) - 1, day || 1);
+    if (isNaN(date.getTime())) return dateString;
+
+    return new Intl.DateTimeFormat(language === 'he' ? 'he-IL' : 'en-US', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+    }).format(date);
+}
+
+function getDatedCurrentAsset(currentAsset, currentAge) {
+    return {
+        ...currentAsset,
+        asOfDate: currentAsset?.asOfDate || getTodayDateString(),
+        ageAtDate: currentAsset?.ageAtDate ?? currentAge ?? ''
+    };
+}
+
+function getCurrentAssetEditKey(source) {
+    if (!source?.currentAsset) return '';
+
+    return JSON.stringify({
+        name: source.name || '',
+        startAge: source.startAge ?? '',
+        endAge: source.endAge ?? '',
+        currentAsset: {
+            kind: source.currentAsset.kind || '',
+            balance: source.currentAsset.balance ?? '',
+            coefficient: source.currentAsset.coefficient ?? '',
+            returnRate: source.currentAsset.returnRate ?? '',
+            asOfDate: source.currentAsset.asOfDate || '',
+            ageAtDate: source.currentAsset.ageAtDate ?? ''
+        }
+    });
+}
+
+function getDisplayedPensionCoefficient(source) {
+    if (source.type !== 'pension' || (!source.currentAsset && !source.pensionCoefficient)) {
+        return null;
+    }
+
+    const savedCoefficient = parseFloat(source.pensionCoefficient);
+    if (savedCoefficient > 0) return savedCoefficient;
+
+    const manualCoefficient = parseFloat(source.currentAsset?.coefficient);
+    if (manualCoefficient > 0) return manualCoefficient;
+
+    const startAge = parseFloat(source.startAge);
+    const endAge = parseFloat(source.endAge);
+    if (!isNaN(startAge) && !isNaN(endAge) && endAge > startAge) {
+        return Math.round((endAge - startAge) * 12);
+    }
+
+    if (!isNaN(startAge)) {
+        return Math.round((Math.max(startAge + 20, 87) - startAge) * 12);
+    }
+
+    return null;
+}
+
+function buildCalculatedSourceDraft(source, defaultReturnRate, currentAge) {
+    if (source.currentAsset) {
+        return {
+            ...source,
+            currentAsset: getDatedCurrentAsset(source.currentAsset, currentAge)
+        };
+    }
+
+    const isPension = source.type === 'pension';
+    const coefficient = isPension ? getDisplayedPensionCoefficient(source) : null;
+    return {
+        ...source,
+        currentAsset: {
+            kind: isPension ? 'pension' : (source.nameEn?.includes('Severance') ? 'severance' : 'provident'),
+            // Legacy calculated rows only kept the computed output. Reopen them with
+            // the computed target value and 0% return so editing does not compound it again.
+            balance: isPension && coefficient
+                ? Math.round((parseFloat(source.amount) || 0) * coefficient)
+                : (parseFloat(source.amount) || 0),
+            coefficient: isPension && coefficient ? coefficient : '',
+            returnRate: 0,
+            legacyCalculatedDraft: true,
+            asOfDate: getTodayDateString(),
+            ageAtDate: currentAge ?? ''
+        },
+        ...(isPension && coefficient ? { pensionCoefficient: coefficient } : {}),
+        calculated: true,
+        autoCalculated: true,
+        defaultReturnRate
+    };
+}
+
 /**
  * Income Source Editor Row
  */
-function IncomeSourceRow({ source, onUpdate, onDelete, t, language, isLight }) {
+function IncomeSourceRow({ source, onUpdate, onEditCalculated, onDelete, t, language, isLight }) {
     const [isEditing, setIsEditing] = useState(false);
     const [editValues, setEditValues] = useState(source);
     const Icon = INCOME_TYPE_ICONS[source.type] || Coins;
+    const displayedCoefficient = getDisplayedPensionCoefficient(source);
 
     const handleSave = () => {
         // Convert string values to numbers when saving
@@ -158,11 +273,18 @@ function IncomeSourceRow({ source, onUpdate, onDelete, t, language, isLight }) {
                 <Icon size={14} />
             </div>
             <div className="flex-1 min-w-0">
-                <div className={`text-sm font-medium truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                    {displayName}
-                    {source.autoCalculated && (
-                        <span className={`text-[10px] ms-1 px-1 py-0.5 rounded ${isLight ? 'bg-blue-100 text-blue-600' : 'bg-blue-500/20 text-blue-400'}`}>
-                            {t('autoCalculated') || 'אוטומטי'}
+                <div className="flex min-w-0 items-center gap-1">
+                    <span className={`min-w-0 truncate text-sm font-medium ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                        {displayName}
+                    </span>
+                    {(source.autoCalculated || source.calculated) && (
+                        <span className={`shrink-0 text-[10px] px-1 py-0.5 rounded ${isLight ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-500/20 text-emerald-300'}`}>
+                            {language === 'he' ? 'מחושב' : 'Calculated'}
+                        </span>
+                    )}
+                    {displayedCoefficient && (
+                        <span className={`shrink-0 text-[10px] px-1 py-0.5 rounded ${isLight ? 'bg-indigo-100 text-indigo-700' : 'bg-indigo-500/20 text-indigo-300'}`}>
+                            {language === 'he' ? 'מקדם' : 'Coef.'} {displayedCoefficient}
                         </span>
                     )}
                 </div>
@@ -171,16 +293,10 @@ function IncomeSourceRow({ source, onUpdate, onDelete, t, language, isLight }) {
                     {source.endAge && ` ${t('toAge') || 'עד'} ${source.endAge}`}
                 </div>
             </div>
-            <div className={`text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                {formatCurrency(source.amount)}
-                <span className="text-[10px] font-normal ms-1 opacity-60">
-                    {source.isTaxable !== false ? (language === 'he' ? '(ברוטו)' : '(Gross)') : ''}
-                </span>
-            </div>
             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 {source.isEditable !== false && (
                     <>
-                        <button onClick={() => setIsEditing(true)} className={`p-1 rounded ${isLight ? 'hover:bg-slate-200 text-slate-600' : 'hover:bg-white/10 text-gray-400'}`}>
+                        <button onClick={() => source.currentAsset || source.calculated ? onEditCalculated(source) : setIsEditing(true)} className={`p-1 rounded ${isLight ? 'hover:bg-slate-200 text-slate-600' : 'hover:bg-white/10 text-gray-400'}`}>
                             <Edit3 size={12} />
                         </button>
                         <button onClick={() => onDelete(source.id)} className={`p-1 rounded ${isLight ? 'hover:bg-red-100 text-red-500' : 'hover:bg-red-500/20 text-red-400'}`}>
@@ -188,6 +304,171 @@ function IncomeSourceRow({ source, onUpdate, onDelete, t, language, isLight }) {
                         </button>
                     </>
                 )}
+            </div>
+            <div className={`shrink-0 text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                {formatCurrency(source.amount)}
+                <span className="text-[10px] font-normal ms-1 opacity-60">
+                    {source.isTaxable !== false ? (language === 'he' ? '(ברוטו)' : '(Gross)') : ''}
+                </span>
+            </div>
+        </div>
+    );
+}
+
+function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRate, canSave, onUpdate, onAdd, onCancel, language, isLight }) {
+    const isPension = source.currentAsset.kind === 'pension';
+    const label = getCurrentAssetLabel(source.currentAsset.kind, language);
+    const numberValue = (value) => value === null || value === undefined ? '' : value;
+    const updateAsset = (updates) => onUpdate({
+        currentAsset: { ...source.currentAsset, ...updates }
+    });
+    const updateNumber = (field) => (e) => {
+        const value = e.target.value;
+        if (value === '' || /^\d*\.?\d*$/.test(value)) {
+            onUpdate({ [field]: value });
+        }
+    };
+    const updateAssetNumber = (field) => (e) => {
+        const value = e.target.value;
+        if (value === '' || /^\d*\.?\d*$/.test(value)) {
+            updateAsset({ [field]: value });
+        }
+    };
+    const formatCurrency = (val) => formatCurrencyUtil(val, language);
+    const setAssetDateToToday = () => updateAsset({
+        asOfDate: getTodayDateString(),
+        ageAtDate: currentAge ?? ''
+    });
+    const canSubmit = Boolean(projectedSource.amount) && canSave;
+
+    return (
+        <div className={`rounded-lg border p-2.5 space-y-2 ${isLight ? 'bg-white border-slate-200' : 'bg-black/10 border-white/10'}`}>
+            <div className="flex items-center gap-2">
+                <div className={`p-1.5 rounded ${isPension ? (isLight ? 'bg-emerald-100 text-emerald-600' : 'bg-emerald-500/20 text-emerald-400') : (isLight ? 'bg-indigo-100 text-indigo-600' : 'bg-indigo-500/20 text-indigo-400')}`}>
+                    {isPension ? <TrendingUp size={14} /> : <Coins size={14} />}
+                </div>
+                <input
+                    type="text"
+                    value={source.name}
+                    onChange={(e) => onUpdate({ name: e.target.value })}
+                    className={`min-w-0 flex-1 px-2 py-1.5 rounded text-sm border ${isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
+                    aria-label={language === 'he' ? 'שם נתון פנסיוני' : 'Pension asset name'}
+                />
+                <span className={`text-[10px] px-1.5 py-1 rounded ${isLight ? 'bg-slate-100 text-slate-600' : 'bg-white/10 text-gray-300'}`}>{label}</span>
+                <button
+                    onClick={onCancel}
+                    title={language === 'he' ? 'מחק' : 'Delete'}
+                    className={`p-1.5 rounded ${isLight ? 'text-red-500 hover:bg-red-50' : 'text-red-400 hover:bg-red-500/20'}`}
+                >
+                    <X size={13} />
+                </button>
+            </div>
+
+            <div className={`flex flex-wrap items-center justify-between gap-2 rounded px-2 py-1.5 text-[11px] ${isLight ? 'bg-slate-50 text-slate-500' : 'bg-white/5 text-gray-400'}`}>
+                <span>
+                    {language === 'he' ? 'תאריך נתונים' : 'Data date'}: <strong className={isLight ? 'text-slate-700' : 'text-gray-200'}>{formatCurrentAssetDate(source.currentAsset.asOfDate, language)}</strong>
+                </span>
+                <button
+                    type="button"
+                    onClick={setAssetDateToToday}
+                    disabled={source.currentAsset.asOfDate === getTodayDateString()}
+                    className={`px-2 py-1 rounded transition-colors ${source.currentAsset.asOfDate === getTodayDateString()
+                        ? (isLight ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white/5 text-gray-500 cursor-not-allowed')
+                        : (isLight ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'bg-blue-500/20 text-blue-300 hover:bg-blue-500/30')}`}
+                >
+                    {language === 'he' ? 'עדכן להיום' : 'Set to today'}
+                </button>
+            </div>
+
+            <div className={`grid gap-2 ${isPension ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-3'}`}>
+                <label className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                    <span className="block mb-1">{language === 'he' ? 'יתרה בתאריך' : 'Balance at date'}</span>
+                    <input
+                        type="text"
+                        inputMode="numeric"
+                        value={numberValue(source.currentAsset.balance)}
+                        onChange={updateAssetNumber('balance')}
+                        className={`w-full px-2 py-1.5 rounded text-sm no-spinner border text-end ${isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
+                    />
+                </label>
+                <label className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                    <span className="block mb-1">{isPension ? (language === 'he' ? 'גיל תחילת קצבה' : 'Annuity age') : (language === 'he' ? 'גיל קבלה' : 'Access age')}</span>
+                    <input
+                        type="text"
+                        inputMode="numeric"
+                        value={numberValue(source.startAge)}
+                        onChange={updateNumber('startAge')}
+                        className={`w-full px-2 py-1.5 rounded text-sm no-spinner border text-center ${isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
+                    />
+                </label>
+                <label className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                    <span className="block mb-1">{language === 'he' ? 'ריבית למקור' : 'Source return'}</span>
+                    <div className="relative">
+                        <input
+                            type="text"
+                            inputMode="decimal"
+                            value={numberValue(source.currentAsset.returnRate)}
+                            onChange={updateAssetNumber('returnRate')}
+                            placeholder={String(defaultReturnRate)}
+                            className={`w-full px-2 py-1.5 pe-5 rounded text-sm no-spinner border text-center ${isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
+                        />
+                        <span className={`absolute end-2 top-1.5 text-xs ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>%</span>
+                    </div>
+                </label>
+                {isPension && (
+                    <label className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                        <span className="block mb-1">{language === 'he' ? 'גיל סיום' : 'End age'}</span>
+                        <input
+                            type="text"
+                            inputMode="numeric"
+                            value={numberValue(source.endAge)}
+                            onChange={updateNumber('endAge')}
+                            className={`w-full px-2 py-1.5 rounded text-sm no-spinner border text-center ${isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
+                        />
+                    </label>
+                )}
+                {isPension && (
+                    <label className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                        <span className="block mb-1">{language === 'he' ? 'מקדם, לפי גיל' : 'Coefficient, by age'}</span>
+                        <input
+                            type="text"
+                            inputMode="numeric"
+                            value={numberValue(source.currentAsset.coefficient)}
+                            onChange={updateAssetNumber('coefficient')}
+                            placeholder={projectedSource.appliedCoefficient ? String(projectedSource.appliedCoefficient) : ''}
+                            className={`w-full px-2 py-1.5 rounded text-sm no-spinner border text-center ${isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
+                        />
+                    </label>
+                )}
+            </div>
+
+            <div className={`flex flex-wrap gap-x-3 gap-y-1 text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                <span>{language === 'he' ? 'ערך מחושב בגיל היעד' : 'Projected value at target age'}: <strong className={isLight ? 'text-slate-700' : 'text-gray-200'}>{formatCurrency(projectedSource.projectedBalance || 0)}</strong></span>
+                {isPension && (
+                    <span>
+                        {language === 'he' ? 'קצבה מחושבת' : 'Calculated annuity'}: <strong className={isLight ? 'text-emerald-700' : 'text-emerald-300'}>{formatCurrency(projectedSource.amount || 0)}</strong>
+                        {projectedSource.appliedCoefficient ? ` / ${language === 'he' ? 'מקדם' : 'coefficient'} ${projectedSource.appliedCoefficient}` : ''}
+                    </span>
+                )}
+                {!isPension && <span>{language === 'he' ? 'נוסף כהון בחלון הפנסיה' : 'Added as capital in the pension window'}</span>}
+                <span>{language === 'he' ? 'ריבית בחישוב' : 'Return used'}: {projectedSource.appliedReturnRate ?? defaultReturnRate}%</span>
+            </div>
+            <div className="flex justify-end gap-2">
+                <button onClick={onCancel} className={`px-2.5 py-1.5 rounded text-xs ${isLight ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-white/10 text-gray-200 hover:bg-white/20'}`}>
+                    {language === 'he' ? 'בטל' : 'Cancel'}
+                </button>
+                <button
+                    onClick={onAdd}
+                    disabled={!canSubmit}
+                    className={`px-2.5 py-1.5 rounded text-xs flex items-center gap-1 ${canSubmit
+                        ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                        : (isLight ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white/5 text-gray-500 cursor-not-allowed')}`}
+                >
+                    <Check size={12} />
+                    {source.id.startsWith('current_asset_')
+                        ? (language === 'he' ? 'הוסף לרשימה' : 'Add to list')
+                        : (language === 'he' ? 'עדכן מקור' : 'Update source')}
+                </button>
             </div>
         </div>
     );
@@ -309,7 +590,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const aiCacheKeyRef = useRef(null);
 
     // Helper to calculate NI with income test and 67 vs 70 logic
-    const calculateEffectiveNI = useCallback((sources, currentRetirementStartAge) => {
+    const calculateEffectiveNI = useCallback((sources, currentRetirementStartAge, extraDeferralYears = 0) => {
         // ALWAYS pass 0 as otherIncome to bypass the income test logic as per user request
         // This ensures the displayed start age is 67, not 70
         const contributionYears = inputs.contributionYears || 35;
@@ -326,8 +607,16 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
             displayAmount = niAt70.totalMonthly;
         }
 
-        const finalStartAge = Math.max(effectiveStartAge, currentRetirementStartAge);
-        return { amount: displayAmount, startAge: finalStartAge, calculationDetails: niCalc };
+        const finalStartAge = Math.max(effectiveStartAge, currentRetirementStartAge) + extraDeferralYears;
+        const deferredCalc = extraDeferralYears > 0
+            ? calculateNationalInsurance(finalStartAge, contributionYears, fiscalParameters, familyStatus, 0)
+            : niCalc;
+
+        return {
+            amount: extraDeferralYears > 0 ? deferredCalc.totalMonthly : displayAmount,
+            startAge: finalStartAge,
+            calculationDetails: deferredCalc
+        };
     }, [inputs.contributionYears, fiscalParameters, familyStatus]);
 
     // Income sources state
@@ -335,6 +624,27 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     // Helper to get safe sources with NI guaranteed
     const getSafeSources = useCallback(() => {
         let sources = inputs.pensionIncomeSources || createDefaultIncomeSources(inputs);
+        const pensionRate = inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : 4;
+        const currentAge = parseFloat(inputs.currentAge) || 0;
+        const defaultPensionAge = parseFloat(inputs.retirementEndAge) || 67;
+        sources = sources.map(source => {
+            if (!source.currentAsset) return source;
+            const projected = projectCurrentPensionSource(source, currentAge, defaultPensionAge, pensionRate);
+            const {
+                projectedBalance: _projectedBalance,
+                appliedCoefficient: _appliedCoefficient,
+                appliedReturnRate: _appliedReturnRate,
+                coefficientCalculated: _coefficientCalculated,
+                ...projectedSource
+            } = projected;
+            return {
+                ...projectedSource,
+                calculated: true,
+                ...(projected.type === 'pension' && projected.appliedCoefficient
+                    ? { pensionCoefficient: projected.appliedCoefficient }
+                    : {})
+            };
+        });
         const niExists = sources.some(s => s.type === 'nationalInsurance');
 
         // Ensure NI exists
@@ -354,7 +664,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         const retStartAge = parseFloat(inputs.retirementStartAge) || 67;
         sources = sources.map(s => {
             if (s.type === 'nationalInsurance' && s.autoCalculated) {
-                const { amount, startAge, calculationDetails } = calculateEffectiveNI(sources, retStartAge);
+                const { amount, startAge, calculationDetails } = calculateEffectiveNI(sources, retStartAge, s.niDeferralYears || 0);
                 return {
                     ...s,
                     amount,
@@ -369,13 +679,40 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     }, [inputs, calculateEffectiveNI]);
 
     const [incomeSources, setIncomeSources] = useState(getSafeSources);
-    const [showIncomeSources, setShowIncomeSources] = useState(true);
+    const [showIncomeSources, setShowIncomeSources] = useState(false);
     const [expandedMilestone, setExpandedMilestone] = useState(null);
     const [pensionInterestRate, setPensionInterestRate] = useState(() => inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : 4);
     const [showRateTooltip, setShowRateTooltip] = useState(false);
     const rateTooltipRef = useRef(null);
-    const [deferralYears, setDeferralYears] = useState(0);
+    const [deferralYears, setDeferralYears] = useState(() => {
+        const savedNiSource = inputs.pensionIncomeSources?.find(source => source.type === 'nationalInsurance');
+        return parseInt(savedNiSource?.niDeferralYears, 10) || 0;
+    });
     const [showDeferralPanel, setShowDeferralPanel] = useState(false);
+    const toggleIncomeSources = () => {
+        const nextOpen = !showIncomeSources;
+        setShowIncomeSources(nextOpen);
+        if (nextOpen) {
+            setShowDeferralPanel(false);
+            setExpandedMilestone(null);
+        }
+    };
+    const toggleDeferralPanel = () => {
+        const nextOpen = !showDeferralPanel;
+        setShowDeferralPanel(nextOpen);
+        if (nextOpen) {
+            setShowIncomeSources(false);
+            setExpandedMilestone(null);
+        }
+    };
+    const toggleMilestone = (idx) => {
+        const nextExpanded = expandedMilestone === idx ? null : idx;
+        setExpandedMilestone(nextExpanded);
+        if (nextExpanded !== null) {
+            setShowIncomeSources(false);
+            setShowDeferralPanel(false);
+        }
+    };
 
     // Lock body scroll when modal is open
     useEffect(() => {
@@ -410,20 +747,20 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         setIncomeSources(prev => {
             const niSource = prev.find(s => s.type === 'nationalInsurance');
             if (niSource && niSource.autoCalculated) {
-                const { amount, startAge, calculationDetails } = calculateEffectiveNI(prev, retirementStartAge);
+                const { amount, startAge, calculationDetails } = calculateEffectiveNI(prev, retirementStartAge, deferralYears);
 
                 // Only update if something actually changed to avoid extra renders
-                if (niSource.amount !== amount || niSource.startAge !== startAge) {
+                if (niSource.amount !== amount || niSource.startAge !== startAge || niSource.niDeferralYears !== deferralYears) {
                     return prev.map(s =>
                         s.type === 'nationalInsurance'
-                            ? { ...s, amount, startAge, calculationDetails }
+                            ? { ...s, amount, startAge, calculationDetails, niDeferralYears: deferralYears }
                             : s
                     );
                 }
             }
             return prev;
         });
-    }, [retirementStartAge, nonNISourcesKey, calculateEffectiveNI]);
+    }, [retirementStartAge, nonNISourcesKey, calculateEffectiveNI, deferralYears]);
 
     // Calculate summary
     const summary = useMemo(() => {
@@ -466,6 +803,88 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         setIncomeSources(prev => [...prev, newSource]);
     };
 
+    const createCurrentAssetDraft = (kind = 'pension') => {
+        const isPension = kind === 'pension';
+        return {
+            id: `current_asset_${Date.now()}`,
+            type: isPension ? 'pension' : 'capital',
+            name: getCurrentAssetLabel(kind, language),
+            nameEn: getCurrentAssetLabel(kind, 'en'),
+            amount: 0,
+            startAge: retirementEndAge,
+            endAge: isPension ? Math.max(retirementEndAge + 20, 87) : null,
+            isTaxable: isPension,
+            isLumpSum: !isPension,
+            enabled: true,
+            isEditable: true,
+            autoCalculated: true,
+            currentAsset: {
+                kind,
+                balance: 0,
+                coefficient: '',
+                returnRate: '',
+                asOfDate: getTodayDateString(),
+                ageAtDate: inputs.currentAge ?? ''
+            }
+        };
+    };
+    const [currentAssetDraft, setCurrentAssetDraft] = useState(null);
+    const [currentAssetEditBaseline, setCurrentAssetEditBaseline] = useState(null);
+    const currentAssetFormRef = useRef(null);
+    const shouldScrollToCurrentAssetFormRef = useRef(false);
+    const currentAssetPreview = useMemo(() => currentAssetDraft
+        ? projectCurrentPensionSource(currentAssetDraft, inputs.currentAge, retirementEndAge, pensionInterestRate)
+        : null,
+    [currentAssetDraft, inputs.currentAge, retirementEndAge, pensionInterestRate]);
+    const currentAssetCanSave = useMemo(() => !currentAssetDraft || currentAssetDraft.id.startsWith('current_asset_') ||
+        getCurrentAssetEditKey(currentAssetDraft) !== getCurrentAssetEditKey(currentAssetEditBaseline),
+    [currentAssetDraft, currentAssetEditBaseline]);
+    const openCurrentAssetForm = (kind) => {
+        setCurrentAssetEditBaseline(null);
+        setCurrentAssetDraft(createCurrentAssetDraft(kind));
+    };
+    const editCurrentAssetSource = (source) => {
+        const draft = buildCalculatedSourceDraft(source, pensionInterestRate, inputs.currentAge);
+        shouldScrollToCurrentAssetFormRef.current = true;
+        setCurrentAssetEditBaseline(draft);
+        setCurrentAssetDraft(draft);
+    };
+    useEffect(() => {
+        if (!currentAssetDraft || !shouldScrollToCurrentAssetFormRef.current) return;
+
+        shouldScrollToCurrentAssetFormRef.current = false;
+        requestAnimationFrame(() => {
+            currentAssetFormRef.current?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'nearest'
+            });
+        });
+    }, [currentAssetDraft]);
+    const addCalculatedCurrentAsset = () => {
+        if (!currentAssetPreview?.amount) return;
+        const {
+            projectedBalance: _projectedBalance,
+            appliedCoefficient: _appliedCoefficient,
+            appliedReturnRate: _appliedReturnRate,
+            coefficientCalculated: _coefficientCalculated,
+            autoCalculated: _autoCalculated,
+            ...source
+        } = currentAssetPreview;
+        const calculatedSource = {
+            ...source,
+            calculated: true,
+            ...(source.type === 'pension' && currentAssetPreview.appliedCoefficient
+                ? { pensionCoefficient: currentAssetPreview.appliedCoefficient }
+                : {}),
+            id: source.id.startsWith('current_asset_') ? `income_${Date.now()}` : source.id
+        };
+        setIncomeSources(prev => source.id.startsWith('current_asset_')
+            ? [...prev, calculatedSource]
+            : prev.map(existing => existing.id === source.id ? calculatedSource : existing));
+        setCurrentAssetDraft(null);
+        setCurrentAssetEditBaseline(null);
+    };
+
     // Update income source
     const updateIncomeSource = (id, updates) => {
         setIncomeSources(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
@@ -481,7 +900,11 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const formatCurrency = useCallback((val) => formatCurrencyUtil(val, language), [language]);
 
     const sortedIncomeSources = useMemo(() =>
-        [...incomeSources].sort((a, b) => (parseFloat(a.startAge) || 0) - (parseFloat(b.startAge) || 0)),
+        [...incomeSources].sort((a, b) => {
+            const ageDelta = (parseFloat(a.startAge) || 0) - (parseFloat(b.startAge) || 0);
+            if (ageDelta !== 0) return ageDelta;
+            return (parseFloat(b.amount) || 0) - (parseFloat(a.amount) || 0);
+        }),
     [incomeSources]);
 
     // NI calculation for summary display (at age 67 OR 70 based on income test)
@@ -502,12 +925,21 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const deferralCalc = useMemo(() => {
         const niSource = incomeSources.find(s => s.type === 'nationalInsurance' && s.enabled !== false);
         if (!niSource) return null;
-        const niStartAge = parseFloat(niSource.startAge) || 67;
-        const niGross = parseFloat(niSource.amount) || 0;
-        const deferredGross = niGross * Math.pow(1.05, deferralYears);
-        const effTaxRate = (incomeAtPensionAge.effectiveTaxRate || 0) / 100;
-        const baseNet = niGross * (1 - effTaxRate);
-        const deferredNet = deferredGross * (1 - effTaxRate);
+        const baseNi = niSource.autoCalculated
+            ? calculateEffectiveNI(incomeSources, retirementStartAge, 0)
+            : {
+                amount: parseFloat(niSource.amount) || 0,
+                startAge: parseFloat(niSource.startAge) || 67
+            };
+        const deferredNi = niSource.autoCalculated
+            ? calculateEffectiveNI(incomeSources, retirementStartAge, deferralYears)
+            : niSource;
+        const niStartAge = parseFloat(baseNi.startAge) || 67;
+        const niGross = parseFloat(baseNi.amount) || 0;
+        const deferredGross = parseFloat(deferredNi.amount) || niGross;
+        // National Insurance is added to pension income as tax-exempt.
+        const baseNet = niGross;
+        const deferredNet = deferredGross;
         const deltaNet = deferredNet - baseNet;
         const milestoneAtNiAge = summary.milestones.find(m => m.age === niStartAge);
         const balAtNiAge = milestoneAtNiAge?.accumulatedCapital ?? capitalAtRetirement;
@@ -521,7 +953,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
             ? niStartAge + deferralYears + Math.ceil(fundingCost / deltaNet / 12)
             : null;
         return { niStartAge, niGross, deferredGross, baseNet, deferredNet, deltaNet, balAtNiAge, projectedBalance: Math.max(0, projectedBalance), fundingCost, breakEvenAge };
-    }, [deferralYears, incomeSources, incomeAtPensionAge, summary, capitalAtRetirement, pensionInterestRate]);
+    }, [deferralYears, incomeSources, summary, capitalAtRetirement, pensionInterestRate, calculateEffectiveNI, retirementStartAge]);
 
     // Track changes
     const initialIncomeSources = useMemo(() => getSafeSources(), [getSafeSources]);
@@ -571,7 +1003,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                 <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
                 {/* Modal */}
-                <div className={`relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl shadow-2xl ${isLight ? 'bg-white' : ''} ring-1 ${isLight ? 'ring-gray-300' : 'ring-white/30'}`} style={{ ...dragStyle, overflow: 'hidden' }}>
+                <div className={`relative w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl shadow-2xl ${isLight ? 'bg-white' : ''} ring-1 ${isLight ? 'ring-gray-300' : 'ring-white/30'}`} style={{ ...dragStyle, overflow: 'hidden' }}>
                     {!isLight && (
                         <>
                             <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" />
@@ -686,7 +1118,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                     </div>
 
                     {/* Content - Fixed Height Main Container with Flex Layout */}
-                    <div className="relative z-10 flex-1 flex flex-col min-h-0 overflow-hidden p-4 space-y-4">
+                    <div className="relative z-10 flex-1 flex flex-col min-h-0 overflow-y-auto custom-scrollbar scrollbar-right p-4 space-y-4">
                         {/* Summary Cards */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                             <div className={`p-3 rounded-lg ${isLight ? 'bg-blue-50 border border-blue-100' : 'bg-blue-500/10 border border-blue-500/20'}`}>
@@ -826,7 +1258,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                         <div className={`rounded-xl border transition-all duration-300 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'}`}>
                             <div
                                 className={`flex items-center justify-between p-3 cursor-pointer ${showIncomeSources ? (isLight ? 'border-b border-slate-200' : 'border-b border-white/10') : ''}`}
-                                onClick={() => setShowIncomeSources(!showIncomeSources)}
+                                onClick={toggleIncomeSources}
                             >
                                 <div className="flex items-center gap-2">
                                     <button className={`p-1 rounded-full transition-colors ${isLight ? 'hover:bg-slate-200 text-slate-500' : 'hover:bg-white/10 text-gray-400'}`}>
@@ -863,18 +1295,63 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                             </div>
 
                             {showIncomeSources && (
-                                <div className="p-2 space-y-1 max-h-44 overflow-y-auto custom-scrollbar scrollbar-right animate-in slide-in-from-top-2 fade-in duration-200">
+                                <div className="p-2 space-y-1 max-h-72 overflow-y-auto custom-scrollbar scrollbar-right animate-in slide-in-from-top-2 fade-in duration-200">
                                     {sortedIncomeSources.map(source => (
                                         <IncomeSourceRow
                                             key={source.id}
                                             source={source}
                                             onUpdate={updateIncomeSource}
+                                            onEditCalculated={editCurrentAssetSource}
                                             onDelete={deleteIncomeSource}
                                             t={t}
                                             language={language}
                                             isLight={isLight}
                                         />
                                     ))}
+                                    <div className={`mt-2 pt-2 space-y-2 border-t ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <div>
+                                                <h4 className={`text-xs font-semibold ${isLight ? 'text-slate-800' : 'text-gray-100'}`}>
+                                                    {language === 'he' ? 'נתונים קיימים היום' : 'Balances that exist today'}
+                                                </h4>
+                                                <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                    {language === 'he'
+                                                        ? 'מחושבים בחלון הפנסיה לפי גיל היעד והריבית למעלה.'
+                                                        : 'Projected inside the pension window using the target age and rate above.'}
+                                                </p>
+                                            </div>
+                                            <div className="flex flex-wrap gap-1">
+                                                <button onClick={() => openCurrentAssetForm('pension')} className={`px-2 py-1 rounded text-[11px] flex items-center gap-1 ${isLight ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30'}`}>
+                                                    <Plus size={12} />{language === 'he' ? 'פנסיה קיימת' : 'Pension'}
+                                                </button>
+                                                <button onClick={() => openCurrentAssetForm('provident')} className={`px-2 py-1 rounded text-[11px] flex items-center gap-1 ${isLight ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30'}`}>
+                                                    <Plus size={12} />{language === 'he' ? 'גמל' : 'Provident'}
+                                                </button>
+                                                <button onClick={() => openCurrentAssetForm('severance')} className={`px-2 py-1 rounded text-[11px] flex items-center gap-1 ${isLight ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'}`}>
+                                                    <Plus size={12} />{language === 'he' ? 'פיצויים' : 'Severance'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {currentAssetDraft && currentAssetPreview && (
+                                            <div ref={currentAssetFormRef}>
+                                                <CurrentAssetForm
+                                                    source={currentAssetDraft}
+                                                    projectedSource={currentAssetPreview}
+                                                    currentAge={inputs.currentAge}
+                                                    defaultReturnRate={pensionInterestRate}
+                                                    canSave={currentAssetCanSave}
+                                                    onUpdate={(updates) => setCurrentAssetDraft(prev => ({ ...prev, ...updates }))}
+                                                    onAdd={addCalculatedCurrentAsset}
+                                                    onCancel={() => {
+                                                        setCurrentAssetDraft(null);
+                                                        setCurrentAssetEditBaseline(null);
+                                                    }}
+                                                    language={language}
+                                                    isLight={isLight}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
                                     {incomeSources.length === 0 && (
                                         <div className={`text-center py-4 text-sm ${isLight ? 'text-slate-500' : 'text-gray-500'}`}>
                                             {t('noIncomeSources') || 'לא הוגדרו מקורות הכנסה'}
@@ -888,7 +1365,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                         {deferralCalc && (
                             <div className={`rounded-xl border transition-all duration-300 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'}`}>
                                 <button
-                                    onClick={() => setShowDeferralPanel(!showDeferralPanel)}
+                                    onClick={toggleDeferralPanel}
                                     className={`w-full flex items-center justify-between p-3 ${isLight ? 'hover:bg-slate-100' : 'hover:bg-white/5'} transition-colors`}
                                 >
                                     <div className="flex items-center gap-2">
@@ -1015,7 +1492,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                         language={language}
                                         isLight={isLight}
                                         isExpanded={expandedMilestone === idx}
-                                        onToggle={() => setExpandedMilestone(expandedMilestone === idx ? null : idx)}
+                                        onToggle={() => toggleMilestone(idx)}
                                         pensionInterestRate={pensionInterestRate}
                                     />
                                 ))}
@@ -1033,10 +1510,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                         </button>
                         {onSave && (
                             <button
-                                onClick={() => {
-                                    onSave(incomeSources, pensionInterestRate);
-                                    onClose();
-                                }}
+                                onClick={() => onSave(incomeSources, pensionInterestRate)}
                                 disabled={!hasChanges}
                                 className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 relative
                                 ${hasChanges

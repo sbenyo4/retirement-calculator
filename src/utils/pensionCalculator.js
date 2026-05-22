@@ -295,6 +295,60 @@ export function calculateCapitalDuration(capital, monthlyDeficit, annualReturnRa
 }
 
 /**
+ * Convert a pension asset balance that exists at its saved data date into the income/capital source
+ * consumed by the pension summary. Existing manual sources pass through unchanged.
+ */
+export function projectCurrentPensionSource(source, currentAge, defaultStartAge, annualReturnRate = 0) {
+    if (!source?.currentAsset) return source;
+
+    const balance = Math.max(0, parseFloat(source.currentAsset.balance) || 0);
+    const startAge = parseFloat(source.startAge) || defaultStartAge;
+    const endAge = source.endAge === null || source.endAge === ''
+        ? null
+        : parseFloat(source.endAge);
+    const assetAge = parseFloat(source.currentAsset.ageAtDate);
+    const projectionAge = !isNaN(assetAge)
+        ? assetAge
+        : (parseFloat(currentAge) || startAge);
+    const yearsUntilUse = Math.max(0, startAge - projectionAge);
+    const sourceReturnRate = source.currentAsset.returnRate !== undefined && source.currentAsset.returnRate !== ''
+        ? parseFloat(source.currentAsset.returnRate)
+        : parseFloat(annualReturnRate);
+    const projectedBalance = balance * Math.pow(1 + (!isNaN(sourceReturnRate) ? sourceReturnRate : 0) / 100, yearsUntilUse);
+
+    if (source.currentAsset.kind !== 'pension') {
+        return {
+            ...source,
+            type: 'capital',
+            amount: Math.round(projectedBalance),
+            isLumpSum: true,
+            isTaxable: false,
+            projectedBalance: Math.round(projectedBalance),
+            appliedReturnRate: !isNaN(sourceReturnRate) ? sourceReturnRate : 0
+        };
+    }
+
+    const manualCoefficient = parseFloat(source.currentAsset.coefficient);
+    const coefficientEndAge = endAge && endAge > startAge
+        ? endAge
+        : Math.max(startAge + 20, 87);
+    const autoCoefficient = Math.round((coefficientEndAge - startAge) * 12);
+    const coefficient = manualCoefficient > 0 ? manualCoefficient : autoCoefficient;
+
+    return {
+        ...source,
+        type: 'pension',
+        amount: coefficient > 0 ? Math.round(projectedBalance / coefficient) : 0,
+        isLumpSum: false,
+        isTaxable: true,
+        projectedBalance: Math.round(projectedBalance),
+        appliedCoefficient: coefficient,
+        appliedReturnRate: !isNaN(sourceReturnRate) ? sourceReturnRate : 0,
+        coefficientCalculated: !(manualCoefficient > 0)
+    };
+}
+
+/**
  * Pension income source entry
  * @typedef {Object} PensionIncomeSource
  * @property {string} type - Type of income (pension, nationalInsurance, rent, etc.)
@@ -314,8 +368,12 @@ export function calculateCapitalDuration(capital, monthlyDeficit, annualReturnRa
  */
 export function calculateIncomeAtAge(incomeSources, age, parameters = null) {
     const activeIncome = incomeSources.filter(source => {
-        const startOk = age >= source.startAge;
-        const endOk = source.endAge === null || age < source.endAge;
+        const startAge = parseFloat(source.startAge);
+        const endAge = source.endAge === null || source.endAge === ''
+            ? null
+            : parseFloat(source.endAge);
+        const startOk = isNaN(startAge) || age >= startAge;
+        const endOk = endAge === null || isNaN(endAge) || age < endAge;
         return startOk && endOk && source.enabled !== false;
     });
 
@@ -399,12 +457,16 @@ export function calculateRetirementIncomeSummary({
         }
     });
 
-    // Always include retirementEndAge as the baseline (this is where capital is calculated)
+    // Always include the pension summary baseline and every source change from that point on.
+    // A source that already started earlier still affects the baseline income at this age.
     milestoneAges.add(retirementEndAge);
 
     // Sort ages
-    const sortedAges = Array.from(milestoneAges)
-        .filter(age => age >= retirementEndAge)
+    const sortedAges = Array.from(new Set(
+        Array.from(milestoneAges)
+            .map(age => parseFloat(age))
+            .filter(age => !isNaN(age) && age >= retirementEndAge)
+    ))
         .sort((a, b) => a - b);
 
     // Get lump sum additions indexed by age
@@ -433,7 +495,17 @@ export function calculateRetirementIncomeSummary({
     let niAmountInitial = 0;
     let niDetailsInitial = null;
 
-    if (niBaseSource && niBaseSource.enabled !== false) {
+    const niSourceIsActiveAtAge = (age) => {
+        if (!niBaseSource || niBaseSource.enabled === false) return false;
+        const niStartAge = parseFloat(niBaseSource.startAge);
+        const niEndAge = niBaseSource.endAge === null || niBaseSource.endAge === ''
+            ? null
+            : parseFloat(niBaseSource.endAge);
+        return (isNaN(niStartAge) || age >= niStartAge) &&
+            (niEndAge === null || isNaN(niEndAge) || age < niEndAge);
+    };
+
+    if (niSourceIsActiveAtAge(retirementStartAge)) {
         niDetailsInitial = calculateNationalInsurance(
             retirementStartAge,
             niBaseSource.details?.contributionYears || 35,
@@ -469,7 +541,7 @@ export function calculateRetirementIncomeSummary({
         let niDetails = null;
         let niAmount = 0;
 
-        if (niBaseSource && niBaseSource.enabled !== false) {
+        if (niSourceIsActiveAtAge(age)) {
             niDetails = calculateNationalInsurance(
                 age,
                 niBaseSource.details?.contributionYears || 35,
