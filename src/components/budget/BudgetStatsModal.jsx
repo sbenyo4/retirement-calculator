@@ -2,9 +2,29 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { BarChart3, ToggleLeft, ToggleRight, X } from 'lucide-react';
 import { Doughnut, Bar } from 'react-chartjs-2';
+import {
+    Chart as ChartJS,
+    CategoryScale,
+    LinearScale,
+    BarElement,
+    ArcElement,
+    Title,
+    Tooltip,
+    Legend
+} from 'chart.js';
 import { useDraggable } from '../../hooks/useDraggable';
 import { toMonthly, toProjectedMonthly, getNowYM, matchIncrease } from './budgetUtils';
 import { CATEGORIES, CAT_COLORS } from './constants';
+
+ChartJS.register(
+    CategoryScale,
+    LinearScale,
+    BarElement,
+    ArcElement,
+    Title,
+    Tooltip,
+    Legend
+);
 
 export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRate, showInflation: showInflationProp, isLight, isHe, currency, t: _t, sliderConsumed, setSliderConsumed, retirementAdj, showRetirementMode, setShowRetirementMode }) {
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
@@ -12,10 +32,21 @@ export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, infl
     const [selectedYearIdx, setSelectedYearIdx] = useState(null);
     const [showSavings, setShowSavings] = useState(false);
     const barDivRef = useRef(null);
+    // Each time isOpen transitions false→true, increment this counter during render
+    // so the <Doughnut> and <Bar> receive a new key and React creates fresh canvas
+    // elements — Chart.js never sees a "canvas already in use" error.
+    const chartOpenCountRef = useRef(0);
+    const prevIsOpenRef = useRef(false);
+    if (isOpen && !prevIsOpenRef.current) chartOpenCountRef.current += 1;
+    prevIsOpenRef.current = isOpen;
 
     // Sync with parent toggle when modal opens
     useEffect(() => {
-        if (isOpen) { setLocalShowInflation(showInflationProp); setSelectedYearIdx(null); setShowSavings(false); }
+        if (isOpen) {
+            setLocalShowInflation(showInflationProp);
+            setSelectedYearIdx(null);
+            setShowSavings(false);
+        }
     }, [isOpen, showInflationProp]);
 
     // Prevent body scroll while modal is open
@@ -532,7 +563,7 @@ export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, infl
                         <div className="flex items-center gap-6">
                             {/* Doughnut */}
                             <div className="relative shrink-0" style={{ width: 170, height: 170 }}>
-                                <Doughnut data={pieData} options={doughnutOptions} />
+                                <Doughnut key={chartOpenCountRef.current} data={pieData} options={doughnutOptions} />
                                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                                     <span className={`text-[10px] ${localShowInflation ? (isLight ? 'text-amber-600' : 'text-amber-400') : (isLight ? 'text-slate-400' : 'text-gray-500')}`}>
                                         {isHe ? 'סה"כ חודשי' : 'Monthly'}
@@ -667,7 +698,7 @@ export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, infl
                                     }
                                 }}
                             >
-                                <Bar data={barData} options={barOptions} plugins={[yearLabelPlugin]} />
+                                <Bar key={chartOpenCountRef.current} data={barData} options={barOptions} plugins={[yearLabelPlugin]} />
                             </div>
                         </div>
                     )}

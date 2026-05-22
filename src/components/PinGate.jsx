@@ -156,8 +156,8 @@ export function PinGate({ uid, t, onLogout, children }) {
                     </div>
                 ) : (
                     <form onSubmit={isSetup ? handleSetup : handleUnlock} className="space-y-3">
-                        <label className="block">
-                            <span className={`mb-1 block text-sm font-medium ${isLight ? 'text-slate-600' : 'text-blue-100'}`}>
+                        <label className="block text-center">
+                            <span className={`mb-1 block w-full text-center text-sm font-medium ${isLight ? 'text-slate-600' : 'text-blue-100'}`} style={{ textAlign: 'center' }}>
                                 {t('pinLabel')}
                             </span>
                             <input
@@ -173,8 +173,8 @@ export function PinGate({ uid, t, onLogout, children }) {
                         </label>
 
                         {isSetup && (
-                            <label className="block">
-                                <span className={`mb-1 block text-sm font-medium ${isLight ? 'text-slate-600' : 'text-blue-100'}`}>
+                            <label className="block text-center">
+                                <span className={`mb-1 block w-full text-center text-sm font-medium ${isLight ? 'text-slate-600' : 'text-blue-100'}`} style={{ textAlign: 'center' }}>
                                     {t('confirmPinLabel')}
                                 </span>
                                 <input

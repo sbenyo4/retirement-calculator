@@ -3632,24 +3632,26 @@ Gap vs target and what can be optimized.`;
             )}
         </div>
 
-        <BudgetStatsModal
-            isOpen={showStats}
-            onClose={() => setShowStats(false)}
-            items={items}
-            inputs={inputs}
-            results={results}
-            inflationRate={inflationRate}
-            showInflation={showInflation}
-            isLight={isLight}
-            isHe={isHe}
-            currency={currency}
-            t={t}
-            sliderConsumed={sliderConsumed}
-            setSliderConsumed={setSliderConsumed}
-            retirementAdj={retirementAdj}
-            showRetirementMode={showRetirementMode}
-            setShowRetirementMode={setShowRetirementMode}
-        />
+        {showStats && (
+            <BudgetStatsModal
+                isOpen={true}
+                onClose={() => setShowStats(false)}
+                items={items}
+                inputs={inputs}
+                results={results}
+                inflationRate={inflationRate}
+                showInflation={showInflation}
+                isLight={isLight}
+                isHe={isHe}
+                currency={currency}
+                t={t}
+                sliderConsumed={sliderConsumed}
+                setSliderConsumed={setSliderConsumed}
+                retirementAdj={retirementAdj}
+                showRetirementMode={showRetirementMode}
+                setShowRetirementMode={setShowRetirementMode}
+            />
+        )}
         <FixedVarModal
             isOpen={showFixedVar}
             onClose={() => setShowFixedVar(false)}

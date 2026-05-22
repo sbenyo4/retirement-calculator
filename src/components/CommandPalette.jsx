@@ -50,8 +50,8 @@ export default function CommandPalette({ language }) {
 
     useEffect(() => {
         const handler = (e) => {
-            // Ctrl+/ or Cmd+/ — safe in all browsers, not captured at OS level
-            const isSlash = e.key === '/' || e.key === 'Divide';
+            // Ctrl+/ or Ctrl+Q (Israeli keyboard layout maps Q to /)
+            const isSlash = e.key === '/' || e.key === 'Divide' || e.key === 'q' || e.key === 'Q';
             if ((e.ctrlKey || e.metaKey) && isSlash && !e.shiftKey && !e.altKey) {
                 // Don't trigger if typing in an input/textarea
                 const tag = document.activeElement?.tagName;
