@@ -102,7 +102,9 @@ function StartupSplash({ t, language, theme }) {
     <div className={`h-full w-full flex items-center justify-center p-4 ${isLight ? 'bg-slate-100' : 'bg-gradient-to-br from-gray-900 to-blue-900'}`} dir={translations[language].dir}>
       <div className={`w-full max-w-sm rounded-2xl border px-8 py-10 text-center shadow-2xl ${isLight ? 'bg-white border-slate-200' : 'bg-white/10 border-white/20 backdrop-blur-md'}`}>
         <div className="relative mx-auto mb-5 flex h-20 w-20 items-center justify-center">
-          <span className={`absolute inset-0 rounded-full border-2 border-t-transparent animate-spin ${isLight ? 'border-blue-500/70' : 'border-blue-300/80'}`} />
+          <svg className={`absolute inset-0 h-full w-full animate-spin ${isLight ? 'text-blue-500/70' : 'text-blue-300/80'}`} viewBox="0 0 80 80">
+            <circle cx="40" cy="40" r="38" stroke="currentColor" strokeWidth="2" fill="transparent" strokeDasharray="179 60" strokeLinecap="round" />
+          </svg>
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg shadow-blue-500/25">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />

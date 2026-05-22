@@ -6,6 +6,7 @@
 
   body {
     @apply bg-slate-900 text-slate-100 min-h-screen select-none;
+    scrollbar-gutter: stable;
     /* Added select-none */
   }
 }
@@ -99,4 +100,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 input[type="date"]::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
+}
+
+/* Optimize spin animations to prevent subpixel wobbling/jumping */
+.animate-spin {
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
