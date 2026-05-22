@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useDraggable } from '../hooks/useDraggable';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { calculateRetirementWithAI } from '../utils/ai-calculator';
-import { NATIONAL_INSURANCE_RATES, PENSION_TAX_BRACKETS } from '../utils/pensionCalculator';
 import { Sparkles, Save, RotateCcw, Check, AlertTriangle, Code, Copy, Table } from 'lucide-react';
 import { deepEqual } from '../hooks/useDeepCompare';
 import { useTheme } from '../contexts/ThemeContext';
@@ -12,6 +11,7 @@ import {
     validateFiscalParameters,
     detectOutdatedValues
 } from '../utils/fiscalDefaults';
+import { fetchFiscalDataFromWeb } from '../utils/fiscalWebFetch';
 
 export function FiscalUpdateModal({
     isOpen,
@@ -23,7 +23,8 @@ export function FiscalUpdateModal({
     language,
     aiProvider,
     aiModel,
-    apiKeyOverride
+    apiKeyOverride,
+    geminiApiKey
 }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
@@ -41,6 +42,7 @@ export function FiscalUpdateModal({
     const [showRawResults, setShowRawResults] = useState(false);
     const [statusMessage, setStatusMessage] = useState('');
     const [sanityWarning, setSanityWarning] = useState(null);
+    const [groundingSources, setGroundingSources] = useState(null);
 
     // Reset state when modal opens to ensure clean slate
     React.useEffect(() => {
@@ -52,6 +54,7 @@ export function FiscalUpdateModal({
             setLoading(false);
             setError(null);
             setSanityWarning(null);
+            setGroundingSources(null);
         }
     }, [isOpen, currentFamilyStatus]);
 
@@ -69,62 +72,53 @@ export function FiscalUpdateModal({
     if (!isOpen) return null;
 
     const baseParameters = currentParameters || DEFAULT_FISCAL_PARAMETERS;
+    const fiscalText = (key, replacements = {}) => {
+        const template = t ? t(key) : key;
+        return Object.entries(replacements).reduce(
+            (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
+            template
+        );
+    };
 
     // Generate improved AI prompt for fiscal data retrieval
     const generateFiscalPrompt = (attemptNumber = 1) => {
         const currentYear = new Date().getFullYear();
 
-        // Base prompt with clear structure and validation requirements
         let prompt = `
-You are a senior Israeli tax and pension analyst. Your task is to provide ACCURATE, VERIFIED data for Israel's National Insurance (Bituach Leumi) old-age pension rates and income tax brackets for January ${currentYear}.
+You are a senior Israeli tax and pension analyst. Search the web and return ACCURATE, CURRENT data for Israel's National Insurance old-age pension rates, income tax brackets, and qualifying pension exemption effective in ${currentYear}.
 
-CRITICAL REQUIREMENTS:
-1. Data must be for ${currentYear}, NOT ${currentYear - 1} or earlier years
-2. All values must be MONTHLY amounts in Israeli Shekels (ILS)
-3. Values must satisfy these MANDATORY relationships:
-   - couple > single (couple includes spouse supplement)
-   - single_child > single (single_child includes child supplement)
-   - couple_child > couple (couple_child includes child supplement)
-   - couple_child > single_child
-4. Tax brackets must have ASCENDING limits
+SEARCH THESE SOURCES:
+- btl.gov.il — for NI old-age pension (קצבת אזרח ותיק) rates
+- taxes.gov.il or gov.il Tax Authority monthly deductions booklet — for income tax brackets and qualifying pension exemption
+- Search: "ביטוח לאומי קצבת אזרח ותיק ${currentYear}"
+- Search: "מדרגות מס הכנסה ${currentYear}"
 
-SEARCH QUERIES TO USE:
-- "ביטוח לאומי קצבת אזרח ותיק ${currentYear}" (National Insurance old-age pension ${currentYear})
-- "מדרגות מס הכנסה ${currentYear}" (Income tax brackets ${currentYear})
-- "תוספת בן זוג ביטוח לאומי ${currentYear}" (Spouse supplement ${currentYear})
+MANDATORY REQUIREMENTS:
+1. All values must be for ${currentYear} — do NOT use ${currentYear - 1} data
+2. All monetary values are MONTHLY amounts in ILS
+3. NI pension relationships must hold: couple > single, single_child > single, couple_child > couple
+4. Tax brackets: limits must be in ASCENDING order
 
-EXPECTED VALUES FOR JANUARY ${currentYear} (use these as reference):
-National Insurance (Bituach Leumi) old-age pension:
-- Single base pension: 1838 ILS/month
-- Spouse supplement: 924 ILS/month (so couple = 1838 + 924 = 2762)
-- Child supplement: 581 ILS/month (so single_child = 1838 + 581 = 2419)
-- couple_child = 1838 + 924 + 581 = 3343
-- Age 80+ addon: 103 ILS/month
-- Income test threshold (single): 13970 ILS/month (above = no pension)
-- Income test threshold (couple): 19483 ILS/month (above = no pension)
+NI PENSION — find these specific values from btl.gov.il:
+- Base single pension (קצבה בסיסית ליחיד)
+- Spouse supplement (תוספת בן/בת זוג)
+- Child supplement (תוספת ילד)
+- Age 80+ addon (תוספת גיל 80+)
+- Income test threshold for single and couple (מבחן הכנסה)
+Then calculate: couple = single + spouse, single_child = single + child, couple_child = single + spouse + child
 
-Tax brackets (monthly limits):
-- 10%: up to 7010 ILS
-- 14%: 7010-10060 ILS
-- 20%: 10060-16150 ILS
-- 31%: 16150-22440 ILS
-- 35%: 22440-46690 ILS
-- 47%: above 46690 ILS
+TAX BRACKETS — return the monthly earned-income brackets from the current Tax Authority booklet:
+- Every bracket before the catch-all has a numeric upper limit (ILS/month)
+- The final catch-all bracket has rate 47% and limit = null
+- Do not add the 3% surtax threshold as a normal income-tax bracket
+- Find the exact monthly limits for ${currentYear} from the Tax Authority
 
-IMPORTANT: If you cannot find updated ${currentYear} values, use the reference values above.
+QUALIFYING PENSION EXEMPTION — return the current values for:
+- Exemption rate for קצבה מזכה
+- Maximum monthly exempt amount
+- Qualifying pension monthly cap
 
-CALCULATION INSTRUCTIONS:
-1. Find the BASE single person pension for ${currentYear}
-2. Find the SPOUSE SUPPLEMENT amount
-3. Find the CHILD SUPPLEMENT amount
-4. Calculate totals:
-   - single = base pension
-   - couple = base pension + spouse supplement
-   - single_child = base pension + child supplement
-   - couple_child = base pension + spouse supplement + child supplement
-
-OUTPUT FORMAT:
-Return ONLY a valid JSON object (no markdown, no explanation), exactly like this:
+Return ONLY valid JSON, no markdown, no explanation:
 
 {
   "nationalInsurance": {
@@ -148,9 +142,13 @@ Return ONLY a valid JSON object (no markdown, no explanation), exactly like this
     { "limit": <number>, "rate": 0.20 },
     { "limit": <number>, "rate": 0.31 },
     { "limit": <number>, "rate": 0.35 },
-    { "limit": <number>, "rate": 0.47 },
-    { "limit": null, "rate": 0.47 }
-  ]
+    { "limit": null,     "rate": 0.47 }
+  ],
+  "pensionExemption": {
+    "rate": <decimal rate>,
+    "maxMonthly": <number>,
+    "maxQualifiedIncome": <number>
+  }
 }`;
 
         // Add retry-specific instructions if this is a retry attempt
@@ -158,15 +156,12 @@ Return ONLY a valid JSON object (no markdown, no explanation), exactly like this
             prompt += `
 
 RETRY ATTEMPT ${attemptNumber}: Previous response failed validation.
-Please double-check:
+Re-search the web and double-check:
 - Are you using ${currentYear} data (not ${currentYear - 1})?
-- Is couple (${DEFAULT_FISCAL_PARAMETERS.nationalInsurance.baseRates.couple}) > single (${DEFAULT_FISCAL_PARAMETERS.nationalInsurance.baseRates.single})?
+- Is couple > single (couple includes spouse supplement)?
 - Are tax bracket limits in ASCENDING order?
-
-Reference values for ${currentYear} (use if search fails):
-- Single: ~1838 ILS
-- Couple: ~2762 ILS
-- First tax bracket: ~7010 ILS`;
+- Does the JSON include pensionExemption?
+- Does ONLY the final tax bracket have limit: null?`;
         }
 
         return prompt;
@@ -188,8 +183,8 @@ Reference values for ${currentYear} (use if search fails):
 
             setStatusMessage(
                 retryCount > 0
-                    ? (language === 'he' ? `ניסיון ${retryCount + 1} - מאמת נתונים...` : `Attempt ${retryCount + 1} - Validating data...`)
-                    : (language === 'he' ? `מחפש נתוני ${currentYear}...` : `Searching for ${currentYear} data...`)
+                    ? fiscalText('validatingFiscalDataAttempt', { attempt: retryCount + 1 })
+                    : fiscalText('searchingFiscalData', { year: currentYear })
             );
 
             const prompt = generateFiscalPrompt(retryCount + 1);
@@ -197,16 +192,107 @@ Reference values for ${currentYear} (use if search fails):
 
             setLastPrompt(prompt);
 
-            setStatusMessage(language === 'he' ? 'מנתח נתונים ומצליב מקורות...' : 'Analyzing data and cross-referencing...');
+            const tryOfficialWebUpdate = async () => {
+                const webResult = await fetchFiscalDataFromWeb({
+                    onStatus: (status) => setStatusMessage(fiscalText(status.key, status.params)),
+                });
+                if (!webResult.success) return webResult;
 
-            const result = await calculateRetirementWithAI(
-                { prompt }, // Special mode or just pass prompt as input logic
-                aiProvider,
-                aiModel,
-                apiKeyOverride,
-                null,
-                t
-            );
+                if (webResult.sources?.length) setGroundingSources(webResult.sources);
+                const validationResult = validateFiscalParameters(webResult.data);
+                if (!validationResult.isValid) {
+                    throw new Error(validationResult.errors.join('; '));
+                }
+
+                setProposedParameters(validationResult.correctedData || webResult.data);
+                setAiResults(webResult.data);
+                const warnings = [...(validationResult.warnings || [])];
+                if (webResult.taxBracketsFromDefaults) {
+                    warnings.push(fiscalText('taxAuthorityVerifiedFiscalDefaults', { year: currentYear }));
+                }
+                if (webResult.verifiedFallbackUsed) {
+                    warnings.push(fiscalText('nationalInsuranceVerifiedFiscalFallback', { year: currentYear }));
+                }
+                setSanityWarning(warnings.length > 0 ? warnings : null);
+                setStatusMessage('');
+                return { ...webResult, applied: true };
+            };
+
+            if (aiProvider !== 'gemini') {
+                setStatusMessage(fiscalText('updatingOfficialFiscalSources'));
+                const webResult = await tryOfficialWebUpdate();
+                if (webResult.applied) {
+                    setLoading(false);
+                    return;
+                }
+            }
+
+            setStatusMessage(fiscalText('analyzingFiscalSources'));
+
+            // Always try the user's selected provider/model first.
+            // If it fails AND a Gemini key is available AND the user isn't already on Gemini,
+            // fall back to Gemini with grounding as a secondary attempt.
+            // If all AI fails, fall back to a direct web fetch from btl.gov.il (no AI needed).
+            let result;
+            try {
+                result = await calculateRetirementWithAI(
+                    { prompt }, aiProvider, aiModel, apiKeyOverride, null, t,
+                    { useGrounding: aiProvider === 'gemini', onGroundingSources: (sources) => setGroundingSources(sources) }
+                );
+            } catch (primaryError) {
+                let aiSucceeded = false;
+                if (aiProvider !== 'gemini' && geminiApiKey) {
+                    try {
+                        setStatusMessage(language === 'he'
+                            ? 'המודל הנוכחי נכשל, מנסה Gemini עם חיפוש רשת...'
+                            : 'Current model failed, trying Gemini with web search...');
+                        result = await calculateRetirementWithAI(
+                            { prompt }, 'gemini', 'gemini-2.0-flash', geminiApiKey, null, t,
+                            { useGrounding: true, onGroundingSources: (sources) => setGroundingSources(sources) }
+                        );
+                        aiSucceeded = true;
+                    } catch { /* fall through to web fetch */ }
+                }
+
+                if (!aiSucceeded) {
+                    // All AI failed — try direct web fetch from btl.gov.il
+                    setStatusMessage(language === 'he'
+                        ? 'ה-AI לא זמין, מנסה חיפוש רשת ישיר...'
+                        : 'AI unavailable, trying direct web fetch...');
+                    const webResult = await fetchFiscalDataFromWeb({
+                        onStatus: (status) => setStatusMessage(fiscalText(status.key, status.params)),
+                    });
+                    if (webResult.success) {
+                        if (webResult.sources?.length) setGroundingSources(webResult.sources);
+                        // Directly set results and skip AI parsing below
+                        const webData = webResult.data;
+                        const validationResult = validateFiscalParameters(webData);
+                        if (validationResult.isValid) {
+                            setProposedParameters(validationResult.correctedData || webData);
+                            setAiResults(webData);
+                            const warnings = [...(validationResult.warnings || [])];
+                            if (webResult.taxBracketsFromDefaults) {
+                                warnings.push(fiscalText('taxAuthorityVerifiedFiscalDefaults', { year: currentYear }));
+                            }
+                            if (webResult.verifiedFallbackUsed) {
+                                warnings.push(fiscalText('nationalInsuranceVerifiedFiscalFallback', { year: currentYear }));
+                            }
+                            setSanityWarning(warnings.length > 0 ? warnings : null);
+                            setStatusMessage('');
+                        } else {
+                            throw new Error(validationResult.errors.join('; '));
+                        }
+                        setLoading(false);
+                        return;
+                    } else {
+                        // Both AI and direct web fetch failed
+                        throw new Error(
+                            primaryError.message +
+                            (webResult.errors?.length ? ` | Web: ${webResult.errors.join(', ')}` : '')
+                        );
+                    }
+                }
+            }
 
             // AI returns { nationalInsurance: {...}, taxBrackets: [...] } directly, not nested under fiscalParameters
             // Handle both formats for flexibility
@@ -216,7 +302,8 @@ Reference values for ${currentYear} (use if search fails):
                 // Clean up any extraneous fields added by calculateRetirementWithAI (history, source, etc.)
                 const fiscalData = {
                     nationalInsurance: rawFiscalData.nationalInsurance,
-                    taxBrackets: rawFiscalData.taxBrackets
+                    taxBrackets: rawFiscalData.taxBrackets,
+                    pensionExemption: rawFiscalData.pensionExemption
                 };
 
                 // STEP 1: Run comprehensive validation
@@ -269,38 +356,9 @@ Reference values for ${currentYear} (use if search fails):
                 const validatedData = validationResult.correctedData || fiscalData;
 
 
-                // Collect warnings from validation
+                // Only propagate structural validation warnings (not baseline comparisons)
                 const warnings = [...validationResult.warnings];
-
-                // Additional sanity check: Compare against baseline
-                const aiSingle = validatedData.nationalInsurance?.baseRates?.single;
-                const baseSingle = baseParameters?.nationalInsurance?.baseRates?.single || NATIONAL_INSURANCE_RATES.baseRates.single;
-                if (aiSingle && baseSingle) {
-                    const diffPercent = Math.abs((aiSingle - baseSingle) / baseSingle) * 100;
-                    if (diffPercent > 15) {
-                        warnings.push(language === 'he'
-                            ? `קצבת בסיס: AI החזיר ${aiSingle.toLocaleString()}₪ (הפרש ${diffPercent.toFixed(0)}% מברירת המחדל ${baseSingle.toLocaleString()}₪)`
-                            : `Base Rate: AI returned ${aiSingle.toLocaleString()} (${diffPercent.toFixed(0)}% diff from default ${baseSingle.toLocaleString()})`);
-                    }
-                }
-
-                // Check first tax bracket
-                const aiFirstBracket = validatedData.taxBrackets?.[0]?.limit;
-                const baseFirstBracket = baseParameters?.taxBrackets?.[0]?.limit || PENSION_TAX_BRACKETS[0].limit;
-                if (aiFirstBracket && baseFirstBracket) {
-                    const diffPercent = Math.abs((aiFirstBracket - baseFirstBracket) / baseFirstBracket) * 100;
-                    if (diffPercent > 15) {
-                        warnings.push(language === 'he'
-                            ? `מדרגת מס ראשונה: AI החזיר ${aiFirstBracket.toLocaleString()}₪ (הפרש ${diffPercent.toFixed(0)}% מברירת המחדל ${baseFirstBracket.toLocaleString()}₪)`
-                            : `First Tax Bracket: AI returned ${aiFirstBracket.toLocaleString()} (${diffPercent.toFixed(0)}% diff from default ${baseFirstBracket.toLocaleString()})`);
-                    }
-                }
-
-                if (warnings.length > 0) {
-                    setSanityWarning(warnings);
-                } else {
-                    setSanityWarning(null);
-                }
+                setSanityWarning(warnings.length > 0 ? warnings : null);
 
                 // Check if identical to base parameters
                 if (deepEqual(validatedData, baseParameters)) {
@@ -415,9 +473,10 @@ Reference values for ${currentYear} (use if search fails):
     // 2. Check Tax Brackets (using robust equality)
     // Note: We access taxBrackets safely
     const taxChanged = !areTaxBracketsEqual(baseParameters.taxBrackets, proposedParameters?.taxBrackets);
+    const exemptionChanged = !deepEqual(baseParameters.pensionExemption, proposedParameters?.pensionExemption);
 
     // 3. Combined visible change flag
-    const hasVisibleParametersChanged = proposedParameters && (niChanged || taxChanged);
+    const hasVisibleParametersChanged = proposedParameters && (niChanged || taxChanged || exemptionChanged);
     // Alias for backward compatibility with JSX
     const hasParametersChanged = hasVisibleParametersChanged;
 
@@ -567,6 +626,43 @@ Reference values for ${currentYear} (use if search fails):
                         </div>
                     )}
 
+                    {/* Data source indicator — shown after AI returns results */}
+                    {aiResults && (
+                        groundingSources && groundingSources.length > 0 ? (
+                            <div className={`mt-3 p-3 rounded-xl border text-xs ${isLight ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'}`}>
+                                <div className="font-semibold mb-1.5 flex items-center gap-1.5">
+                                    <Check size={12} />
+                                    {fiscalText('officialWebSources')}
+                                </div>
+                                <ul className="space-y-1">
+                                    {groundingSources.map((src, i) => (
+                                        <li key={i} className="flex items-start gap-1.5">
+                                            <span className="opacity-40 shrink-0">•</span>
+                                            <a
+                                                href={src.url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className={`hover:underline break-all ${isLight ? 'text-emerald-600' : 'text-emerald-300'}`}
+                                                title={src.url}
+                                            >
+                                                {src.titleKey ? fiscalText(src.titleKey, src.titleParams) : src.title}
+                                            </a>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ) : (
+                            <div className={`mt-3 p-3 rounded-xl border text-xs ${isLight ? 'bg-amber-50 border-amber-100 text-amber-700' : 'bg-amber-500/10 border-amber-500/20 text-amber-300'}`}>
+                                <div className="font-semibold flex items-center gap-1.5">
+                                    <AlertTriangle size={12} />
+                                    {fiscalText(aiProvider !== 'gemini' && !geminiApiKey
+                                        ? 'aiTrainingDataNoWebGeminiKey'
+                                        : 'aiTrainingDataNoWebGrounding')}
+                                </div>
+                            </div>
+                        )
+                    )}
+
                     {error && (
                         <div className="mt-4 p-4 border rounded-xl bg-rose-500/10 border-rose-500/20 text-rose-500 text-sm animate-in fade-in duration-300">
                             <div className="flex items-center gap-2 font-bold mb-1">
@@ -634,8 +730,10 @@ Reference values for ${currentYear} (use if search fails):
                                                     <span className="text-emerald-500 font-bold">{formatCurrency(getSafeBaseRate(proposedParameters?.nationalInsurance || baseParameters?.nationalInsurance, selectedStatus))}</span>
                                                 </div>
                                             </div>
-                                        ) : (
-                                            <>
+                                        ) : null
+                                    )}
+                                    {hasParametersChanged && (
+                                        <>
                                                 {/* Income Test Threshold Change - Show only if changed */}
                                                 {/* Income Test Threshold Change - Hidden as per user request */}
 
@@ -648,8 +746,15 @@ Reference values for ${currentYear} (use if search fails):
                                                         </span>
                                                     </div>
                                                 )}
-                                            </>
-                                        )
+                                                {exemptionChanged && (
+                                                    <div className="flex justify-between items-center py-1 border-t border-emerald-500/10">
+                                                        <span className="opacity-70">{language === 'he' ? 'פטור קצבה מזכה:' : 'Qualifying Pension Exemption:'}</span>
+                                                        <span className="font-mono font-medium text-emerald-500">
+                                                            {formatCurrency(proposedParameters?.pensionExemption?.maxMonthly || 0)}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                        </>
                                     )}
                                 </div>
                             </div>

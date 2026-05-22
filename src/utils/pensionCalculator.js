@@ -5,7 +5,8 @@
 
 import {
     DEFAULT_NATIONAL_INSURANCE,
-    DEFAULT_TAX_BRACKETS
+    DEFAULT_TAX_BRACKETS,
+    DEFAULT_PENSION_EXEMPTION
 } from './fiscalDefaults.js';
 
 // Re-export centralized defaults for backward compatibility
@@ -21,11 +22,7 @@ const NATIONAL_INSURANCE_RATES = {
 const PENSION_TAX_BRACKETS = DEFAULT_TAX_BRACKETS;
 
 // Pension income exemption (Pshur - פטור מזכה) - January 2026
-const PENSION_EXEMPTION = {
-    rate: 0.575, // 57.5% פטור ב-2026
-    maxMonthly: 5422, // תקרת פטור חודשית (9,430 * 57.5%)
-    maxQualifiedIncome: 9430 // תקרת קצבה מזכה (נשאר מ-2025)
-};
+const PENSION_EXEMPTION = DEFAULT_PENSION_EXEMPTION;
 
 // Capital gains tax rates
 const CAPITAL_TAX_RATES = {
@@ -61,7 +58,9 @@ export function calculateNationalInsurance(age, contributionYears = 35, paramete
     };
 
     const status = familyStatus || 'single';
-    const threshold = rates.incomeTestThreshold[status === 'couple' ? 'couple' : 'single'] || 13970;
+    const thresholdKey = status === 'couple' ? 'couple' : 'single';
+    const threshold = rates.incomeTestThreshold[thresholdKey]
+        || NATIONAL_INSURANCE_RATES.incomeTestThreshold[thresholdKey];
 
     // Eligibility check - Old Age pension starts at age 67
     if (age < 67) {
@@ -128,10 +127,11 @@ export function calculateNationalInsurance(age, contributionYears = 35, paramete
     const seniorityBonusPercent = Math.round(seniorityYears * seniorityRate);
     const seniorityBonus = rawBase * (seniorityBonusPercent / 100);
 
-    // Deferral bonus: calculated on rawBase (1,838), past age 67
+    // Deferral bonus: calculated on full pension (base + seniority), past age 67
+    // Per Israeli NI rules, the 5% per year applies to the total pension amount
     const deferralYears = Math.max(0, Math.min(age - 67, 5));
     const deferralBonusPercent = Math.round(deferralYears * deferralRate);
-    const deferralBonus = rawBase * (deferralBonusPercent / 100);
+    const deferralBonus = (rawBase + seniorityBonus) * (deferralBonusPercent / 100);
 
     // Effective base pension (includes age 80+ supplement)
     let basePension = rawBase;
@@ -316,24 +316,39 @@ export function projectCurrentPensionSource(source, currentAge, defaultStartAge,
         : parseFloat(annualReturnRate);
     const projectedBalance = balance * Math.pow(1 + (!isNaN(sourceReturnRate) ? sourceReturnRate : 0) / 100, yearsUntilUse);
 
-    if (source.currentAsset.kind !== 'pension') {
-        return {
-            ...source,
-            type: 'capital',
-            amount: Math.round(projectedBalance),
-            isLumpSum: true,
-            isTaxable: false,
-            projectedBalance: Math.round(projectedBalance),
-            appliedReturnRate: !isNaN(sourceReturnRate) ? sourceReturnRate : 0
-        };
-    }
-
     const manualCoefficient = parseFloat(source.currentAsset.coefficient);
     const coefficientEndAge = endAge && endAge > startAge
         ? endAge
         : Math.max(startAge + 20, 87);
     const autoCoefficient = Math.round((coefficientEndAge - startAge) * 12);
     const coefficient = manualCoefficient > 0 ? manualCoefficient : autoCoefficient;
+
+    if (source.currentAsset.kind !== 'pension') {
+        const targetAnnuity = source.currentAsset.kind === 'provident'
+            ? Math.max(0, parseFloat(source.currentAsset.targetAnnuity) || 0)
+            : 0;
+        const providentAnnuityCapitalUsed = targetAnnuity > 0 && coefficient > 0
+            ? Math.min(projectedBalance, targetAnnuity * coefficient)
+            : 0;
+        const providentAnnuityAmount = providentAnnuityCapitalUsed > 0 && coefficient > 0
+            ? Math.round(providentAnnuityCapitalUsed / coefficient)
+            : 0;
+
+        return {
+            ...source,
+            type: 'capital',
+            amount: Math.round(projectedBalance - providentAnnuityCapitalUsed),
+            isLumpSum: true,
+            isTaxable: false,
+            projectedBalance: Math.round(projectedBalance),
+            appliedReturnRate: !isNaN(sourceReturnRate) ? sourceReturnRate : 0,
+            ...(providentAnnuityAmount > 0 ? {
+                providentAnnuityAmount,
+                providentAnnuityCapitalUsed: Math.round(providentAnnuityCapitalUsed),
+                providentAnnuityCoefficient: coefficient
+            } : {})
+        };
+    }
 
     return {
         ...source,
@@ -346,6 +361,29 @@ export function projectCurrentPensionSource(source, currentAge, defaultStartAge,
         appliedReturnRate: !isNaN(sourceReturnRate) ? sourceReturnRate : 0,
         coefficientCalculated: !(manualCoefficient > 0)
     };
+}
+
+function getIncomeSourcesWithProvidentAnnuities(incomeSources) {
+    return incomeSources.flatMap(source => {
+        const providentAnnuityAmount = !source.derivedFromProvident && source.currentAsset?.kind === 'provident'
+            ? parseFloat(source.providentAnnuityAmount) || 0
+            : 0;
+        const sources = source.isLumpSum ? [] : [source];
+
+        if (providentAnnuityAmount > 0) {
+            sources.push({
+                ...source,
+                id: `${source.id}_provident_annuity`,
+                type: 'pension',
+                amount: providentAnnuityAmount,
+                isLumpSum: false,
+                isTaxable: true,
+                derivedFromProvident: true
+            });
+        }
+
+        return sources;
+    });
 }
 
 /**
@@ -367,7 +405,7 @@ export function projectCurrentPensionSource(source, currentAge, defaultStartAge,
  * @returns {object} Total income details at that age
  */
 export function calculateIncomeAtAge(incomeSources, age, parameters = null) {
-    const activeIncome = incomeSources.filter(source => {
+    const activeIncome = getIncomeSourcesWithProvidentAnnuities(incomeSources).filter(source => {
         const startAge = parseFloat(source.startAge);
         const endAge = source.endAge === null || source.endAge === ''
             ? null
@@ -484,7 +522,7 @@ export function calculateRetirementIncomeSummary({
     let previousAge = retirementEndAge;
 
     // Get annuity sources (excluding lump sums)
-    const annuitySources = incomeSources.filter(s => !s.isLumpSum);
+    const annuitySources = getIncomeSourcesWithProvidentAnnuities(incomeSources);
 
     // Track current income to use for the NEXT period's calculation
     // Start with income at retirementStartAge

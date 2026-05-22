@@ -223,8 +223,7 @@ export function calculateRetirementProjection(inputs, t = null) {
 
     // 5. NI Context for AI/UI
     const pensionSources = inputs.pensionIncomeSources || [];
-    const annuitySources = pensionSources.filter(s => !s.isLumpSum);
-    const incomeAtNIStart = calculateIncomeAtAge(annuitySources, 67, inputs.fiscalParameters ? { ...inputs.fiscalParameters, familyStatus: inputs.familyStatus } : { familyStatus: inputs.familyStatus });
+    const incomeAtNIStart = calculateIncomeAtAge(pensionSources, 67, inputs.fiscalParameters ? { ...inputs.fiscalParameters, familyStatus: inputs.familyStatus } : { familyStatus: inputs.familyStatus });
     const niDetails = calculateNationalInsurance(67, 35, inputs.fiscalParameters, inputs.familyStatus);
 
     return {

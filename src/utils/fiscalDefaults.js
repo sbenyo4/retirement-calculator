@@ -7,7 +7,7 @@
  */
 
 // Israeli National Insurance (Bituach Leumi) rates for old-age pension (January 2026)
-// Source: https://www.btl.gov.il/English%20Homepage/Benefits/Old%20Age%20Insurance/Pages/Pensionrates.aspx
+// Source: https://www.btl.gov.il/benefits/old_age/Shum/Pages/Shum.aspx
 export const DEFAULT_NATIONAL_INSURANCE = {
     baseRates: {
         single: 1838,           // Base monthly pension for single person
@@ -21,9 +21,10 @@ export const DEFAULT_NATIONAL_INSURANCE = {
     // Income test thresholds (מבחן הכנסות) - applies ages 67-70 only
     // Source: https://www.btl.gov.il/benefits/old_age/Conditions_of_eligibility/Pages/hachnasotMewavoda.aspx
     incomeTestThreshold: {
-        workEarningsLimit: 9781,  // Max work income for full pension (single)
-        single: 13970,            // Above this = no pension at all (single)
-        couple: 19483             // Above this = no pension at all (couple)
+        workEarningsLimit: 10113, // Max work income for full pension (single)
+        single: 14402,            // Above this = no pension at all (single)
+        coupleWorkEarningsLimit: 13484,
+        couple: 20082             // Above this = no pension at all (couple)
     }
 };
 
@@ -31,36 +32,41 @@ export const DEFAULT_NATIONAL_INSURANCE = {
 export const DEFAULT_TAX_BRACKETS = [
     { limit: 7010, rate: 0.10 },
     { limit: 10060, rate: 0.14 },
-    { limit: 16150, rate: 0.20 },
-    { limit: 22440, rate: 0.31 },
+    { limit: 19000, rate: 0.20 },
+    { limit: 25100, rate: 0.31 },
     { limit: 46690, rate: 0.35 },
-    { limit: 60130, rate: 0.47 },
     { limit: null, rate: 0.47 }  // Catch-all bracket
 ];
+
+export const DEFAULT_PENSION_EXEMPTION = {
+    rate: 0.575,
+    maxMonthly: 5422,
+    maxQualifiedIncome: 9430
+};
 
 // Combined default fiscal parameters
 export const DEFAULT_FISCAL_PARAMETERS = {
     nationalInsurance: DEFAULT_NATIONAL_INSURANCE,
-    taxBrackets: DEFAULT_TAX_BRACKETS
+    taxBrackets: DEFAULT_TAX_BRACKETS,
+    pensionExemption: DEFAULT_PENSION_EXEMPTION
 };
 
-// Validation ranges - expected bounds for 2026 values (with 10% tolerance for stricter validation)
+// Sanity ranges — very wide bounds to catch obvious hallucinations only.
+// These are NOT year-specific; do not tighten to expected annual values.
 export const VALIDATION_RANGES = {
     nationalInsurance: {
-        // Strict ranges (10% tolerance) - values outside trigger ERRORS
-        single: { min: 1650, max: 2020 },       // ~1838 +/- 10%
-        single_child: { min: 2180, max: 2660 }, // ~2419 +/- 10%
-        couple: { min: 2490, max: 3040 },       // ~2762 +/- 10%
-        couple_child: { min: 3010, max: 3680 }, // ~3343 +/- 10%
-        // Income test thresholds - UPDATED to match official 2026 values
-        incomeTestSingle: { min: 12500, max: 15500 },  // ~13970 +/- ~10%
-        incomeTestCouple: { min: 17500, max: 21500 }   // ~19483 +/- ~10%
+        single: { min: 1000, max: 4000 },
+        single_child: { min: 1200, max: 5000 },
+        couple: { min: 1500, max: 6000 },
+        couple_child: { min: 1800, max: 7000 },
+        incomeTestSingle: { min: 8000, max: 30000 },
+        incomeTestCouple: { min: 10000, max: 40000 }
     },
     taxBrackets: {
-        firstBracketLimit: { min: 6300, max: 7700 },  // ~7010 +/- 10%
-        lastBracketLimit: { min: 54000, max: 66000 }, // ~60130 +/- 10%
-        minRate: 0.08,
-        maxRate: 0.50
+        firstBracketLimit: { min: 4000, max: 12000 },
+        lastBracketLimit: { min: 30000, max: 120000 },
+        minRate: 0.05,
+        maxRate: 0.60
     }
 };
 
@@ -103,40 +109,15 @@ export function validateNationalInsurance(niData) {
         }
     }
 
-    // 2. Check value ranges - these are now ERRORS (stricter validation)
-    if (rates.single !== undefined) {
-        const val = Number(rates.single);
+    // 2. Check values are numbers in a sane range (wide bounds — not year-specific)
+    for (const field of ['single', 'couple', 'single_child', 'couple_child']) {
+        if (rates[field] === undefined) continue;
+        const val = Number(rates[field]);
+        const range = ranges[field];
         if (isNaN(val)) {
-            errors.push(`Invalid single rate: not a number`);
-        } else if (val < ranges.single.min || val > ranges.single.max) {
-            errors.push(`Single rate ${val} outside valid range (${ranges.single.min}-${ranges.single.max}). Expected ~1838.`);
-        }
-    }
-
-    if (rates.couple !== undefined) {
-        const val = Number(rates.couple);
-        if (isNaN(val)) {
-            errors.push(`Invalid couple rate: not a number`);
-        } else if (val < ranges.couple.min || val > ranges.couple.max) {
-            errors.push(`Couple rate ${val} outside valid range (${ranges.couple.min}-${ranges.couple.max}). Expected ~2762.`);
-        }
-    }
-
-    if (rates.single_child !== undefined) {
-        const val = Number(rates.single_child);
-        if (isNaN(val)) {
-            errors.push(`Invalid single_child rate: not a number`);
-        } else if (val < ranges.single_child.min || val > ranges.single_child.max) {
-            errors.push(`Single_child rate ${val} outside valid range. Expected ~2419.`);
-        }
-    }
-
-    if (rates.couple_child !== undefined) {
-        const val = Number(rates.couple_child);
-        if (isNaN(val)) {
-            errors.push(`Invalid couple_child rate: not a number`);
-        } else if (val < ranges.couple_child.min || val > ranges.couple_child.max) {
-            errors.push(`Couple_child rate ${val} outside valid range. Expected ~3343.`);
+            errors.push(`Invalid ${field} rate: not a number`);
+        } else if (val < range.min || val > range.max) {
+            errors.push(`${field} rate ${val} is implausible (expected ${range.min}–${range.max} ILS/month)`);
         }
     }
 
@@ -178,14 +159,14 @@ export function validateNationalInsurance(niData) {
         if (thresholds.single) {
             const val = Number(thresholds.single);
             if (isNaN(val) || val < ranges.incomeTestSingle.min || val > ranges.incomeTestSingle.max) {
-                errors.push(`Income test single threshold ${val} outside valid range (${ranges.incomeTestSingle.min}-${ranges.incomeTestSingle.max}). Expected ~13970.`);
+                errors.push(`Income test single threshold ${val} outside valid range (${ranges.incomeTestSingle.min}-${ranges.incomeTestSingle.max}). Expected ~14402.`);
             }
         }
 
         if (thresholds.couple) {
             const val = Number(thresholds.couple);
             if (isNaN(val) || val < ranges.incomeTestCouple.min || val > ranges.incomeTestCouple.max) {
-                errors.push(`Income test couple threshold ${val} outside valid range (${ranges.incomeTestCouple.min}-${ranges.incomeTestCouple.max}). Expected ~19483.`);
+                errors.push(`Income test couple threshold ${val} outside valid range (${ranges.incomeTestCouple.min}-${ranges.incomeTestCouple.max}). Expected ~20082.`);
             }
         }
     } else {
@@ -349,6 +330,17 @@ export function validateFiscalParameters(fiscalData) {
     allErrors.push(...taxResult.errors.map(e => `Tax: ${e}`));
     allWarnings.push(...taxResult.warnings.map(w => `Tax: ${w}`));
 
+    const pensionExemption = fiscalData.pensionExemption || DEFAULT_PENSION_EXEMPTION;
+    const exemptionRate = Number(pensionExemption.rate);
+    const exemptionMonthly = Number(pensionExemption.maxMonthly);
+    const exemptionQualified = Number(pensionExemption.maxQualifiedIncome);
+    if (!(exemptionRate > 0 && exemptionRate <= 1)) {
+        allErrors.push('Pension exemption: invalid exemption rate');
+    }
+    if (!(exemptionMonthly > 0 && exemptionQualified > 0 && exemptionMonthly <= exemptionQualified)) {
+        allErrors.push('Pension exemption: invalid monthly cap or qualifying pension cap');
+    }
+
     const isValid = allErrors.length === 0;
 
     return {
@@ -357,7 +349,12 @@ export function validateFiscalParameters(fiscalData) {
         warnings: allWarnings,
         correctedData: isValid ? {
             nationalInsurance: niResult.correctedData,
-            taxBrackets: taxResult.correctedData
+            taxBrackets: taxResult.correctedData,
+            pensionExemption: {
+                rate: exemptionRate,
+                maxMonthly: exemptionMonthly,
+                maxQualifiedIncome: exemptionQualified
+            }
         } : null
     };
 }
@@ -368,35 +365,21 @@ export function validateFiscalParameters(fiscalData) {
  * @returns {Object} Detection result with year estimate
  */
 export function detectOutdatedValues(singleRate) {
-    // Known historical values for single person NI rate
+    // Only flag clearly old values — wide per-year ranges, no tolerance check against a fixed target
     const historicalRates = {
-        2025: { min: 1750, max: 1770 },  // ~1756
-        2024: { min: 1680, max: 1710 },  // ~1690
-        2023: { min: 1595, max: 1625 }   // ~1610
+        2024: { min: 1650, max: 1720 },
+        2023: { min: 1560, max: 1650 },
+        2022: { min: 1470, max: 1560 }
     };
-
-    // Current expected value for 2026
-    const expected2026 = 1838;
-    const tolerance = 0.03; // 3% tolerance for "correct" values
 
     for (const [year, range] of Object.entries(historicalRates)) {
         if (singleRate >= range.min && singleRate <= range.max) {
             return {
                 isOutdated: true,
                 detectedYear: parseInt(year),
-                message: `Value ${singleRate} appears to be from ${year}, not 2026. Expected ~${expected2026}.`
+                message: `Value ${singleRate} matches known ${year} NI rate — may not be current year.`
             };
         }
-    }
-
-    // Check if the value is significantly different from expected 2026 value
-    const diffPercent = Math.abs((singleRate - expected2026) / expected2026);
-    if (diffPercent > tolerance) {
-        return {
-            isOutdated: true,
-            detectedYear: null,
-            message: `Value ${singleRate} differs by ${(diffPercent * 100).toFixed(1)}% from expected 2026 value of ${expected2026}`
-        };
     }
 
     return { isOutdated: false, detectedYear: null, message: null };

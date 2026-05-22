@@ -12,7 +12,8 @@
       "Bash(Select-Object FullName)",
       "Bash(Format-List)",
       "Bash(grep -E \"\\\\.\\(jsx|js\\)$\")",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "WebSearch"
     ]
   }
 }

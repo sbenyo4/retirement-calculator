@@ -931,6 +931,7 @@ function MainApp() {
                     familyStatus={settings.familyStatus}
                     onUpdateFiscalData={handleUpdateFiscalData}
                     saveGlobalPension={saveGlobalPension}
+                    geminiApiKey={(settings.aiProvider === 'gemini' ? settings.apiKeyOverride : null) || settings.apiKeys?.gemini || import.meta.env.VITE_GEMINI_API_KEY}
 
                     // Sensitivity analysis props
                     showInterestSensitivity={showInterestSensitivity}

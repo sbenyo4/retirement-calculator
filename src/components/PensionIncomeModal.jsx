@@ -129,6 +129,7 @@ function getCurrentAssetEditKey(source) {
             kind: source.currentAsset.kind || '',
             balance: source.currentAsset.balance ?? '',
             coefficient: source.currentAsset.coefficient ?? '',
+            targetAnnuity: source.currentAsset.targetAnnuity ?? '',
             returnRate: source.currentAsset.returnRate ?? '',
             asOfDate: source.currentAsset.asOfDate || '',
             ageAtDate: source.currentAsset.ageAtDate ?? ''
@@ -213,6 +214,9 @@ function IncomeSourceRow({ source, onUpdate, onEditCalculated, onDelete, t, lang
 
     const displayName = language === 'he' ? source.name : (source.nameEn || source.name);
     const formatCurrency = (val) => formatCurrencyUtil(val, language);
+    const providentAnnuityAmount = source.currentAsset?.kind === 'provident'
+        ? parseFloat(source.providentAnnuityAmount) || 0
+        : 0;
 
 
 
@@ -287,6 +291,11 @@ function IncomeSourceRow({ source, onUpdate, onEditCalculated, onDelete, t, lang
                             {language === 'he' ? 'מקדם' : 'Coef.'} {displayedCoefficient}
                         </span>
                     )}
+                    {providentAnnuityAmount > 0 && (
+                        <span className={`shrink-0 text-[10px] px-1 py-0.5 rounded ${isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-500/20 text-blue-300'}`}>
+                            {language === 'he' ? 'קצבה' : 'Annuity'} {formatCurrency(providentAnnuityAmount)}
+                        </span>
+                    )}
                 </div>
                 <div className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                     {t('fromAge') || 'מגיל'} {source.startAge}
@@ -317,6 +326,7 @@ function IncomeSourceRow({ source, onUpdate, onEditCalculated, onDelete, t, lang
 
 function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRate, canSave, onUpdate, onAdd, onCancel, language, isLight }) {
     const isPension = source.currentAsset.kind === 'pension';
+    const isProvident = source.currentAsset.kind === 'provident';
     const label = getCurrentAssetLabel(source.currentAsset.kind, language);
     const numberValue = (value) => value === null || value === undefined ? '' : value;
     const updateAsset = (updates) => onUpdate({
@@ -339,7 +349,7 @@ function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRa
         asOfDate: getTodayDateString(),
         ageAtDate: currentAge ?? ''
     });
-    const canSubmit = Boolean(projectedSource.amount) && canSave;
+    const canSubmit = Boolean(projectedSource.amount || projectedSource.providentAnnuityAmount) && canSave;
 
     return (
         <div className={`rounded-lg border p-2.5 space-y-2 ${isLight ? 'bg-white border-slate-200' : 'bg-black/10 border-white/10'}`}>
@@ -380,7 +390,7 @@ function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRa
                 </button>
             </div>
 
-            <div className={`grid gap-2 ${isPension ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-3'}`}>
+            <div className={`grid gap-2 ${isPension || isProvident ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-3'}`}>
                 <label className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                     <span className="block mb-1">{language === 'he' ? 'יתרה בתאריך' : 'Balance at date'}</span>
                     <input
@@ -388,7 +398,7 @@ function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRa
                         inputMode="numeric"
                         value={numberValue(source.currentAsset.balance)}
                         onChange={updateAssetNumber('balance')}
-                        className={`w-full px-2 py-1.5 rounded text-sm no-spinner border text-end ${isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
+                        className={`w-full px-2 py-1.5 rounded text-sm no-spinner border text-center ${isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
                     />
                 </label>
                 <label className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
@@ -415,7 +425,7 @@ function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRa
                         <span className={`absolute end-2 top-1.5 text-xs ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>%</span>
                     </div>
                 </label>
-                {isPension && (
+                {(isPension || isProvident) && (
                     <label className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                         <span className="block mb-1">{language === 'he' ? 'גיל סיום' : 'End age'}</span>
                         <input
@@ -427,7 +437,19 @@ function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRa
                         />
                     </label>
                 )}
-                {isPension && (
+                {isProvident && (
+                    <label className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                        <span className="block mb-1">{language === 'he' ? 'קצבת יעד' : 'Target annuity'}</span>
+                        <input
+                            type="text"
+                            inputMode="numeric"
+                            value={numberValue(source.currentAsset.targetAnnuity)}
+                            onChange={updateAssetNumber('targetAnnuity')}
+                            className={`w-full px-2 py-1.5 rounded text-sm no-spinner border text-end ${isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
+                        />
+                    </label>
+                )}
+                {(isPension || isProvident) && (
                     <label className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                         <span className="block mb-1">{language === 'he' ? 'מקדם, לפי גיל' : 'Coefficient, by age'}</span>
                         <input
@@ -435,7 +457,9 @@ function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRa
                             inputMode="numeric"
                             value={numberValue(source.currentAsset.coefficient)}
                             onChange={updateAssetNumber('coefficient')}
-                            placeholder={projectedSource.appliedCoefficient ? String(projectedSource.appliedCoefficient) : ''}
+                            placeholder={projectedSource.appliedCoefficient || projectedSource.providentAnnuityCoefficient
+                                ? String(projectedSource.appliedCoefficient || projectedSource.providentAnnuityCoefficient)
+                                : ''}
                             className={`w-full px-2 py-1.5 rounded text-sm no-spinner border text-center ${isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
                         />
                     </label>
@@ -450,7 +474,16 @@ function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRa
                         {projectedSource.appliedCoefficient ? ` / ${language === 'he' ? 'מקדם' : 'coefficient'} ${projectedSource.appliedCoefficient}` : ''}
                     </span>
                 )}
-                {!isPension && <span>{language === 'he' ? 'נוסף כהון בחלון הפנסיה' : 'Added as capital in the pension window'}</span>}
+                {isProvident && projectedSource.providentAnnuityAmount > 0 && (
+                    <>
+                        <span>
+                            {language === 'he' ? 'קצבה מהגמל' : 'Provident annuity'}: <strong className={isLight ? 'text-emerald-700' : 'text-emerald-300'}>{formatCurrency(projectedSource.providentAnnuityAmount)}</strong>
+                            {projectedSource.providentAnnuityCoefficient ? ` / ${language === 'he' ? 'מקדם' : 'coefficient'} ${projectedSource.providentAnnuityCoefficient}` : ''}
+                        </span>
+                        <span>{language === 'he' ? 'הון שהוקצה לקצבה' : 'Capital allocated to annuity'}: <strong className={isLight ? 'text-slate-700' : 'text-gray-200'}>{formatCurrency(projectedSource.providentAnnuityCapitalUsed || 0)}</strong></span>
+                    </>
+                )}
+                {!isPension && <span>{language === 'he' ? 'יתרה שנשארת כהון' : 'Capital left invested'}: <strong className={isLight ? 'text-indigo-700' : 'text-indigo-300'}>{formatCurrency(projectedSource.amount || 0)}</strong></span>}
                 <span>{language === 'he' ? 'ריבית בחישוב' : 'Return used'}: {projectedSource.appliedReturnRate ?? defaultReturnRate}%</span>
             </div>
             <div className="flex justify-end gap-2">
@@ -483,6 +516,9 @@ function MilestoneSummary({ milestone, t, language, isLight, isExpanded, onToggl
 
     const { age, income, accumulatedCapital, monthlyDeficit, monthlySurplus, ageAtDepletion } = milestone;
     const isPositive = monthlySurplus > 0 || monthlyDeficit === 0;
+    const incomeSourcesByAmount = [...income.sources].sort((a, b) =>
+        (parseFloat(b.amount) || 0) - (parseFloat(a.amount) || 0)
+    );
 
     return (
         <div className={`rounded-lg border overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-white/5 border-white/10'}`}>
@@ -556,8 +592,8 @@ function MilestoneSummary({ milestone, t, language, isLight, isExpanded, onToggl
                             <div className={`text-xs font-medium mb-2 ${isLight ? 'text-slate-600' : 'text-gray-400'}`}>
                                 {t('activeIncomeSources') || 'מקורות הכנסה פעילים'}:
                             </div>
-                            <div className="flex flex-wrap gap-1">
-                                {income.sources.map(source => (
+                            <div className="flex flex-wrap gap-1" dir={language === 'he' ? 'rtl' : 'ltr'}>
+                                {incomeSourcesByAmount.map(source => (
                                     <span key={source.id} className={`text-xs px-2 py-1 rounded ${isLight ? 'bg-slate-200 text-slate-700' : 'bg-white/10 text-gray-300'}`}>
                                         {language === 'he' ? source.name : (source.nameEn || source.name)}: {formatCurrency(source.amount)}
                                     </span>
@@ -574,7 +610,7 @@ function MilestoneSummary({ milestone, t, language, isLight, isExpanded, onToggl
 /**
  * Main Pension Income Modal
  */
-export function PensionIncomeModal({ inputs, results, onClose, onSave, t, language, aiProvider, aiModel, apiKeyOverride, fiscalParameters, familyStatus, onUpdateFiscalData }) {
+export function PensionIncomeModal({ inputs, results, onClose, onSave, t, language, aiProvider, aiModel, apiKeyOverride, geminiApiKey, fiscalParameters, familyStatus, onUpdateFiscalData, getCachedAIAnalysis, onCacheAIAnalysis }) {
 
     const { theme } = useTheme();
     const isLight = theme === 'light';
@@ -583,11 +619,10 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const [showBracketTable, setShowBracketTable] = useState(false);
     const [aiInsight, setAiInsight] = useState(null);
     const [aiPanelVisible, setAiPanelVisible] = useState(false);
-    const [aiPanelCollapsed, setAiPanelCollapsed] = useState(false);
+    const [aiPanelCollapsed, setAiPanelCollapsed] = useState(true);
     const [isLoadingAI, setIsLoadingAI] = useState(false);
     const [aiError, setAiError] = useState(null);
     const aiAbortRef = useRef(null);
-    const aiCacheKeyRef = useRef(null);
 
     // Helper to calculate NI with income test and 67 vs 70 logic
     const calculateEffectiveNI = useCallback((sources, currentRetirementStartAge, extraDeferralYears = 0) => {
@@ -689,29 +724,26 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         return parseInt(savedNiSource?.niDeferralYears, 10) || 0;
     });
     const [showDeferralPanel, setShowDeferralPanel] = useState(false);
+    const closeAllSections = () => {
+        setShowIncomeSources(false);
+        setShowDeferralPanel(false);
+        setExpandedMilestone(null);
+        setAiPanelCollapsed(true);
+    };
     const toggleIncomeSources = () => {
         const nextOpen = !showIncomeSources;
+        closeAllSections();
         setShowIncomeSources(nextOpen);
-        if (nextOpen) {
-            setShowDeferralPanel(false);
-            setExpandedMilestone(null);
-        }
     };
     const toggleDeferralPanel = () => {
         const nextOpen = !showDeferralPanel;
+        closeAllSections();
         setShowDeferralPanel(nextOpen);
-        if (nextOpen) {
-            setShowIncomeSources(false);
-            setExpandedMilestone(null);
-        }
     };
     const toggleMilestone = (idx) => {
         const nextExpanded = expandedMilestone === idx ? null : idx;
+        closeAllSections();
         setExpandedMilestone(nextExpanded);
-        if (nextExpanded !== null) {
-            setShowIncomeSources(false);
-            setShowDeferralPanel(false);
-        }
     };
 
     // Lock body scroll when modal is open
@@ -822,6 +854,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                 kind,
                 balance: 0,
                 coefficient: '',
+                targetAnnuity: '',
                 returnRate: '',
                 asOfDate: getTodayDateString(),
                 ageAtDate: inputs.currentAge ?? ''
@@ -861,7 +894,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         });
     }, [currentAssetDraft]);
     const addCalculatedCurrentAsset = () => {
-        if (!currentAssetPreview?.amount) return;
+        if (!currentAssetPreview?.amount && !currentAssetPreview?.providentAnnuityAmount) return;
         const {
             projectedBalance: _projectedBalance,
             appliedCoefficient: _appliedCoefficient,
@@ -941,8 +974,34 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         const baseNet = niGross;
         const deferredNet = deferredGross;
         const deltaNet = deferredNet - baseNet;
-        const milestoneAtNiAge = summary.milestones.find(m => m.age === niStartAge);
-        const balAtNiAge = milestoneAtNiAge?.accumulatedCapital ?? capitalAtRetirement;
+
+        // Compute the baseline (no-deferral) portfolio balance at NI start age.
+        // We can't use summary.milestones because those already reflect the current
+        // deferral setting (NI startAge pushed forward), creating a circular dependency.
+        // Instead, build a separate no-deferral summary to get the true baseline balance.
+        const noDeferralSources = incomeSources.map(s =>
+            s.type === 'nationalInsurance'
+                ? { ...s, amount: niGross, startAge: niStartAge, niDeferralYears: 0 }
+                : s
+        );
+        const noDeferralSummary = calculateRetirementIncomeSummary({
+            incomeSources: noDeferralSources,
+            retirementStartAge,
+            retirementEndAge,
+            capital: capitalAtRetirement,
+            monthlyExpenses,
+            capitalReturnRate,
+            parameters: fiscalParameters
+                ? { ...fiscalParameters, retirementAge: retirementStartAge, familyStatus, ignoreIncomeTest: true }
+                : { familyStatus, retirementAge: retirementStartAge, ignoreIncomeTest: true }
+        });
+        const noDeferralMilestone = noDeferralSummary.milestones.find(m => m.age === niStartAge);
+        const balAtNiAge = noDeferralMilestone?.accumulatedCapital ?? capitalAtRetirement;
+
+        // Project the portfolio balance during deferral years.
+        // During deferral, the user does NOT receive NI, so they must fund
+        // the full expense gap from capital. We simulate: capital grows by
+        // return, but the monthly deficit is higher by the missing NI amount.
         const returnRate = pensionInterestRate / 100;
         let projectedBalance = balAtNiAge;
         for (let y = 0; y < deferralYears; y++) {
@@ -953,7 +1012,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
             ? niStartAge + deferralYears + Math.ceil(fundingCost / deltaNet / 12)
             : null;
         return { niStartAge, niGross, deferredGross, baseNet, deferredNet, deltaNet, balAtNiAge, projectedBalance: Math.max(0, projectedBalance), fundingCost, breakEvenAge };
-    }, [deferralYears, incomeSources, summary, capitalAtRetirement, pensionInterestRate, calculateEffectiveNI, retirementStartAge]);
+    }, [deferralYears, incomeSources, summary, capitalAtRetirement, pensionInterestRate, calculateEffectiveNI, retirementStartAge, retirementEndAge, monthlyExpenses, capitalReturnRate, fiscalParameters, familyStatus]);
 
     // Track changes
     const initialIncomeSources = useMemo(() => getSafeSources(), [getSafeSources]);
@@ -963,14 +1022,59 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
             return rest;
         });
         const initialRate = inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : 4;
-        return JSON.stringify(clean(incomeSources)) !== JSON.stringify(clean(initialIncomeSources)) || pensionInterestRate !== initialRate;
-    }, [incomeSources, initialIncomeSources, pensionInterestRate, inputs]);
+        const sourcesChanged = JSON.stringify(clean(incomeSources)) !== JSON.stringify(clean(initialIncomeSources)) || pensionInterestRate !== initialRate;
+        const aiChanged = aiInsight !== null && JSON.stringify(aiInsight) !== JSON.stringify(inputs.pensionAIInsight ?? null);
+        return sourcesChanged || aiChanged;
+    }, [incomeSources, initialIncomeSources, pensionInterestRate, inputs, aiInsight]);
+
+    const pensionAIInputs = useMemo(() => {
+        const { pensionAIInsight: _omit, ...restInputs } = inputs;
+        return { ...restInputs, capitalAtRetirement, monthlyNetIncomeDesired: monthlyExpenses, fiscalParameters };
+    }, [inputs, capitalAtRetirement, monthlyExpenses, fiscalParameters]);
+    const pensionAICacheKey = useMemo(() => JSON.stringify({
+        incomeSources: inputs.pensionIncomeSources,
+        summary: summary?.milestones,
+        pensionInputs: pensionAIInputs,
+        aiProvider,
+        aiModel,
+        language
+    }), [inputs.pensionIncomeSources, summary, pensionAIInputs, aiProvider, aiModel, language]);
+
+    useEffect(() => {
+        const analysis = getCachedAIAnalysis?.(pensionAICacheKey) || inputs.pensionAIInsight || null;
+        if (!analysis) {
+            setAiInsight(null);
+            setAiError(null);
+            return;
+        }
+        setAiInsight(analysis);
+        setAiError(null);
+        setAiPanelVisible(true);
+    }, [getCachedAIAnalysis, pensionAICacheKey, inputs.pensionAIInsight]);
+
+    // Clear AI insight when user modifies data — stale insight shouldn't linger
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        const clean = (sources) => sources.map(({ calculationDetails: _cd, ...rest }) => rest);
+        const initialRate = inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : 4;
+        const dataChanged =
+            JSON.stringify(clean(incomeSources)) !== JSON.stringify(clean(initialIncomeSources)) ||
+            pensionInterestRate !== initialRate;
+        if (dataChanged) {
+            setAiInsight(null);
+            setAiError(null);
+            setAiPanelVisible(false);
+        }
+    // Only re-run when user-editable state changes, not when derived baselines update
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [incomeSources, pensionInterestRate]);
 
     const runAIAnalysis = useCallback(async () => {
         if (!aiProvider || isLoadingAI) return;
-        const pensionInputs = { ...inputs, capitalAtRetirement, monthlyNetIncomeDesired: monthlyExpenses, fiscalParameters };
-        const cacheKey = JSON.stringify({ incomeSources, summary: summary?.milestones, pensionInputs, aiProvider, aiModel });
-        if (cacheKey === aiCacheKeyRef.current && aiInsight) {
+        const cachedAnalysis = getCachedAIAnalysis?.(pensionAICacheKey);
+        if (cachedAnalysis) {
+            setAiInsight(cachedAnalysis);
+            setAiError(null);
             setAiPanelVisible(true);
             return;
         }
@@ -983,18 +1087,24 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         setAiInsight(null);
         try {
             const result = await getPensionAIInsights(
-                incomeSources, summary, pensionInputs,
+                incomeSources, summary, pensionAIInputs,
                 aiProvider, aiModel, apiKeyOverride, language,
                 { signal: controller.signal }
             );
-            aiCacheKeyRef.current = cacheKey;
             setAiInsight(result);
+            onCacheAIAnalysis?.(pensionAICacheKey, result);
         } catch (err) {
             if (err.name !== 'AbortError') setAiError(classifyAiError(err));
         } finally {
             setIsLoadingAI(false);
         }
-    }, [aiProvider, aiModel, apiKeyOverride, incomeSources, summary, inputs, capitalAtRetirement, monthlyExpenses, fiscalParameters, language, isLoadingAI, aiInsight]);
+    }, [aiProvider, aiModel, apiKeyOverride, incomeSources, summary, pensionAIInputs, pensionAICacheKey, getCachedAIAnalysis, onCacheAIAnalysis, language, isLoadingAI]);
+    const pensionAICardClass = isLight
+        ? 'bg-white border-slate-300 shadow-md'
+        : 'bg-white/5 border-white/10';
+    const pensionAISectionClass = isLight
+        ? 'bg-white border-slate-200'
+        : 'bg-white/5 border-white/10';
 
     return (
         <>
@@ -1144,31 +1254,33 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
 
                         {/* AI Analysis Panel */}
                         {aiPanelVisible && (aiInsight || isLoadingAI || aiError) && (
-                            <div className={`rounded-xl border ${isLight ? 'bg-purple-50 border-purple-200' : 'bg-purple-900/20 border-purple-500/30'}`}>
-                                <div className="flex items-center justify-between px-3 py-2">
-                                    <button
-                                        onClick={() => setAiPanelCollapsed(c => !c)}
-                                        className="flex items-center gap-1.5 flex-1 text-left"
-                                    >
-                                        <Sparkles size={13} className={isLight ? 'text-purple-600' : 'text-purple-400'} />
-                                        <span className={`text-xs font-bold ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>
+                            <div className={`rounded-xl border transition-all duration-300 ${pensionAICardClass}`}>
+                                <div
+                                    className={`flex items-center justify-between p-3 cursor-pointer ${!aiPanelCollapsed ? (isLight ? 'border-b border-slate-200' : 'border-b border-white/10') : ''}`}
+                                    onClick={() => setAiPanelCollapsed(c => {
+                                        if (c) { setShowIncomeSources(false); setShowDeferralPanel(false); setExpandedMilestone(null); }
+                                        return !c;
+                                    })}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <button className={`p-1 rounded-full transition-colors ${isLight ? 'hover:bg-slate-200 text-purple-500' : 'hover:bg-white/10 text-purple-400'}`}>
+                                            {aiPanelCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+                                        </button>
+                                        <h3 className={`text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>
                                             {language === 'he' ? 'ניתוח AI' : 'AI Analysis'}
-                                        </span>
-                                        {aiPanelCollapsed
-                                            ? <ChevronDown size={14} className={isLight ? 'text-purple-500' : 'text-purple-400'} />
-                                            : <ChevronUp size={14} className={isLight ? 'text-purple-500' : 'text-purple-400'} />
-                                        }
-                                    </button>
-                                    <button onClick={() => setAiPanelVisible(false)} className={`p-0.5 rounded transition-colors ${isLight ? 'text-slate-400 hover:text-slate-600' : 'text-gray-500 hover:text-gray-300'}`}>
-                                        <X size={13} />
+                                        </h3>
+                                        <Sparkles size={14} className={isLight ? 'text-purple-500' : 'text-purple-400'} />
+                                    </div>
+                                    <button onClick={e => { e.stopPropagation(); setAiPanelVisible(false); }} className={`p-1 rounded-full transition-colors ${isLight ? 'hover:bg-slate-200 text-slate-400 hover:text-slate-600' : 'hover:bg-white/10 text-gray-500 hover:text-gray-300'}`}>
+                                        <X size={14} />
                                     </button>
                                 </div>
                                 {!aiPanelCollapsed && (
-                                    <div className="px-3 pb-3 space-y-2">
+                                    <div className="p-4 space-y-3">
                                         {isLoadingAI && (
                                             <div className="flex items-center gap-2 py-1">
-                                                <Loader2 size={14} className="animate-spin text-purple-400" />
-                                                <span className={`text-xs ${isLight ? 'text-purple-600' : 'text-purple-300'}`}>{language === 'he' ? 'מנתח נתוני פנסיה...' : 'Analyzing pension data...'}</span>
+                                                <Loader2 size={16} className="animate-spin text-purple-400" />
+                                                <span className={`text-sm ${isLight ? 'text-purple-600' : 'text-purple-300'}`}>{language === 'he' ? 'מנתח נתוני פנסיה...' : 'Analyzing pension data...'}</span>
                                             </div>
                                         )}
                                         {aiError && (() => {
@@ -1193,52 +1305,73 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                             );
                                         })()}
                                         {aiInsight && (
-                                            <div className="space-y-2 text-xs overflow-y-auto custom-scrollbar scrollbar-right max-h-64" dir={language === 'he' ? 'rtl' : 'ltr'}>
+                                            <div className="space-y-3 text-sm leading-relaxed" dir={language === 'he' ? 'rtl' : 'ltr'}>
                                         {/* Period Scores */}
                                         {aiInsight.periodScores?.length > 0 && (
-                                            <div className="space-y-1">
-                                                <p className={`font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{language === 'he' ? 'ציון לפי תקופה:' : 'Score by Period:'}</p>
-                                                <div className="flex flex-wrap gap-1.5">
+                                            <div className={`rounded-xl border-l-4 border-l-purple-500 border p-4 space-y-3 ${pensionAISectionClass}`}>
+                                                <p className={`text-base font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>{language === 'he' ? 'ציון לפי תקופה:' : 'Score by Period:'}</p>
+                                                <div className="flex flex-col gap-3">
                                                     {aiInsight.periodScores.map((p, i) => {
                                                         const score = Math.min(100, Math.max(0, Math.round(p.score)));
-                                                        const color = score >= 80 ? 'emerald' : score >= 60 ? 'amber' : 'red';
+                                                        const circumference = 2 * Math.PI * 40;
+                                                        const offset = circumference - (score / 100) * circumference;
+                                                        const ringColor = score >= 80 ? 'text-emerald-500' : score >= 60 ? 'text-amber-500' : 'text-red-500';
+                                                        const labelColor = score >= 80 ? (isLight ? 'text-emerald-600' : 'text-emerald-400') : score >= 60 ? (isLight ? 'text-amber-600' : 'text-amber-400') : (isLight ? 'text-red-600' : 'text-red-400');
                                                         return (
-                                                            <div key={i} className={`flex flex-col items-center px-2 py-1.5 rounded-lg border ${isLight ? `bg-${color}-50 border-${color}-200` : `bg-${color}-900/20 border-${color}-500/30`}`} title={p.note}>
-                                                                <span className={`text-[10px] font-medium ${isLight ? `text-${color}-700` : `text-${color}-300`}`}>{language === 'he' ? `גיל ${p.fromAge}–${p.toAge ?? '∞'}` : `Age ${p.fromAge}–${p.toAge ?? '∞'}`}</span>
-                                                                <span className={`text-base font-bold ${isLight ? `text-${color}-700` : `text-${color}-400`}`}>{p.score}</span>
-                                                                {p.label && <span className={`text-[9px] text-center ${isLight ? `text-${color}-600` : `text-${color}-400`}`}>{p.label}</span>}
+                                                            <div key={i} className="flex items-center gap-3" title={p.note}>
+                                                                <div className="relative flex-shrink-0">
+                                                                    <svg className="w-14 h-14 transform -rotate-90" viewBox="0 0 96 96">
+                                                                        <circle cx="48" cy="48" r="40" stroke="currentColor" strokeWidth="8" fill="transparent" className={isLight ? 'text-gray-200' : 'text-white/10'} />
+                                                                        <circle cx="48" cy="48" r="40" stroke="currentColor" strokeWidth="8" fill="transparent"
+                                                                            strokeDasharray={circumference}
+                                                                            strokeDashoffset={offset}
+                                                                            strokeLinecap="round"
+                                                                            className={`${ringColor} transition-all duration-700 ease-out`}
+                                                                        />
+                                                                    </svg>
+                                                                    <div className="absolute inset-0 flex items-center justify-center">
+                                                                        <span className={`text-sm font-bold ${isLight ? 'text-slate-700' : 'text-white'}`}>{score}</span>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <div className={`text-xs font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
+                                                                        {language === 'he' ? `גיל ${p.fromAge}–${p.toAge ?? '∞'}` : `Age ${p.fromAge}–${p.toAge ?? '∞'}`}
+                                                                    </div>
+                                                                    {p.label && <div className={`text-xs ${labelColor}`}>{p.label}</div>}
+                                                                    {p.note && <div className={`text-xs mt-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{p.note}</div>}
+                                                                </div>
                                                             </div>
                                                         );
                                                     })}
                                                 </div>
                                             </div>
                                         )}
-                                        {aiInsight.summary && <p className={isLight ? 'text-slate-700' : 'text-gray-200'}>{aiInsight.summary}</p>}
+                                        {aiInsight.summary && <p className={`rounded-xl border-l-4 border-l-purple-500 border p-4 ${pensionAISectionClass} ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{aiInsight.summary}</p>}
                                         {aiInsight.incomeAnalysis && (
-                                            <div>
-                                                <p className={`font-semibold mb-0.5 ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{language === 'he' ? 'ניתוח הכנסות:' : 'Income Analysis:'}</p>
+                                            <div className={`rounded-xl border-l-4 border-l-blue-500 border p-4 ${pensionAISectionClass}`}>
+                                                <p className={`text-base font-semibold mb-1 ${isLight ? 'text-slate-900' : 'text-white'}`}>{language === 'he' ? 'ניתוח הכנסות:' : 'Income Analysis:'}</p>
                                                 <p className={isLight ? 'text-slate-600' : 'text-gray-300'}>{aiInsight.incomeAnalysis}</p>
                                             </div>
                                         )}
                                         {aiInsight.taxOptimization && (
-                                            <div>
-                                                <p className={`font-semibold mb-0.5 ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{language === 'he' ? 'אופטימיזציית מס:' : 'Tax Optimization:'}</p>
+                                            <div className={`rounded-xl border-l-4 border-l-emerald-500 border p-4 ${pensionAISectionClass}`}>
+                                                <p className={`text-base font-semibold mb-1 ${isLight ? 'text-slate-900' : 'text-white'}`}>{language === 'he' ? 'אופטימיזציית מס:' : 'Tax Optimization:'}</p>
                                                 <p className={isLight ? 'text-slate-600' : 'text-gray-300'}>{aiInsight.taxOptimization}</p>
                                             </div>
                                         )}
                                         {aiInsight.gaps && (
-                                            <div>
-                                                <p className={`font-semibold mb-0.5 ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{language === 'he' ? 'פערים:' : 'Gaps:'}</p>
+                                            <div className={`rounded-xl border-l-4 border-l-red-500 border p-4 ${pensionAISectionClass}`}>
+                                                <p className={`text-base font-semibold mb-1 ${isLight ? 'text-slate-900' : 'text-white'}`}>{language === 'he' ? 'פערים:' : 'Gaps:'}</p>
                                                 <p className={isLight ? 'text-slate-600' : 'text-gray-300'}>{aiInsight.gaps}</p>
                                             </div>
                                         )}
                                         {aiInsight.recommendations?.length > 0 && (
                                             <div>
-                                                <p className={`font-semibold mb-0.5 ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{language === 'he' ? 'המלצות:' : 'Recommendations:'}</p>
-                                                <ul className="space-y-1.5">
+                                                <p className={`text-base font-semibold mb-2 ${isLight ? 'text-slate-900' : 'text-white'}`}>{language === 'he' ? 'המלצות:' : 'Recommendations:'}</p>
+                                                <ul className="space-y-2">
                                                     {aiInsight.recommendations.map((r, i) => (
-                                                        <li key={i} className={`p-1.5 rounded ${isLight ? 'bg-white border border-purple-100' : 'bg-white/5 border border-purple-500/20'}`}>
-                                                            <span className={`font-medium ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>{r.title}</span>
+                                                        <li key={i} className={`p-4 rounded-xl border ${pensionAISectionClass}`}>
+                                                            <span className={`text-base font-semibold ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>{r.title}</span>
                                                             {r.description && <p className={`mt-0.5 ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>{r.description}</p>}
                                                             {r.impact && <p className={`mt-0.5 font-medium ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>{r.impact}</p>}
                                                         </li>
@@ -1510,7 +1643,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                         </button>
                         {onSave && (
                             <button
-                                onClick={() => onSave(incomeSources, pensionInterestRate)}
+                                onClick={() => onSave(incomeSources, pensionInterestRate, aiInsight)}
                                 disabled={!hasChanges}
                                 className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 relative
                                 ${hasChanges
@@ -1538,6 +1671,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                     aiProvider={aiProvider}
                     aiModel={aiModel}
                     apiKeyOverride={apiKeyOverride}
+                    geminiApiKey={geminiApiKey}
                 />
 
                 {/* Bracket Overlay Viewer */}

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { calculateRetirementProjection } from '../utils/calculator';
@@ -38,7 +38,7 @@ ChartJS.register(
     Filler
 );
 
-export const ResultsDashboard = React.memo(function ResultsDashboard({ results, inputs, setInputs, t, language, calculationMode, aiResults, simulationResults, aiLoading, aiError, simulationType, profiles, selectedProfileIds, setSelectedProfileIds, profileResults, showInterestSensitivity, setShowInterestSensitivity, showIncomeSensitivity, setShowIncomeSensitivity, showAgeSensitivity, setShowAgeSensitivity, aiProvider, aiModel, apiKeyOverride, aiInsightsData, setAiInsightsData, fiscalParameters, familyStatus, onUpdateFiscalData, saveGlobalPension }) {
+export const ResultsDashboard = React.memo(function ResultsDashboard({ results, inputs, setInputs, t, language, calculationMode, aiResults, simulationResults, aiLoading, aiError, simulationType, profiles, selectedProfileIds, setSelectedProfileIds, profileResults, showInterestSensitivity, setShowInterestSensitivity, showIncomeSensitivity, setShowIncomeSensitivity, showAgeSensitivity, setShowAgeSensitivity, aiProvider, aiModel, apiKeyOverride, aiInsightsData, setAiInsightsData, fiscalParameters, familyStatus, onUpdateFiscalData, saveGlobalPension, geminiApiKey }) {
     // ALL HOOKS MUST BE AT THE TOP - React rules of hooks
     const { theme } = useTheme();
     const isLight = theme === 'light';
@@ -49,6 +49,7 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
     const [showAmortizationModal, setShowAmortizationModal] = useState(false);
     const [showInflationModal, setShowInflationModal] = useState(false);
     const [showPensionModal, setShowPensionModal] = useState(false);
+    const pensionAiCacheRef = useRef(new Map());
     const [activeTab, setActiveTab] = useState('numerical'); // 'numerical' | 'insights' | 'budget'
     const [showStrategyComparison, setShowStrategyComparison] = useState(false);
     const [showRetirementTargetModal, setShowRetirementTargetModal] = useState(false);
@@ -1167,14 +1168,15 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                                     : activeResults
                             }
                             onClose={() => setShowPensionModal(false)}
-                            onSave={(newIncomeSources, newInterestRate) => {
+                            onSave={(newIncomeSources, newInterestRate, newAIInsight) => {
                                 setInputs(prev => ({
                                     ...prev,
                                     pensionIncomeSources: newIncomeSources,
-                                    pensionInterestRate: newInterestRate
+                                    pensionInterestRate: newInterestRate,
+                                    ...(newAIInsight != null ? { pensionAIInsight: newAIInsight } : {})
                                 }));
                                 if (saveGlobalPension) {
-                                    saveGlobalPension(newIncomeSources, newInterestRate);
+                                    saveGlobalPension(newIncomeSources, newInterestRate, newAIInsight);
                                 }
                             }}
                             onUpdateFiscalData={(data) => {
@@ -1191,6 +1193,9 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                             aiProvider={aiProvider}
                             aiModel={aiModel}
                             apiKeyOverride={apiKeyOverride}
+                            geminiApiKey={geminiApiKey}
+                            getCachedAIAnalysis={(key) => pensionAiCacheRef.current.get(key) || null}
+                            onCacheAIAnalysis={(key, analysis) => pensionAiCacheRef.current.set(key, analysis)}
                         />
                     )}
                 </div >

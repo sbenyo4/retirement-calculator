@@ -61,6 +61,9 @@ export function useRetirementData() {
                     if (pensionData.interestRate !== undefined) {
                         baseInputs.pensionInterestRate = pensionData.interestRate;
                     }
+                    if (pensionData.aiInsight != null) {
+                        baseInputs.pensionAIInsight = pensionData.aiInsight;
+                    }
                 }
 
                 // 2. Fetch the ID of the last active profile
@@ -80,6 +83,9 @@ export function useRetirementData() {
                             pensionIncomeSources: baseInputs.pensionIncomeSources,
                             ...(baseInputs.pensionInterestRate !== undefined
                                 ? { pensionInterestRate: baseInputs.pensionInterestRate }
+                                : {}),
+                            ...(baseInputs.pensionAIInsight != null
+                                ? { pensionAIInsight: baseInputs.pensionAIInsight }
                                 : {})
                         };
                     }
@@ -105,12 +111,15 @@ export function useRetirementData() {
     /**
      * Explicitly save global pension sources and optional interest rate.
      */
-    const saveGlobalPension = useCallback(async (sources, interestRate) => {
+    const saveGlobalPension = useCallback(async (sources, interestRate, aiInsight) => {
         if (!uid || !sources) return;
         try {
             const dataToSave = { sources };
             if (interestRate !== undefined) {
                 dataToSave.interestRate = interestRate;
+            }
+            if (aiInsight != null) {
+                dataToSave.aiInsight = JSON.parse(JSON.stringify(aiInsight));
             }
             await setPensionSources(uid, dataToSave);
         } catch (err) {

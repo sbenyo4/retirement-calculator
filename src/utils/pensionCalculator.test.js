@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateCapitalDuration, calculateRetirementIncomeSummary, projectCurrentPensionSource } from './pensionCalculator';
+import { calculateCapitalDuration, calculateIncomeAtAge, calculateRetirementIncomeSummary, projectCurrentPensionSource } from './pensionCalculator';
 
 describe('calculateCapitalDuration', () => {
     it('returns Infinity when return rate sustains the withdrawal (capital never depletes)', () => {
@@ -144,6 +144,87 @@ describe('projectCurrentPensionSource', () => {
         expect(result.isLumpSum).toBe(true);
         expect(result.isTaxable).toBe(false);
         expect(result.appliedReturnRate).toBe(4);
+    });
+
+    it('splits a provident balance into a target annuity and retained capital', () => {
+        const result = projectCurrentPensionSource({
+            id: 'provident-split',
+            type: 'capital',
+            amount: 0,
+            startAge: 67,
+            endAge: null,
+            currentAsset: {
+                kind: 'provident',
+                balance: 100_000,
+                coefficient: 240,
+                targetAnnuity: 250
+            }
+        }, 67, 67, 0);
+
+        expect(result.projectedBalance).toBe(100_000);
+        expect(result.providentAnnuityAmount).toBe(250);
+        expect(result.providentAnnuityCapitalUsed).toBe(60_000);
+        expect(result.providentAnnuityCoefficient).toBe(240);
+        expect(result.amount).toBe(40_000);
+        expect(result.isLumpSum).toBe(true);
+    });
+
+    it('caps a provident target annuity when it needs more than the projected balance', () => {
+        const result = projectCurrentPensionSource({
+            id: 'provident-capped',
+            type: 'capital',
+            amount: 0,
+            startAge: 67,
+            endAge: null,
+            currentAsset: {
+                kind: 'provident',
+                balance: 30_000,
+                coefficient: 240,
+                targetAnnuity: 250
+            }
+        }, 67, 67, 0);
+
+        expect(result.providentAnnuityAmount).toBe(125);
+        expect(result.providentAnnuityCapitalUsed).toBe(30_000);
+        expect(result.amount).toBe(0);
+    });
+});
+
+describe('provident target annuity income', () => {
+    const providentSource = {
+        id: 'provident-split',
+        type: 'capital',
+        name: 'Provident',
+        amount: 40_000,
+        startAge: 67,
+        endAge: null,
+        isLumpSum: true,
+        isTaxable: false,
+        enabled: true,
+        currentAsset: { kind: 'provident' },
+        providentAnnuityAmount: 250
+    };
+
+    it('counts the planned annuity but not the retained lump sum as age income', () => {
+        const income = calculateIncomeAtAge([providentSource], 67);
+
+        expect(income.totalGross).toBe(250);
+        expect(income.sources.map(source => source.id)).toContain('provident-split_provident_annuity');
+        expect(income.sources.map(source => source.id)).not.toContain('provident-split');
+    });
+
+    it('keeps the retained provident capital in the pension summary', () => {
+        const summary = calculateRetirementIncomeSummary({
+            incomeSources: [providentSource],
+            retirementStartAge: 67,
+            retirementEndAge: 67,
+            capital: 0,
+            monthlyExpenses: 0,
+            capitalReturnRate: 0
+        });
+
+        expect(summary.milestones[0].income.totalGross).toBe(250);
+        expect(summary.milestones[0].accumulatedCapital).toBe(40_000);
     });
 });
 

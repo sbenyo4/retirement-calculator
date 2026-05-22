@@ -134,6 +134,7 @@ export async function withRetry(fn, options = {}) {
         backoffMultiplier = RETRY_CONFIG.backoffMultiplier,
         timeoutMs = RETRY_CONFIG.timeoutMs,
         onRetry = null,
+        shouldRetry = null, // optional override: (error) => boolean
     } = options;
 
     let lastError;
@@ -147,7 +148,8 @@ export async function withRetry(fn, options = {}) {
             lastError = error;
 
             // Don't retry if it's the last attempt or error is not retryable
-            if (attempt === maxRetries || !isRetryableError(error)) {
+            const retryable = shouldRetry ? shouldRetry(error) : isRetryableError(error);
+            if (attempt === maxRetries || !retryable) {
                 throw error;
             }
 
@@ -328,7 +330,7 @@ function generateHistoryFromSummary(inputs, aiResult) {
     return history;
 }
 
-export async function calculateRetirementWithAI(inputs, provider, model, apiKeyOverride = null, mathematicalBaseline = null, t = null, { signal } = {}) {
+export async function calculateRetirementWithAI(inputs, provider, model, apiKeyOverride = null, mathematicalBaseline = null, t = null, { signal, useGrounding = false, onGroundingSources } = {}) {
     let prompt = inputs.prompt || generatePrompt(inputs);
 
     if (mathematicalBaseline) {
@@ -394,29 +396,53 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
 
             // Helper to try generating content with a specific model
             const tryGenerate = async (modelId) => {
-                const genModel = genAI.getGenerativeModel({
-                    model: modelId,
-                    generationConfig: { temperature: 0 }
-                });
+                const supportsGrounding = useGrounding && /gemini-1\.5|gemini-2|gemini-exp/i.test(modelId);
+                const modelConfig = { model: modelId, generationConfig: { temperature: 0 } };
+                if (supportsGrounding) modelConfig.tools = [{ googleSearch: {} }];
+                const genModel = genAI.getGenerativeModel(modelConfig);
                 const result = await genModel.generateContent(prompt);
+
+                if (supportsGrounding && onGroundingSources) {
+                    const chunks = result.response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+                    const sources = chunks
+                        .filter(c => c.web?.uri)
+                        .map(c => ({ title: c.web.title || c.web.uri, url: c.web.uri }));
+                    if (sources.length > 0) onGroundingSources(sources);
+                }
+
                 return result.response.text();
             };
 
+            // When grounding is requested but the chosen model doesn't support it,
+            // upgrade to the cheapest grounding-capable model (same API key).
+            const GROUNDING_FALLBACK = 'gemini-2.0-flash';
+            const modelSupportsGrounding = /gemini-1\.5|gemini-2|gemini-exp/i.test(model);
+            const effectiveModel = (useGrounding && !modelSupportsGrounding) ? GROUNDING_FALLBACK : model;
+
+            // Don't retry quota errors on the same model — immediately try alternatives
+            const notQuota = (err) => !(err.code === 'quota' || err.status === 429 || /quota|rate.?limit|429/i.test(err.message));
+
             try {
-                // Wrap the API call with retry logic
-                responseText = await withRetry(() => tryGenerate(model), { onRetry });
+                responseText = await withRetry(() => tryGenerate(effectiveModel), { onRetry, shouldRetry: (err) => notQuota(err) && isRetryableError(err) });
             } catch (primaryError) {
-                // If primary model fails with 404, try fallbacks
-                if (primaryError.message.includes('404') || primaryError.message.includes('not found')) {
-                    const fallbacks = ['gemini-1.5-flash', 'gemini-1.5-flash-001', 'gemini-pro', 'gemini-1.0-pro'];
-                    const alternative = fallbacks.find(m => m !== model);
+                const isQuota = !notQuota(primaryError);
+                const isNotFound = primaryError.message.includes('404') || primaryError.message.includes('not found');
 
-                    if (alternative) {
-
-                        responseText = await withRetry(() => tryGenerate(alternative), { onRetry });
-                    } else {
-                        throw primaryError;
+                if (isNotFound || isQuota) {
+                    // On 404 or quota, walk through grounding-capable fallbacks in order
+                    const fallbacks = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-flash-001', 'gemini-1.5-pro'];
+                    const alternatives = fallbacks.filter(m => m !== effectiveModel);
+                    let succeeded = false;
+                    for (const alt of alternatives) {
+                        try {
+                            responseText = await withRetry(() => tryGenerate(alt), { onRetry, shouldRetry: (err) => notQuota(err) && isRetryableError(err) });
+                            succeeded = true;
+                            break;
+                        } catch {
+                            // try next
+                        }
                     }
+                    if (!succeeded) throw primaryError;
                 } else {
                     throw primaryError;
                 }
@@ -464,8 +490,8 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
         if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
         // More robust JSON extraction:
-        // 1. Remove markdown blocks if they exist
-        let cleaned = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        // 1. Remove markdown blocks and Gemini grounding citation markers ([1], [2]...)
+        let cleaned = responseText.replace(/```json/g, '').replace(/```/g, '').replace(/\[\d+\]/g, '').trim();
 
         // 2. Find the first '{' and the last '}' to isolate the JSON object
         const firstBrace = cleaned.indexOf('{');
