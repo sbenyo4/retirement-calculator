@@ -1118,87 +1118,85 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                     </div>
 
 
-                    {/* Amortization Table Modal */}
-                    <AmortizationTableModal
-                        isOpen={showAmortizationModal}
-                        onClose={() => setShowAmortizationModal(false)}
-                        history={history}
-                        t={t}
-                        language={language}
-                    />
-
-                    <SensitivityRangeModal
-                        isOpen={showSensitivityModal}
-                        onClose={() => setShowSensitivityModal(false)}
-                        inputs={sensitivityInputs}
-                        t={t}
-                        language={language}
-                        aiProvider={aiProvider}
-                        aiModel={aiModel}
-                        apiKeyOverride={apiKeyOverride}
-                    />
-
-                    <SensitivityHeatmapModal
-                        isOpen={showHeatmapModal}
-                        onClose={() => setShowHeatmapModal(false)}
-                        inputs={sensitivityInputs}
-                        t={t}
-                        language={language}
-                        sourceName={sensitivitySourceName}
-                    />
-
-                    <InflationModal
-                        isOpen={showInflationModal}
-                        onClose={() => setShowInflationModal(false)}
-                        t={t}
-                        language={language}
-                    />
-
-                    {showPensionModal && (
-                        <PensionIncomeModal
-                            inputs={selectedProfileIds.length === 1
-                                ? profiles.find(p => p.id === selectedProfileIds[0])?.data || inputs
-                                : inputs
-                            }
-                            results={
-                                // If in Compare Mode AND exactly one profile is selected, show that profile's data.
-                                // Otherwise (including normal mode, sim mode, etc.), show the ACTIVE Dashboard results.
-                                isCompareMode && selectedProfileIds.length === 1
-                                    ? profileResults?.find(r => r.id === selectedProfileIds[0])?.results || activeResults
-                                    : activeResults
-                            }
-                            onClose={() => setShowPensionModal(false)}
-                            onSave={(newIncomeSources, newInterestRate, newAIInsight) => {
-                                setInputs(prev => ({
-                                    ...prev,
-                                    pensionIncomeSources: newIncomeSources,
-                                    pensionInterestRate: newInterestRate,
-                                    ...(newAIInsight != null ? { pensionAIInsight: newAIInsight } : {})
-                                }));
-                                if (saveGlobalPension) {
-                                    saveGlobalPension(newIncomeSources, newInterestRate, newAIInsight);
-                                }
-                            }}
-                            onUpdateFiscalData={(data) => {
-                                setInputs(prev => ({
-                                    ...prev,
-                                    fiscalParameters: data.parameters,
-                                    familyStatus: data.familyStatus
-                                }));
-                            }}
-                            fiscalParameters={inputs.fiscalParameters}
-                            familyStatus={inputs.familyStatus}
-                            t={t}
-                            language={language}
-                            aiProvider={aiProvider}
-                            aiModel={aiModel}
-                            apiKeyOverride={apiKeyOverride}
-                            geminiApiKey={geminiApiKey}
-                            getCachedAIAnalysis={(key) => pensionAiCacheRef.current.get(key) || null}
-                            onCacheAIAnalysis={(key, analysis) => pensionAiCacheRef.current.set(key, analysis)}
-                        />
-                    )}
                 </div >
+            )}
+            {/* Modals — outside the tab ternary so they work from any tab */}
+            <AmortizationTableModal
+                isOpen={showAmortizationModal}
+                onClose={() => setShowAmortizationModal(false)}
+                history={history}
+                t={t}
+                language={language}
+            />
+
+            <SensitivityRangeModal
+                isOpen={showSensitivityModal}
+                onClose={() => setShowSensitivityModal(false)}
+                inputs={sensitivityInputs}
+                t={t}
+                language={language}
+                aiProvider={aiProvider}
+                aiModel={aiModel}
+                apiKeyOverride={apiKeyOverride}
+            />
+
+            <SensitivityHeatmapModal
+                isOpen={showHeatmapModal}
+                onClose={() => setShowHeatmapModal(false)}
+                inputs={sensitivityInputs}
+                t={t}
+                language={language}
+                sourceName={sensitivitySourceName}
+            />
+
+            <InflationModal
+                isOpen={showInflationModal}
+                onClose={() => setShowInflationModal(false)}
+                t={t}
+                language={language}
+            />
+
+            {showPensionModal && (
+                <PensionIncomeModal
+                    inputs={selectedProfileIds.length === 1
+                        ? profiles.find(p => p.id === selectedProfileIds[0])?.data || inputs
+                        : inputs
+                    }
+                    results={
+                        isCompareMode && selectedProfileIds.length === 1
+                            ? profileResults?.find(r => r.id === selectedProfileIds[0])?.results || activeResults
+                            : activeResults
+                    }
+                    onClose={() => setShowPensionModal(false)}
+                    onSave={(newIncomeSources, newInterestRate, newAIInsight) => {
+                        setInputs(prev => ({
+                            ...prev,
+                            pensionIncomeSources: newIncomeSources,
+                            pensionInterestRate: newInterestRate,
+                            ...(newAIInsight != null ? { pensionAIInsight: newAIInsight } : {})
+                        }));
+                        if (saveGlobalPension) {
+                            saveGlobalPension(newIncomeSources, newInterestRate, newAIInsight);
+                        }
+                    }}
+                    onUpdateFiscalData={(data) => {
+                        setInputs(prev => ({
+                            ...prev,
+                            fiscalParameters: data.parameters,
+                            familyStatus: data.familyStatus
+                        }));
+                    }}
+                    fiscalParameters={inputs.fiscalParameters}
+                    familyStatus={inputs.familyStatus}
+                    t={t}
+                    language={language}
+                    aiProvider={aiProvider}
+                    aiModel={aiModel}
+                    apiKeyOverride={apiKeyOverride}
+                    geminiApiKey={geminiApiKey}
+                    getCachedAIAnalysis={(key) => pensionAiCacheRef.current.get(key) || null}
+                    onCacheAIAnalysis={(key, analysis) => pensionAiCacheRef.current.set(key, analysis)}
+                />
             )}
             <RetirementTargetModal
                 isOpen={showRetirementTargetModal}
