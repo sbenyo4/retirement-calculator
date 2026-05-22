@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Bell, BellRing, X, Clock, Trash2, FileText, Plus, Pencil, Save, MessageSquare, RefreshCw } from 'lucide-react';
+import { Bell, BellRing, X, Clock, Trash2, FileText, Plus, Pencil, Save, RefreshCw } from 'lucide-react';
 import { useReminders, syncComponentReminders, silenceReminder, updateReminderInSession, nextOccurrenceOf, nextOccurrenceByInterval } from '../hooks/useReminders';
 import { useAuth } from '../contexts/AuthContext';
 import { setGeneralReminders } from '../utils/db';
@@ -450,18 +450,19 @@ export function ReminderBell({ id, t: _t, language, isLight, activeProfileId }) 
 
 function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onDismiss: _onDismiss, onEdit, onSaveEdit, onCancelEdit, isEditing, editForm, setEditForm, due, tone }) {
     const isTomorrow = tone === 'tomorrow';
-    const [showNote, setShowNote] = useState(false);
+    const rowBg = due ? (isLight ? 'bg-red-50/50' : 'bg-red-500/5') : isTomorrow ? (isLight ? 'bg-yellow-50/70' : 'bg-yellow-500/5') : '';
     return (
         <>
-        <div className={`flex items-start gap-2 px-3 py-2.5 ${due ? (isLight ? 'bg-red-50/50' : 'bg-red-500/5') : isTomorrow ? (isLight ? 'bg-yellow-50/70' : 'bg-yellow-500/5') : ''}`}>
-            <Clock size={13} className={`mt-0.5 shrink-0 ${due ? 'text-red-400' : isTomorrow ? (isLight ? 'text-yellow-500' : 'text-yellow-300') : (isLight ? 'text-slate-400' : 'text-gray-500')}`} />
+        {/* Fixed-height row — buttons never shift regardless of note presence */}
+        <div className={`flex items-center gap-2 px-3 py-2.5 ${rowBg}`}>
+            <Clock size={13} className={`shrink-0 ${due ? 'text-red-400' : isTomorrow ? (isLight ? 'text-yellow-500' : 'text-yellow-300') : (isLight ? 'text-slate-400' : 'text-gray-500')}`} />
             <div className="flex-1 min-w-0">
                 <div
                     className="flex items-center gap-1.5 flex-wrap cursor-pointer group"
                     onClick={() => {
                         if (r.source === 'general') return;
                         window.dispatchEvent(new CustomEvent('rc-navigate-to-item', { detail: { source: r.source, id: r.id } }));
-                        document.dispatchEvent(new Event('mousedown')); // trigger click-outside
+                        document.dispatchEvent(new Event('mousedown'));
                     }}
                 >
                     <span className={`text-xs font-medium truncate ${r.source !== 'general' ? 'group-hover:underline' : ''} ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{r.label}</span>
@@ -479,19 +480,9 @@ function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onD
                 <div className={`text-[11px] mt-0.5 ${due ? (isLight ? 'text-red-500' : 'text-red-400') : isTomorrow ? (isLight ? 'text-yellow-600' : 'text-yellow-300') : (isLight ? 'text-blue-500' : 'text-blue-400')}`}>
                     {formatDate(r.date)}
                 </div>
-                {r.text && <div className={`text-[11px] mt-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{r.text}</div>}
             </div>
+            {/* Buttons — always exactly 2: edit + delete */}
             <div className="flex items-center gap-0.5 shrink-0">
-                {r.note && (
-                    <button
-                        onClick={() => setShowNote(v => !v)}
-                        title={isHe ? 'הצג הערה' : 'Show note'}
-                        aria-label={isHe ? 'הצג הערה' : 'Show note'}
-                        className={`p-0.5 rounded transition-colors ${showNote ? (isLight ? 'text-amber-600 bg-amber-100' : 'text-amber-400 bg-amber-500/20') : (isLight ? 'text-amber-400 hover:text-amber-600' : 'text-amber-500 hover:text-amber-300')}`}
-                    >
-                        <MessageSquare size={12} />
-                    </button>
-                )}
                 <button
                     onClick={() => onEdit?.(r)}
                     title={isHe ? 'ערוך תזכורת' : 'Edit reminder'}
@@ -505,9 +496,10 @@ function ReminderRow({ r, isLight, isHe, formatDate, sourceLabel, onConfirm, onD
                 </button>
             </div>
         </div>
-        {showNote && r.note && (
-            <div className={`px-3 pb-2 text-[11px] leading-snug ${isLight ? 'text-amber-800 bg-amber-50' : 'text-amber-300 bg-amber-500/10'}`}>
-                {r.note}
+        {/* Note appears below the row — never affects button positions */}
+        {(r.text || r.note) && (
+            <div className={`px-8 pb-2 text-[11px] leading-snug ${rowBg} ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                {r.text || r.note}
             </div>
         )}
         {isEditing && (

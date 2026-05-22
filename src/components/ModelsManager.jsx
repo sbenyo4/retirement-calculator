@@ -17,7 +17,7 @@ const ALL_ALERTS = [
     { id: 'late_retirement',  severity: 'info',     labelHe: 'גיל פרישה מאוחר (מעל 70)',                   labelEn: 'Late retirement age (above 70)' },
 ];
 
-export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, uid, idleTimeoutEnabled = true, onIdleTimeoutEnabledChange, idleTimeoutMinutes = 5, onIdleTimeoutChange, fourPercentMode = 'net', onFourPercentModeChange, disabledAlerts = [], onToggleAlert, aiProvider, aiModel, apiKeyOverride }) {
+export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, uid, idleTimeoutEnabled = true, onIdleTimeoutEnabledChange, idleTimeoutMinutes = 5, onIdleTimeoutChange, screenLockEnabled = true, onScreenLockEnabledChange, screenLockTimeoutMinutes = 2, onScreenLockTimeoutChange, fourPercentMode = 'net', onFourPercentModeChange, disabledAlerts = [], onToggleAlert, aiProvider, aiModel, apiKeyOverride }) {
     const { theme } = useTheme();
     const isLight = theme === 'light';
     const [loading, setLoading] = useState(false);
@@ -33,6 +33,8 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
     const [pinChangeBusy, setPinChangeBusy] = useState(false);
     const [pinChangeError, setPinChangeError] = useState('');
     const [pinChangeSuccess, setPinChangeSuccess] = useState(false);
+    const screenLockMaxMinutes = Math.max(1, idleTimeoutMinutes - 1);
+    const screenLockAvailable = idleTimeoutEnabled && idleTimeoutMinutes > 1;
 
     const [expandedProvider, setExpandedProvider] = useState(null);
     const abortRef = useRef(null);
@@ -354,6 +356,34 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
                                         {language === 'he' ? 'דק׳' : 'min'}
                                     </span>
                                 </div>
+
+                                <div className="flex items-center gap-3">
+                                    <span className={`text-sm flex-1 ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
+                                        {t('screenLockAfterInactivity')}
+                                    </span>
+                                    <button
+                                        onClick={() => onScreenLockEnabledChange?.(!screenLockEnabled)}
+                                        disabled={!screenLockAvailable}
+                                        className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${!screenLockAvailable ? 'opacity-40 cursor-not-allowed' : ''} ${screenLockEnabled && screenLockAvailable ? 'bg-blue-600' : (isLight ? 'bg-gray-300' : 'bg-gray-600')}`}
+                                    >
+                                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${screenLockEnabled && screenLockAvailable ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                    </button>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={screenLockMaxMinutes}
+                                        value={Math.min(screenLockTimeoutMinutes, screenLockMaxMinutes)}
+                                        disabled={!screenLockAvailable || !screenLockEnabled}
+                                        onChange={e => onScreenLockTimeoutChange?.(Math.max(1, Math.min(screenLockMaxMinutes, Number(e.target.value) || 1)))}
+                                        className={`w-14 h-8 text-center rounded-lg px-2 text-sm border transition-opacity ${!screenLockAvailable || !screenLockEnabled ? 'opacity-40 cursor-not-allowed' : ''} ${isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-gray-800 border-gray-600 text-white'}`}
+                                    />
+                                    <span className={`text-sm w-6 transition-opacity ${!screenLockAvailable || !screenLockEnabled ? 'opacity-40' : ''} ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                                        {language === 'he' ? 'דק׳' : 'min'}
+                                    </span>
+                                </div>
+                                <p className={`text-[11px] ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                                    {screenLockAvailable ? t('screenLockBeforeLogoutHint') : t('screenLockRequiresLogoutHint')}
+                                </p>
 
                                 {/* 4% Rule Mode */}
                                 <div className={`pt-3 border-t ${isLight ? 'border-gray-200' : 'border-white/10'}`}>

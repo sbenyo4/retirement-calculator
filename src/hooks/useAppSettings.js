@@ -14,6 +14,8 @@ const SETTINGS_ACTIONS = {
     SET_MODELS_OVERRIDE: 'SET_MODELS_OVERRIDE',
     SET_IDLE_TIMEOUT: 'SET_IDLE_TIMEOUT',
     SET_IDLE_TIMEOUT_ENABLED: 'SET_IDLE_TIMEOUT_ENABLED',
+    SET_SCREEN_LOCK_TIMEOUT: 'SET_SCREEN_LOCK_TIMEOUT',
+    SET_SCREEN_LOCK_ENABLED: 'SET_SCREEN_LOCK_ENABLED',
     SET_FOUR_PERCENT_MODE: 'SET_FOUR_PERCENT_MODE',
     SET_ACTIVE_VIEW: 'SET_ACTIVE_VIEW',
     SET_DISABLED_ALERTS: 'SET_DISABLED_ALERTS',
@@ -33,6 +35,8 @@ function getDefaultSettings() {
         aiModelsOverride: null, // User-selected custom AI models
         idleTimeoutMinutes: 5,
         idleTimeoutEnabled: true,
+        screenLockTimeoutMinutes: 2,
+        screenLockEnabled: true,
         fourPercentMode: 'net',
         activeView: 'parameters',
         disabledAlerts: []
@@ -57,6 +61,8 @@ function settingsReducer(state, action) {
                 aiModelsOverride: db.aiModelsOverride || state.aiModelsOverride,
                 idleTimeoutMinutes: db.idleTimeoutMinutes ?? state.idleTimeoutMinutes,
                 idleTimeoutEnabled: db.idleTimeoutEnabled ?? state.idleTimeoutEnabled,
+                screenLockTimeoutMinutes: db.screenLockTimeoutMinutes ?? state.screenLockTimeoutMinutes,
+                screenLockEnabled: db.screenLockEnabled ?? state.screenLockEnabled,
                 fourPercentMode: db.fourPercentMode ?? state.fourPercentMode,
                 disabledAlerts: Array.isArray(db.disabledAlerts) ? db.disabledAlerts : state.disabledAlerts,
             };
@@ -109,10 +115,20 @@ function settingsReducer(state, action) {
             };
 
         case SETTINGS_ACTIONS.SET_IDLE_TIMEOUT:
-            return { ...state, idleTimeoutMinutes: action.payload };
+            return {
+                ...state,
+                idleTimeoutMinutes: action.payload,
+                screenLockTimeoutMinutes: Math.min(state.screenLockTimeoutMinutes, Math.max(1, action.payload - 1))
+            };
 
         case SETTINGS_ACTIONS.SET_IDLE_TIMEOUT_ENABLED:
             return { ...state, idleTimeoutEnabled: action.payload };
+
+        case SETTINGS_ACTIONS.SET_SCREEN_LOCK_TIMEOUT:
+            return { ...state, screenLockTimeoutMinutes: action.payload };
+
+        case SETTINGS_ACTIONS.SET_SCREEN_LOCK_ENABLED:
+            return { ...state, screenLockEnabled: action.payload };
 
         case SETTINGS_ACTIONS.SET_FOUR_PERCENT_MODE:
             return { ...state, fourPercentMode: action.payload };
@@ -186,6 +202,8 @@ export function useAppSettings() {
             aiModelsOverride: settings.aiModelsOverride,
             idleTimeoutMinutes: settings.idleTimeoutMinutes,
             idleTimeoutEnabled: settings.idleTimeoutEnabled,
+            screenLockTimeoutMinutes: settings.screenLockTimeoutMinutes,
+            screenLockEnabled: settings.screenLockEnabled,
             fourPercentMode: settings.fourPercentMode,
             disabledAlerts: settings.disabledAlerts,
         };
@@ -207,6 +225,8 @@ export function useAppSettings() {
         settings.aiModelsOverride,
         settings.idleTimeoutMinutes,
         settings.idleTimeoutEnabled,
+        settings.screenLockTimeoutMinutes,
+        settings.screenLockEnabled,
         settings.fourPercentMode,
         settings.disabledAlerts,
         uid,

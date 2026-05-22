@@ -93,6 +93,26 @@ export function PinGate({ uid, t, onLogout, children }) {
         }
     }
 
+    useEffect(() => {
+        if (mode !== 'unlock' || !pinLock || !isValidPin(pin) || busy) return undefined;
+
+        let active = true;
+        const timeoutId = setTimeout(async () => {
+            try {
+                if (await verifyPinLock(pin, pinLock)) {
+                    if (active) setMode('unlocked');
+                }
+            } catch (err) {
+                console.error('Failed to auto-verify PIN lock:', err);
+            }
+        }, 250);
+
+        return () => {
+            active = false;
+            clearTimeout(timeoutId);
+        };
+    }, [busy, mode, pin, pinLock]);
+
     if (mode === 'unlocked') return children;
 
     const isSetup = mode === 'setup';

@@ -3,13 +3,18 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 const WARNING_SECONDS = 30;
 const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
 
-export function useIdleTimer({ timeoutMinutes = 5, onLogout, enabled = true }) {
+export function useIdleTimer({ timeoutMinutes = 5, onLogout, enabled = true, trackActivity = true }) {
     const [warningActive, setWarningActive] = useState(false);
     const [secondsLeft, setSecondsLeft] = useState(WARNING_SECONDS);
 
     const idleTimerRef = useRef(null);
     const countdownRef = useRef(null);
     const warningActiveRef = useRef(false);
+    const trackActivityRef = useRef(trackActivity);
+
+    useEffect(() => {
+        trackActivityRef.current = trackActivity;
+    }, [trackActivity]);
 
     const clearCountdown = useCallback(() => {
         if (countdownRef.current) {
@@ -53,7 +58,7 @@ export function useIdleTimer({ timeoutMinutes = 5, onLogout, enabled = true }) {
 
         const handleActivity = () => {
             // Ignore activity while warning is shown — user must click the button
-            if (warningActiveRef.current) return;
+            if (warningActiveRef.current || !trackActivityRef.current) return;
             resetTimer();
         };
 

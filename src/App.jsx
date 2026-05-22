@@ -12,12 +12,14 @@ import { UserMenu } from './components/UserMenu';
 import { ThemeToggle } from './components/ThemeToggle';
 import { LoginPage } from './components/LoginPage';
 import { PinGate } from './components/PinGate';
+import { ScreenLockOverlay } from './components/ScreenLockOverlay';
 import { ZoomToggle } from './components/ZoomToggle';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import { IdleWarningModal } from './components/IdleWarningModal';
 import { ChatWidget } from './components/ChatWidget';
 import CommandPalette from './components/CommandPalette';
 import { useIdleTimer } from './hooks/useIdleTimer';
+import { useScreenLockTimer } from './hooks/useScreenLockTimer';
 import { getProjectedAgeDate } from './utils/dateUtils';
 
 // Lazy-loaded components (loaded only when needed)
@@ -93,6 +95,31 @@ function AuthenticatedApp() {
   );
 }
 
+function StartupSplash({ t, language, theme }) {
+  const isLight = theme === 'light';
+
+  return (
+    <div className={`h-full w-full flex items-center justify-center p-4 ${isLight ? 'bg-slate-100' : 'bg-gradient-to-br from-gray-900 to-blue-900'}`} dir={translations[language].dir}>
+      <div className={`w-full max-w-sm rounded-2xl border px-8 py-10 text-center shadow-2xl ${isLight ? 'bg-white border-slate-200' : 'bg-white/10 border-white/20 backdrop-blur-md'}`}>
+        <div className="relative mx-auto mb-5 flex h-20 w-20 items-center justify-center">
+          <span className={`absolute inset-0 rounded-full border-2 border-t-transparent animate-spin ${isLight ? 'border-blue-500/70' : 'border-blue-300/80'}`} />
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg shadow-blue-500/25">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+        </div>
+        <h1 className={`text-2xl font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>
+          {t('appTitle')}
+        </h1>
+        <p className={`mt-2 text-sm ${isLight ? 'text-slate-500' : 'text-blue-100/85'}`}>
+          {t('loadingWorkspace')}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function MainApp() {
   const { currentUser, logout } = useAuth();
   const { theme } = useTheme();
@@ -104,6 +131,9 @@ function MainApp() {
 
   // Use Custom Hooks for Logic
   const { settings, dispatch: dispatchSettings, SETTINGS_ACTIONS, settingsLoaded } = useAppSettings();
+  const [screenLocked, setScreenLocked] = useState(false);
+  const [startupDelayDone, setStartupDelayDone] = useState(false);
+  const [splashRemoved, setSplashRemoved] = useState(false);
 
   const [chatOpen, setChatOpen] = useState(false);
   const [triggeredSmartAlerts, setTriggeredSmartAlerts] = useState([]);
@@ -143,7 +173,25 @@ function MainApp() {
     timeoutMinutes: settings.idleTimeoutMinutes ?? 5,
     onLogout: logout,
     enabled: !!currentUser && (settings.idleTimeoutEnabled ?? true),
+    trackActivity: !screenLocked,
   });
+  const idleTimeoutMinutes = settings.idleTimeoutMinutes ?? 5;
+  const screenLockTimeoutMinutes = Math.min(
+    Math.max(1, settings.screenLockTimeoutMinutes ?? 2),
+    Math.max(1, idleTimeoutMinutes - 1)
+  );
+  const screenLockAvailable = (settings.idleTimeoutEnabled ?? true) && idleTimeoutMinutes > 1;
+  const lockScreen = useCallback(() => setScreenLocked(true), []);
+  const { resetTimer: resetScreenLockTimer } = useScreenLockTimer({
+    timeoutMinutes: screenLockTimeoutMinutes,
+    enabled: !!currentUser && !screenLocked && screenLockAvailable && (settings.screenLockEnabled ?? true),
+    onLock: lockScreen,
+  });
+  const unlockScreen = useCallback(() => {
+    setScreenLocked(false);
+    resetTimer();
+    resetScreenLockTimer();
+  }, [resetScreenLockTimer, resetTimer]);
   const { inputs, setInputs, saveGlobalPension, inputsLoaded } = useRetirementData();
 
   const [capeRatio, setCapeRatio] = useState(33.5);
@@ -163,10 +211,25 @@ function MainApp() {
     simulationResults,
     validationError,
     simulationError,
+    isCalculating,
     dismissSimulationError,
     goalSeekWithdrawal,
     memoizedDebouncedInputs
   } = useCalculation(React.useMemo(() => ({ ...inputs, language, fourPercentMode: settings.fourPercentMode, capeRatio }), [inputs, language, settings.fourPercentMode, capeRatio]), settings);
+
+  useEffect(() => {
+    if (!settingsLoaded || !inputsLoaded) {
+      setStartupDelayDone(false);
+      return undefined;
+    }
+
+    // Preload the ResultsDashboard chunk during the splash delay so the
+    // Suspense boundary resolves instantly when the main UI appears.
+    preloadResultsDashboard();
+
+    const timeoutId = setTimeout(() => setStartupDelayDone(true), 450);
+    return () => clearTimeout(timeoutId);
+  }, [inputsLoaded, settingsLoaded]);
 
   // Sync calculation results to sessionStorage so smart alerts can read them
   useEffect(() => {
@@ -684,6 +747,43 @@ function MainApp() {
     setLanguage(prev => prev === 'en' ? 'he' : 'en');
   };
 
+  const startupCurrentAge = parseFloat(inputs.currentAge);
+  const startupRetirementStartAge = parseFloat(inputs.retirementStartAge);
+  const startupRetirementEndAge = parseFloat(inputs.retirementEndAge);
+  const hasCalculableStartupInputs =
+    Number.isFinite(startupCurrentAge) && startupCurrentAge >= 0 && startupCurrentAge <= 120 &&
+    Number.isFinite(startupRetirementStartAge) && startupRetirementStartAge >= 0 && startupRetirementStartAge <= 120 &&
+    Number.isFinite(startupRetirementEndAge) && startupRetirementEndAge >= 0 && startupRetirementEndAge <= 120 &&
+    startupRetirementStartAge > startupCurrentAge &&
+    startupRetirementEndAge > startupRetirementStartAge;
+  const startupCalculationReady = !hasCalculableStartupInputs || (!isCalculating && Boolean(results));
+  const isAppReady = settingsLoaded && inputsLoaded && startupDelayDone && startupCalculationReady;
+
+  // Remove the splash overlay from the DOM only after its CSS fade-out completes.
+  // Reset it when the app becomes unready again (e.g. user logs out and back in).
+  // Block body scroll while the overlay is present so the scrollbar never appears
+  // during startup and causes a layout jump inside the fixed overlay.
+  // Block body scroll synchronously (before paint) while the splash overlay is
+  // present — useLayoutEffect fires before the browser draws, so the scrollbar
+  // never has a chance to appear and shift the spinner position.
+  React.useLayoutEffect(() => {
+    if (!splashRemoved) {
+      document.body.style.overflow = 'hidden';
+      return () => { document.body.style.overflow = ''; };
+    }
+  }, [splashRemoved]);
+
+  // Fade-out timing and splash lifecycle (runs after paint — no visual impact).
+  React.useEffect(() => {
+    if (isAppReady && !splashRemoved) {
+      const t = setTimeout(() => setSplashRemoved(true), 350);
+      return () => clearTimeout(t);
+    }
+    if (!isAppReady && splashRemoved) {
+      setSplashRemoved(false);
+    }
+  }, [isAppReady, splashRemoved]);
+
   return (
     <div className={`min-h-screen ${theme === 'light' ? 'bg-slate-100' : 'bg-gradient-to-br from-gray-900 to-blue-900'} p-2 md:p-4 pb-[18px]`} dir={translations[language].dir}>
       <div className="max-w-7xl mx-auto">
@@ -993,6 +1093,15 @@ function MainApp() {
       {/* Reminder Alert — shown once per session per due reminder */}
       <ReminderAlert language={language} isLight={theme === 'light'} sessionKey={currentUser.uid} />
 
+      {screenLocked && (
+        <ScreenLockOverlay
+          uid={currentUser.uid}
+          t={t}
+          onUnlock={unlockScreen}
+          onLogout={logout}
+        />
+      )}
+
       {/* Idle Warning Modal */}
       {warningActive && (
         <IdleWarningModal
@@ -1032,6 +1141,10 @@ function MainApp() {
               onIdleTimeoutEnabledChange={v => dispatchSettings({ type: SETTINGS_ACTIONS.SET_IDLE_TIMEOUT_ENABLED, payload: v })}
               idleTimeoutMinutes={settings.idleTimeoutMinutes ?? 5}
               onIdleTimeoutChange={v => dispatchSettings({ type: SETTINGS_ACTIONS.SET_IDLE_TIMEOUT, payload: v })}
+              screenLockEnabled={settings.screenLockEnabled ?? true}
+              onScreenLockEnabledChange={v => dispatchSettings({ type: SETTINGS_ACTIONS.SET_SCREEN_LOCK_ENABLED, payload: v })}
+              screenLockTimeoutMinutes={settings.screenLockTimeoutMinutes ?? 2}
+              onScreenLockTimeoutChange={v => dispatchSettings({ type: SETTINGS_ACTIONS.SET_SCREEN_LOCK_TIMEOUT, payload: v })}
               fourPercentMode={settings.fourPercentMode ?? 'net'}
               onFourPercentModeChange={v => dispatchSettings({ type: SETTINGS_ACTIONS.SET_FOUR_PERCENT_MODE, payload: v })}
               disabledAlerts={disabledAlerts}
@@ -1042,6 +1155,17 @@ function MainApp() {
             />
           </Suspense>
         </ErrorBoundary>
+      )}
+
+      {/* Splash overlay — sits on top and fades out once the app is ready.
+          Removed from DOM after the transition completes to free resources. */}
+      {!splashRemoved && (
+        <div
+          className={`fixed inset-0 z-[9999] transition-opacity duration-300 ${isAppReady ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+          style={{ willChange: 'opacity' }}
+        >
+          <StartupSplash t={t} language={language} theme={theme} />
+        </div>
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bell, CheckCircle, Clock, ArrowUpRight, MessageSquare, RefreshCw, ChevronUp, ChevronDown } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { markLoginReminderHandled, useReminders, advanceRecurringReminder, updateReminderInSession, setReminderSnooze } from '../hooks/useReminders';
@@ -11,9 +11,11 @@ export function ReminderAlert({ language, isLight, sessionKey }) {
     const isHe = language === 'he';
     const [locallyClosedAlertIds, setLocallyClosedAlertIds] = useState(() => new Set());
     const [snoozeDays, setSnoozeDays] = useState(0);
+    const initialTotalRef = useRef(null);
 
     useEffect(() => {
         setLocallyClosedAlertIds(new Set());
+        initialTotalRef.current = null;
     }, [sessionKey]);
 
     useEffect(() => {
@@ -37,6 +39,10 @@ export function ReminderAlert({ language, isLight, sessionKey }) {
 
     const visibleAlerts = alertDueNow.filter(r => !locallyClosedAlertIds.has(`${r.source}-${r.id}`));
     if (!visibleAlerts.length) return null;
+
+    if (initialTotalRef.current === null) initialTotalRef.current = visibleAlerts.length;
+    const totalAlerts = initialTotalRef.current;
+    const currentAlertIndex = totalAlerts - visibleAlerts.length + 1;
 
     function formatDate(dateStr) {
         if (!dateStr) return '';
@@ -117,12 +123,12 @@ export function ReminderAlert({ language, isLight, sessionKey }) {
 
                     <div className="px-5 py-4">
                         {/* Counter badge */}
-                        {rest.length > 0 && (
+                        {totalAlerts > 1 && (
                             <div className={`flex items-center gap-1.5 text-xs font-semibold mb-3 ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
                                 <Bell size={12} className="animate-bounce" />
                                 {isHe
-                                    ? `תזכורת 1 מתוך ${visibleAlerts.length}`
-                                    : `Reminder 1 of ${visibleAlerts.length}`}
+                                    ? `תזכורת ${currentAlertIndex} מתוך ${totalAlerts}`
+                                    : `Reminder ${currentAlertIndex} of ${totalAlerts}`}
                             </div>
                         )}
 
@@ -152,15 +158,6 @@ export function ReminderAlert({ language, isLight, sessionKey }) {
                                         </button>
                                     )}
                                 </div>
-                                {(active.note || active.text) && (
-                                    <div className={`mt-2 rounded-lg text-sm border ${isLight ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'}`}>
-                                        <div className={`flex items-center gap-1.5 px-2.5 py-1.5 border-b text-xs font-semibold ${isLight ? 'border-amber-200 text-amber-600' : 'border-amber-500/20 text-amber-400'}`}>
-                                            <MessageSquare size={11} />
-                                            {isHe ? 'הערה' : 'Note'}
-                                        </div>
-                                        <div className="px-2.5 py-2 leading-snug">{active.note || active.text}</div>
-                                    </div>
-                                )}
                                 <div className={`flex items-center gap-1.5 mt-2 text-xs ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
                                     <Clock size={11} />
                                     <span>{formatDate(active.date)}</span>
@@ -230,6 +227,15 @@ export function ReminderAlert({ language, isLight, sessionKey }) {
                                         {isHe ? 'הזכר' : 'Remind'}
                                     </button>
                                 </div>
+                            </div>
+                        )}
+                        {(active.note || active.text) && (
+                            <div className={`mt-3 rounded-lg text-sm border ${isLight ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'}`}>
+                                <div className={`flex items-center gap-1.5 px-2.5 py-1.5 border-b text-xs font-semibold ${isLight ? 'border-amber-200 text-amber-600' : 'border-amber-500/20 text-amber-400'}`}>
+                                    <MessageSquare size={11} />
+                                    {isHe ? 'הערה' : 'Note'}
+                                </div>
+                                <div className="px-2.5 py-2 leading-snug">{active.note || active.text}</div>
                             </div>
                         )}
                     </div>

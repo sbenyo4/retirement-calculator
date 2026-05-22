@@ -2,6 +2,7 @@ export const translations = {
     en: {
         appTitle: "Retirement Planner",
         appSubtitle: "Visualize your financial future with tax-adjusted projections.",
+        loadingWorkspace: "Preparing your retirement workspace...",
         parameters: "Parameters",
         birthdate: "Birthdate (Optional)",
         currentAge: "Current Age",
@@ -84,6 +85,11 @@ export const translations = {
         changePinAction: "Change PIN",
         pinChanged: "PIN changed.",
         clearPinFields: "Clear",
+        screenLockedTitle: "Screen Locked",
+        screenLockedDesc: "Enter your PIN to return to your open session.",
+        screenLockAfterInactivity: "Lock screen after inactivity",
+        screenLockBeforeLogoutHint: "Screen lock must occur before auto-logout. Unlocking uses the app PIN.",
+        screenLockRequiresLogoutHint: "Enable auto-logout for more than 1 minute to use screen lock.",
 
         // AI & Simulations
         calculationMode: 'Calculation Mode',
@@ -444,6 +450,7 @@ export const translations = {
         invalidAiResponse: 'Invalid AI response structure',
     },
     he: {
+        loadingWorkspace: "מכין את סביבת התכנון שלך...",
         appTitle: "מתכנן פרישה",
         appSubtitle: "המחשה של העתיד הפיננסי שלך עם התאמות מס.",
         parameters: "פרמטרים",
@@ -536,6 +543,11 @@ export const translations = {
         changePinAction: "החלף PIN",
         pinChanged: "ה-PIN הוחלף.",
         clearPinFields: "נקה",
+        screenLockedTitle: "המסך נעול",
+        screenLockedDesc: "הזן PIN כדי לחזור לפעילות הפתוחה.",
+        screenLockAfterInactivity: "נעילת מסך לאחר חוסר פעילות",
+        screenLockBeforeLogoutHint: "הנעילה חייבת להיות לפני הניתוק האוטומטי. הפתיחה נעשית עם ה-PIN של האפליקציה.",
+        screenLockRequiresLogoutHint: "יש להפעיל ניתוק אוטומטי ליותר מדקה כדי להשתמש בנעילת מסך.",
 
         // AI & Simulations
         calculationMode: 'מצב חישוב',
