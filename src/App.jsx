@@ -11,6 +11,7 @@ import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { UserMenu } from './components/UserMenu';
 import { ThemeToggle } from './components/ThemeToggle';
 import { LoginPage } from './components/LoginPage';
+import { PinGate } from './components/PinGate';
 import { ZoomToggle } from './components/ZoomToggle';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import { IdleWarningModal } from './components/IdleWarningModal';
@@ -71,9 +72,24 @@ function App() {
   return (
     <AuthProvider>
       <ThemeProvider>
-        <MainApp />
+        <AuthenticatedApp />
       </ThemeProvider>
     </AuthProvider>
+  );
+}
+
+function AuthenticatedApp() {
+  const { currentUser, logout } = useAuth();
+  const t = React.useCallback((key) => translations.he[key] || key, []);
+
+  if (!currentUser) {
+    return <LoginPage t={t} />;
+  }
+
+  return (
+    <PinGate uid={currentUser.uid} t={t} onLogout={logout}>
+      <MainApp />
+    </PinGate>
   );
 }
 
@@ -667,10 +683,6 @@ function MainApp() {
   const toggleLanguage = () => {
     setLanguage(prev => prev === 'en' ? 'he' : 'en');
   };
-
-  if (!currentUser) {
-    return <LoginPage t={t} />;
-  }
 
   return (
     <div className={`min-h-screen ${theme === 'light' ? 'bg-slate-100' : 'bg-gradient-to-br from-gray-900 to-blue-900'} p-2 md:p-4 pb-[18px]`} dir={translations[language].dir}>

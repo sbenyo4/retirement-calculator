@@ -24,6 +24,10 @@ function settingsRef(uid) {
     return userDoc(uid, 'data', 'settings');
 }
 
+function pinLockRef(uid) {
+    return userDoc(uid, 'data', 'pinLock');
+}
+
 function currentSessionRef(uid) {
     return userDoc(uid, 'data', 'currentSession');
 }
@@ -108,6 +112,15 @@ export async function getUserSettings(uid) {
 
 export async function setUserSettings(uid, data) {
     await setDoc(settingsRef(uid), data, { merge: true });
+}
+
+export async function getPinLock(uid) {
+    const snap = await getDoc(pinLockRef(uid));
+    return snap.exists() ? snap.data() : null;
+}
+
+export async function setPinLock(uid, data) {
+    await setDoc(pinLockRef(uid), { ...data, updatedAt: Date.now() });
 }
 
 // ─── Current Session ───────────────────────────────────────────────
