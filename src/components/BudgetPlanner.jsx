@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell, Save, Send, BarChart3, Calculator, RefreshCw, Copy, Undo2, Redo2, TrendingUp, Lock, Unlock, Globe, Car, PiggyBank, Route } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Trash2, Target, RotateCcw, BrainCircuit, Loader2, Search, X, History, Clock, ToggleLeft, ToggleRight, MessageSquare, Bell, Save, Send, BarChart3, Calculator, RefreshCw, Copy, Undo2, Redo2, TrendingUp, Lock, Unlock, Globe, Car, PiggyBank, Route, AlertTriangle, Sparkles } from 'lucide-react';
 import { MaintenanceCalcPanel } from './MaintenanceCalcPanel';
 import { syncComponentReminders } from '../hooks/useReminders';
 import { InsightRenderer } from './budget/InsightRenderer';
@@ -2079,6 +2079,14 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const aiInsightStaleRef = useRef(false); // mirror of aiInsightStale for use inside callbacks
     const aiStaleInitRef = useRef(false);   // true after the first post-load render
     const { dragStyle: aiDragStyle, onDragMouseDown: onAiDragMouseDown } = useDraggable(aiModalOpen);
+
+    useEffect(() => {
+        if (aiModalOpen) {
+            document.body.style.overflow = 'hidden';
+            return () => { document.body.style.overflow = ''; };
+        }
+    }, [aiModalOpen]);
+
     const [searchQuery, setSearchQuery] = useState('');
     const [showStats, setShowStats] = useState(false);
     const [showFixedVar, setShowFixedVar] = useState(false);
@@ -3557,24 +3565,68 @@ Gap vs target and what can be optimized.`;
                         </div>
                     </div>
                     {/* Body */}
-                    <div className="px-4 py-4 max-h-[80vh] overflow-y-auto custom-scrollbar scrollbar-right" dir={isHe ? 'rtl' : 'ltr'}>
+                    <div className="px-4 py-4 max-h-[80vh] overflow-y-auto custom-scrollbar scrollbar-right" dir="ltr">
+                        <div dir={isHe ? 'rtl' : 'ltr'}>
                         {aiLoading && (
-                            <div className={`flex items-center gap-2 text-sm mb-3 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
-                                <Loader2 size={15} className="animate-spin text-purple-400" />
-                                {isHe ? 'מעדכן ניתוח...' : 'Updating analysis...'}
+                            <div className="flex flex-col items-center justify-center py-10 space-y-4">
+                                <div className="relative">
+                                    <div className="w-16 h-16 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin" />
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                        <BrainCircuit size={24} className="text-purple-600 animate-pulse" />
+                                    </div>
+                                </div>
+                                <p className={`text-sm animate-pulse ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                    {isHe ? 'מנתח נתוני תקציב...' : 'Analyzing budget data...'}
+                                </p>
                             </div>
                         )}
                         {aiError && !aiLoading && (
-                            <p className="text-sm text-red-500">{aiError}</p>
+                            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
+                                <div className="flex items-start gap-3">
+                                    <div className="p-2 bg-red-500/20 rounded-full shrink-0">
+                                        <AlertTriangle size={20} className="text-red-500" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <h3 className={`font-bold text-sm mb-1 ${isLight ? 'text-red-800' : 'text-red-200'}`}>
+                                            {isHe ? 'שגיאה בניתוח' : 'Analysis Error'}
+                                        </h3>
+                                        <details className="text-xs opacity-70 cursor-pointer">
+                                            <summary className="hover:opacity-100 transition-opacity">
+                                                {isHe ? 'פרטים' : 'Details'}
+                                            </summary>
+                                            <pre className="mt-1 p-2 bg-black/20 rounded overflow-x-auto whitespace-pre-wrap">{aiError}</pre>
+                                        </details>
+                                    </div>
+                                </div>
+                            </div>
                         )}
-                        {insightText && (
+                        {insightText && !aiLoading && (
                             <InsightRenderer text={insightText} isLight={isLight} />
                         )}
                         {!aiLoading && !aiError && !aiInsight && (
-                            <p className={`text-sm ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
-                                {isHe ? 'לחץ על הכפתור למעלה להפעלת הניתוח' : 'Click the button above to generate analysis'}
-                            </p>
+                            <div className="flex flex-col items-center justify-center py-10 text-center space-y-4">
+                                <div className={`p-4 rounded-full ${isLight ? 'bg-purple-100' : 'bg-purple-900/30'}`}>
+                                    <BrainCircuit size={40} className="text-purple-500" />
+                                </div>
+                                <div>
+                                    <h3 className={`text-base font-semibold mb-1 ${isLight ? 'text-slate-800' : 'text-white'}`}>
+                                        {isHe ? 'ניתוח AI לתקציב' : 'AI Budget Analysis'}
+                                    </h3>
+                                    <p className={`text-sm max-w-xs mx-auto ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                        {isHe ? 'קבל תובנות מותאמות אישית על התקציב שלך והמלצות לחיסכון.' : 'Get personalized insights on your budget and savings recommendations.'}
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={handleAiInsight}
+                                    disabled={totalMonthly === 0}
+                                    className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-full font-medium shadow-lg transition-all disabled:opacity-40"
+                                >
+                                    <Sparkles size={16} />
+                                    {isHe ? 'נתח עכשיו' : 'Analyze Now'}
+                                </button>
+                            </div>
                         )}
+                        </div>
                     </div>
                 </div>
             )}

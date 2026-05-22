@@ -8,51 +8,83 @@ function renderInline(text, isLight) {
     });
 }
 
+const SECTION_COLORS = [
+    { border: 'border-l-purple-500', dot: 'bg-purple-400' },
+    { border: 'border-l-blue-500',   dot: 'bg-blue-400' },
+    { border: 'border-l-green-500',  dot: 'bg-green-400' },
+    { border: 'border-l-amber-500',  dot: 'bg-amber-400' },
+    { border: 'border-l-rose-500',   dot: 'bg-rose-400' },
+    { border: 'border-l-cyan-500',   dot: 'bg-cyan-400' },
+];
+
 export function InsightRenderer({ text, isLight }) {
     if (!text) return null;
-    const lines = text.split('\n');
-    const elements = [];
-    let i = 0;
-    while (i < lines.length) {
-        const line = lines[i];
-        const trimmed = line.trim();
 
-        if (!trimmed) { i++; continue; }
+    const lines = text.split('\n');
+    const sections = [];
+    let current = null;
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
 
         const isHeading = /^#{1,3}\s/.test(trimmed)
-            || (/^[^•\-*]/.test(trimmed) && trimmed.endsWith(':') && trimmed.length < 60);
+            || (/^[^•\-*\d]/.test(trimmed) && trimmed.endsWith(':') && trimmed.length < 60);
+
         if (isHeading) {
-            const headText = trimmed.replace(/^#{1,3}\s*/, '').replace(/:$/, '');
-            elements.push(
-                <div key={i} className={`flex items-center gap-2 mt-4 mb-1.5 first:mt-0 pb-1 border-b ${isLight ? 'border-slate-100' : 'border-white/10'}`}>
-                    <span className="w-1 h-4 rounded-full bg-purple-400 shrink-0" />
-                    <span className={`text-xs font-bold uppercase tracking-wide ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
-                        {renderInline(headText, isLight)}
-                    </span>
-                </div>
-            );
-            i++; continue;
+            if (current) sections.push(current);
+            current = {
+                heading: trimmed.replace(/^#{1,3}\s*/, '').replace(/:$/, ''),
+                lines: [],
+            };
+        } else if (current) {
+            current.lines.push(trimmed);
+        } else {
+            if (!sections.length) sections.push({ heading: null, lines: [] });
+            sections[sections.length - 1].lines.push(trimmed);
         }
-
-        if (/^[-•*]\s/.test(trimmed) || /^\d+\.\s/.test(trimmed)) {
-            const bulletText = trimmed.replace(/^[-•*]\s/, '').replace(/^\d+\.\s/, '');
-            elements.push(
-                <div key={i} className="flex gap-2 items-start py-0.5">
-                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" />
-                    <span className={`text-sm leading-relaxed ${isLight ? 'text-slate-700' : 'text-gray-300'}`}>
-                        {renderInline(bulletText, isLight)}
-                    </span>
-                </div>
-            );
-            i++; continue;
-        }
-
-        elements.push(
-            <p key={i} className={`text-sm leading-relaxed mt-2 first:mt-0 ${isLight ? 'text-slate-700' : 'text-gray-300'}`}>
-                {renderInline(trimmed, isLight)}
-            </p>
-        );
-        i++;
     }
-    return <div className="space-y-0.5">{elements}</div>;
+    if (current) sections.push(current);
+
+    const cardBase = isLight
+        ? 'bg-white border border-slate-200 shadow-sm'
+        : 'bg-white/5 border border-white/10';
+
+    return (
+        <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {sections.map((section, si) => {
+                const { border, dot } = SECTION_COLORS[si % SECTION_COLORS.length];
+                return (
+                    <div key={si} className={`${cardBase} rounded-xl p-4 border-l-4 ${border}`}>
+                        {section.heading && (
+                            <h3 className={`font-semibold text-sm mb-2.5 ${isLight ? 'text-slate-800' : 'text-gray-200'}`}>
+                                {renderInline(section.heading, isLight)}
+                            </h3>
+                        )}
+                        <div className="space-y-1.5">
+                            {section.lines.map((line, li) => {
+                                const isBullet = /^[-•*]\s/.test(line) || /^\d+\.\s/.test(line);
+                                if (isBullet) {
+                                    const bulletText = line.replace(/^[-•*]\s/, '').replace(/^\d+\.\s/, '');
+                                    return (
+                                        <div key={li} className="flex gap-2 items-start">
+                                            <span className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}`} />
+                                            <span className={`text-sm leading-relaxed ${isLight ? 'text-slate-600' : 'text-gray-400'}`}>
+                                                {renderInline(bulletText, isLight)}
+                                            </span>
+                                        </div>
+                                    );
+                                }
+                                return (
+                                    <p key={li} className={`text-sm leading-relaxed ${isLight ? 'text-slate-600' : 'text-gray-400'}`}>
+                                        {renderInline(line, isLight)}
+                                    </p>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
 }
