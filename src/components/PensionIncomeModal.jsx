@@ -1256,24 +1256,28 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                         {aiPanelVisible && (aiInsight || isLoadingAI || aiError) && (
                             <div className={`rounded-xl border transition-all duration-300 ${pensionAICardClass}`}>
                                 <div
-                                    className={`flex items-center justify-between p-3 cursor-pointer ${!aiPanelCollapsed ? (isLight ? 'border-b border-slate-200' : 'border-b border-white/10') : ''}`}
+                                    className={`flex items-center justify-between gap-3 p-3 cursor-pointer ${!aiPanelCollapsed ? (isLight ? 'border-b border-slate-200' : 'border-b border-white/10') : ''}`}
                                     onClick={() => setAiPanelCollapsed(c => {
                                         if (c) { setShowIncomeSources(false); setShowDeferralPanel(false); setExpandedMilestone(null); }
                                         return !c;
                                     })}
                                 >
-                                    <div className="flex items-center gap-2">
-                                        <button className={`p-1 rounded-full transition-colors ${isLight ? 'hover:bg-slate-200 text-purple-500' : 'hover:bg-white/10 text-purple-400'}`}>
-                                            {aiPanelCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-                                        </button>
+                                    <div className="flex min-w-0 items-center gap-2">
+                                        <div className={`p-1 rounded ${isLight ? 'bg-purple-100 text-purple-600' : 'bg-purple-500/20 text-purple-400'}`}>
+                                            <Sparkles size={14} />
+                                        </div>
                                         <h3 className={`text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>
                                             {language === 'he' ? 'ניתוח AI' : 'AI Analysis'}
                                         </h3>
-                                        <Sparkles size={14} className={isLight ? 'text-purple-500' : 'text-purple-400'} />
                                     </div>
-                                    <button onClick={e => { e.stopPropagation(); setAiPanelVisible(false); }} className={`p-1 rounded-full transition-colors ${isLight ? 'hover:bg-slate-200 text-slate-400 hover:text-slate-600' : 'hover:bg-white/10 text-gray-500 hover:text-gray-300'}`}>
-                                        <X size={14} />
-                                    </button>
+                                    <div className="flex shrink-0 items-center gap-1">
+                                        <button onClick={e => { e.stopPropagation(); setAiPanelVisible(false); }} className={`p-1 rounded-full transition-colors ${isLight ? 'hover:bg-slate-200 text-slate-400 hover:text-slate-600' : 'hover:bg-white/10 text-gray-500 hover:text-gray-300'}`}>
+                                            <X size={14} />
+                                        </button>
+                                        <button className={`p-1 rounded-full transition-colors ${isLight ? 'hover:bg-slate-200 text-slate-500' : 'hover:bg-white/10 text-gray-400'}`}>
+                                            {aiPanelCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+                                        </button>
+                                    </div>
                                 </div>
                                 {!aiPanelCollapsed && (
                                     <div className="p-4 space-y-3">
@@ -1390,13 +1394,13 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                         {/* Income Sources */}
                         <div className={`rounded-xl border transition-all duration-300 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'}`}>
                             <div
-                                className={`flex items-center justify-between p-3 cursor-pointer ${showIncomeSources ? (isLight ? 'border-b border-slate-200' : 'border-b border-white/10') : ''}`}
+                                className={`flex items-center justify-between gap-3 p-3 cursor-pointer ${showIncomeSources ? (isLight ? 'border-b border-slate-200' : 'border-b border-white/10') : ''}`}
                                 onClick={toggleIncomeSources}
                             >
-                                <div className="flex items-center gap-2">
-                                    <button className={`p-1 rounded-full transition-colors ${isLight ? 'hover:bg-slate-200 text-slate-500' : 'hover:bg-white/10 text-gray-400'}`}>
-                                        {showIncomeSources ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                                    </button>
+                                <div className="flex min-w-0 items-center gap-2">
+                                    <div className={`p-1 rounded ${isLight ? 'bg-emerald-100 text-emerald-600' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                                        <Wallet size={14} />
+                                    </div>
                                     <h3 className={`text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>
                                         {t('incomeSources') || 'מקורות הכנסה'}
                                     </h3>
@@ -1407,8 +1411,9 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                     )}
                                 </div>
 
-                                {showIncomeSources && (
-                                    <div className="flex gap-1 flex-wrap" onClick={e => e.stopPropagation()}>
+                                <div className="flex shrink-0 items-center gap-2">
+                                    {showIncomeSources && (
+                                        <div className="flex gap-1 flex-wrap" onClick={e => e.stopPropagation()}>
                                         <button
                                             onClick={() => addIncomeSource('pension')}
                                             className={`px-3 py-1.5 rounded text-xs flex items-center gap-1.5 ${isLight ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'}`}
@@ -1423,8 +1428,12 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                             <Plus size={14} />
                                             {t('addCapital') || 'הוסף הון'}
                                         </button>
-                                    </div>
-                                )}
+                                        </div>
+                                    )}
+                                    <button className={`p-1 rounded-full transition-colors ${isLight ? 'hover:bg-slate-200 text-slate-500' : 'hover:bg-white/10 text-gray-400'}`}>
+                                        {showIncomeSources ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                    </button>
+                                </div>
                             </div>
 
                             {showIncomeSources && (
@@ -1499,7 +1508,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                             <div className={`rounded-xl border transition-all duration-300 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'}`}>
                                 <button
                                     onClick={toggleDeferralPanel}
-                                    className={`w-full flex items-center justify-between p-3 ${isLight ? 'hover:bg-slate-100' : 'hover:bg-white/5'} transition-colors`}
+                                    className={`w-full flex items-center justify-between gap-3 p-3 ${isLight ? 'hover:bg-slate-100' : 'hover:bg-white/5'} transition-colors`}
                                 >
                                     <div className="flex items-center gap-2">
                                         <div className={`p-1 rounded ${isLight ? 'bg-blue-100 text-blue-600' : 'bg-blue-500/20 text-blue-400'}`}>
@@ -1514,7 +1523,9 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                             </span>
                                         )}
                                     </div>
-                                    {showDeferralPanel ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                    <span className={`shrink-0 p-1 rounded-full ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                        {showDeferralPanel ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                    </span>
                                 </button>
 
                                 {showDeferralPanel && (
