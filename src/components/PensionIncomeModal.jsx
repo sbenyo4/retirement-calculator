@@ -253,8 +253,10 @@ function IncomeSourceRow({ source, onUpdate, onEditCalculated, onDelete, t, lang
                     <div className="flex items-center gap-1">
                         <span className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{t('startAge') || 'מגיל'}</span>
                         <input
-                            type="text"
+                            type="number"
                             inputMode="numeric"
+                            min="0"
+                            step="1"
                             value={editValues.startAge}
                             onChange={handleNumberChange('startAge')}
                             className={`w-14 px-2 py-1.5 rounded text-sm no-spinner ${isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'} border text-center`}
@@ -344,6 +346,28 @@ function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRa
             updateAsset({ [field]: value });
         }
     };
+    const updateAssetInteger = (field) => (e) => {
+        const value = e.target.value;
+        if (value === '' || /^\d*$/.test(value)) {
+            updateAsset({ [field]: value });
+        }
+    };
+    const getSteppedNumber = (value, step, direction) => {
+        const currentValue = parseFloat(value);
+        const startValue = Number.isFinite(currentValue) ? currentValue : 0;
+        const precision = String(step).split('.')[1]?.length || 0;
+        const nextValue = Math.max(0, startValue + (step * direction));
+
+        if (!precision) return String(Math.round(nextValue));
+
+        return nextValue.toFixed(precision).replace(/\.?0+$/, '');
+    };
+    const handleNumberStep = (value, step, update) => (e) => {
+        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+
+        e.preventDefault();
+        update(getSteppedNumber(value, step, e.key === 'ArrowUp' ? 1 : -1));
+    };
     const formatCurrency = (val) => formatCurrencyUtil(val, language);
     const setAssetDateToToday = () => updateAsset({
         asOfDate: getTodayDateString(),
@@ -404,10 +428,13 @@ function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRa
                 <label className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                     <span className="block mb-1">{isPension ? (language === 'he' ? 'גיל תחילת קצבה' : 'Annuity age') : (language === 'he' ? 'גיל קבלה' : 'Access age')}</span>
                     <input
-                        type="text"
+                        type="number"
                         inputMode="numeric"
+                        min="0"
+                        step="1"
                         value={numberValue(source.startAge)}
                         onChange={updateNumber('startAge')}
+                        onKeyDown={handleNumberStep(source.startAge, 1, (value) => onUpdate({ startAge: value }))}
                         className={`w-full px-2 py-1.5 rounded text-sm no-spinner border text-center ${isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
                     />
                 </label>
@@ -415,10 +442,13 @@ function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRa
                     <span className="block mb-1">{language === 'he' ? 'ריבית למקור' : 'Source return'}</span>
                     <div className="relative">
                         <input
-                            type="text"
-                            inputMode="decimal"
+                            type="number"
+                            inputMode="numeric"
+                            min="0"
+                            step="1"
                             value={numberValue(source.currentAsset.returnRate)}
-                            onChange={updateAssetNumber('returnRate')}
+                            onChange={updateAssetInteger('returnRate')}
+                            onKeyDown={handleNumberStep(source.currentAsset.returnRate, 1, (value) => updateAsset({ returnRate: value }))}
                             placeholder={String(defaultReturnRate)}
                             className={`w-full px-2 py-1.5 pe-5 rounded text-sm no-spinner border text-center ${isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
                         />
@@ -429,10 +459,13 @@ function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRa
                     <label className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                         <span className="block mb-1">{language === 'he' ? 'גיל סיום' : 'End age'}</span>
                         <input
-                            type="text"
+                            type="number"
                             inputMode="numeric"
+                            min="0"
+                            step="1"
                             value={numberValue(source.endAge)}
                             onChange={updateNumber('endAge')}
+                            onKeyDown={handleNumberStep(source.endAge, 1, (value) => onUpdate({ endAge: value }))}
                             className={`w-full px-2 py-1.5 rounded text-sm no-spinner border text-center ${isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
                         />
                     </label>
@@ -445,7 +478,7 @@ function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRa
                             inputMode="numeric"
                             value={numberValue(source.currentAsset.targetAnnuity)}
                             onChange={updateAssetNumber('targetAnnuity')}
-                            className={`w-full px-2 py-1.5 rounded text-sm no-spinner border text-end ${isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
+                            className={`w-full px-2 py-1.5 rounded text-sm no-spinner border text-center ${isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
                         />
                     </label>
                 )}
@@ -453,10 +486,13 @@ function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRa
                     <label className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                         <span className="block mb-1">{language === 'he' ? 'מקדם, לפי גיל' : 'Coefficient, by age'}</span>
                         <input
-                            type="text"
+                            type="number"
                             inputMode="numeric"
+                            min="0"
+                            step="1"
                             value={numberValue(source.currentAsset.coefficient)}
                             onChange={updateAssetNumber('coefficient')}
+                            onKeyDown={handleNumberStep(source.currentAsset.coefficient, 1, (value) => updateAsset({ coefficient: value }))}
                             placeholder={projectedSource.appliedCoefficient || projectedSource.providentAnnuityCoefficient
                                 ? String(projectedSource.appliedCoefficient || projectedSource.providentAnnuityCoefficient)
                                 : ''}

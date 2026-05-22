@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { RefreshCw, Check, X, AlertCircle, Download, RotateCcw, ChevronDown } from 'lucide-react';
+import { RefreshCw, Check, X, AlertCircle, Download, RotateCcw, ChevronDown, KeyRound, Loader2 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { fetchAllAvailableModels, compareModels } from '../utils/ai-models-fetcher';
 import { AI_MODELS_CONFIG } from '../config/ai-models';
-import { getUserSettings, setUserSettings } from '../utils/db';
+import { getPinLock, getUserSettings, setPinLock, setUserSettings } from '../utils/db';
+import { createPinLock, isValidPin, verifyPinLock } from '../utils/pinLock';
 import { SmartAlertsPanel } from './SmartAlertsPanel';
 import { readAppState } from '../utils/appState';
 
@@ -26,6 +27,12 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
     const [collapsed, setCollapsed] = useState({});
     const toggleSection = (id) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
     const [selectedModels, setSelectedModels] = useState({});
+    const [currentPin, setCurrentPin] = useState('');
+    const [nextPin, setNextPin] = useState('');
+    const [confirmNextPin, setConfirmNextPin] = useState('');
+    const [pinChangeBusy, setPinChangeBusy] = useState(false);
+    const [pinChangeError, setPinChangeError] = useState('');
+    const [pinChangeSuccess, setPinChangeSuccess] = useState(false);
 
     const [expandedProvider, setExpandedProvider] = useState(null);
     const abortRef = useRef(null);
@@ -220,6 +227,61 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
         setTimeout(() => setSaveSuccess(false), 3000);
     };
 
+    const updatePinField = setter => event => {
+        setter(event.target.value.replace(/\D/g, '').slice(0, 8));
+        setPinChangeError('');
+        setPinChangeSuccess(false);
+    };
+    const canChangePin = isValidPin(currentPin)
+        && isValidPin(nextPin)
+        && isValidPin(confirmNextPin)
+        && confirmNextPin === nextPin
+        && !pinChangeBusy;
+
+    const handleChangePin = async (event) => {
+        event.preventDefault();
+        if (!uid) return;
+        if (!isValidPin(currentPin) || !isValidPin(nextPin)) {
+            setPinChangeError(t('pinDigitsError'));
+            return;
+        }
+        if (nextPin !== confirmNextPin) {
+            setPinChangeError(t('pinMismatchError'));
+            return;
+        }
+
+        setPinChangeBusy(true);
+        setPinChangeError('');
+        setPinChangeSuccess(false);
+        try {
+            const currentLock = await getPinLock(uid);
+            if (!currentLock || !(await verifyPinLock(currentPin, currentLock))) {
+                setPinChangeError(t('pinIncorrectError'));
+                return;
+            }
+
+            await setPinLock(uid, await createPinLock(nextPin));
+            setCurrentPin('');
+            setNextPin('');
+            setConfirmNextPin('');
+            setPinChangeSuccess(true);
+            setTimeout(() => setPinChangeSuccess(false), 3000);
+        } catch (err) {
+            console.error('Failed to change PIN:', err);
+            setPinChangeError(t('pinSaveError'));
+        } finally {
+            setPinChangeBusy(false);
+        }
+    };
+
+    const handleClearPinChange = () => {
+        setCurrentPin('');
+        setNextPin('');
+        setConfirmNextPin('');
+        setPinChangeError('');
+        setPinChangeSuccess(false);
+    };
+
     const handleToggleExpand = (providerId) => {
         setExpandedProvider(prev => prev === providerId ? null : providerId);
     };
@@ -324,6 +386,85 @@ export function ModelsManager({ apiKeys, onClose, onModelsUpdated, t, language, 
                                             : ((t && t('fourPercentModeGrossDesc')) || (language === 'he' ? 'התיק מושך בדיוק 4% ברוטו/שנה. אחרי מס רווחי הון מקבל פחות.' : 'Portfolio withdraws exactly 4% gross/year. You receive less after capital gains tax.'))}
                                     </p>
                                 </div>
+
+                                {/* App PIN */}
+                                <form autoComplete="off" onSubmit={handleChangePin} className={`pt-3 border-t space-y-2 ${isLight ? 'border-gray-200' : 'border-white/10'}`}>
+                                    <div className="flex items-start gap-2">
+                                        <KeyRound size={16} className={`mt-0.5 shrink-0 ${isLight ? 'text-blue-600' : 'text-blue-400'}`} />
+                                        <div>
+                                            <h4 className={`text-sm font-medium ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                                                {t('changePinTitle')}
+                                            </h4>
+                                            <p className={`text-[11px] ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                                                {t('changePinDesc')}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="grid gap-2 sm:grid-cols-3">
+                                        <input
+                                            type="password"
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
+                                            autoComplete="off"
+                                            value={currentPin}
+                                            onChange={updatePinField(setCurrentPin)}
+                                            placeholder={t('currentPinLabel')}
+                                            className={`h-9 rounded-lg border px-3 text-sm text-center ${isLight ? 'bg-white border-gray-300 text-gray-900 placeholder:text-gray-400' : 'bg-gray-800 border-gray-600 text-white placeholder:text-gray-500'}`}
+                                        />
+                                        <input
+                                            type="password"
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
+                                            autoComplete="off"
+                                            value={nextPin}
+                                            onChange={updatePinField(setNextPin)}
+                                            placeholder={t('newPinLabel')}
+                                            className={`h-9 rounded-lg border px-3 text-sm text-center ${isLight ? 'bg-white border-gray-300 text-gray-900 placeholder:text-gray-400' : 'bg-gray-800 border-gray-600 text-white placeholder:text-gray-500'}`}
+                                        />
+                                        <input
+                                            type="password"
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
+                                            autoComplete="off"
+                                            value={confirmNextPin}
+                                            onChange={updatePinField(setConfirmNextPin)}
+                                            placeholder={t('confirmPinLabel')}
+                                            className={`h-9 rounded-lg border px-3 text-sm text-center ${isLight ? 'bg-white border-gray-300 text-gray-900 placeholder:text-gray-400' : 'bg-gray-800 border-gray-600 text-white placeholder:text-gray-500'}`}
+                                        />
+                                    </div>
+                                    {pinChangeError && (
+                                        <p className={`rounded-lg border px-2.5 py-1.5 text-xs ${isLight ? 'border-red-200 bg-red-50 text-red-700' : 'border-red-500/30 bg-red-500/10 text-red-200'}`}>
+                                            {pinChangeError}
+                                        </p>
+                                    )}
+                                    {pinChangeSuccess && (
+                                        <p className={`rounded-lg border px-2.5 py-1.5 text-xs ${isLight ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'}`}>
+                                            {t('pinChanged')}
+                                        </p>
+                                    )}
+                                    <div className="flex flex-wrap gap-2">
+                                        <button
+                                            type="submit"
+                                            disabled={!canChangePin}
+                                            className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold ${!canChangePin
+                                                ? (isLight ? 'bg-gray-200 text-gray-400' : 'bg-white/10 text-gray-500')
+                                                : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                                        >
+                                            {pinChangeBusy && <Loader2 size={13} className="animate-spin" />}
+                                            {t('changePinAction')}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleClearPinChange}
+                                            disabled={pinChangeBusy || (!currentPin && !nextPin && !confirmNextPin && !pinChangeError && !pinChangeSuccess)}
+                                            className={`rounded-lg px-3 py-2 text-xs font-semibold ${pinChangeBusy || (!currentPin && !nextPin && !confirmNextPin && !pinChangeError && !pinChangeSuccess)
+                                                ? (isLight ? 'bg-gray-100 text-gray-400' : 'bg-white/5 text-gray-600')
+                                                : (isLight ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-white/10 text-gray-300 hover:bg-white/20')}`}
+                                        >
+                                            {t('clearPinFields')}
+                                        </button>
+                                    </div>
+                                </form>
                             </div>}
                         </div>
 

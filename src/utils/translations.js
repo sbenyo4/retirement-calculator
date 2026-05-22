@@ -77,6 +77,13 @@ export const translations = {
         pinVerifyError: "Could not verify the PIN.",
         pinRememberWarning: "Remember this PIN. It is stored as a verifier, not as readable text.",
         pinUnlockHint: "This is an extra app lock after Google sign-in.",
+        changePinTitle: "Change App PIN",
+        changePinDesc: "Enter the current PIN before saving a new one.",
+        currentPinLabel: "Current PIN",
+        newPinLabel: "New PIN",
+        changePinAction: "Change PIN",
+        pinChanged: "PIN changed.",
+        clearPinFields: "Clear",
 
         // AI & Simulations
         calculationMode: 'Calculation Mode',
@@ -522,6 +529,13 @@ export const translations = {
         pinVerifyError: "לא ניתן לאמת את ה-PIN.",
         pinRememberWarning: "חשוב לזכור את ה-PIN. הוא נשמר כמאמת ולא כטקסט קריא.",
         pinUnlockHint: "זו שכבת נעילה נוספת אחרי ההתחברות עם Google.",
+        changePinTitle: "החלפת PIN לאפליקציה",
+        changePinDesc: "יש להזין את ה-PIN הנוכחי לפני שמירת PIN חדש.",
+        currentPinLabel: "PIN נוכחי",
+        newPinLabel: "PIN חדש",
+        changePinAction: "החלף PIN",
+        pinChanged: "ה-PIN הוחלף.",
+        clearPinFields: "נקה",
 
         // AI & Simulations
         calculationMode: 'מצב חישוב',
