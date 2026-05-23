@@ -94,6 +94,15 @@ export function ScreenLockOverlay({ uid, t, onUnlock, onLogout }) {
         return undefined;
     }, [busy, error, loading]);
 
+    useEffect(() => {
+        const focusPinInput = () => {
+            setTimeout(() => pinInputRef.current?.focus(), 0);
+        };
+
+        window.addEventListener('rc-focus-pin-input', focusPinInput);
+        return () => window.removeEventListener('rc-focus-pin-input', focusPinInput);
+    }, []);
+
     return (
         <div className={`fixed inset-0 z-[190] flex items-center justify-center p-4 ${isLight ? 'bg-slate-100/95' : 'bg-slate-950/95'} backdrop-blur-md`}>
             <div className={`w-full max-w-sm rounded-2xl border p-6 shadow-2xl ${isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`} dir={t('dir') === 'rtl' ? 'rtl' : 'ltr'}>

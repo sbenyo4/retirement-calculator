@@ -194,6 +194,12 @@ function MainApp() {
     resetTimer();
     resetScreenLockTimer();
   }, [resetScreenLockTimer, resetTimer]);
+  const handleStayLoggedIn = useCallback(() => {
+    resetTimer();
+    if (screenLocked) {
+      setTimeout(() => window.dispatchEvent(new Event('rc-focus-pin-input')), 0);
+    }
+  }, [resetTimer, screenLocked]);
   const { inputs, setInputs, saveGlobalPension, inputsLoaded } = useRetirementData();
 
   const [capeRatio, setCapeRatio] = useState(33.5);
@@ -1108,7 +1114,7 @@ function MainApp() {
       {warningActive && (
         <IdleWarningModal
           secondsLeft={secondsLeft}
-          onStayLoggedIn={resetTimer}
+          onStayLoggedIn={handleStayLoggedIn}
           language={language}
         />
       )}

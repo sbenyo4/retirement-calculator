@@ -122,6 +122,15 @@ export function PinGate({ uid, t, onLogout, children }) {
         return undefined;
     }, [busy, mode, error]);
 
+    useEffect(() => {
+        const focusPinInput = () => {
+            setTimeout(() => pinInputRef.current?.focus(), 0);
+        };
+
+        window.addEventListener('rc-focus-pin-input', focusPinInput);
+        return () => window.removeEventListener('rc-focus-pin-input', focusPinInput);
+    }, []);
+
     if (mode === 'unlocked') return children;
 
     const isSetup = mode === 'setup';
