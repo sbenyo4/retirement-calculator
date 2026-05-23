@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { KeyRound, Loader2, LockKeyhole, LogOut } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { getPinLock, setPinLock } from '../utils/db';
@@ -13,6 +13,7 @@ export function PinGate({ uid, t, onLogout, children }) {
     const [confirmPin, setConfirmPin] = useState('');
     const [error, setError] = useState('');
     const [busy, setBusy] = useState(false);
+    const pinInputRef = useRef(null);
 
     useEffect(() => {
         let active = true;
@@ -113,6 +114,14 @@ export function PinGate({ uid, t, onLogout, children }) {
         };
     }, [busy, mode, pin, pinLock]);
 
+    useEffect(() => {
+        if ((mode === 'unlock' || mode === 'setup') && !busy) {
+            const timeoutId = setTimeout(() => pinInputRef.current?.focus(), 0);
+            return () => clearTimeout(timeoutId);
+        }
+        return undefined;
+    }, [busy, mode, error]);
+
     if (mode === 'unlocked') return children;
 
     const isSetup = mode === 'setup';
@@ -161,6 +170,7 @@ export function PinGate({ uid, t, onLogout, children }) {
                                 {t('pinLabel')}
                             </span>
                             <input
+                                ref={pinInputRef}
                                 autoFocus
                                 autoComplete={isSetup ? 'new-password' : 'one-time-code'}
                                 inputMode="numeric"

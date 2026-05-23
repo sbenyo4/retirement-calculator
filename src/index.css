@@ -108,3 +108,9 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
+
+.rc-stable-spinner {
+  transform-box: fill-box;
+  transform-origin: center;
+  contain: layout paint;
+}

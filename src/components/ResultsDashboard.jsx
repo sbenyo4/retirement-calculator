@@ -56,6 +56,10 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
     const [showEndBalanceTargetModal, setShowEndBalanceTargetModal] = useState(false);
 
     useEffect(() => {
+        setActiveTab(calculationMode === 'ai' ? 'insights' : 'numerical');
+    }, [calculationMode]);
+
+    useEffect(() => {
         const handler = () => setActiveTab('budget');
         window.addEventListener('rc-open-budget-tab', handler);
         return () => window.removeEventListener('rc-open-budget-tab', handler);

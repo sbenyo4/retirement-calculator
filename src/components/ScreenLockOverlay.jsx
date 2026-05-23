@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Loader2, LockKeyhole, LogOut } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { getPinLock } from '../utils/db';
@@ -12,6 +12,7 @@ export function ScreenLockOverlay({ uid, t, onUnlock, onLogout }) {
     const [error, setError] = useState('');
     const [busy, setBusy] = useState(false);
     const [loading, setLoading] = useState(true);
+    const pinInputRef = useRef(null);
 
     useEffect(() => {
         let active = true;
@@ -85,6 +86,14 @@ export function ScreenLockOverlay({ uid, t, onUnlock, onLogout }) {
         };
     }, [busy, loading, onUnlock, pin, pinLock]);
 
+    useEffect(() => {
+        if (!loading && !busy) {
+            const timeoutId = setTimeout(() => pinInputRef.current?.focus(), 0);
+            return () => clearTimeout(timeoutId);
+        }
+        return undefined;
+    }, [busy, error, loading]);
+
     return (
         <div className={`fixed inset-0 z-[190] flex items-center justify-center p-4 ${isLight ? 'bg-slate-100/95' : 'bg-slate-950/95'} backdrop-blur-md`}>
             <div className={`w-full max-w-sm rounded-2xl border p-6 shadow-2xl ${isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`} dir={t('dir') === 'rtl' ? 'rtl' : 'ltr'}>
@@ -112,6 +121,7 @@ export function ScreenLockOverlay({ uid, t, onUnlock, onLogout }) {
                                 {t('pinLabel')}
                             </span>
                             <input
+                                ref={pinInputRef}
                                 autoFocus
                                 autoComplete="one-time-code"
                                 inputMode="numeric"

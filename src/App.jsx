@@ -102,7 +102,7 @@ function StartupSplash({ t, language, theme }) {
     <div className={`h-full w-full flex items-center justify-center p-4 ${isLight ? 'bg-slate-100' : 'bg-gradient-to-br from-gray-900 to-blue-900'}`} dir={translations[language].dir}>
       <div className={`w-full max-w-sm rounded-2xl border px-8 py-10 text-center shadow-2xl ${isLight ? 'bg-white border-slate-200' : 'bg-white/10 border-white/20 backdrop-blur-md'}`}>
         <div className="relative mx-auto mb-5 flex h-20 w-20 items-center justify-center">
-          <svg className={`absolute inset-0 h-full w-full animate-spin ${isLight ? 'text-blue-500/70' : 'text-blue-300/80'}`} viewBox="0 0 80 80">
+          <svg className={`rc-stable-spinner absolute inset-0 h-full w-full animate-spin ${isLight ? 'text-blue-500/70' : 'text-blue-300/80'}`} viewBox="0 0 80 80">
             <circle cx="40" cy="40" r="38" stroke="currentColor" strokeWidth="2" fill="transparent" strokeDasharray="179 60" strokeLinecap="round" />
           </svg>
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg shadow-blue-500/25">
