@@ -3365,7 +3365,7 @@ Gap vs target and what can be optimized.`;
                     {ageInSelectedYear !== null && (
                         <span
                             title={isHe ? 'גיל בשנה הנבחרת' : 'Age in selected year'}
-                            className={`absolute top-[calc(50%-4px)] -translate-y-1/2 text-xs px-2 rounded-full border leading-none tracking-wide py-1 ${isHe ? 'right-12' : 'left-12'} ${isLight ? 'bg-cyan-50 text-cyan-700 border-cyan-200' : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'}`}
+                            className={`absolute top-[calc(50%-4px)] -translate-y-1/2 text-[13px] font-semibold px-2.5 rounded-full border leading-none tracking-wide py-1 ${isHe ? 'right-12' : 'left-12'} ${isLight ? 'bg-cyan-50 text-cyan-700 border-cyan-200' : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'}`}
                             dir={isHe ? 'rtl' : 'ltr'}
                         >
                             {isHe ? `גיל ${ageInSelectedYear}` : `Age ${ageInSelectedYear}`}
@@ -3458,12 +3458,16 @@ Gap vs target and what can be optimized.`;
                         <button onClick={() => setHouseholdSize(s => Math.min(10, s + 1))} className={`w-5 h-5 rounded flex items-center justify-center font-bold transition-colors ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}>+</button>
                     </div>
                     <div className="flex-1" />
-                    {showRetirementMode && retirementAdj && (
+                    {retirementAdj && (
                         <button
                             onClick={() => setIncludeRetirementEntertainment(v => !v)}
-                            className={`shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded-lg border transition-colors ${includeRetirementEntertainment
-                                ? (isLight ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-amber-500/10 border-amber-500/30 text-amber-300')
-                                : (isLight ? 'bg-slate-50 border-slate-200 text-slate-500' : 'bg-white/5 border-white/20 text-gray-400')}`}
+                            className={`shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded-lg border transition-colors ${
+                                showRetirementMode
+                                    ? (includeRetirementEntertainment
+                                        ? (isLight ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-amber-500/10 border-amber-500/30 text-amber-300')
+                                        : (isLight ? 'bg-slate-50 border-slate-200 text-slate-500' : 'bg-white/5 border-white/20 text-gray-400'))
+                                    : 'invisible pointer-events-none'
+                            }`}
                             title={isHe
                                 ? (includeRetirementEntertainment ? 'בילויים גדלים בתקציב הפרישה' : 'בילויים נשארים בפער לחלוקה ידנית')
                                 : (includeRetirementEntertainment ? 'Entertainment grows in retirement budget' : 'Entertainment stays in the gap for manual allocation')}
