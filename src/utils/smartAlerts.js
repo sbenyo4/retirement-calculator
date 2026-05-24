@@ -397,9 +397,11 @@ function compare(value, operator, threshold) {
 
 function isBudgetPctAboveDisplayedThreshold(condition, appState) {
     if (condition?.type !== 'budget_pct_of_target') return true;
-    if (condition.operator !== '>') return true;
+    if (condition.operator !== '>' && condition.operator !== '>=') return true;
     if (!appState?.target) return false;
 
+    // Always use strict > for the display check: "exceeds 75%" means rounded pct must be ≥ 76.
+    // This prevents the alert from firing when rounded pct equals the threshold (e.g. 75.1% rounds to 75 but 75 >= 75 is true).
     const displayedPct = Math.round((appState.totalMonthly / appState.target) * 100);
     const displayedThreshold = Math.round((condition.threshold || 0) * 100);
     return displayedPct > displayedThreshold;

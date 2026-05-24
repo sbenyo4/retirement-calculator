@@ -30,7 +30,7 @@ ChartJS.register(
     Legend
 );
 
-export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRate, showInflation: showInflationProp, isLight, isHe, currency, t: _t, sliderConsumed, setSliderConsumed, retirementAdj, showRetirementMode, setShowRetirementMode }) {
+export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRate, showInflation: showInflationProp, isLight, isHe, currency, t: _t, sliderConsumed, setSliderConsumed, retirementAdj, showRetirementMode, setShowRetirementMode, isRetirementModeManual }) {
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
     const [localShowInflation, setLocalShowInflation] = useState(showInflationProp);
     const [selectedYearIdx, setSelectedYearIdx] = useState(null);
@@ -578,12 +578,21 @@ export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, infl
                         </button>
                         {retirementAdj && (
                             <button
-                                onClick={() => setShowRetirementMode(v => !v)}
+                                onClick={() => {
+                                    if (isRetirementModeManual) {
+                                        setShowRetirementMode(v => !v);
+                                    }
+                                }}
                                 onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
-                                className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border transition-colors shrink-0 ${showRetirementMode
+                                className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border transition-colors shrink-0 ${
+                                    !isRetirementModeManual ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                                } ${showRetirementMode
                                     ? (isLight ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-amber-500 bg-amber-900/20 text-amber-300')
                                     : (isLight ? 'border-slate-200 bg-slate-50 text-slate-400' : 'border-white/20 bg-white/5 text-gray-500')}`}
-                                title={isHe ? 'תצוגת פרישה' : 'Retirement view'}
+                                title={!isRetirementModeManual
+                                    ? (isHe ? 'מצב חישוב אוטומטי (לא ניתן לשינוי ידני)' : 'Automatic calculation mode (cannot be toggled)')
+                                    : (isHe ? 'תצוגת פרישה' : 'Retirement view')
+                                }
                             >
                                 {showRetirementMode ? <ToggleRight size={13} /> : <ToggleLeft size={13} />}
                                 🔮 {isHe ? 'פרישה' : 'Retirement'}

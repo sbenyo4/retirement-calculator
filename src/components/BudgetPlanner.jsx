@@ -2045,7 +2045,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const isHe = language === 'he';
     const currency = isHe ? '₪' : '$';
     // Use actual calculated net withdrawal if available (reflects withdrawal strategy), else use the manual input
-    const target = Math.round(results?.initialNetWithdrawal ?? parseFloat(inputs.monthlyNetIncomeDesired) ?? 0);
+    const baseTarget = Math.round(results?.initialNetWithdrawal ?? parseFloat(inputs.monthlyNetIncomeDesired) ?? 0);
     const { currentUser } = useAuth();
     const uid = currentUser?.uid;
 
@@ -2110,6 +2110,9 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         return monthsInStartYear > 6 ? retirementStartDate.getFullYear() : retirementStartDate.getFullYear() + 1;
     }, [retirementStartDate, retirementEndYear]);
     const [selectedYear, setSelectedYear] = useState(currentYear);
+    // Per-year income target: use yearlyIncomeOverrides for the selected year if set, else fall back to baseTarget
+    const yearIncomeOverride = parseFloat(inputs.yearlyIncomeOverrides?.[selectedYear]);
+    const target = (!isNaN(yearIncomeOverride) && yearIncomeOverride > 0) ? Math.round(yearIncomeOverride) : baseTarget;
     const ageInSelectedYear = useMemo(() => {
         const baseAge = parseFloat(inputs.currentAge);
         if (!Number.isFinite(baseAge)) return null;
@@ -2228,12 +2231,25 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         : false;
     const setShowRetirementMode = useCallback((updater) => {
         setRetirementModeByYear(prev => {
-            const current = prev[selectedYear] ?? defaultShowRetirementMode;
+            if (prev[selectedYear] === undefined) return prev;
+            const current = prev[selectedYear];
             const next = typeof updater === 'function' ? updater(current) : updater;
             return {
                 ...prev,
                 [selectedYear]: !!next
             };
+        });
+    }, [selectedYear]);
+
+    const handleToggleManualOverride = useCallback(() => {
+        setRetirementModeByYear(prev => {
+            const next = { ...prev };
+            if (next[selectedYear] !== undefined) {
+                delete next[selectedYear];
+            } else {
+                next[selectedYear] = defaultShowRetirementMode;
+            }
+            return next;
         });
     }, [selectedYear, defaultShowRetirementMode]);
 
@@ -2645,7 +2661,9 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                   }, 0)
                 : 0;
             const monthly = monthlyBase + retDelta;
-            const incomeTarget = Math.round(results?.initialNetWithdrawal ?? parseFloat(inputs.monthlyNetIncomeDesired) ?? 0);
+            const incomeBaseTarget = Math.round(results?.initialNetWithdrawal ?? parseFloat(inputs.monthlyNetIncomeDesired) ?? 0);
+            const incomeYearOverride = parseFloat(inputs.yearlyIncomeOverrides?.[selectedYear]);
+            const incomeTarget = (!isNaN(incomeYearOverride) && incomeYearOverride > 0) ? Math.round(incomeYearOverride) : incomeBaseTarget;
             const perPerson = householdSize > 0 ? Math.round(monthly / householdSize) : 0;
 
             const SCALABLE_CATS = new Set(['food', 'health', 'personal', 'family', 'entertainment']);
@@ -2695,7 +2713,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             }));
             window.dispatchEvent(new Event('rc-budget-updated'));
         } catch {}
-    }, [displayItems, loaded, inputs.monthlyNetIncomeDesired, results, householdSize, showInflation, inflationRate, projFactor, projYears, showRetirementMode, effectiveRetirementAdj, selectedYear]);
+    }, [displayItems, loaded, inputs.monthlyNetIncomeDesired, inputs.yearlyIncomeOverrides, results, householdSize, showInflation, inflationRate, projFactor, projYears, showRetirementMode, effectiveRetirementAdj, selectedYear]);
 
     // Keep budget reminders in sync immediately from local state (before DB debounce/save).
     useEffect(() => {
@@ -3303,16 +3321,46 @@ Gap vs target and what can be optimized.`;
                     {/* Right arrow: increase in LTR, decrease in Hebrew — wraps around */}
                     </div>
                     {retirementModeLabel && (
-                        <span
-                            title={isHe ? 'תצוגת תקציב פרישה' : 'Retirement budget view'}
-                            className={`absolute top-[calc(50%-4px)] -translate-y-1/2 min-w-0 max-w-[16rem] truncate text-[10px] px-1.5 rounded-full border leading-none tracking-wide py-0.5 ${isHe ? 'left-12' : 'right-12'} ${showRetirementMode
-                                ? (isLight ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-amber-500/10 text-amber-300 border-amber-500/40')
-                                : (isLight ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-white/5 text-gray-500 border-white/20')}`}
+                        <div
+                            className={`absolute top-[calc(50%-4px)] -translate-y-1/2 flex items-center gap-1.5 ${isHe ? 'left-12' : 'right-12'}`}
                             dir={isHe ? 'rtl' : 'ltr'}
                         >
-                            <span className="align-middle">🔮</span>
-                            <span className="align-middle ms-1">{retirementModeLabel}</span>
-                        </span>
+                            <button
+                                onClick={handleToggleManualOverride}
+                                title={retirementModeByYear[selectedYear] !== undefined
+                                    ? (isHe ? 'מצב ידני (נעול) - לחץ למעבר למצב מחושב' : 'Manual mode (locked) - click to switch to calculated')
+                                    : (isHe ? 'מצב מחושב (אוטומטי) - לחץ למעבר למצב ידני' : 'Calculated mode (auto) - click to switch to manual')
+                                }
+                                className={`w-5 h-5 flex items-center justify-center rounded-full border transition-colors shrink-0 ${
+                                    retirementModeByYear[selectedYear] !== undefined
+                                        ? (isLight ? 'bg-indigo-50 border-indigo-200 text-indigo-600 hover:bg-indigo-100' : 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400 hover:bg-indigo-500/30')
+                                        : (isLight ? 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100' : 'bg-white/5 border-white/10 text-gray-500 hover:bg-white/10')
+                                }`}
+                            >
+                                {retirementModeByYear[selectedYear] !== undefined ? <Lock size={10} /> : <Calculator size={10} />}
+                            </button>
+                            <span
+                                onClick={() => {
+                                    if (retirementModeByYear[selectedYear] !== undefined) {
+                                        setShowRetirementMode(v => !v);
+                                    }
+                                }}
+                                title={retirementModeByYear[selectedYear] !== undefined
+                                    ? (isHe ? 'לחץ לשינוי מצב תצוגת פרישה' : 'Click to toggle retirement view state')
+                                    : (isHe ? 'מצב חישוב אוטומטי (לא ניתן לשינוי ידני)' : 'Automatic calculation mode (cannot be toggled)')
+                                }
+                                className={`min-w-0 max-w-[16rem] truncate text-[10px] px-1.5 rounded-full border leading-none tracking-wide py-0.5 select-none transition-all ${
+                                    retirementModeByYear[selectedYear] !== undefined
+                                        ? 'cursor-pointer hover:scale-[1.02] active:scale-[0.98]'
+                                        : 'cursor-default'
+                                } ${showRetirementMode
+                                    ? (isLight ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-amber-500/10 text-amber-300 border-amber-500/40')
+                                    : (isLight ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-white/5 text-gray-500 border-white/20')}`}
+                            >
+                                <span className="align-middle">🔮</span>
+                                <span className="align-middle ms-1">{retirementModeLabel}</span>
+                            </span>
+                        </div>
                     )}
                     {ageInSelectedYear !== null && (
                         <span
@@ -3519,17 +3567,6 @@ Gap vs target and what can be optimized.`;
                 >
                     <Lock size={14} />
                 </button>
-                {retirementAdj && (
-                    <button
-                        onClick={() => setShowRetirementMode(v => !v)}
-                        title={isHe ? 'תצוגת תקציב פרישה' : 'Retirement budget view'}
-                        className={`shrink-0 px-2 py-1.5 rounded-xl border text-xs font-medium transition-colors ${showRetirementMode
-                            ? (isLight ? 'bg-amber-100 border-amber-400 text-amber-700' : 'bg-amber-500/20 border-amber-400 text-amber-300')
-                            : (isLight ? 'bg-slate-50 border-slate-200 text-slate-400 hover:border-amber-300 hover:text-amber-600' : 'bg-white/5 border-white/20 text-gray-500 hover:border-amber-400 hover:text-amber-400')}`}
-                    >
-                        🔮
-                    </button>
-                )}
             </div>
 
             {/* ── Search results ── */}
@@ -3828,6 +3865,7 @@ Gap vs target and what can be optimized.`;
                 retirementAdj={effectiveRetirementAdj}
                 showRetirementMode={showRetirementMode}
                 setShowRetirementMode={setShowRetirementMode}
+                isRetirementModeManual={retirementModeByYear[selectedYear] !== undefined}
             />
         )}
         <FixedVarModal
