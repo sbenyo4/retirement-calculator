@@ -53,11 +53,11 @@ export function LoginPage({ t }) {
                 <button
                     onClick={handleLogin}
                     disabled={loading}
-                    className={`w-full flex items-center justify-center gap-3 bg-white text-gray-900 px-6 py-3 rounded-xl hover:bg-gray-100 transition-all font-bold text-lg shadow-lg shadow-black/20 disabled:opacity-70 disabled:cursor-not-allowed border-2 border-gray-300 ${loading ? '' : 'transform hover:scale-[1.02] active:scale-[0.98]'}`}
+                    className="w-full flex items-center justify-center gap-3 bg-white text-gray-900 px-6 py-3 rounded-xl hover:bg-gray-100 font-bold text-lg shadow-lg shadow-black/20 disabled:opacity-70 disabled:cursor-not-allowed border-2 border-gray-300 transition-all duration-200"
                 >
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center">
+                    <div className="w-6 h-6 shrink-0 flex items-center justify-center relative">
                         {loading ? (
-                            <span className="block h-5 w-5 rounded-full border-2 border-gray-300 border-t-gray-900 animate-spin" />
+                            <div className="h-5 w-5 rounded-full border-2 border-gray-300 border-t-gray-900 animate-spin" />
                         ) : (
                             <svg className="h-6 w-6" viewBox="0 0 24 24">
                                 <path
@@ -78,7 +78,7 @@ export function LoginPage({ t }) {
                                 />
                             </svg>
                         )}
-                    </span>
+                    </div>
                     {t('signInWithGoogle')}
                 </button>
             </div>

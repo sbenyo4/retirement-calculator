@@ -64,7 +64,11 @@ function computeInsightsHash(inputs) {
     fourPercentMode,
     ...formData
   } = inputs;
-  return JSON.stringify({ ...normalizeInputs(formData), language, fourPercentMode });
+  const normalized = normalizeInputs(formData);
+  if (!normalized.manualAge) {
+    normalized.currentAge = 0;
+  }
+  return JSON.stringify({ ...normalized, language, fourPercentMode });
 }
 
 function App() {
@@ -567,6 +571,18 @@ function MainApp() {
       
       if (hash && data) {
         insightsCacheRef.current[hash] = data;
+        
+        // Also cache under the current computed hash to prevent invalidation due to dynamic age changes or old/mismatched hashes
+        if (profile.data) {
+          const baseInputsForHash = {
+            ...profile.data,
+            pensionIncomeSources: inputs.pensionIncomeSources || [],
+            pensionInterestRate: inputs.pensionInterestRate ?? 4
+          };
+          const currentComputedHash = computeInsightsHash({ ...baseInputsForHash, language, fourPercentMode: settings.fourPercentMode });
+          insightsCacheRef.current[currentComputedHash] = data;
+        }
+        
         setAiInsightsData(data);
       }
     }
@@ -580,6 +596,11 @@ function MainApp() {
       const data = hasHash ? profileInsights.data : profileInsights;
       const hash = hasHash ? profileInsights.hash : computeInsightsHash({ ...profileInputs, language, fourPercentMode: settings.fourPercentMode });
       insightsCacheRef.current[hash] = data;
+      
+      // Also cache under the current computed hash to prevent invalidation due to dynamic age changes or old/mismatched hashes
+      const currentComputedHash = computeInsightsHash({ ...profileInputs, language, fourPercentMode: settings.fourPercentMode });
+      insightsCacheRef.current[currentComputedHash] = data;
+      
       setAiInsightsData(data);
     } else {
       setAiInsightsData(null);
