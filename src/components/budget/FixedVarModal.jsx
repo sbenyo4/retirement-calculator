@@ -2,11 +2,31 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronUp, X, Lock, Unlock, Globe } from 'lucide-react';
 import { useDraggable } from '../../hooks/useDraggable';
-import { effectiveIsFixed, trackActiveInYear } from './budgetUtils';
+import { effectiveIsFixed, trackActiveInYear, matchIncrease } from './budgetUtils';
 import { CATEGORIES } from './constants';
 const CURRENT_YEAR = new Date().getFullYear();
 
-export function FixedVarModal({ isOpen, onClose, items, isHe, isLight, currency, monthlyIncome, maxYear, initialYear, aiProvider, aiModel, apiKeyOverride, LocationSuggestModal }) {
+export function FixedVarModal({
+    isOpen,
+    onClose,
+    items,
+    isHe,
+    isLight,
+    currency,
+    maxYear,
+    initialYear,
+    aiProvider,
+    aiModel,
+    apiKeyOverride,
+    LocationSuggestModal,
+    results,
+    inputs,
+    retirementAdj,
+    retirementModeByYear,
+    defaultRetirementModeStartYear,
+    retirementEndYear,
+    getResolvedItemsForYear
+}) {
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
     const [selectedYear, setSelectedYear] = useState(CURRENT_YEAR);
     const [showLocations, setShowLocations] = useState(false);
@@ -20,6 +40,12 @@ export function FixedVarModal({ isOpen, onClose, items, isHe, isLight, currency,
 
     useEffect(() => { if (isOpen) setSelectedYear(initialYear ?? CURRENT_YEAR); }, [isOpen, initialYear]);
 
+    const activeIncome = useMemo(() => {
+        const baseTarget = Math.round(results?.initialNetWithdrawal ?? parseFloat(inputs?.monthlyNetIncomeDesired) ?? 0);
+        const override = parseFloat(inputs?.yearlyIncomeOverrides?.[selectedYear]);
+        return !isNaN(override) && override > 0 ? override : baseTarget;
+    }, [results, inputs, selectedYear]);
+
     const monthlyForYear = useCallback((item, year) => {
         if (item.type === 'loan') {
             return (item.tracks || [])
@@ -32,11 +58,61 @@ export function FixedVarModal({ isOpen, onClose, items, isHe, isLight, currency,
     const { fixedGroups, varGroups, fixedTotal, variableTotal } = useMemo(() => {
         if (!isOpen) return { fixedGroups: [], varGroups: [], fixedTotal: 0, variableTotal: 0 };
         const fixed = [], variable = [];
-        items.filter(it => it.enabled !== false).forEach(it => {
+        
+        const resolvedItems = getResolvedItemsForYear ? getResolvedItemsForYear(selectedYear) : items;
+
+        const defaultShowRet = selectedYear >= defaultRetirementModeStartYear && selectedYear <= retirementEndYear;
+        const showRetMode = retirementAdj
+            ? (retirementModeByYear?.[selectedYear] ?? defaultShowRet)
+            : false;
+
+        const categoryItemsMap = {};
+        CATEGORIES.forEach(cat => {
+            categoryItemsMap[cat.id] = resolvedItems.filter(it => it.categoryId === cat.id && it.enabled !== false);
+        });
+
+        resolvedItems.filter(it => it.enabled !== false).forEach(it => {
             const monthly = monthlyForYear(it, selectedYear);
             if (monthly <= 0) return;
-            (effectiveIsFixed(it) ? fixed : variable).push({ ...it, monthly });
+            (effectiveIsFixed(it) ? fixed : variable).push({ ...it, monthly: Math.round(monthly) });
         });
+
+        if (showRetMode && retirementAdj) {
+            (retirementAdj.additions || []).forEach(a => {
+                const monthly = a.monthlyAmount || 0;
+                if (monthly <= 0) return;
+                variable.push({
+                    id: `ret-add-${a.label}`,
+                    label: `🔮 ${a.label}`,
+                    categoryId: a.categoryId,
+                    monthly: Math.round(monthly)
+                });
+            });
+
+            (retirementAdj.increases || []).forEach(inc => {
+                const monthly = inc.increaseAmount || 0;
+                if (monthly <= 0) return;
+                const catItems = categoryItemsMap[inc.categoryId] || [];
+                const matchedItem = catItems.find(i => matchIncrease(i.label, inc.itemLabel));
+                if (matchedItem) {
+                    const isFixed = effectiveIsFixed(matchedItem);
+                    (isFixed ? fixed : variable).push({
+                        id: `ret-inc-${inc.itemLabel}`,
+                        label: `🔮 ${matchedItem.label} (${isHe ? 'תוספת' : 'increase'})`,
+                        categoryId: inc.categoryId,
+                        monthly: Math.round(monthly)
+                    });
+                } else {
+                    variable.push({
+                        id: `ret-inc-${inc.itemLabel}`,
+                        label: `🔮 ${inc.itemLabel} (${isHe ? 'תוספת' : 'increase'})`,
+                        categoryId: inc.categoryId,
+                        monthly: Math.round(monthly)
+                    });
+                }
+            });
+        }
+
         const group = list => {
             const map = {};
             list.forEach(it => {
@@ -47,13 +123,14 @@ export function FixedVarModal({ isOpen, onClose, items, isHe, isLight, currency,
             });
             return Object.values(map).sort((a, b) => b.total - a.total);
         };
+
         return {
             fixedGroups: group(fixed),
             varGroups: group(variable),
             fixedTotal: fixed.reduce((s, it) => s + it.monthly, 0),
             variableTotal: variable.reduce((s, it) => s + it.monthly, 0),
         };
-    }, [isOpen, items, selectedYear, monthlyForYear]);
+    }, [isOpen, items, selectedYear, monthlyForYear, getResolvedItemsForYear, retirementAdj, retirementModeByYear, defaultRetirementModeStartYear, retirementEndYear, isHe]);
 
     const [openCats, setOpenCats] = useState(() => new Set());
     useEffect(() => { if (isOpen) setOpenCats(new Set()); }, [isOpen]);
@@ -115,7 +192,7 @@ export function FixedVarModal({ isOpen, onClose, items, isHe, isLight, currency,
         </div>
     );
 
-    const available = monthlyIncome - fixedTotal;
+    const available = activeIncome - fixedTotal;
     return (
       <>
         {createPortal(
@@ -181,7 +258,7 @@ export function FixedVarModal({ isOpen, onClose, items, isHe, isLight, currency,
                                         <Unlock size={11} className={isLight ? 'text-blue-500' : 'text-blue-400'} />
                                     </div>
                                     {(() => {
-                                        const spare = monthlyIncome > 0 ? monthlyIncome - fixedTotal - variableTotal : null;
+                                        const spare = activeIncome > 0 ? activeIncome - fixedTotal - variableTotal : null;
                                         const spareOk = spare !== null && spare >= 0;
                                         const varSpan = (
                                             <span className={`text-xl font-bold leading-tight ${isLight ? 'text-slate-800' : 'text-white'}`} dir={isHe ? 'rtl' : 'ltr'}>
@@ -199,8 +276,8 @@ export function FixedVarModal({ isOpen, onClose, items, isHe, isLight, currency,
                                             </div>
                                         );
                                     })()}
-                                    {monthlyIncome > 0 && (() => {
-                                        const avail = monthlyIncome - fixedTotal;
+                                    {activeIncome > 0 && (() => {
+                                        const avail = activeIncome - fixedTotal;
                                         const label = <span className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'פנוי למחיה' : 'Available'}</span>;
                                         const amount = <span className={`text-base font-bold ${isLight ? 'text-sky-600' : 'text-sky-400'}`} dir={isHe ? 'rtl' : 'ltr'}>{fmt(avail)}<span className={`text-[10px] font-normal ms-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? '/חו׳' : '/mo'}</span></span>;
                                         const globeBtn = (
@@ -248,8 +325,8 @@ export function FixedVarModal({ isOpen, onClose, items, isHe, isLight, currency,
         onClose={() => setShowLocations(false)}
         availableAmount={available}
         userMonthlyCost={total}
-        monthlySavingsAmount={Math.max(0, monthlyIncome - total)}
-        withdrawalMonthlyAmount={monthlyIncome}
+        monthlySavingsAmount={Math.max(0, activeIncome - total)}
+        withdrawalMonthlyAmount={activeIncome}
         year={selectedYear}
         currency={currency}
         isHe={isHe}

@@ -3,6 +3,43 @@ import { getProviderEnvKey } from '../config/ai-models';
 // Re-export for backward compatibility
 export { getAvailableProviders, getAvailableModels } from '../config/ai-models';
 
+function findMatchingBrace(str, startIdx) {
+    let braceCount = 0;
+    let inString = false;
+    let escape = false;
+    
+    for (let i = startIdx; i < str.length; i++) {
+        const char = str[i];
+        
+        if (escape) {
+            escape = false;
+            continue;
+        }
+        
+        if (char === '\\') {
+            escape = true;
+            continue;
+        }
+        
+        if (char === '"') {
+            inString = !inString;
+            continue;
+        }
+        
+        if (!inString) {
+            if (char === '{') {
+                braceCount++;
+            } else if (char === '}') {
+                braceCount--;
+                if (braceCount === 0) {
+                    return i;
+                }
+            }
+        }
+    }
+    return -1;
+}
+
 /**
  * Strips raw API noise (URLs, SDK prefixes) from error messages and attaches
  * a stable `code` so callers can show localized UI messages.
@@ -493,9 +530,15 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
         // 1. Remove markdown blocks and Gemini grounding citation markers ([1], [2]...)
         let cleaned = responseText.replace(/```json/g, '').replace(/```/g, '').replace(/\[\d+\]/g, '').trim();
 
-        // 2. Find the first '{' and the last '}' to isolate the JSON object
+        // 2. Find the first '{' and the matching '}' to isolate the JSON object
         const firstBrace = cleaned.indexOf('{');
-        const lastBrace = cleaned.lastIndexOf('}');
+        let lastBrace = -1;
+        if (firstBrace !== -1) {
+            lastBrace = findMatchingBrace(cleaned, firstBrace);
+        }
+        if (lastBrace === -1) {
+            lastBrace = cleaned.lastIndexOf('}');
+        }
 
         if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
             cleaned = cleaned.substring(firstBrace, lastBrace + 1);
@@ -912,8 +955,16 @@ ${earlyRetirementNote}
 
     const cleaned = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
     const firstBrace = cleaned.indexOf('{');
-    const lastBrace = cleaned.lastIndexOf('}');
-    const jsonStr = firstBrace !== -1 ? cleaned.substring(firstBrace, lastBrace + 1) : cleaned;
+    let lastBrace = -1;
+    if (firstBrace !== -1) {
+        lastBrace = findMatchingBrace(cleaned, firstBrace);
+    }
+    if (lastBrace === -1) {
+        lastBrace = cleaned.lastIndexOf('}');
+    }
+    const jsonStr = firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace
+        ? cleaned.substring(firstBrace, lastBrace + 1)
+        : cleaned;
 
     let parsed;
     try {

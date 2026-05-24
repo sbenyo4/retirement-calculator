@@ -1,6 +1,69 @@
 
 import { getProviderEnvKey } from '../config/ai-models';
 
+function findMatchingBrace(str, startIdx) {
+    let braceCount = 0;
+    let inString = false;
+    let escape = false;
+    
+    for (let i = startIdx; i < str.length; i++) {
+        const char = str[i];
+        
+        if (escape) {
+            escape = false;
+            continue;
+        }
+        
+        if (char === '\\') {
+            escape = true;
+            continue;
+        }
+        
+        if (char === '"') {
+            inString = !inString;
+            continue;
+        }
+        
+        if (!inString) {
+            if (char === '{') {
+                braceCount++;
+            } else if (char === '}') {
+                braceCount--;
+                if (braceCount === 0) {
+                    return i;
+                }
+            }
+        }
+    }
+    return -1;
+}
+
+/**
+ * Robustly extracts and parses a JSON object from raw AI response text.
+ * Handles: markdown fences, BOM, control characters, trailing commas.
+ */
+function parseAiJson(raw) {
+    const text = String(raw || '')
+        .replace(/^\uFEFF/, '')
+        .replace(/```json\s*/gi, '')
+        .replace(/```\s*/g, '')
+        .trim();
+    const start = text.indexOf('{');
+    let end = -1;
+    if (start >= 0) {
+        end = findMatchingBrace(text, start);
+    }
+    if (end < 0) {
+        end = text.lastIndexOf('}');
+    }
+    if (start < 0 || end <= start) throw new Error('AI response did not contain a JSON object');
+    const extracted = text.slice(start, end + 1)
+        .split('').filter(c => { const code = c.charCodeAt(0); return code === 0x09 || code === 0x0A || code === 0x0D || code >= 0x20; }).join('')
+        .replace(/[\r\n]/g, ' ')
+        .replace(/,\s*([}\]])/g, '$1');
+    return JSON.parse(extracted);
+}
+
 /**
  * Classify an AI API error into a structured { type, raw } object.
  * type: 'balance' | 'quota' | 'auth' | 'context' | 'network' | 'unknown'
@@ -404,8 +467,7 @@ export async function getCrashAIInsights(analysisInputs, sweepResults, provider,
     }
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-    const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-    return JSON.parse(cleanJson);
+    return parseAiJson(responseText);
 }
 
 /**
@@ -503,8 +565,7 @@ export async function getRangeAIInsights(rangeResults, parameterLabel, currentVa
     }
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-    const cleanJson2 = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-    return JSON.parse(cleanJson2);
+    return parseAiJson(responseText);
 }
 
 /**
@@ -583,8 +644,7 @@ export async function getGlobalRangeAIInsights(allParamResults, provider, model,
     }
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-    const cleanJson3 = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-    return JSON.parse(cleanJson3);
+    return parseAiJson(responseText);
 }
 
 /**
@@ -662,8 +722,7 @@ export async function getAIInsights(inputs, results, provider, model, apiKeyOver
         if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
         // Parse JSON
-        const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-        return JSON.parse(cleanJson);
+        return parseAiJson(responseText);
 
     } catch (error) {
         console.error("AI Insight Error:", error);
@@ -810,6 +869,5 @@ export async function getPensionAIInsights(incomeSources, summary, inputs, provi
     }
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-    const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-    return JSON.parse(cleanJson);
+    return parseAiJson(responseText);
 }

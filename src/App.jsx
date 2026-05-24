@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense, startTransition } from 'react';
 import InputForm from './components/InputForm';
 // ResultsDashboard is lazy-loaded below with ModelsManager
 import { ProfileManager } from './components/ProfileManager';
@@ -56,15 +56,12 @@ const isLifeEventSource = (source) =>
   typeof source === 'string' && (source === 'lifeEvents' || source.startsWith('lifeEvents:'));
 
 // Pure function — no closure over component state.
-// Strips pension sources (global, not per-profile) and pensionInterestRate so the hash
-// matches between profile-load (profile.data has no pension) and live form data (has pension).
+// Strips language and fourPercentMode to stringify formData normalized inputs.
 function computeInsightsHash(inputs) {
   if (!inputs) return '';
   const {
     language,
     fourPercentMode,
-    pensionIncomeSources: _pensionIncomeSources,
-    pensionInterestRate: _pensionInterestRate,
     ...formData
   } = inputs;
   return JSON.stringify({ ...normalizeInputs(formData), language, fourPercentMode });
@@ -551,20 +548,39 @@ function MainApp() {
     const profile = profiles.find(p => p.id === activeProfileId);
     if (!profile) return;
     startupInsightsCachedRef.current = true;
-    if (profile.aiInsights && profile.data) {
-      const hash = computeInsightsHash({ ...profile.data, language, fourPercentMode: settings.fourPercentMode });
-      insightsCacheRef.current[hash] = profile.aiInsights;
-      setAiInsightsData(profile.aiInsights);
+    if (profile.aiInsights) {
+      const hasHash = typeof profile.aiInsights === 'object' && profile.aiInsights !== null && 'hash' in profile.aiInsights && 'data' in profile.aiInsights;
+      const data = hasHash ? profile.aiInsights.data : profile.aiInsights;
+      
+      let hash;
+      if (hasHash) {
+        hash = profile.aiInsights.hash;
+      } else if (profile.data) {
+        // Legacy fallback: merge global pension sources from loaded inputs to construct best guess hash
+        const baseInputsForHash = {
+          ...profile.data,
+          pensionIncomeSources: inputs.pensionIncomeSources || [],
+          pensionInterestRate: inputs.pensionInterestRate ?? 4
+        };
+        hash = computeInsightsHash({ ...baseInputsForHash, language, fourPercentMode: settings.fourPercentMode });
+      }
+      
+      if (hash && data) {
+        insightsCacheRef.current[hash] = data;
+        setAiInsightsData(data);
+      }
     }
-  }, [inputsLoaded, activeProfileId, profiles, language, settings.fourPercentMode]);
+  }, [inputsLoaded, activeProfileId, profiles, language, settings.fourPercentMode, inputs.pensionIncomeSources, inputs.pensionInterestRate]);
 
   // Called by ProfileManager when loading/reloading a profile.
   // Seeds the cache immediately (no debounce wait) and shows insights right away.
   const handleLoad = useCallback((profileInputs, profileInsights) => {
     if (profileInsights) {
-      const hash = computeInsightsHash({ ...profileInputs, language, fourPercentMode: settings.fourPercentMode });
-      insightsCacheRef.current[hash] = profileInsights;
-      setAiInsightsData(profileInsights);
+      const hasHash = typeof profileInsights === 'object' && profileInsights !== null && 'hash' in profileInsights && 'data' in profileInsights;
+      const data = hasHash ? profileInsights.data : profileInsights;
+      const hash = hasHash ? profileInsights.hash : computeInsightsHash({ ...profileInputs, language, fourPercentMode: settings.fourPercentMode });
+      insightsCacheRef.current[hash] = data;
+      setAiInsightsData(data);
     } else {
       setAiInsightsData(null);
     }
@@ -573,10 +589,11 @@ function MainApp() {
 
   // Save insights to the active profile, update state, and populate the cache.
   const handleSetAiInsights = useCallback((data) => {
-    if (data) insightsCacheRef.current[computeInsightsHash(memoizedDebouncedInputs)] = data;
+    const hash = computeInsightsHash(memoizedDebouncedInputs);
+    if (data) insightsCacheRef.current[hash] = data;
     setAiInsightsData(data);
     if (data && activeProfileId) {
-      updateProfileInsights(activeProfileId, data);
+      updateProfileInsights(activeProfileId, { data, hash });
     }
   }, [memoizedDebouncedInputs, activeProfileId, updateProfileInsights]);
 
@@ -950,7 +967,7 @@ function MainApp() {
 
               // Settings Props
               calculationMode={settings.calculationMode}
-              setCalculationMode={(mode) => dispatchSettings({ type: SETTINGS_ACTIONS.SET_CALCULATION_MODE, payload: mode })}
+              setCalculationMode={(mode) => startTransition(() => dispatchSettings({ type: SETTINGS_ACTIONS.SET_CALCULATION_MODE, payload: mode }))}
               aiProvider={settings.aiProvider}
               setAiProvider={(provider) => dispatchSettings({ type: SETTINGS_ACTIONS.SET_AI_PROVIDER, payload: provider })}
               aiModel={settings.aiModel}

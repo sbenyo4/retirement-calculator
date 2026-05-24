@@ -15,7 +15,7 @@ import {
     Legend
 } from 'chart.js';
 import { useDraggable } from '../../hooks/useDraggable';
-import { toMonthly, toProjectedMonthly, getNowYM, matchIncrease } from './budgetUtils';
+import { getNowYM, matchIncrease } from './budgetUtils';
 import { CATEGORIES, CAT_COLORS } from './constants';
 
 ChartJS.register(
@@ -30,7 +30,29 @@ ChartJS.register(
     Legend
 );
 
-export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, inflationRate, showInflation: showInflationProp, isLight, isHe, currency, t: _t, sliderConsumed, setSliderConsumed, retirementAdj, showRetirementMode, setShowRetirementMode, isRetirementModeManual }) {
+export function BudgetStatsModal({
+    isOpen,
+    onClose,
+    items,
+    inputs,
+    results,
+    inflationRate,
+    showInflation: showInflationProp,
+    isLight,
+    isHe,
+    currency,
+    t: _t,
+    sliderConsumed,
+    setSliderConsumed,
+    showRetirementMode,
+    setShowRetirementMode,
+    isRetirementModeManual,
+    getResolvedItemsForYear,
+    retirementAdj,
+    retirementModeByYear,
+    defaultRetirementModeStartYear,
+    retirementEndYear
+}) {
     const { dragStyle, onDragMouseDown } = useDraggable(isOpen);
     const [localShowInflation, setLocalShowInflation] = useState(showInflationProp);
     const [selectedYearIdx, setSelectedYearIdx] = useState(null);
@@ -82,46 +104,50 @@ export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, infl
         return { yearsToRet, retYM, ages };
     }, [inputs]);
 
-    // Per-category retirement delta (today's ₪, inflated when applied)
-    const retDeltaByCat = useMemo(() => {
-        if (!showRetirementMode || !retirementAdj) return {};
-        const map = {};
-        (retirementAdj.additions || []).forEach(a => {
-            map[a.categoryId] = (map[a.categoryId] || 0) + (a.monthlyAmount || 0);
-        });
-        (retirementAdj.increases || []).forEach(inc => {
-            map[inc.categoryId] = (map[inc.categoryId] || 0) + (inc.increaseAmount || 0);
-        });
-        return map;
-    }, [showRetirementMode, retirementAdj]);
-
     // ── Helper: compute per-category totals for a given year index ──
     const computeCatTotals = useCallback((yi) => {
-        const { yearsToRet, retYM } = yearGeom;
+        const { yearsToRet } = yearGeom;
+        const currentYear = new Date().getFullYear();
+        const targetYear = currentYear + yearsToRet + yi;
         const yearsFromNow = yearsToRet + yi;
         const inflFactor   = localShowInflation ? Math.pow(1 + inflationRate, yearsFromNow) : 1;
-        const atYM         = retYM + yi * 12;
+
+        const resolvedItems = getResolvedItemsForYear ? getResolvedItemsForYear(targetYear) : items;
 
         return CATEGORIES.map((cat, i) => {
-            const catItems = items.filter(it => it.categoryId === cat.id && it.enabled !== false);
-            const base = catItems.reduce((s, it) => {
+            const catItems = resolvedItems.filter(it => it.categoryId === cat.id && it.enabled !== false);
+            const total = catItems.reduce((s, it) => {
                 if (it.type === 'loan') {
                     return s + (it.tracks || []).reduce((ts, tr) => {
-                        if (!tr.endDate) return ts + (tr.amount || 0);
-                        const [y, m] = tr.endDate.split('-').map(Number);
-                        if (atYM <= y * 12 + (m - 1))
-                            return ts + (tr.amount || 0) * (localShowInflation && tr.inflationAffected ? inflFactor : 1);
-                        return ts;
+                        return ts + (tr.amount || 0) * (localShowInflation && tr.inflationAffected ? inflFactor : 1);
                     }, 0);
                 }
                 const monthly = it.frequency === 'annual' ? (it.amount || 0) / 12 : (it.amount || 0);
                 return s + monthly * inflFactor;
             }, 0);
-            const retDelta = (retDeltaByCat[cat.id] || 0) * inflFactor;
-            const total = Math.round(base + retDelta);
-            return { cat, total, color: CAT_COLORS[i] };
+
+            const defaultShowRet = targetYear >= defaultRetirementModeStartYear && targetYear <= retirementEndYear;
+            const showRetMode = retirementAdj
+                ? (retirementModeByYear?.[targetYear] ?? defaultShowRet)
+                : false;
+
+            let retDelta = 0;
+            if (showRetMode && retirementAdj) {
+                const additions = (retirementAdj.additions || [])
+                    .filter(a => a.categoryId === cat.id)
+                    .reduce((s, a) => s + (a.monthlyAmount || 0), 0);
+                const increases = (retirementAdj.increases || [])
+                    .filter(inc => inc.categoryId === cat.id)
+                    .reduce((s, inc) => {
+                        const matched = catItems.some(i => matchIncrease(i.label, inc.itemLabel));
+                        return s + (matched ? (inc.increaseAmount || 0) : 0);
+                    }, 0);
+                retDelta = (additions + increases) * inflFactor;
+            }
+
+            return { cat, total: Math.round(total + retDelta), color: CAT_COLORS[i] };
         }).filter(c => c.total > 0);
-    }, [items, yearGeom, inflationRate, localShowInflation, retDeltaByCat]);
+    }, [yearGeom, getResolvedItemsForYear, items, localShowInflation, inflationRate, retirementAdj, retirementModeByYear, defaultRetirementModeStartYear, retirementEndYear]);
 
     // ── Default pie year: current age if already retired, else retirement start ──
     const defaultYearIdx = useMemo(() => {
@@ -149,34 +175,50 @@ export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, infl
     // ── Bar: monthly expenses per retirement year, stacked by category ──
     const barData = useMemo(() => {
         const { ages, yearsToRet, retYM } = yearGeom;
-        const baseTarget = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
+        const baseTarget = Math.round(results?.initialNetWithdrawal ?? parseFloat(inputs.monthlyNetIncomeDesired) ?? 0);
         const nowYear = new Date().getFullYear();
         const curAge  = parseFloat(inputs.currentAge) || 30;
         const years   = ages.map(a => nowYear + Math.round(a - curAge));
 
         const datasets = CATEGORIES.map((cat, ci) => {
-            const catItems = items.filter(it => it.categoryId === cat.id && it.enabled !== false);
-            if (!catItems.length) return null;
-
-            const catRetDelta = retDeltaByCat[cat.id] || 0;
             const data = ages.map((_, yi) => {
+                const targetYear = nowYear + Math.round(ages[yi] - curAge);
                 const yearsFromNow = yearsToRet + yi;
                 const inflFactor   = localShowInflation ? Math.pow(1 + inflationRate, yearsFromNow) : 1;
-                const atYM         = retYM + yi * 12;
-                const base = catItems.reduce((s, it) => {
+
+                const resolvedItems = getResolvedItemsForYear ? getResolvedItemsForYear(targetYear) : items;
+                const catItems = resolvedItems.filter(it => it.categoryId === cat.id && it.enabled !== false);
+                
+                const total = catItems.reduce((s, it) => {
                     if (it.type === 'loan') {
                         return s + (it.tracks || []).reduce((ts, tr) => {
-                            if (!tr.endDate) return ts + (tr.amount || 0);
-                            const [y, m] = tr.endDate.split('-').map(Number);
-                            if (atYM <= y * 12 + (m - 1))
-                                return ts + (tr.amount || 0) * (localShowInflation && tr.inflationAffected ? inflFactor : 1);
-                            return ts;
+                            return ts + (tr.amount || 0) * (localShowInflation && tr.inflationAffected ? inflFactor : 1);
                         }, 0);
                     }
                     const monthly = it.frequency === 'annual' ? (it.amount || 0) / 12 : (it.amount || 0);
                     return s + monthly * inflFactor;
                 }, 0);
-                return Math.round(base + catRetDelta * inflFactor);
+
+                const defaultShowRet = targetYear >= defaultRetirementModeStartYear && targetYear <= retirementEndYear;
+                const showRetMode = retirementAdj
+                    ? (retirementModeByYear?.[targetYear] ?? defaultShowRet)
+                    : false;
+
+                let retDelta = 0;
+                if (showRetMode && retirementAdj) {
+                    const additions = (retirementAdj.additions || [])
+                        .filter(a => a.categoryId === cat.id)
+                        .reduce((s, a) => s + (a.monthlyAmount || 0), 0);
+                    const increases = (retirementAdj.increases || [])
+                        .filter(inc => inc.categoryId === cat.id)
+                        .reduce((s, inc) => {
+                            const matched = catItems.some(i => matchIncrease(i.label, inc.itemLabel));
+                            return s + (matched ? (inc.increaseAmount || 0) : 0);
+                        }, 0);
+                    retDelta = (additions + increases) * inflFactor;
+                }
+
+                return Math.round(total + retDelta);
             });
 
             if (data.every(v => v === 0)) return null;
@@ -259,7 +301,7 @@ export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, infl
         const loanEndIndices = [...loanEndMap.entries()].map(([yi, labels]) => ({ yi, label: labels.join(', ') }));
 
         return { labels: ages.map(a => `${isHe ? 'גיל' : 'Age'} ${a}`), datasets, target: maxTarget, targets, expenseTotals, ages, years, loanEndIndices, totalSavings };
-    }, [items, inputs, yearGeom, inflationRate, localShowInflation, isHe, selectedYearIdx, defaultYearIdx, showSavings, retDeltaByCat]);
+    }, [items, inputs, yearGeom, inflationRate, localShowInflation, isHe, selectedYearIdx, defaultYearIdx, showSavings, getResolvedItemsForYear, results, retirementAdj, retirementModeByYear, defaultRetirementModeStartYear, retirementEndYear]);
 
     const textColor   = isLight ? '#475569' : '#94a3b8';
     const gridColor   = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)';

@@ -1,5 +1,6 @@
 
 import React, { useState, useRef } from 'react';
+import { useDelayedFlag } from '../hooks/useDelayedFlag';
 import { useTheme } from '../contexts/ThemeContext';
 import { Sparkles, AlertTriangle, CheckCircle, TrendingUp, Shield, Target, Brain } from 'lucide-react';
 import { getAIInsights } from '../utils/ai-insights';
@@ -10,6 +11,7 @@ function AIInsightsView({ inputs, results, aiProvider, aiModel, apiKeyOverride, 
     const isHebrew = language === 'he';
 
     const [loading, setLoading] = useState(false);
+    const showLoadingSpinner = useDelayedFlag(loading);
     // Local state removed in favor of lifted state
     const [error, setError] = useState(null);
     const abortRef = useRef(null);
@@ -90,7 +92,7 @@ function AIInsightsView({ inputs, results, aiProvider, aiModel, apiKeyOverride, 
         );
     }
 
-    if (loading) {
+    if (showLoadingSpinner) {
         return (
             <div className="flex flex-col items-center justify-center h-full space-y-4">
                 <div className="relative">

@@ -12,6 +12,7 @@ import { WITHDRAWAL_STRATEGIES } from '../constants';
 import { LayoutDashboard, BrainCircuit, Wallet, Info, X, TrendingUp, PlusCircle, Landmark, Flag } from 'lucide-react';
 import { useDraggable } from '../hooks/useDraggable';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
+import { useDelayedFlag } from '../hooks/useDelayedFlag';
 import AIInsightsView from './AIInsightsView';
 import BudgetPlanner from './BudgetPlanner';
 import { Line } from 'react-chartjs-2';
@@ -54,6 +55,8 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
     const [showStrategyComparison, setShowStrategyComparison] = useState(false);
     const [showRetirementTargetModal, setShowRetirementTargetModal] = useState(false);
     const [showEndBalanceTargetModal, setShowEndBalanceTargetModal] = useState(false);
+
+    const showAiLoadingSpinner = useDelayedFlag(aiLoading);
 
     useEffect(() => {
         setActiveTab(calculationMode === 'ai' ? 'insights' : 'numerical');
@@ -506,7 +509,7 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
 
     // NOW we can have early returns (after all hooks are called)
     // Loading State
-    if (aiLoading) {
+    if (showAiLoadingSpinner) {
         return (
             <div className="p-8 text-center space-y-4 bg-white/5 rounded-2xl border border-white/10 animate-pulse">
                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>

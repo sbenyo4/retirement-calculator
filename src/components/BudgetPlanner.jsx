@@ -22,6 +22,7 @@ import { getChatResponse } from '../utils/ai-chat';
 import { feature as topoFeature } from 'topojson-client';
 import { geoMercator, geoPath as d3GeoPath } from 'd3-geo';
 import { useDraggable } from '../hooks/useDraggable';
+import { useDelayedFlag } from '../hooks/useDelayedFlag';
 import { getProjectedAgeDate, getProjectedYear } from '../utils/dateUtils';
 
 const SAVE_DEBOUNCE_MS = 1000;
@@ -2075,6 +2076,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const [aiInsightStale, setAiInsightStale] = useState(false);
     const [aiModalOpen, setAiModalOpen] = useState(false);
     const [aiLoading, setAiLoading] = useState(false);
+    const showAiLoadingSpinner = useDelayedFlag(aiLoading);
     const [aiError, setAiError] = useState(null);
     const [retirementModeByYear, setRetirementModeByYear] = useState({});
     const aiInsightRef = useRef(null);      // cached insight text (survives modal close)
@@ -3786,7 +3788,7 @@ Gap vs target and what can be optimized.`;
                     {/* Body */}
                     <div className="px-4 py-4 max-h-[80vh] overflow-y-auto custom-scrollbar scrollbar-right" dir="ltr">
                         <div dir={isHe ? 'rtl' : 'ltr'}>
-                        {aiLoading && (
+                        {showAiLoadingSpinner && (
                             <div className="flex flex-col items-center justify-center py-10 space-y-4">
                                 <div className="relative">
                                     <div className="w-16 h-16 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin" />
@@ -3870,6 +3872,10 @@ Gap vs target and what can be optimized.`;
                 showRetirementMode={showRetirementMode}
                 setShowRetirementMode={setShowRetirementMode}
                 isRetirementModeManual={retirementModeByYear[selectedYear] !== undefined}
+                getResolvedItemsForYear={getResolvedItemsForYear}
+                retirementModeByYear={retirementModeByYear}
+                defaultRetirementModeStartYear={defaultRetirementModeStartYear}
+                retirementEndYear={retirementEndYear}
             />
         )}
         <FixedVarModal
@@ -3879,13 +3885,19 @@ Gap vs target and what can be optimized.`;
             isHe={isHe}
             isLight={isLight}
             currency={currency}
-            monthlyIncome={parseFloat(inputs?.monthlyNetIncomeDesired) || 0}
             maxYear={retirementEndYear}
             initialYear={selectedYear}
             aiProvider={aiProvider}
             aiModel={aiModel}
             apiKeyOverride={apiKeyOverride}
             LocationSuggestModal={LocationSuggestModal}
+            results={results}
+            inputs={inputs}
+            retirementAdj={effectiveRetirementAdj}
+            retirementModeByYear={retirementModeByYear}
+            defaultRetirementModeStartYear={defaultRetirementModeStartYear}
+            retirementEndYear={retirementEndYear}
+            getResolvedItemsForYear={getResolvedItemsForYear}
         />
         </>
     );

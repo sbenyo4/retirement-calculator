@@ -13,6 +13,7 @@ import {
     Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Landmark, RotateCcw, Search, X, EyeOff, Undo2, Trash2, MessageSquare, Bell, Save, Lock, LockOpen
 } from 'lucide-react';
 import { syncComponentReminders, forgetReminderShown, silenceReminder, nextOccurrenceOf, nextOccurrenceByInterval } from '../hooks/useReminders';
+import { useDelayedFlag } from '../hooks/useDelayedFlag';
 import { undismissReminder } from '../utils/db';
 
 const PRIORITIES = {
@@ -1411,6 +1412,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
     const [dismissedItems, setDismissedItems] = useState([]); // ever-dismissed/removed items: [{id, catId, categoryTitle, item}]
     const [keptItemIds, setKeptItemIds] = useState(new Set()); // items user explicitly kept (AI won't re-flag)
     const [aiSilentLoading, setAiSilentLoading] = useState(false);
+    const showAiSilentLoadingSpinner = useDelayedFlag(aiSilentLoading);
     const [aiError, setAiError] = useState(null);
     const [filterMode, setFilterMode] = useState(null);
     const [timingFilter, setTimingFilter] = useState(null);
@@ -2405,7 +2407,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
             </div>
 
             {/* First-load skeleton while AI generates */}
-            {!aiData && aiSilentLoading && (
+            {!aiData && showAiSilentLoadingSpinner && (
                 <div className="flex flex-col items-center justify-center gap-3 py-16 px-8">
                     <RefreshCw size={28} className="animate-spin text-purple-400" />
                     <span className={`text-sm ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
