@@ -9,12 +9,20 @@ export function CategorySection({ category, items, isHe, isLight, currency, t, o
     const enabledItems = items.filter(i => i.enabled !== false);
     const categoryTotal = enabledItems.reduce((s, i) => s + toMonthly(i), 0);
     const categoryProjected = enabledItems.reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0);
+    const mutedRetirementCategoryIds = new Set(retirementOverlay?.mutedCategoryIds || []);
+    const isRetirementMuted = mutedRetirementCategoryIds.has(category.id);
 
     const retAdditions = retirementOverlay?.additions?.filter(a => a.categoryId === category.id) ?? [];
     const retIncreases = retirementOverlay?.increases?.filter(inc => inc.categoryId === category.id) ?? [];
+    const mutedRetAdditions = retirementOverlay?.mutedAdditions?.filter(a => a.categoryId === category.id) ?? [];
+    const mutedRetIncreases = retirementOverlay?.mutedIncreases?.filter(inc => inc.categoryId === category.id) ?? [];
     const retDelta = retirementOverlay
         ? retAdditions.reduce((s, a) => s + (a.monthlyAmount || 0), 0) +
           retIncreases.reduce((s, inc) => s + (inc.increaseAmount || 0), 0)
+        : 0;
+    const mutedRetDelta = retirementOverlay
+        ? mutedRetAdditions.reduce((s, a) => s + (a.monthlyAmount || 0), 0) +
+          mutedRetIncreases.reduce((s, inc) => s + (inc.increaseAmount || 0), 0)
         : 0;
     const disabledCount = items.length - enabledItems.length;
     const allDisabled = items.length > 0 && enabledItems.length === 0;
@@ -72,6 +80,11 @@ export function CategorySection({ category, items, isHe, isLight, currency, t, o
                                 +{currency}{Math.round(retDelta).toLocaleString()}
                             </span>
                         )}
+                        {mutedRetDelta > 0 && (
+                            <span className={`text-xs font-semibold px-1 py-0.5 rounded border ${isLight ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-white/5 text-gray-500 border-white/10'}`} title={isHe ? 'נשאר בפער לחלוקה ידנית' : 'Kept in the gap for manual allocation'}>
+                                +{currency}{Math.round(mutedRetDelta).toLocaleString()}
+                            </span>
+                        )}
                     </span>
                 )}
                 <button
@@ -92,10 +105,16 @@ export function CategorySection({ category, items, isHe, isLight, currency, t, o
                 <div className="px-2 pb-2 space-y-0.5">
                     {items.map(item => {
                         const inc = retIncreases.find(r => matchIncrease(item.label, r.itemLabel));
+                        const mutedInc = mutedRetIncreases.find(r => matchIncrease(item.label, r.itemLabel));
                         const retBadge = inc && item.enabled !== false ? (
                             <span className={`shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${isLight ? 'bg-amber-100 text-amber-700 border border-amber-300' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'}`} dir="ltr">
                                 🔮 +{currency}{(inc.increaseAmount || 0).toLocaleString()}
                                 {inc.increasePercent ? ` (+${inc.increasePercent}%)` : ''}
+                            </span>
+                        ) : mutedInc && item.enabled !== false ? (
+                            <span className={`shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold border ${isLight ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-white/5 text-gray-500 border-white/10'}`} title={isHe ? 'נשאר בפער לחלוקה ידנית' : 'Kept in the gap for manual allocation'} dir="ltr">
+                                ðŸ”® +{currency}{(mutedInc.increaseAmount || 0).toLocaleString()}
+                                {mutedInc.increasePercent ? ` (+${mutedInc.increasePercent}%)` : ''}
                             </span>
                         ) : null;
                         if (item.type === 'loan') return (
@@ -152,8 +171,8 @@ export function CategorySection({ category, items, isHe, isLight, currency, t, o
                             />
                         );
                     })}
-                    {retAdditions.map(a => (
-                        <div key={`ret-add-${a.label}`} className={`flex items-center justify-between px-3 py-2 rounded-lg border-2 border-dashed text-sm ${isLight ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-amber-500/50 bg-amber-500/10 text-amber-300'}`} dir={isHe ? 'rtl' : 'ltr'}>
+                    {[...retAdditions, ...mutedRetAdditions].map(a => (
+                        <div key={`ret-add-${a.label}`} className={`flex items-center justify-between px-3 py-2 rounded-lg border-2 border-dashed text-sm ${isRetirementMuted ? (isLight ? 'border-slate-200 bg-slate-50 text-slate-400' : 'border-white/10 bg-white/5 text-gray-500') : (isLight ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-amber-500/50 bg-amber-500/10 text-amber-300')}`} dir={isHe ? 'rtl' : 'ltr'}>
                             <span className="flex items-center gap-2 min-w-0">
                                 <span className="opacity-60 shrink-0">🔮</span>
                                 <span className="font-medium truncate">{a.label}</span>

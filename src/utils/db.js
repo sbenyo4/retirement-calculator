@@ -190,6 +190,7 @@ export function onBudgetItemsSnapshot(uid, callback) {
                 }))
                 : [],
             yearAmounts: data.yearAmounts ?? null,
+            retirementModeByYear: data.retirementModeByYear ?? null,
         });
     });
 }
@@ -210,6 +211,7 @@ export async function getBudgetItems(uid) {
             }))
             : [],
         yearAmounts: data.yearAmounts ?? null,
+        retirementModeByYear: data.retirementModeByYear ?? null,
     };
 }
 
@@ -225,7 +227,7 @@ export async function setBudgetAiInsight(uid, insight) {
     await setDoc(budgetAiInsightRef(uid), { insight: insight ?? null, updatedAt: Date.now() });
 }
 
-export async function setBudgetItems(uid, items, householdSize, backupSlots, yearAmounts) {
+export async function setBudgetItems(uid, items, householdSize, backupSlots, yearAmounts, retirementModeByYear) {
     const payload = {
         items: stripUndefinedDeep(normalizeBudgetItemsStatus(items)),
         updatedAt: Date.now()
@@ -240,6 +242,7 @@ export async function setBudgetItems(uid, items, householdSize, backupSlots, yea
             : []);
     }
     if (yearAmounts !== undefined) payload.yearAmounts = stripUndefinedDeep(yearAmounts);
+    if (retirementModeByYear !== undefined) payload.retirementModeByYear = stripUndefinedDeep(retirementModeByYear);
     await setDoc(budgetItemsRef(uid), payload, { merge: true });
 }
 

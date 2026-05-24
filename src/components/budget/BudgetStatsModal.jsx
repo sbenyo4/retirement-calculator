@@ -1,12 +1,14 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { BarChart3, ToggleLeft, ToggleRight, X } from 'lucide-react';
-import { Doughnut, Bar } from 'react-chartjs-2';
+import { Doughnut, Bar, Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
     CategoryScale,
     LinearScale,
     BarElement,
+    LineElement,
+    PointElement,
     ArcElement,
     Title,
     Tooltip,
@@ -20,6 +22,8 @@ ChartJS.register(
     CategoryScale,
     LinearScale,
     BarElement,
+    LineElement,
+    PointElement,
     ArcElement,
     Title,
     Tooltip,
@@ -145,7 +149,10 @@ export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, infl
     // ── Bar: monthly expenses per retirement year, stacked by category ──
     const barData = useMemo(() => {
         const { ages, yearsToRet, retYM } = yearGeom;
-        const target = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
+        const baseTarget = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
+        const nowYear = new Date().getFullYear();
+        const curAge  = parseFloat(inputs.currentAge) || 30;
+        const years   = ages.map(a => nowYear + Math.round(a - curAge));
 
         const datasets = CATEGORIES.map((cat, ci) => {
             const catItems = items.filter(it => it.categoryId === cat.id && it.enabled !== false);
@@ -187,13 +194,22 @@ export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, infl
             };
         }).filter(Boolean);
 
-        // Savings fill above bars up to target
+        const yearlyIncomeOverrides = inputs.yearlyIncomeOverrides && typeof inputs.yearlyIncomeOverrides === 'object'
+            ? inputs.yearlyIncomeOverrides
+            : {};
+        const targets = years.map(year => {
+            const override = parseFloat(yearlyIncomeOverrides[year]);
+            return !isNaN(override) && override > 0 ? override : baseTarget;
+        });
+        const expenseTotals = ages.map((_, yi) =>
+            datasets.filter(ds => ds.stack === 'total').reduce((s, ds) => s + (ds.data[yi] || 0), 0)
+        );
+        const maxTarget = Math.max(0, ...targets);
+
+        // Savings fill above bars up to the target for each year
         let totalSavings = 0;
-        if (showSavings && target > 0) {
-            const barTotals = ages.map((_, yi) =>
-                datasets.filter(ds => ds.stack === 'total').reduce((s, ds) => s + (ds.data[yi] || 0), 0)
-            );
-            const savingsData = barTotals.map(t => Math.max(0, target - t));
+        if (showSavings && maxTarget > 0) {
+            const savingsData = expenseTotals.map((t, yi) => Math.max(0, (targets[yi] || 0) - t));
             totalSavings = Math.round(savingsData.reduce((s, v) => s + v * 12, 0));
             if (savingsData.some(v => v > 0)) {
                 const activeIdx = selectedYearIdx ?? defaultYearIdx;
@@ -242,10 +258,7 @@ export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, infl
         });
         const loanEndIndices = [...loanEndMap.entries()].map(([yi, labels]) => ({ yi, label: labels.join(', ') }));
 
-        const nowYear = new Date().getFullYear();
-        const curAge  = parseFloat(inputs.currentAge) || 30;
-        const years   = ages.map(a => nowYear + Math.round(a - curAge));
-        return { labels: ages.map(a => `${isHe ? 'גיל' : 'Age'} ${a}`), datasets, target, ages, years, loanEndIndices, totalSavings };
+        return { labels: ages.map(a => `${isHe ? 'גיל' : 'Age'} ${a}`), datasets, target: maxTarget, targets, expenseTotals, ages, years, loanEndIndices, totalSavings };
     }, [items, inputs, yearGeom, inflationRate, localShowInflation, isHe, selectedYearIdx, defaultYearIdx, showSavings, retDeltaByCat]);
 
     const textColor   = isLight ? '#475569' : '#94a3b8';
@@ -261,20 +274,22 @@ export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, infl
             const { ctx, scales: { x }, chartArea } = chart;
 
             // 0. Target line — full width
-            const { target } = barData;
-            if (target > 0 && chart.scales.y) {
-                const yPos = chart.scales.y.getPixelForValue(target);
-                if (yPos >= chartArea.top && yPos <= chartArea.bottom) {
-                    ctx.save();
-                    ctx.setLineDash([6, 3]);
-                    ctx.strokeStyle = '#f59e0b';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.moveTo(chartArea.left, yPos);
-                    ctx.lineTo(chartArea.right, yPos);
-                    ctx.stroke();
-                    ctx.restore();
-                }
+            const targets = barData.targets || [];
+            if (targets.some(v => v > 0) && chart.scales.y) {
+                ctx.save();
+                ctx.setLineDash([6, 3]);
+                ctx.strokeStyle = '#f59e0b';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                targets.forEach((target, i) => {
+                    if (!(target > 0)) return;
+                    const yPos = chart.scales.y.getPixelForValue(target);
+                    const xPos = x.getPixelForTick(i);
+                    if (i === 0) ctx.moveTo(xPos, yPos);
+                    else ctx.lineTo(xPos, yPos);
+                });
+                ctx.stroke();
+                ctx.restore();
             }
 
             // 1. Year labels at bottom
@@ -385,15 +400,75 @@ export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, infl
         },
     }), [currency, textColor, gridColor, isHe, barData.target]);
 
+    const targetPercentData = useMemo(() => {
+        const percentages = (barData.expenseTotals || []).map((total, yi) => {
+            const target = barData.targets?.[yi] || 0;
+            return target > 0 ? Math.round((total / target) * 100) : 0;
+        });
+        return {
+            labels: barData.years?.map(String) || [],
+            datasets: [{
+                label: isHe ? 'אחוז מהיעד' : 'Percent of target',
+                data: percentages,
+                borderColor: isLight ? '#0891b2' : '#22d3ee',
+                backgroundColor: isLight ? 'rgba(8,145,178,0.12)' : 'rgba(34,211,238,0.14)',
+                pointBackgroundColor: percentages.map((pct, yi) => {
+                    const activeIdx = selectedYearIdx ?? defaultYearIdx;
+                    if (yi === activeIdx) return isLight ? '#0e7490' : '#67e8f9';
+                    return pct > 100 ? '#ef4444' : pct >= 90 ? '#f59e0b' : '#22c55e';
+                }),
+                pointBorderColor: isLight ? '#ffffff' : '#0f172a',
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                tension: 0.25,
+                fill: true,
+            }],
+        };
+    }, [barData.expenseTotals, barData.targets, barData.years, isHe, isLight, selectedYearIdx, defaultYearIdx]);
+
+    const targetPercentOptions = useMemo(() => ({
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: {
+                    label: ctx => `${isHe ? 'אחוז מהיעד' : 'Percent of target'}: ${ctx.parsed.y}%`,
+                    afterLabel: ctx => {
+                        const yi = ctx.dataIndex;
+                        const total = barData.expenseTotals?.[yi] || 0;
+                        const target = barData.targets?.[yi] || 0;
+                        return `${isHe ? 'הוצאות' : 'Expenses'}: ${currency}${Math.round(total).toLocaleString()} / ${isHe ? 'יעד' : 'Target'}: ${currency}${Math.round(target).toLocaleString()}`;
+                    },
+                },
+            },
+        },
+        scales: {
+            x: {
+                ticks: { color: textColor, font: { size: 10 }, maxRotation: 45 },
+                grid: { display: false },
+            },
+            y: {
+                suggestedMin: 0,
+                suggestedMax: Math.max(100, ...((targetPercentData.datasets?.[0]?.data || []).map(v => v + 8))),
+                ticks: { color: textColor, font: { size: 10 }, callback: v => `${v}%` },
+                grid: { color: gridColor },
+            },
+        },
+    }), [barData.expenseTotals, barData.targets, currency, gridColor, isHe, targetPercentData, textColor]);
+
     // ── Savings slider ─────────────────────────────────────────────────────────
 
     const savingsSliderData = useMemo(() => {
         const Fend = results?.balanceAtEnd;
         const F0   = results?.balanceAtRetirement;
-        const W    = barData.target;
+        const targets = barData.targets || [];
+        const maxTarget = Math.max(0, ...targets);
         const { ages } = yearGeom;
         const N = ages.length;
-        if (Fend == null || !F0 || F0 <= 0 || !W || !N || !barData.datasets.length) return null;
+        if (Fend == null || !F0 || F0 <= 0 || !maxTarget || !N || !barData.datasets.length) return null;
 
         const savingsLabel = isHe ? 'חיסכון' : 'Savings';
         const barTotals = ages.map((_, yi) =>
@@ -401,7 +476,7 @@ export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, infl
                 .filter(ds => ds.stack === 'total' && ds.label !== savingsLabel)
                 .reduce((s, ds) => s + (ds.data[yi] || 0), 0)
         );
-        if (barTotals[0] >= W) return null;
+        if (barTotals[0] >= (targets[0] || 0)) return null;
 
         // Decumulation rate
         const realRate = (results?.effectiveRetirementRate ?? 0) / 100;
@@ -414,7 +489,7 @@ export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, infl
         let totalSavings = 0;
         let FV_bonus = 0;
         for (let yi = 0; yi < N; yi++) {
-            const monthlySaved = Math.max(0, W - barTotals[yi]);
+            const monthlySaved = Math.max(0, (targets[yi] || 0) - barTotals[yi]);
             if (monthlySaved <= 0) continue;
             totalSavings += monthlySaved * 12;
             // FV of 12 monthly deposits, then grown for remaining (N-1-yi) full years
@@ -544,8 +619,9 @@ export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, infl
                                 {isHe ? 'התפלגות הוצאות לפי קטגוריה' : 'Expenses by Category'}
                                 {' '}<span className={`text-xs font-normal ${localShowInflation ? (isLight ? 'text-amber-600' : 'text-amber-400') : (isLight ? 'text-slate-400' : 'text-gray-500')}`}>— {pieLabel}{localShowInflation ? ` · ${(inflationRate * 100).toFixed(1)}%` : ''}</span>
                             </h3>
-                            {barData.target > 0 && (() => {
-                                const gap = barData.target - pieData.grandTotal;
+                            {(barData.targets?.[selectedYearIdx ?? defaultYearIdx] || 0) > 0 && (() => {
+                                const activeTarget = barData.targets[selectedYearIdx ?? defaultYearIdx] || 0;
+                                const gap = activeTarget - pieData.grandTotal;
                                 const isPos = gap >= 0;
                                 return (
                                     <span dir="ltr" className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full flex items-baseline gap-1.5 ${isPos
@@ -703,6 +779,25 @@ export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, infl
                         </div>
                     )}
 
+                    {barData.expenseTotals?.length > 0 && barData.targets?.some(v => v > 0) && (
+                        <div>
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                                <h3 className={`text-sm font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                                    {isHe ? 'אחוז התקציב מהיעד לפי שנה' : 'Budget Percent of Target by Year'}
+                                </h3>
+                                <span className={`text-[11px] ${isLight ? 'text-cyan-700' : 'text-cyan-300'}`}>
+                                    {isHe ? 'כולל יעד משיכה משתנה' : 'Variable targets included'}
+                                </span>
+                            </div>
+                            <p className={`text-xs mb-3 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                {isHe ? 'כל נקודה משווה את סך ההוצאות החודשי באותה שנה ליעד המשיכה של אותה שנה.' : 'Each point compares that year’s monthly expenses with that year’s withdrawal target.'}
+                            </p>
+                            <div style={{ height: 190 }}>
+                                <Line key={`pct-${chartOpenCountRef.current}`} data={targetPercentData} options={targetPercentOptions} />
+                            </div>
+                        </div>
+                    )}
+
                     {/* ── Savings slider ── */}
                     {savingsSliderData && (() => {
                         const { totalSavings, FV_bonus, Fend, Fmax } = savingsSliderData;
@@ -752,7 +847,9 @@ export function BudgetStatsModal({ isOpen, onClose, items, inputs, results, infl
                                 <div className="grid grid-cols-2 gap-2 mt-4">
                                     {(() => {
                                         const N = yearGeom.ages.length;
-                                        const W = barData.target || 0;
+                                        const W = barData.targets?.length
+                                            ? barData.targets.reduce((s, v) => s + (v || 0), 0) / barData.targets.length
+                                            : 0;
                                         // Monthly from savings portion (based on slider)
                                         const monthlyFromSavings = N > 0 ? Math.round(sliderConsumed / (N * 12)) : 0;
                                         // Monthly from other sources (pension etc.) = target minus what savings covers at full utilization

@@ -22,6 +22,7 @@ import { getChatResponse } from '../utils/ai-chat';
 import { feature as topoFeature } from 'topojson-client';
 import { geoMercator, geoPath as d3GeoPath } from 'd3-geo';
 import { useDraggable } from '../hooks/useDraggable';
+import { getProjectedAgeDate, getProjectedYear } from '../utils/dateUtils';
 
 const SAVE_DEBOUNCE_MS = 1000;
 const DEFAULT_TRIP_PLAN_SORT = { key: 'createdAt', dir: 'desc' };
@@ -2065,6 +2066,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const latestStateRef = useRef({ items, householdSize }); // always-current ref for closures
     const backupSlotsRef = useRef([]);   // in-memory mirror of Firestore backupSlots
     const pauseStateFingerprintRef = useRef(null);
+    const retirementModeFingerprintRef = useRef(null);
     const [backups, setBackups] = useState([]);
     const [showRestore, setShowRestore] = useState(false);
     const [pendingConfirm, setPendingConfirm] = useState(null); // { type: 'restore'|'reset', backup? }
@@ -2074,7 +2076,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const [aiModalOpen, setAiModalOpen] = useState(false);
     const [aiLoading, setAiLoading] = useState(false);
     const [aiError, setAiError] = useState(null);
-    const [showRetirementMode, setShowRetirementMode] = useState(false);
+    const [retirementModeByYear, setRetirementModeByYear] = useState({});
     const aiInsightRef = useRef(null);      // cached insight text (survives modal close)
     const aiInsightStaleRef = useRef(false); // mirror of aiInsightStale for use inside callbacks
     const aiStaleInitRef = useRef(false);   // true after the first post-load render
@@ -2091,13 +2093,31 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const [showStats, setShowStats] = useState(false);
     const [showFixedVar, setShowFixedVar] = useState(false);
     const [sliderConsumed, setSliderConsumed] = useState(0);
+    const [includeRetirementEntertainment, setIncludeRetirementEntertainment] = useState(false);
     const currentYear = new Date().getFullYear();
-    const retirementEndYear = currentYear + Math.max(0, Math.round(
-        parseFloat(inputs.retirementEndAge || 90) - parseFloat(inputs.currentAge || 40)
-    ));
+    const retirementStartDate = useMemo(
+        () => getProjectedAgeDate(inputs.retirementStartAge, inputs.currentAge, inputs.birthdate, inputs.manualAge),
+        [inputs.retirementStartAge, inputs.currentAge, inputs.birthdate, inputs.manualAge]
+    );
+    const retirementStartYear = retirementStartDate?.getFullYear() ?? currentYear;
+    const retirementEndYear = getProjectedYear(inputs.retirementEndAge, inputs.currentAge, inputs.birthdate, inputs.manualAge)
+        ?? (currentYear + Math.max(0, Math.round(
+            parseFloat(inputs.retirementEndAge || 90) - parseFloat(inputs.currentAge || 40)
+        )));
+    const defaultRetirementModeStartYear = useMemo(() => {
+        if (!retirementStartDate) return retirementEndYear + 1;
+        const monthsInStartYear = 12 - retirementStartDate.getMonth();
+        return monthsInStartYear > 6 ? retirementStartDate.getFullYear() : retirementStartDate.getFullYear() + 1;
+    }, [retirementStartDate, retirementEndYear]);
     const [selectedYear, setSelectedYear] = useState(currentYear);
+    const ageInSelectedYear = useMemo(() => {
+        const baseAge = parseFloat(inputs.currentAge);
+        if (!Number.isFinite(baseAge)) return null;
+        return Math.max(0, Math.round(baseAge + (selectedYear - currentYear)));
+    }, [inputs.currentAge, selectedYear, currentYear]);
     const [yearAmounts, setYearAmounts] = useState({});
     const yearAmountsRef = useRef({});
+    const retirementModeByYearRef = useRef({});
     // Undo / redo
     const [canUndo, setCanUndo] = useState(false);
     const [canRedo, setCanRedo] = useState(false);
@@ -2148,17 +2168,26 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         if (!uid) return;
         getUserSettings(uid).then(s => {
             if (s?.budgetSliderConsumed != null) setSliderConsumed(s.budgetSliderConsumed);
+            if (s?.includeRetirementEntertainmentVersion >= 3 && typeof s?.includeRetirementEntertainment === 'boolean') {
+                setIncludeRetirementEntertainment(s.includeRetirementEntertainment);
+            } else {
+                setIncludeRetirementEntertainment(false);
+            }
         }).catch(() => {});
     }, [uid]);
 
-    // Debounced save of slider value to Firestore
+    // Debounced save of budget display preferences to Firestore
     useEffect(() => {
         if (!uid) return;
         const t = setTimeout(() => {
-            setUserSettings(uid, { budgetSliderConsumed: sliderConsumed }).catch(() => {});
+            setUserSettings(uid, {
+                budgetSliderConsumed: sliderConsumed,
+                includeRetirementEntertainment,
+                includeRetirementEntertainmentVersion: 3,
+            }).catch(() => {});
         }, 800);
         return () => clearTimeout(t);
-    }, [uid, sliderConsumed]);
+    }, [uid, sliderConsumed, includeRetirementEntertainment]);
 
     useEffect(() => {
         const handler = (e) => {
@@ -2174,13 +2203,39 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     }, []);
 
     // Always-current refs so closures always see latest state
-    latestStateRef.current = { items, householdSize, yearAmounts };
+    latestStateRef.current = { items, householdSize, yearAmounts, retirementModeByYear };
     yearAmountsRef.current = yearAmounts;
+    retirementModeByYearRef.current = retirementModeByYear;
     aiInsightStaleRef.current = aiInsightStale;
 
     // Derive clean display text and structured retirement adjustments from raw AI insight
     const insightText    = useMemo(() => stripRetirementJson(aiInsight), [aiInsight]);
     const retirementAdj  = useMemo(() => parseRetirementAdj(aiInsight),  [aiInsight]);
+    const effectiveRetirementAdj = useMemo(() => {
+        if (!retirementAdj || includeRetirementEntertainment) return retirementAdj;
+        return {
+            ...retirementAdj,
+            mutedCategoryIds: ['entertainment'],
+            mutedAdditions: (retirementAdj.additions || []).filter(a => a.categoryId === 'entertainment'),
+            mutedIncreases: (retirementAdj.increases || []).filter(inc => inc.categoryId === 'entertainment'),
+            additions: (retirementAdj.additions || []).filter(a => a.categoryId !== 'entertainment'),
+            increases: (retirementAdj.increases || []).filter(inc => inc.categoryId !== 'entertainment'),
+        };
+    }, [retirementAdj, includeRetirementEntertainment]);
+    const defaultShowRetirementMode = selectedYear >= defaultRetirementModeStartYear && selectedYear <= retirementEndYear;
+    const showRetirementMode = retirementAdj
+        ? (retirementModeByYear[selectedYear] ?? defaultShowRetirementMode)
+        : false;
+    const setShowRetirementMode = useCallback((updater) => {
+        setRetirementModeByYear(prev => {
+            const current = prev[selectedYear] ?? defaultShowRetirementMode;
+            const next = typeof updater === 'function' ? updater(current) : updater;
+            return {
+                ...prev,
+                [selectedYear]: !!next
+            };
+        });
+    }, [selectedYear, defaultShowRetirementMode]);
 
     const updateItems = useCallback((updater) => {
         setItems(prev => {
@@ -2253,7 +2308,12 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const persistBudgetSnapshot = useCallback((withBackup = true) => {
         if (!uid || !loaded || !saveAllowedRef.current) return;
 
-        const { items: latestItems, householdSize: latestHouseholdSize, yearAmounts: latestYearAmounts } = latestStateRef.current;
+        const {
+            items: latestItems,
+            householdSize: latestHouseholdSize,
+            yearAmounts: latestYearAmounts,
+            retirementModeByYear: latestRetirementModeByYear,
+        } = latestStateRef.current;
         const normalizedItems = Array.isArray(latestItems) ? latestItems.map(normalizeBudgetItem) : latestItems;
         const prev = confirmedRef.current;
         let newSlots = backupSlotsRef.current;
@@ -2274,7 +2334,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         }
 
         const snap = { items: normalizedItems, householdSize: latestHouseholdSize, savedAt: Date.now() };
-        setBudgetItems(uid, normalizedItems, latestHouseholdSize, withBackup ? newSlots : undefined, latestYearAmounts || {})
+        setBudgetItems(uid, normalizedItems, latestHouseholdSize, withBackup ? newSlots : undefined, latestYearAmounts || {}, latestRetirementModeByYear || {})
             .then(() => {
                 confirmedRef.current = snap;
                 if (withBackup) {
@@ -2443,6 +2503,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
 
     useEffect(() => {
         pauseStateFingerprintRef.current = null;
+        retirementModeFingerprintRef.current = null;
     }, [uid]);
 
     // Load from Firestore on mount
@@ -2452,12 +2513,14 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             let loadedItems = null;
             let loadedHouseholdSize = 2;
             let loadedYearAmounts = null;
+            let loadedRetirementModeByYear = null;
             if (saved) {
                 if (Array.isArray(saved)) { loadedItems = saved; } // legacy format
                 else {
                     if (Array.isArray(saved.items)) loadedItems = saved.items;
                     if (saved.householdSize) loadedHouseholdSize = saved.householdSize;
                     if (saved.yearAmounts && typeof saved.yearAmounts === 'object') loadedYearAmounts = saved.yearAmounts;
+                    if (saved.retirementModeByYear && typeof saved.retirementModeByYear === 'object') loadedRetirementModeByYear = saved.retirementModeByYear;
                 }
             }
             if (loadedItems) {
@@ -2492,6 +2555,10 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                 if (loadedYearAmounts) {
                     setYearAmounts(loadedYearAmounts);
                     yearAmountsRef.current = loadedYearAmounts;
+                }
+                if (loadedRetirementModeByYear) {
+                    setRetirementModeByYear(loadedRetirementModeByYear);
+                    retirementModeByYearRef.current = loadedRetirementModeByYear;
                 }
                 confirmedRef.current = { items: normalizedLoadedItems, householdSize: loadedHouseholdSize, savedAt: Date.now() };
                 backupSlotsRef.current = slots;
@@ -2533,6 +2600,21 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         persistBudgetSnapshot(false);
     }, [uid, loaded, pauseStateFingerprint, persistBudgetSnapshot]);
 
+    // Persist per-year retirement view settings without creating budget backups.
+    useEffect(() => {
+        if (!uid || !loaded || !saveAllowedRef.current) return;
+        const fingerprint = JSON.stringify(retirementModeByYear);
+        if (retirementModeFingerprintRef.current === null) {
+            retirementModeFingerprintRef.current = fingerprint;
+            return;
+        }
+        if (retirementModeFingerprintRef.current === fingerprint) return;
+
+        retirementModeFingerprintRef.current = fingerprint;
+        clearTimeout(saveTimerRef.current);
+        persistBudgetSnapshot(false);
+    }, [uid, loaded, retirementModeByYear, persistBudgetSnapshot]);
+
     // Debounced save to Firestore whenever items or yearAmounts change (after initial load)
     useEffect(() => {
         if (!uid || !loaded || !saveAllowedRef.current) return;
@@ -2555,9 +2637,9 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         if (!loaded) return;
         try {
             const monthlyBase = displayItems.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0);
-            const retDelta = showRetirementMode && retirementAdj
-                ? (retirementAdj.additions || []).reduce((s, a) => s + (a.monthlyAmount || 0), 0)
-                  + (retirementAdj.increases || []).reduce((s, inc) => {
+            const retDelta = showRetirementMode && effectiveRetirementAdj
+                ? (effectiveRetirementAdj.additions || []).reduce((s, a) => s + (a.monthlyAmount || 0), 0)
+                  + (effectiveRetirementAdj.increases || []).reduce((s, inc) => {
                       const matched = displayItems.filter(i => i.enabled !== false).some(i => matchIncrease(i.label, inc.itemLabel));
                       return s + (matched ? (inc.increaseAmount || 0) : 0);
                   }, 0)
@@ -2613,7 +2695,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             }));
             window.dispatchEvent(new Event('rc-budget-updated'));
         } catch {}
-    }, [displayItems, loaded, inputs.monthlyNetIncomeDesired, results, householdSize, showInflation, inflationRate, projFactor, projYears, showRetirementMode, retirementAdj, selectedYear]);
+    }, [displayItems, loaded, inputs.monthlyNetIncomeDesired, results, householdSize, showInflation, inflationRate, projFactor, projYears, showRetirementMode, effectiveRetirementAdj, selectedYear]);
 
     // Keep budget reminders in sync immediately from local state (before DB debounce/save).
     useEffect(() => {
@@ -2634,15 +2716,15 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         [displayItems]
     );
     const retirementDeltaTotal = useMemo(() => {
-        if (!showRetirementMode || !retirementAdj) return 0;
-        const additions = (retirementAdj.additions || []).reduce((s, a) => s + (a.monthlyAmount || 0), 0);
-        const increases = (retirementAdj.increases || []).reduce((s, inc) => {
+        if (!showRetirementMode || !effectiveRetirementAdj) return 0;
+        const additions = (effectiveRetirementAdj.additions || []).reduce((s, a) => s + (a.monthlyAmount || 0), 0);
+        const increases = (effectiveRetirementAdj.increases || []).reduce((s, inc) => {
             // only count increase if there's a matching enabled item
             const matched = displayItems.filter(i => i.enabled !== false).some(i => matchIncrease(i.label, inc.itemLabel));
             return s + (matched ? (inc.increaseAmount || 0) : 0);
         }, 0);
         return additions + increases;
-    }, [showRetirementMode, retirementAdj, displayItems]);
+    }, [showRetirementMode, effectiveRetirementAdj, displayItems]);
     const totalMonthly = showRetirementMode ? totalMonthlyBase + retirementDeltaTotal : totalMonthlyBase;
     const fullMonthly = useMemo(
         () => displayItems.reduce((s, i) => s + toMonthly(i), 0),
@@ -2680,12 +2762,21 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const applyStatusItemsWithImmediateSave = useCallback((nextItems) => {
         const normalizedNextItems = Array.isArray(nextItems) ? nextItems.map(normalizeBudgetItem) : [];
         setItems(normalizedNextItems);
-        const { householdSize: nextHouseholdSize, yearAmounts: nextYearAmounts } = latestStateRef.current;
-        latestStateRef.current = { items: normalizedNextItems, householdSize: nextHouseholdSize, yearAmounts: nextYearAmounts };
+        const {
+            householdSize: nextHouseholdSize,
+            yearAmounts: nextYearAmounts,
+            retirementModeByYear: nextRetirementModeByYear,
+        } = latestStateRef.current;
+        latestStateRef.current = {
+            items: normalizedNextItems,
+            householdSize: nextHouseholdSize,
+            yearAmounts: nextYearAmounts,
+            retirementModeByYear: nextRetirementModeByYear,
+        };
 
         if (!uid || !loaded || !saveAllowedRef.current) return;
         clearTimeout(saveTimerRef.current);
-        setBudgetItems(uid, normalizedNextItems, nextHouseholdSize, undefined, nextYearAmounts || {})
+        setBudgetItems(uid, normalizedNextItems, nextHouseholdSize, undefined, nextYearAmounts || {}, nextRetirementModeByYear || {})
             .then(() => {
                 confirmedRef.current = { items: normalizedNextItems, householdSize: nextHouseholdSize, savedAt: Date.now() };
             })
@@ -2918,9 +3009,15 @@ ${isRetirementBeforeNI ? `
 ` : ''}
 חלק לשני תתי-סעיפים:
 
-א) הוצאות חדשות שיתווספו בתקופת הפרישה${isRetirementBeforeNI ? ` (גיל ${retirementAge}–67)` : ''}: ${isRetirementBeforeNI ? 'דמי ביטוח לאומי ובריאות כ"מי שאינו עובד" (לא דמי בריאות לגמלאי),' : 'ביטוח לאומי (דמי בריאות לגמלאי),'} שינוי בביטוח רפואי פרטי, תרופות וטיפולים רפואיים נוספים, פנאי ונסיעות גדולות יותר, עזרה בבית, ועוד — עם סכום חודשי משוער.
+א) הוצאות חדשות שיתווספו בתקופת הפרישה${isRetirementBeforeNI ? ` (גיל ${retirementAge}–67)` : ''}: ${isRetirementBeforeNI ? 'דמי ביטוח לאומי ובריאות כ"מי שאינו עובד" (לא דמי בריאות לגמלאי),' : 'ביטוח לאומי (דמי בריאות לגמלאי),'} שינוי בביטוח רפואי פרטי (בפרט אובדן הטבות מעסיק/פוליסה קבוצתית והתייקרות גיל), תרופות וטיפולים רפואיים נוספים, פנאי ותחביבים, נסיעות גדולות יותר, עזרה בבית, ועוד — עם סכום חודשי משוער.
 
-ב) הוצאות קיימות שיגדלו: בפרישה נמצאים יותר זמן בבית ולא עובדים, לכן בדוק מהקטגוריות הקיימות מה צפוי לגדול — למשל צריכת מזון (יותר ארוחות בבית), חשמל וגז (יותר שעות בבית), תקשורת ובידור, ועוד. ציין את אחוז הגידול הצפוי לכל סעיף ואת התוספת החודשית המשוערת.
+ב) הוצאות קיימות שיגדלו: בפרישה נמצאים הרבה יותר זמן בבית ואינך נמצא בעבודה רוב היום. כמו כן, אתה מממן הכל בעצמך ללא השתתפות מעסיק. לכן, נתח מה צפוי לגדול:
+- חשמל, מים וגז (מיזוג אוויר לאורך כל היום, שימוש מוגבר במכשירים ותאורה).
+- מזון, סופר ואירוח (יותר ארוחות וקפה בבית, אירוח משפחה/נכדים במקום ארוחות מסובסדות בעבודה).
+- תקשורת, טלוויזיה ואינטרנט (צריכת מדינה, טלוויזיה וסטרימינג מוגברת בבית).
+- תחזוקת בית ובלאי (עקב שהייה ממושכת בבית ושימוש מוגבר במתקנים).
+- תחבורה, דלק וטלפון נייד (במידה והיו מסובסדים או ממומנים על ידי המעסיק בעבר וכעת הם במימון מלא שלך).
+ציין את אחוז הגידול הצפוי לכל סעיף ואת התוספת החודשית המשוערת.
 
 בסוף תשובתך (אחרי הסיכום) הוסף בלוק JSON בפורמט המדויק הזה ואל תשנה את המבנה. categoryId חייב להיות אחד מ: housing, food, health, transport, entertainment, personal, family, misc. itemLabel חייב להיות זהה לשם הפריט בתקציב שהוזן. ${isRetirementBeforeNI ? 'השתמש בסכום המתאים לתקופה לפני גיל 67 (דמי ביטוח לאומי כ"מי שאינו עובד"), לא לגמלאי.' : ''}
 
@@ -2953,9 +3050,15 @@ From age 67, different NI rules apply — pension-age entitlements begin and NI 
 ` : ''}
 Split into two sub-sections:
 
-a) New expenses added during retirement${isRetirementBeforeNI ? ` (age ${retirementAge}–67)` : ''}: ${isRetirementBeforeNI ? 'NI and health insurance as a non-worker (NOT pensioner rates),' : 'national insurance (pensioner health contributions),'} changes in private medical insurance, additional medications and treatments, more leisure and travel, home help, etc. — with estimated monthly amounts.
+a) New expenses added during retirement${isRetirementBeforeNI ? ` (age ${retirementAge}–67)` : ''}: ${isRetirementBeforeNI ? 'NI and health insurance as a non-worker (NOT pensioner rates),' : 'national insurance (pensioner health contributions),'} changes in private medical insurance (especially losing employer group rates and aging premiums), additional medications and treatments, leisure/hobbies, more travel, home help, etc. — with estimated monthly amounts.
 
-b) Existing expenses that will increase: being home all day instead of working means certain costs rise — check the existing categories and flag which ones will grow, e.g. food (more meals at home), electricity and gas (more hours at home), communication and entertainment, etc. Estimate the percentage increase and additional monthly cost for each.
+b) Existing expenses that will increase: being home all day instead of working, and funding everything out-of-pocket without employer subsidies/workplace perks, means certain costs rise. Analyze the existing categories and flag which ones will grow:
+- Utilities: electricity, water, gas (increased air conditioning/heating, lighting, and appliance usage throughout the day).
+- Food & groceries: more meals, coffee, and hosting at home instead of subsidized workplace dining or corporate catering.
+- Communication, TV & internet: increased media/streaming consumption at home.
+- Home maintenance & wear-and-tear (due to much higher utilization of the home).
+- Transportation & mobile: if previously subsidized or provided by an employer (like a company car/phone) and now self-funded.
+Estimate the percentage increase and additional monthly cost for each.
 
 At the end of your response (after the summary) include a JSON block in exactly this format. categoryId must be one of: housing, food, health, transport, entertainment, personal, family, misc. itemLabel must match the budget item name exactly as entered. ${isRetirementBeforeNI ? 'Use the amount applicable to a non-worker before age 67, not the pensioner rate.' : ''}
 
@@ -3053,13 +3156,20 @@ Gap vs target and what can be optimized.`;
     const statusColor = pct > 1 ? 'text-red-500' : pct > 0.9 ? 'text-amber-500' : 'text-emerald-500';
     const barColor   = pct > 1 ? 'bg-red-500'   : pct > 0.9 ? 'bg-amber-500'   : 'bg-emerald-500';
     const pctColor   = pct > 0.9 ? 'text-red-500' : pct > 0.8 ? 'text-amber-400' : 'text-emerald-500';
+    const retirementModeLabel = retirementAdj
+        ? (showRetirementMode
+            ? (isHe
+                ? `תצוגת פרישה +${currency}${Math.round(retirementDeltaTotal).toLocaleString()}/חודש`
+                : `Retirement view +${currency}${Math.round(retirementDeltaTotal).toLocaleString()}/mo`)
+            : (isHe ? 'תצוגת פרישה כבויה' : 'Retirement view off'))
+        : null;
 
     return (
         <>
         <div className="space-y-3" dir={isHe ? 'rtl' : 'ltr'}>
 
             {/* ── Retirement mode banner ── */}
-            {showRetirementMode && retirementAdj && (() => {
+            {false && showRetirementMode && retirementAdj && (() => {
                 const totalDelta = (retirementAdj.additions || []).reduce((s, a) => s + (a.monthlyAmount || 0), 0)
                     + (retirementAdj.increases || []).reduce((s, inc) => s + (inc.increaseAmount || 0), 0);
                 return (
@@ -3078,8 +3188,20 @@ Gap vs target and what can be optimized.`;
             {/* ── Summary banner — sticky ── */}
             <div className={`sticky top-0 z-20 rounded-xl p-3 border backdrop-blur-md ${isLight ? 'bg-white border-slate-200' : 'bg-white/10 border-white/20'}`}>
                 {/* Year navigation — integrated into summary header */}
-                <div className={`flex items-center pt-1 pb-3 mb-2 border-b ${isLight ? 'border-slate-100' : 'border-white/10'}`} dir="ltr">
+                <div className={`relative flex items-center pt-1 pb-3 mb-2 border-b ${isLight ? 'border-slate-100' : 'border-white/10'}`} dir="ltr">
                     {/* Left arrow: decrease in LTR, increase in Hebrew — wraps around */}
+                    {false && retirementModeLabel && (
+                        <span
+                            title={isHe ? 'תצוגת תקציב פרישה' : 'Retirement budget view'}
+                            className={`absolute top-[calc(50%-4px)] -translate-y-1/2 min-w-0 max-w-[16rem] truncate text-[10px] px-1.5 rounded-full border leading-none tracking-wide py-0.5 ${isHe ? 'left-12' : 'right-12'} ${showRetirementMode
+                                ? (isLight ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-amber-500/10 text-amber-300 border-amber-500/40')
+                                : (isLight ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-white/5 text-gray-500 border-white/20')}`}
+                            dir={isHe ? 'rtl' : 'ltr'}
+                        >
+                            <span className="align-middle">🔮</span>
+                            <span className="align-middle ms-1">{retirementModeLabel}</span>
+                        </span>
+                    )}
                     <button
                         onClick={() => setSelectedYear(y => isHe
                             ? (y >= retirementEndYear ? currentYear : y + 1)
@@ -3090,10 +3212,23 @@ Gap vs target and what can be optimized.`;
                     </button>
                     {/* Center: year + copy dropdown icon */}
                     <div className={`flex-1 flex items-center justify-center gap-2 ${isHe ? 'flex-row-reverse' : 'flex-row'}`}>
+                        <div className="contents">
                         <div className="flex items-center justify-center gap-1.5" dir={isHe ? 'rtl' : 'ltr'}>
                             <span className={`text-xl font-bold leading-none tabular-nums ${selectedYear === currentYear ? (isLight ? 'text-slate-700' : 'text-gray-200') : (isLight ? 'text-indigo-700' : 'text-indigo-300')}`}>
                                 {selectedYear}
                             </span>
+                            {false && retirementModeLabel && (
+                                <span
+                                    title={isHe ? 'תצוגת תקציב פרישה' : 'Retirement budget view'}
+                                    className={`text-[10px] px-1.5 rounded-full border leading-none tracking-wide py-0.5 ${showRetirementMode
+                                        ? (isLight ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-amber-500/10 text-amber-300 border-amber-500/40')
+                                        : (isLight ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-white/5 text-gray-500 border-white/20')}`}
+                                    dir={isHe ? 'rtl' : 'ltr'}
+                                >
+                                    <span className="align-middle">🔮</span>
+                                    <span className="align-middle ms-1">{retirementModeLabel}</span>
+                                </span>
+                            )}
                             {(() => {
                                 const st = copiedStateByYear[selectedYear];
                                 const hasEdits = Object.keys(yearAmounts[selectedYear] || {}).length > 0;
@@ -3166,6 +3301,28 @@ Gap vs target and what can be optimized.`;
                         )}
                     </div>
                     {/* Right arrow: increase in LTR, decrease in Hebrew — wraps around */}
+                    </div>
+                    {retirementModeLabel && (
+                        <span
+                            title={isHe ? 'תצוגת תקציב פרישה' : 'Retirement budget view'}
+                            className={`absolute top-[calc(50%-4px)] -translate-y-1/2 min-w-0 max-w-[16rem] truncate text-[10px] px-1.5 rounded-full border leading-none tracking-wide py-0.5 ${isHe ? 'left-12' : 'right-12'} ${showRetirementMode
+                                ? (isLight ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-amber-500/10 text-amber-300 border-amber-500/40')
+                                : (isLight ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-white/5 text-gray-500 border-white/20')}`}
+                            dir={isHe ? 'rtl' : 'ltr'}
+                        >
+                            <span className="align-middle">🔮</span>
+                            <span className="align-middle ms-1">{retirementModeLabel}</span>
+                        </span>
+                    )}
+                    {ageInSelectedYear !== null && (
+                        <span
+                            title={isHe ? 'גיל בשנה הנבחרת' : 'Age in selected year'}
+                            className={`absolute top-[calc(50%-4px)] -translate-y-1/2 text-xs px-2 rounded-full border leading-none tracking-wide py-1 ${isHe ? 'right-12' : 'left-12'} ${isLight ? 'bg-cyan-50 text-cyan-700 border-cyan-200' : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'}`}
+                            dir={isHe ? 'rtl' : 'ltr'}
+                        >
+                            {isHe ? `גיל ${ageInSelectedYear}` : `Age ${ageInSelectedYear}`}
+                        </span>
+                    )}
                     <button
                         onClick={() => setSelectedYear(y => isHe
                             ? (y <= currentYear ? retirementEndYear : y - 1)
@@ -3253,6 +3410,27 @@ Gap vs target and what can be optimized.`;
                         <button onClick={() => setHouseholdSize(s => Math.min(10, s + 1))} className={`w-5 h-5 rounded flex items-center justify-center font-bold transition-colors ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}>+</button>
                     </div>
                     <div className="flex-1" />
+                    {showRetirementMode && retirementAdj && (
+                        <button
+                            onClick={() => setIncludeRetirementEntertainment(v => !v)}
+                            className={`shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded-lg border transition-colors ${includeRetirementEntertainment
+                                ? (isLight ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-amber-500/10 border-amber-500/30 text-amber-300')
+                                : (isLight ? 'bg-slate-50 border-slate-200 text-slate-500' : 'bg-white/5 border-white/20 text-gray-400')}`}
+                            title={isHe
+                                ? (includeRetirementEntertainment ? 'בילויים גדלים בתקציב הפרישה' : 'בילויים נשארים בפער לחלוקה ידנית')
+                                : (includeRetirementEntertainment ? 'Entertainment grows in retirement budget' : 'Entertainment stays in the gap for manual allocation')}
+                            dir={isHe ? 'rtl' : 'ltr'}
+                        >
+                            {includeRetirementEntertainment
+                                ? <ToggleRight size={18} className="text-amber-500" />
+                                : <ToggleLeft size={18} className={isLight ? 'text-slate-400' : 'text-gray-400'} />}
+                            <span className="shrink-0">
+                                {isHe
+                                    ? (includeRetirementEntertainment ? 'בילויים גדלים' : 'בילויים לפער')
+                                    : (includeRetirementEntertainment ? 'Entertainment grows' : 'Entertainment to gap')}
+                            </span>
+                        </button>
+                    )}
                     {/* Inflation projection controls — always visible, no layout shift */}
                     <button
                         onClick={() => setShowInflation(v => !v)}
@@ -3413,7 +3591,7 @@ Gap vs target and what can be optimized.`;
                         aiProvider={aiProvider}
                         aiModel={aiModel}
                         apiKeyOverride={apiKeyOverride}
-                        retirementOverlay={showRetirementMode ? retirementAdj : null}
+                        retirementOverlay={showRetirementMode ? effectiveRetirementAdj : null}
                         currentAge={parseFloat(inputs.currentAge) || 30}
                         retirementEndAge={parseFloat(inputs.retirementEndAge) || 90}
                     />
@@ -3647,7 +3825,7 @@ Gap vs target and what can be optimized.`;
                 t={t}
                 sliderConsumed={sliderConsumed}
                 setSliderConsumed={setSliderConsumed}
-                retirementAdj={retirementAdj}
+                retirementAdj={effectiveRetirementAdj}
                 showRetirementMode={showRetirementMode}
                 setShowRetirementMode={setShowRetirementMode}
             />

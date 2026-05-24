@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useLayoutEffect, useR
 import ReactDOM from 'react-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { formatCurrency } from '../utils/formatters';
+import { getProjectedAgeDate } from '../utils/dateUtils';
 import { generateRetirementChecklistInsights, applyChecklistDiff, explainChecklistItem, generateChecklistOverview, localizeAiError } from '../utils/ai-calculator';
 import { useAuth } from '../contexts/AuthContext';
 import { getChecklistState, setChecklistState, getChecklistOverview, setChecklistOverview } from '../utils/db';
@@ -839,6 +840,59 @@ function AiTextRenderer({ text, isLight }) {
     );
 }
 
+const getRecommendedReminder = (item, inputs) => {
+    if (!item.timing) return null;
+    const currentAge = parseFloat(inputs?.currentAge) || 65;
+    const retirementAge = parseFloat(inputs?.retirementStartAge) || 67;
+    
+    let targetAge = null;
+    let recurringType = 'none';
+
+    if (item.timing.type === 'before') {
+        targetAge = retirementAge + item.timing.value;
+    } else if (item.timing.type === 'after') {
+        targetAge = retirementAge + item.timing.value;
+    } else if (item.timing.type === 'range') {
+        targetAge = retirementAge + item.timing.value;
+    } else if (item.timing.type === 'age') {
+        targetAge = item.timing.value;
+    } else if (item.timing.type === 'ongoing') {
+        targetAge = currentAge;
+        recurringType = 'monthly';
+    }
+
+    if (targetAge === null) return null;
+
+    let dateObj = null;
+    try {
+        dateObj = getProjectedAgeDate(targetAge, currentAge, inputs?.birthdate, inputs?.manualAge);
+    } catch (e) {
+        console.error(e);
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (!dateObj || isNaN(dateObj.getTime())) {
+        dateObj = new Date();
+        dateObj.setDate(today.getDate() + 7);
+    } else if (dateObj < today && item.timing.type !== 'ongoing') {
+        dateObj = new Date();
+        dateObj.setDate(today.getDate() + 7);
+    }
+
+    const yyyy = dateObj.getFullYear();
+    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const dd = String(dateObj.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+
+    return {
+        targetAge: targetAge.toFixed(1),
+        dateStr,
+        recurringType
+    };
+};
+
 function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem, isNew, onSeen, onKeepNew, onDismissNew, onManualRemove, onChangeItem, uid, categoryTitle, categoryEmoji, categoryIcon: CatIcon, inputs, results, aiProvider, aiModel, apiKeyOverride, aiExplanation, onSetAiExplanation, isLocked, onToggleLock }) {
     const p = PRIORITIES[item.priority] || PRIORITIES.medium;
     const isHe = language === 'he';
@@ -1207,9 +1261,91 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                     </button>
                 </div>
             )}
-            {isExpanded && item.details && (
+            {isExpanded && (
                 <div className={`px-3 pb-3 pt-0 ms-10 text-xs leading-relaxed border-t ${isLight ? 'border-gray-100 text-gray-700 bg-white/60' : 'border-white/5 text-gray-300'}`}>
-                    <div className="pt-2">{item.details}</div>
+                    {item.details && <div className="pt-2">{item.details}</div>}
+                    {!checked && !item.reminder?.date && (() => {
+                        const rec = getRecommendedReminder(item, inputs);
+                        if (!rec) return null;
+                        
+                        const statusObj = getTimingStatus(item.timing, inputs, checked);
+                        let urgencyLabel = '';
+                        let urgencyColor = '';
+                        
+                        if (statusObj) {
+                            if (statusObj.status === 'overdue') {
+                                urgencyLabel = isHe ? 'באיחור (דחיפות גבוהה)' : 'Overdue (High Urgency)';
+                                urgencyColor = 'text-red-500 font-semibold';
+                            } else if (statusObj.status === 'urgent') {
+                                urgencyLabel = isHe ? 'דחוף (בטווח של שנה)' : 'Urgent (Within 1 year)';
+                                urgencyColor = 'text-orange-500 font-semibold';
+                            } else if (statusObj.status === 'soon') {
+                                urgencyLabel = isHe ? 'בקרוב (בטווח של 3 שנים)' : 'Soon (Within 3 years)';
+                                urgencyColor = 'text-yellow-600 font-semibold';
+                            } else if (statusObj.status === 'ongoing') {
+                                urgencyLabel = isHe ? 'טיפול שוטף' : 'Ongoing attention';
+                                urgencyColor = 'text-blue-500';
+                            } else {
+                                urgencyLabel = isHe ? 'בזמן (דחיפות נמוכה)' : 'On Track (Low Urgency)';
+                                urgencyColor = 'text-green-600';
+                            }
+                        }
+
+                        return (
+                            <div className={`mt-3 p-3 rounded-lg border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                                isLight 
+                                    ? 'bg-gradient-to-r from-blue-50 to-indigo-50/30 border-blue-100 text-slate-800' 
+                                    : 'bg-gradient-to-r from-blue-950/20 to-indigo-950/10 border-white/5 text-gray-200'
+                            }`}>
+                                <div className="space-y-1 flex-1">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        <Bell size={12} className={isLight ? 'text-blue-600' : 'text-blue-400'} />
+                                        <span className="font-semibold text-[11px]">
+                                            {isHe ? 'המלצה לתזכורת מהצ\'קליסט:' : 'Recommended Checklist Reminder:'}
+                                        </span>
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isLight ? 'bg-blue-100' : 'bg-blue-950/40'} ${urgencyColor}`}>
+                                            {urgencyLabel}
+                                        </span>
+                                    </div>
+                                    <p className={`text-[11px] ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
+                                        {isHe 
+                                            ? `מומלץ להתחיל להתייחס בגיל ${rec.targetAge} (בסביבות ${rec.dateStr})${rec.recurringType !== 'none' ? ' כתזכורת חודשית שוטפת' : ''}.`
+                                            : `Recommended starting age: ${rec.targetAge} (around ${rec.dateStr})${rec.recurringType !== 'none' ? ' as a monthly recurring reminder' : ''}.`
+                                        }
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        
+                                        // Set state for reminder form popup
+                                        setReminderDate(rec.dateStr);
+                                        setReminderType(rec.recurringType);
+                                        if (rec.recurringType === 'monthly') {
+                                            setReminderDay(10);
+                                        }
+                                        setReminderText(isHe ? `תזכורת: ${item.title}` : `Reminder: ${item.title}`);
+                                        
+                                        // Trigger popup positioning
+                                        const rect = reminderBtnRef.current?.getBoundingClientRect();
+                                        if (rect) {
+                                            setReminderAnchor(rect);
+                                        }
+                                        setShowReminder(true);
+                                    }}
+                                    className={`shrink-0 px-3 py-1.5 rounded-md text-xs font-semibold shadow-sm transition-all flex items-center gap-1 ${
+                                        isLight 
+                                            ? 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow' 
+                                            : 'bg-blue-600 text-white hover:bg-blue-500 hover:shadow'
+                                    }`}
+                                >
+                                    <Bell size={11} />
+                                    {isHe ? 'פרטים והגדרה' : 'Review & Setup'}
+                                </button>
+                            </div>
+                        );
+                    })()}
                 </div>
             )}
             {showAiExplain && (

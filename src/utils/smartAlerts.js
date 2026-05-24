@@ -11,8 +11,9 @@ export const CONDITION_TYPES = {
         labelEn: 'Budget % of target',
         check({ threshold, operator }, { totalMonthly, target }) {
             if (!target) return false;
-            const pct = totalMonthly / target;
-            return compare(pct, operator, threshold);
+            const pct = Math.round((totalMonthly / target) * 100);
+            const thresholdPct = Math.round(threshold * 100);
+            return compare(pct, operator, thresholdPct);
         },
         statusHe({ threshold, operator }, { totalMonthly, target }) {
             if (!target) return 'אין יעד משיכה';
@@ -394,6 +395,57 @@ function compare(value, operator, threshold) {
     }
 }
 
+function isBudgetPctAboveDisplayedThreshold(condition, appState) {
+    if (condition?.type !== 'budget_pct_of_target') return true;
+    if (condition.operator !== '>') return true;
+    if (!appState?.target) return false;
+
+    const displayedPct = Math.round((appState.totalMonthly / appState.target) * 100);
+    const displayedThreshold = Math.round((condition.threshold || 0) * 100);
+    return displayedPct > displayedThreshold;
+}
+
+export function normalizeAlertCondition(alert) {
+    const condition = alert?.condition || {};
+    if (condition.type !== 'budget_pct_of_target') return condition;
+
+    const text = [
+        alert.originalText,
+        alert.label,
+        alert.labelHe,
+        alert.labelEn,
+        alert.summaryHe,
+        alert.summaryEn,
+        alert.text,
+    ].filter(Boolean).join(' ').toLowerCase();
+    const aboveWords = ['\u05de\u05e2\u05dc', '\u05d9\u05d5\u05ea\u05e8', '\u05e2\u05d5\u05d1\u05e8', '\u05e2\u05d5\u05dc\u05d4', '\u05d2\u05d1\u05d5\u05d4', '\u05d7\u05e8\u05d2', 'exceed', 'above', 'over', 'greater', 'more'];
+    const belowWords = ['\u05de\u05ea\u05d7\u05ea', '\u05e4\u05d7\u05d5\u05ea', '\u05e0\u05de\u05d5\u05da', 'below', 'under', 'less'];
+    const inferredAbove = aboveWords.some(word => text.includes(word));
+    const inferredBelow = belowWords.some(word => text.includes(word));
+    const budgetAboveByTitle = /budget_pct_of_target/i.test(condition.type || '')
+        && condition.threshold >= 0.5
+        && !inferredBelow
+        && (text.includes('\u05ea\u05e7\u05e6\u05d9\u05d1') || text.includes('budget'));
+
+    if ((inferredAbove || budgetAboveByTitle) && !inferredBelow && ['<', '<=', '>='].includes(condition.operator)) {
+        return { ...condition, operator: '>' };
+    }
+    if (inferredBelow && !inferredAbove && ['>', '>=', '<='].includes(condition.operator)) {
+        return { ...condition, operator: '<' };
+    }
+    const wantsAbove = /(מעל|יותר|עובר|עולה|גבוה|חרג|exceed|above|over|greater|more)/i.test(text);
+    const wantsBelow = /(מתחת|פחות|נמוך|below|under|less)/i.test(text);
+
+    if (wantsAbove && !wantsBelow && ['<', '<=', '>='].includes(condition.operator)) {
+        return { ...condition, operator: '>' };
+    }
+    if (wantsBelow && !wantsAbove && ['>', '>=', '<='].includes(condition.operator)) {
+        return { ...condition, operator: '<' };
+    }
+
+    return condition;
+}
+
 // ─── Evaluate all alerts against current app state ──────────────────────────
 
 /**
@@ -409,10 +461,11 @@ export function evaluateSmartAlerts(alerts, appState) {
     return (alerts || []).filter(alert => {
         if (!alert.enabled) return false;
         if (alert.snoozedUntil && now < alert.snoozedUntil) return false;
-        const def = CONDITION_TYPES[alert.condition?.type];
+        const condition = normalizeAlertCondition(alert);
+        const def = CONDITION_TYPES[condition?.type];
         if (!def) return false;
         try {
-            return def.check(alert.condition, appState);
+            return def.check(condition, appState) && isBudgetPctAboveDisplayedThreshold(condition, appState);
         } catch {
             return false;
         }
@@ -420,19 +473,21 @@ export function evaluateSmartAlerts(alerts, appState) {
 }
 
 export function getAlertStatus(alert, appState, isHe) {
-    const def = CONDITION_TYPES[alert.condition?.type];
+    const condition = normalizeAlertCondition(alert);
+    const def = CONDITION_TYPES[condition?.type];
     if (!def) return '';
     try {
-        return isHe ? def.statusHe(alert.condition, appState) : def.statusEn(alert.condition, appState);
+        return isHe ? def.statusHe(condition, appState) : def.statusEn(condition, appState);
     } catch {
         return '';
     }
 }
 
 export function isAlertTriggered(alert, appState) {
-    const def = CONDITION_TYPES[alert.condition?.type];
+    const condition = normalizeAlertCondition(alert);
+    const def = CONDITION_TYPES[condition?.type];
     if (!def || !alert.enabled) return false;
-    try { return def.check(alert.condition, appState); } catch { return false; }
+    try { return def.check(condition, appState) && isBudgetPctAboveDisplayedThreshold(condition, appState); } catch { return false; }
 }
 
 // ─── AI parser ──────────────────────────────────────────────────────────────

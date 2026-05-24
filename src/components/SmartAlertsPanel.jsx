@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Sparkles, Plus, Trash2, ToggleRight, ToggleLeft, Loader2, AlertTriangle, CheckCircle, Pencil, X, FlaskConical, ChevronDown, ChevronUp } from 'lucide-react';
-import { parseAlertWithAI, isAlertTriggered, getAlertStatus } from '../utils/smartAlerts';
+import { parseAlertWithAI, isAlertTriggered, getAlertStatus, normalizeAlertCondition } from '../utils/smartAlerts';
 import { getSmartAlerts, setSmartAlerts } from '../utils/db';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -69,7 +69,7 @@ function ParseForm({ inputVal, onInputChange, onParse, parsing, parseError, pars
 
 function buildTestRows(alert, appState, isHe) {
     const txt = (en, he) => isHe ? he : en;
-    const c = alert.condition || {};
+    const c = normalizeAlertCondition(alert);
     const fmt = (n) => typeof n === 'number' ? `₪${Math.round(n).toLocaleString()}` : String(n ?? '—');
     const pct = (n) => typeof n === 'number' ? `${Math.round(n * 100)}%` : '—';
     const rows = [];
@@ -208,7 +208,19 @@ export function SmartAlertsPanel({ isHe, isLight, appState, aiProvider, aiModel,
     // Load from DB
     useEffect(() => {
         if (!uid) return;
-        getSmartAlerts(uid).then(a => { setAlerts(a); setLoaded(true); }).catch(() => setLoaded(true));
+        getSmartAlerts(uid).then(a => {
+            const normalized = (a || []).map(alert => ({
+                ...alert,
+                condition: normalizeAlertCondition(alert),
+            }));
+            setAlerts(normalized);
+            setLoaded(true);
+            if (JSON.stringify(normalized) !== JSON.stringify(a || [])) {
+                setSmartAlerts(uid, normalized)
+                    .then(() => window.dispatchEvent(new Event('rc-smart-alerts-changed')))
+                    .catch(() => {});
+            }
+        }).catch(() => setLoaded(true));
     }, [uid]);
 
     // Sync when disabled externally (e.g. X button in alert bar)
@@ -452,7 +464,8 @@ export function SmartAlertsPanel({ isHe, isLight, appState, aiProvider, aiModel,
                         const status = getAlertStatus(alert, appState, isHe);
                         const isEditing = editingId === alert.id;
                         const testOpen = testingId === alert.id;
-                        const testTriggered = testOpen && isAlertTriggered(alert, appState);
+                        const testConditionMet = testOpen && isAlertTriggered({ ...alert, enabled: true }, appState);
+                        const testTriggered = testConditionMet && alert.enabled;
                         const testRows = testOpen ? buildTestRows(alert, appState, isHe) : [];
 
                         return (
@@ -506,12 +519,14 @@ export function SmartAlertsPanel({ isHe, isLight, appState, aiProvider, aiModel,
                                 {/* Test result */}
                                 {testOpen && (
                                     <div className={`px-4 py-3 border-t space-y-2 ${isLight ? 'bg-blue-50/60 border-blue-100' : 'bg-blue-900/10 border-blue-500/20'}`}>
-                                        <div className={`flex items-center gap-2 text-xs font-semibold ${testTriggered ? (isLight ? 'text-amber-700' : 'text-amber-300') : (isLight ? 'text-slate-500' : 'text-gray-400')}`}>
-                                            {testTriggered
+                                        <div className={`flex items-center gap-2 text-xs font-semibold ${testConditionMet ? (isLight ? 'text-amber-700' : 'text-amber-300') : (isLight ? 'text-slate-500' : 'text-gray-400')}`}>
+                                            {testConditionMet
                                                 ? <AlertTriangle size={13} className="text-amber-500" />
                                                 : <CheckCircle size={13} className={isLight ? 'text-slate-400' : 'text-gray-500'} />}
-                                            {testTriggered
-                                                ? txt('Condition MET — alert would fire', 'התנאי מתקיים — ההתראה הייתה מופעלת')
+                                            {testConditionMet
+                                                ? (alert.enabled
+                                                    ? txt('Condition MET — alert would fire', 'התנאי מתקיים — ההתראה הייתה מופעלת')
+                                                    : txt('Condition MET — alert is disabled', 'התנאי מתקיים — ההתראה כבויה'))
                                                 : txt('Condition not met — alert would not fire', 'התנאי לא מתקיים — ההתראה לא הייתה מופעלת')}
                                         </div>
                                         {alert.originalText && (
