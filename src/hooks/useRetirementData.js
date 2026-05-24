@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { DEFAULT_INPUTS } from '../constants';
 import { normalizeInputs } from '../utils/profileUtils';
 import { createDefaultIncomeSources } from '../utils/pensionCalculator';

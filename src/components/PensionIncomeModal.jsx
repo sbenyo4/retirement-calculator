@@ -1048,7 +1048,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
             ? niStartAge + deferralYears + Math.ceil(fundingCost / deltaNet / 12)
             : null;
         return { niStartAge, niGross, deferredGross, baseNet, deferredNet, deltaNet, balAtNiAge, projectedBalance: Math.max(0, projectedBalance), fundingCost, breakEvenAge };
-    }, [deferralYears, incomeSources, summary, capitalAtRetirement, pensionInterestRate, calculateEffectiveNI, retirementStartAge, retirementEndAge, monthlyExpenses, capitalReturnRate, fiscalParameters, familyStatus]);
+    }, [deferralYears, incomeSources, capitalAtRetirement, pensionInterestRate, calculateEffectiveNI, retirementStartAge, retirementEndAge, monthlyExpenses, capitalReturnRate, fiscalParameters, familyStatus]);
 
     // Track changes
     const initialIncomeSources = useMemo(() => getSafeSources(), [getSafeSources]);
@@ -1089,7 +1089,6 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     }, [getCachedAIAnalysis, pensionAICacheKey, inputs.pensionAIInsight]);
 
     // Clear AI insight when user modifies data — stale insight shouldn't linger
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => {
         const clean = (sources) => sources.map(({ calculationDetails: _cd, ...rest }) => rest);
         const initialRate = inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : 4;

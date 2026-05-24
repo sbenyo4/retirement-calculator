@@ -23,12 +23,9 @@ export default function LifeEventsManager({
     birthDate,
     results,
     setInputs,
-    calculationMode,
-    simulationType,
     profiles,
     updateProfile,
-    currentProfileId,
-    currentInputs
+    currentProfileId
 }) {
     const classes = useThemeClasses();
     const [showAddModal, setShowAddModal] = useState(false);
@@ -257,34 +254,6 @@ export default function LifeEventsManager({
         }
     };
 
-    const calculateDuration = (startDate, endDate) => {
-        if (!startDate || !endDate) return null;
-
-        const startYear = startDate.year;
-        const startMonth = startDate.month;
-        const endYear = endDate.year;
-        const endMonth = endDate.month;
-
-        let totalMonths = (endYear - startYear) * 12 + (endMonth - startMonth);
-        const years = Math.floor(totalMonths / 12);
-        const months = totalMonths % 12;
-
-        return { years, months };
-    };
-
-    const formatDuration = (duration) => {
-        if (!duration) return '';
-
-        const parts = [];
-        if (duration.years > 0) {
-            parts.push(`${duration.years} ${language === 'he' ? (duration.years === 1 ? 'שנה' : 'שנים') : (duration.years === 1 ? 'year' : 'years')}`);
-        }
-        if (duration.months > 0) {
-            parts.push(`${duration.months} ${language === 'he' ? (duration.months === 1 ? 'חודש' : 'חודשים') : (duration.months === 1 ? 'month' : 'months')}`);
-        }
-
-        return parts.length > 0 ? ` (${parts.join(language === 'he' ? ' ו-' : ' and ')})` : '';
-    };
 
     const formatAmount = (event) => {
         const currency = language === 'he' ? '₪' : '$';
