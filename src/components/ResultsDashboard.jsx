@@ -724,14 +724,10 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                     {/* Comparison View or Standard Summary Cards */}
                     {isCompareMode ? (
                         <div className={orderedColumns.length > 1 ? "overflow-x-auto" : "overflow-x-hidden"}>
-                            {/* Profile Selection for Comparison - Compact View */}
-                            {/* Profile Selection for Comparison - Compact View */}
-                            {/* Profile Selection for Comparison - Compact View */}
-                            {/* Profile Selection for Comparison - Compact View */}
-                            <div className={`mb-2 p-2 rounded-xl border ${isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-white/5 border-white/10'}`}>
-                                <div className="flex flex-col md:flex-row gap-4 items-start">
+                            <div className={`mb-2 p-3 rounded-xl border ${isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-white/5 border-white/10'}`}>
+                                <div className="flex flex-col gap-3">
                                     {/* Controls Column */}
-                                    <div className="flex flex-col gap-2 shrink-0 border-b md:border-b-0 md:border-e border-white/10 pb-4 md:pb-0 md:pe-4 w-full md:w-auto">
+                                    <div className="flex flex-col gap-2 w-full">
                                         {/* Basic Scenarios */}
                                         <div className="flex flex-wrap items-center gap-2">
                                             <span className={`${isLight ? 'text-slate-500' : 'text-gray-400'} text-xs font-medium uppercase tracking-wider whitespace-nowrap`}>{t('basicScenarios')}</span>
@@ -766,7 +762,7 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                                             </button>
 
                                             {/* Sensitivity Icons - Pushed to the end (Left in RTL) */}
-                                            <div className="flex gap-1 ms-auto mt-1 md:mt-0">
+                                            <div className="flex gap-1 ms-auto">
                                                 <SensitivityRangeButton
                                                     onClick={() => setShowSensitivityModal(true)}
                                                     t={t}
@@ -788,7 +784,7 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
 
                                         {/* Sensitivity Toggles - Disabled if AI is first in comparison */}
                                         {orderedSelections[0] !== 'ai' && (
-                                            <div className="flex flex-wrap gap-x-4 gap-y-2 mt-2 md:mt-0">
+                                            <div className="flex flex-wrap gap-x-4 gap-y-2 mt-1">
                                                 <label className="flex items-center gap-2 cursor-pointer group">
                                                     <div className="relative">
                                                         <input
@@ -839,8 +835,11 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                                         )}
                                     </div>
 
+                                    {/* Horizontal Divider */}
+                                    <div className={`border-t ${isLight ? 'border-slate-200' : 'border-white/10'}`} />
+
                                     {/* Saved Profiles */}
-                                    <div className="flex-1 min-w-0">
+                                    <div className="w-full">
                                         <div className="flex flex-wrap items-center gap-2">
                                             <span className={`${isLight ? 'text-slate-500' : 'text-gray-400'} text-xs font-medium uppercase tracking-wider`}>{t('selectProfiles')}</span>
                                             <div className="flex flex-wrap gap-1">
@@ -849,7 +848,7 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                                                         key={profile.id}
                                                         onClick={() => toggleSelection(`profile_${profile.id}`)}
                                                         title={profile.name}
-                                                        className={`px-2 py-1 rounded text-xs transition-colors border max-w-[120px] truncate ${isSelected(`profile_${profile.id}`)
+                                                        className={`px-2 py-1 rounded text-xs transition-colors border max-w-[150px] truncate ${isSelected(`profile_${profile.id}`)
                                                             ? 'bg-emerald-600 border-emerald-500 text-white'
                                                             : (isLight ? 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50' : 'bg-white/5 border-white/20 text-gray-300 hover:bg-white/10')
                                                             }`}
