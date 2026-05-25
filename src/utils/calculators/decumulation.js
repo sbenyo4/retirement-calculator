@@ -181,15 +181,16 @@ export function calculateDecumulation({
                             surplusPrincipal += event.amount;
                         }
                         break;
-                    case EVENT_TYPES.ONE_TIME_EXPENSE:
-                        retirementBalance -= event.amount;
+                    case EVENT_TYPES.ONE_TIME_EXPENSE: {
+                        const expenseAmount = Math.min(event.amount, Math.max(0, retirementBalance));
+                        retirementBalance = Math.max(0, retirementBalance - expenseAmount);
                         // Reduce principal proportionally to the fraction of balance spent
-                        if (retirementBalance + event.amount > 0) {
-                            const expenseFraction = event.amount / (retirementBalance + event.amount);
+                        if (retirementBalance + expenseAmount > 0) {
+                            const expenseFraction = expenseAmount / (retirementBalance + expenseAmount);
                             currentPrincipal = Math.max(0, currentPrincipal - currentPrincipal * expenseFraction);
                         }
                         if (enableBuckets) {
-                            let expenseRemaining = event.amount;
+                            let expenseRemaining = expenseAmount;
                             if (safeBalance >= expenseRemaining) {
                                 const safeFraction = expenseRemaining / safeBalance;
                                 safePrincipal = Math.max(0, safePrincipal - safePrincipal * safeFraction);
@@ -205,8 +206,10 @@ export function calculateDecumulation({
                                 }
                                 surplusBalance = Math.max(0, surplusBalance - expenseRemaining);
                             }
+                            retirementBalance = safeBalance + surplusBalance;
                         }
                         break;
+                    }
                 }
             }
         });
@@ -497,6 +500,9 @@ export function calculateDecumulation({
 
         // Required Capital PV Calculation
         let monthlyNeed = targetMonthlyIncome + activeExpenseAdjustment - activeIncomeAdjustment;
+        if (hasAdditionalIncome) {
+            monthlyNeed -= (additionalIncomeByYear[calYear] || 0);
+        }
 
         lifeEvents.forEach((e, idx) => {
             if (!e.enabled) return;

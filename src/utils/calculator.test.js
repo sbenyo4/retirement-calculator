@@ -63,6 +63,30 @@ describe('calculateRetirementProjection', () => {
                 calculateRetirementProjection({ ...baseInputs, taxRate: 0 }).requiredCapitalAtRetirement
             );
         });
+
+        it('subtracts additional yearly income from required retirement capital', () => {
+            const firstRetirementYear = new Date().getFullYear() + 20;
+            const withoutIncome = calculateRetirementProjection({
+                ...baseInputs,
+                annualReturnRate: 0,
+                taxRate: 0
+            });
+            const withIncome = calculateRetirementProjection({
+                ...baseInputs,
+                annualReturnRate: 0,
+                taxRate: 0,
+                additionalYearlyIncome: [{
+                    id: 'pension-bridge',
+                    enabled: true,
+                    startYear: firstRetirementYear,
+                    endYear: firstRetirementYear + 30,
+                    monthlyAmount: 1000
+                }]
+            });
+
+            expect(withIncome.initialNetWithdrawal).toBe(3000);
+            expect(withoutIncome.requiredCapitalAtRetirement - withIncome.requiredCapitalAtRetirement).toBeCloseTo(240000, 0);
+        });
     });
 
     describe('surplus and deficit', () => {
@@ -616,6 +640,34 @@ describe('calculateRetirementProjection', () => {
             const withoutRatio = without.averageGrossWithdrawal / without.averageNetWithdrawal;
             const with_Ratio = with_.averageGrossWithdrawal / with_.averageNetWithdrawal;
             expect(Math.abs(withoutRatio - with_Ratio)).toBeLessThan(0.15);
+        });
+
+        it('one-time expense larger than the portfolio does not create negative withdrawals', () => {
+            const now = new Date();
+            const retirementYear = now.getFullYear() + (baseInputs.retirementStartAge - baseInputs.currentAge);
+            const result = calculateRetirementProjection({
+                ...baseInputs,
+                currentSavings: 100000,
+                monthlyContribution: 0,
+                annualReturnRate: 0,
+                taxRate: 0,
+                lifeEvents: [{
+                    id: '1',
+                    enabled: true,
+                    type: EVENT_TYPES.ONE_TIME_EXPENSE,
+                    startDate: { year: retirementYear + 1, month: 1 },
+                    amount: 9999999,
+                }],
+            });
+
+            expect(result.balanceAtEnd).toBe(0);
+            expect(result.averageGrossWithdrawal).toBeGreaterThanOrEqual(0);
+            result.history
+                .filter(h => h.phase === 'decumulation')
+                .forEach(h => {
+                    expect(h.balance).toBeGreaterThanOrEqual(0);
+                    expect(h.withdrawal).toBeGreaterThanOrEqual(0);
+                });
         });
     });
 
