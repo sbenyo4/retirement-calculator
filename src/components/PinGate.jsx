@@ -160,7 +160,9 @@ export function PinGate({ uid, t, onLogout, children }) {
 
                 {isLoading ? (
                     <div className={`flex items-center justify-center gap-2 rounded-xl py-10 ${isLight ? 'bg-slate-50 text-slate-500' : 'bg-white/5 text-blue-100'}`}>
-                        <Loader2 size={18} className="animate-spin" />
+                        <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center">
+                            <Loader2 size={18} className="animate-spin" />
+                        </span>
                         <span>{t('loadingPin')}</span>
                     </div>
                 ) : mode === 'error' ? (
@@ -221,9 +223,11 @@ export function PinGate({ uid, t, onLogout, children }) {
                         <button
                             type="submit"
                             disabled={!canSubmit}
-                            className={`flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 font-bold transition-colors ${canSubmit ? 'bg-blue-600 text-white hover:bg-blue-700' : (isLight ? 'bg-slate-200 text-slate-400' : 'bg-white/10 text-white/40')}`}
+                            className={`flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl px-4 py-3 font-bold transition-colors ${canSubmit ? 'bg-blue-600 text-white hover:bg-blue-700' : (isLight ? 'bg-slate-200 text-slate-400' : 'bg-white/10 text-white/40')}`}
                         >
-                            {busy && <Loader2 size={16} className="animate-spin" />}
+                            <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                                {busy && <Loader2 size={16} className="animate-spin" />}
+                            </span>
                             {isSetup ? t('savePin') : t('unlock')}
                         </button>
 

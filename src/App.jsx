@@ -73,11 +73,13 @@ function computeInsightsHash(inputs) {
 
 function App() {
   return (
-    <AuthProvider>
-      <ThemeProvider>
-        <AuthenticatedApp />
-      </ThemeProvider>
-    </AuthProvider>
+    <div className="app-scroll custom-scrollbar" dir="ltr">
+      <AuthProvider>
+        <ThemeProvider>
+          <AuthenticatedApp />
+        </ThemeProvider>
+      </AuthProvider>
+    </div>
   );
 }
 
@@ -100,22 +102,20 @@ function StartupSplash({ t, language, theme }) {
   const isLight = theme === 'light';
 
   return (
-    <div className={`h-full w-full flex items-center justify-center p-4 ${isLight ? 'bg-slate-100' : 'bg-gradient-to-br from-gray-900 to-blue-900'}`} dir={translations[language].dir}>
-      <div className={`w-full max-w-sm rounded-2xl border px-8 py-10 text-center shadow-2xl ${isLight ? 'bg-white border-slate-200' : 'bg-white/10 border-white/20 backdrop-blur-md'}`}>
-        <div className="relative mx-auto mb-5 flex h-20 w-20 items-center justify-center">
-          <svg className={`rc-stable-spinner absolute inset-0 h-full w-full animate-spin ${isLight ? 'text-blue-500/70' : 'text-blue-300/80'}`} viewBox="0 0 80 80">
-            <circle cx="40" cy="40" r="38" stroke="currentColor" strokeWidth="2" fill="transparent" strokeDasharray="179 60" strokeLinecap="round" />
-          </svg>
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg shadow-blue-500/25">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <div className={`h-full w-full flex items-center justify-center ${isLight ? 'bg-slate-100' : 'bg-gradient-to-br from-gray-900 to-blue-900'}`} style={{ padding: 16, fontSize: 16 }} dir={translations[language].dir}>
+      <div className={`w-full rounded-2xl border text-center shadow-2xl ${isLight ? 'bg-white border-slate-200' : 'bg-white/10 border-white/20 backdrop-blur-md'}`} style={{ maxWidth: 384, padding: '40px 32px' }}>
+        <div className="relative mx-auto flex items-center justify-center" style={{ width: 80, height: 80, marginBottom: 20 }}>
+          <div className={`rc-stable-spinner absolute inset-0 rounded-full border-2 border-current border-r-transparent ${isLight ? 'text-blue-500/70' : 'text-blue-300/80'}`} />
+          <div className="flex items-center justify-center rounded-full bg-blue-600 text-white shadow-lg shadow-blue-500/25" style={{ width: 56, height: 56 }}>
+            <svg xmlns="http://www.w3.org/2000/svg" style={{ width: 28, height: 28 }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
         </div>
-        <h1 className={`text-2xl font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>
+        <h1 className={`font-bold ${isLight ? 'text-slate-900' : 'text-white'}`} style={{ fontSize: 24, lineHeight: '32px' }}>
           {t('appTitle')}
         </h1>
-        <p className={`mt-2 text-sm ${isLight ? 'text-slate-500' : 'text-blue-100/85'}`}>
+        <p className={`${isLight ? 'text-slate-500' : 'text-blue-100/85'}`} style={{ marginTop: 8, fontSize: 14, lineHeight: '20px' }}>
           {t('loadingWorkspace')}
         </p>
       </div>

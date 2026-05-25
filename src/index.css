@@ -3,12 +3,26 @@
 @tailwind utilities;
 
 @layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+  }
 
   body {
-    @apply bg-slate-900 text-slate-100 min-h-screen select-none;
-    scrollbar-gutter: stable;
+    @apply bg-slate-900 text-slate-100 select-none;
     /* Added select-none */
   }
+}
+
+.app-scroll {
+  height: 100dvh;
+  min-height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 /* Allow selection in inputs and textareas */
@@ -110,7 +124,14 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 }
 
 .rc-stable-spinner {
-  transform-box: fill-box;
+  animation: rc-spin 1s linear infinite;
   transform-origin: center;
   contain: layout paint;
+  flex: 0 0 auto;
+}
+
+@keyframes rc-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

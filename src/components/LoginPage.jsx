@@ -53,13 +53,13 @@ export function LoginPage({ t }) {
                 <button
                     onClick={handleLogin}
                     disabled={loading}
-                    className="w-full flex items-center justify-center gap-3 bg-white text-gray-900 px-6 py-3 rounded-xl hover:bg-gray-100 font-bold text-lg shadow-lg shadow-black/20 disabled:opacity-70 disabled:cursor-not-allowed border-2 border-gray-300 transition-all duration-200"
+                    className="w-full min-h-[56px] flex items-center justify-center gap-3 bg-white text-gray-900 px-6 py-3 rounded-xl hover:bg-gray-100 font-bold text-lg shadow-lg shadow-black/20 disabled:opacity-70 disabled:cursor-not-allowed border-2 border-gray-300 transition-all duration-200"
                 >
-                    <div className="w-6 h-6 shrink-0 flex items-center justify-center relative">
+                    <div className="w-6 h-6 shrink-0 flex items-center justify-center relative overflow-hidden">
                         {loading ? (
-                            <div className="h-5 w-5 rounded-full border-2 border-gray-300 border-t-gray-900 animate-spin" />
+                            <div className="absolute inset-0 rounded-full border-2 border-gray-300 border-t-gray-900 animate-spin" />
                         ) : (
-                            <svg className="h-6 w-6" viewBox="0 0 24 24">
+                            <svg className="absolute inset-0 h-6 w-6" viewBox="0 0 24 24">
                                 <path
                                     fill="currentColor"
                                     d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
