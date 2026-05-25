@@ -4,13 +4,15 @@ import { useTheme } from '../contexts/ThemeContext';
 import { formatCurrency } from '../utils/formatters';
 import { getProjectedAgeDate } from '../utils/dateUtils';
 import { generateRetirementChecklistInsights, applyChecklistDiff, explainChecklistItem, generateChecklistOverview, localizeAiError } from '../utils/ai-calculator';
+import { getChatResponse } from '../utils/ai-chat';
 import { useAuth } from '../contexts/AuthContext';
 import { getChecklistState, setChecklistState, getChecklistOverview, setChecklistOverview } from '../utils/db';
 import {
     Shield, Heart, Receipt, TrendingUp, Home, Scale, Laptop,
     AlertTriangle, CheckCircle, ChevronDown, ChevronRight,
     Umbrella, Stethoscope, Building2, FileText, Users,
-    Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Landmark, RotateCcw, Search, X, EyeOff, Undo2, Trash2, MessageSquare, Bell, Save, Lock, LockOpen
+    Activity, CreditCard, Zap, Star, Info, BadgeAlert, RefreshCw, Landmark, RotateCcw, Search, X, EyeOff, Undo2, Trash2, MessageSquare, Bell, Save, Lock, LockOpen,
+    Clock, Sparkles, ListChecks, Send
 } from 'lucide-react';
 import { syncComponentReminders, forgetReminderShown, silenceReminder, nextOccurrenceOf, nextOccurrenceByInterval } from '../hooks/useReminders';
 import { useDelayedFlag } from '../hooks/useDelayedFlag';
@@ -841,6 +843,116 @@ function AiTextRenderer({ text, isLight }) {
     );
 }
 
+function getTimingRecommendationText(item, inputs, language) {
+    const isHe = language === 'he';
+    const timing = item.timing;
+    if (!timing) return null;
+    const currentAge = parseFloat(inputs?.currentAge) || 30;
+    const retAge = parseFloat(inputs?.retirementStartAge) || 67;
+    const fmtYrs = (y) => {
+        const abs = Math.abs(Math.round(y));
+        if (abs === 0) return isHe ? 'עכשיו' : 'now';
+        return isHe ? `${abs} שנ${abs === 1 ? 'ה' : 'ים'}` : `${abs} yr${abs === 1 ? '' : 's'}`;
+    };
+    if (timing.type === 'ongoing') {
+        return isHe ? 'פעולה שוטפת — יש לבצע באופן קבוע' : 'Ongoing — perform regularly';
+    }
+    if (timing.type === 'before') {
+        const yearsBeforeRet = Math.abs(timing.value);
+        const targetAge = retAge + timing.value;
+        const yearsFromNow = targetAge - currentAge;
+        if (yearsFromNow < 0)
+            return isHe ? `היה מומלץ ${yearsBeforeRet} שנים לפני הפרישה — חשוב לטפל כעת` : `Recommended ${yearsBeforeRet} yrs before retirement — address now`;
+        return isHe ? `${yearsBeforeRet} שנים לפני הפרישה — בגיל ${Math.round(targetAge)} (עוד ${fmtYrs(yearsFromNow)})` : `${yearsBeforeRet} yrs before retirement — at age ${Math.round(targetAge)} (in ${fmtYrs(yearsFromNow)})`;
+    }
+    if (timing.type === 'after') {
+        const targetAge = retAge + timing.value;
+        return isHe ? `${timing.value} שנים לאחר הפרישה — בגיל ${Math.round(targetAge)}` : `${timing.value} yrs after retirement — at age ${Math.round(targetAge)}`;
+    }
+    if (timing.type === 'range') {
+        const startAge = retAge + timing.value;
+        const endAge = retAge + (timing.valueTo ?? 0);
+        return isHe ? `בין גיל ${Math.round(startAge)} לגיל ${Math.round(endAge)}` : `Between ages ${Math.round(startAge)} and ${Math.round(endAge)}`;
+    }
+    if (timing.type === 'age') {
+        const yearsFromNow = timing.value - currentAge;
+        if (yearsFromNow < 0)
+            return isHe ? `גיל ${timing.value} — עבר, חשוב לטפל כעת` : `Age ${timing.value} — past due, address now`;
+        return isHe ? `בגיל ${timing.value} (עוד ${fmtYrs(yearsFromNow)})` : `At age ${timing.value} (in ${fmtYrs(yearsFromNow)})`;
+    }
+    return null;
+}
+
+function AiExplanationRenderer({ text, isLight, language }) {
+    const sections = [];
+    let currentHeading = null;
+    let currentLines = [];
+    text.split('\n').forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('**') && trimmed.endsWith('**') && trimmed.length > 4 && !trimmed.slice(2, -2).includes('**')) {
+            if (currentLines.some(l => l.trim())) sections.push({ heading: currentHeading, lines: currentLines });
+            currentHeading = trimmed.slice(2, -2);
+            currentLines = [];
+        } else {
+            currentLines.push(line);
+        }
+    });
+    if (currentLines.some(l => l.trim())) sections.push({ heading: currentHeading, lines: currentLines });
+
+    if (sections.length === 0) return <div className="px-3 py-2.5"><AiTextRenderer text={text} isLight={isLight} /></div>;
+
+    const sectionDefs = [
+        { border: 'border-l-2 border-l-purple-400', headingColor: isLight ? 'text-purple-700' : 'text-purple-300', Icon: Info },
+        { border: 'border-l-2 border-l-emerald-400', headingColor: isLight ? 'text-emerald-700' : 'text-emerald-300', Icon: ListChecks },
+        { border: 'border-l-2 border-l-blue-400', headingColor: isLight ? 'text-blue-700' : 'text-blue-300', Icon: CheckCircle },
+    ];
+
+    const renderLine = (line, i) => {
+        if (!line.trim()) return null;
+        const isNumbered = /^\d+\.\s/.test(line.trim());
+        const isBullet = /^[•\-\*]\s/.test(line.trim());
+        const cleanLine = isNumbered ? line.replace(/^\d+\.\s+/, '') : isBullet ? line.replace(/^[•\-\*]\s+/, '') : line;
+        const num = isNumbered ? line.match(/^\d+/)?.[0] : null;
+        const parts = cleanLine.split(/(\*\*[^*]+\*\*)/);
+        const content = parts.map((p, j) =>
+            p.startsWith('**') && p.endsWith('**')
+                ? <strong key={j} className={isLight ? 'text-gray-900' : 'text-white'}>{p.slice(2, -2)}</strong>
+                : <span key={j}>{p}</span>
+        );
+        if (isNumbered || isBullet) {
+            return (
+                <div key={i} className={`flex gap-2 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                    <span className="shrink-0 mt-0.5 font-medium">{isNumbered ? `${num}.` : '•'}</span>
+                    <span className="leading-relaxed">{content}</span>
+                </div>
+            );
+        }
+        return <p key={i} className={`leading-relaxed ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>{content}</p>;
+    };
+
+    return (
+        <div className={`divide-y ${isLight ? 'divide-slate-100' : 'divide-white/5'}`}>
+            {sections.map((section, idx) => {
+                const def = sectionDefs[idx % sectionDefs.length];
+                const Icon = def.Icon;
+                return (
+                    <div key={idx} className={`px-3 py-2.5 ${def.border}`}>
+                        {section.heading && (
+                            <div className={`flex items-center gap-1.5 mb-2 ${def.headingColor}`}>
+                                <Icon size={11} className="shrink-0" />
+                                <span className="font-semibold text-[11px]">{section.heading}</span>
+                            </div>
+                        )}
+                        <div className="space-y-1.5 text-xs">
+                            {section.lines.map((line, i) => renderLine(line, i))}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
 const getRecommendedReminder = (item, inputs) => {
     if (!item.timing) return null;
     const currentAge = parseFloat(inputs?.currentAge) || 65;
@@ -894,6 +1006,27 @@ const getRecommendedReminder = (item, inputs) => {
     };
 };
 
+function buildItemChatSystemPrompt(item, inputs, results, aiExplanation, language) {
+    const isHe = language === 'he';
+    const fmt = n => n ? Math.round(n).toLocaleString() : '0';
+    const ctx = [
+        `Current age: ${inputs?.currentAge}`,
+        `Retirement age: ${inputs?.retirementStartAge}`,
+        `Monthly desired income: ${fmt(inputs?.monthlyNetIncomeDesired)} ILS`,
+        `Current savings: ${fmt(inputs?.currentSavings)} ILS`,
+        results?.balanceAtRetirement ? `Projected balance at retirement: ${fmt(results.balanceAtRetirement)} ILS` : null,
+        results?.ranOutAtAge ? `WARNING: funds run out at age ${results.ranOutAtAge}` : null,
+    ].filter(Boolean).join('\n');
+    const itemInfo = [
+        `Topic: ${item.title}`,
+        item.desc ? `Summary: ${item.desc}` : null,
+        item.details ? `Details: ${item.details}` : null,
+    ].filter(Boolean).join('\n');
+    const explainBlock = aiExplanation ? (isHe ? `\nהסבר שכבר ניתן:\n${aiExplanation}` : `\nExisting explanation:\n${aiExplanation}`) : '';
+    if (isHe) return `אתה יועץ פרישה ישראלי מומחה. אתה עוזר למשתמש להבין ולטפל בנושא ספציפי מרשימת תכנון הפרישה שלו.\n\nנתוני המשתמש:\n${ctx}\n\nהנושא הנדון:\n${itemInfo}${explainBlock}\n\nענה בעברית בצורה קצרה וממוקדת. אל תחזור על מה שכבר נאמר אלא אם שאלו. תן מידע מעשי ורלוונטי לפרופיל הספציפי של המשתמש.`;
+    return `You are an expert Israeli retirement advisor helping the user understand and act on a specific retirement checklist item.\n\nUser data:\n${ctx}\n\nTopic:\n${itemInfo}${explainBlock}\n\nReply in English, concisely and practically. Don't repeat what was already explained unless asked. Give actionable advice relevant to this user's specific profile.`;
+}
+
 function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked, onCheck, onConfirmRemove, onKeepItem, isNew, onSeen, onKeepNew, onDismissNew, onManualRemove, onChangeItem, uid, categoryTitle, categoryEmoji, categoryIcon: CatIcon, inputs, results, aiProvider, aiModel, apiKeyOverride, aiExplanation, onSetAiExplanation, isLocked, onToggleLock }) {
     const p = PRIORITIES[item.priority] || PRIORITIES.medium;
     const isHe = language === 'he';
@@ -903,6 +1036,42 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
     const [aiExplainLoading, setAiExplainLoading] = useState(false);
     const [aiExplainError, setAiExplainError] = useState(null);
     const [showAiExplain, setShowAiExplain] = useState(false);
+
+    const [chatOpen, setChatOpen] = useState(false);
+    const [chatMessages, setChatMessages] = useState([]);
+    const [chatInput, setChatInput] = useState('');
+    const [chatLoading, setChatLoading] = useState(false);
+    const [chatError, setChatError] = useState(null);
+    const chatEndRef = useRef(null);
+    const chatInputRef = useRef(null);
+
+    useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
+    useEffect(() => { if (chatOpen) setTimeout(() => chatInputRef.current?.focus(), 50); }, [chatOpen]);
+
+    const sendChatMessage = async () => {
+        const q = chatInput.trim();
+        if (!q || chatLoading) return;
+        const nextMsgs = [...chatMessages, { role: 'user', content: q }];
+        setChatMessages(nextMsgs);
+        setChatInput('');
+        setChatError(null);
+        setChatLoading(true);
+        try {
+            const systemPrompt = buildItemChatSystemPrompt(item, inputs, results, aiExplanation, language);
+            const reply = await getChatResponse(
+                nextMsgs.map(({ role, content }) => ({ role, content })),
+                systemPrompt,
+                aiProvider,
+                aiModel,
+                apiKeyOverride
+            );
+            setChatMessages(msgs => [...msgs, { role: 'assistant', content: reply }]);
+        } catch (err) {
+            setChatError(localizeAiError(err, language));
+        } finally {
+            setChatLoading(false);
+        }
+    };
 
     const handleAiExplain = async (e) => {
         e.stopPropagation();
@@ -984,6 +1153,22 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                             </span>
                             {!checked && <PriorityBadge priority={item.priority} isLight={isLight} language={language} />}
                             {!checked && item.timing && <TimingBadge timing={item.timing} inputs={inputs} checked={checked} isLight={isLight} language={language} />}
+                            {aiProvider && aiModel && !checked && (
+                                <button
+                                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setChatOpen(v => !v); }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    title={isHe ? 'שאל שאלה על הסעיף' : 'Chat about this item'}
+                                    className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                                        chatOpen
+                                            ? (isLight ? 'bg-violet-100 text-violet-700' : 'bg-violet-500/20 text-violet-200')
+                                            : chatMessages.length > 0
+                                                ? (isLight ? 'bg-violet-50 text-violet-600 ring-1 ring-violet-300' : 'bg-violet-500/15 text-violet-300 ring-1 ring-violet-500/40')
+                                                : (isLight ? 'bg-slate-100 text-slate-400 hover:bg-violet-50 hover:text-violet-600' : 'bg-white/5 text-gray-500 hover:bg-violet-500/10 hover:text-violet-400')
+                                    }`}
+                                >
+                                    <MessageSquare size={10} />
+                                </button>
+                            )}
                             {isNew && !checked && (
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isLight ? 'bg-green-100 text-green-700' : 'bg-green-500/20 text-green-400'}`}>
                                     {isHe ? 'חדש' : 'New'}
@@ -1350,9 +1535,13 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                 </div>
             )}
             {showAiExplain && (
-                <div className={`mx-3 mb-3 rounded-lg border text-xs ${isLight ? 'bg-purple-50 border-purple-100' : 'bg-purple-500/10 border-purple-500/20'}`}>
-                    <div className={`flex items-center justify-between px-3 py-1.5 border-b ${isLight ? 'border-purple-100' : 'border-purple-500/20'}`}>
-                        <span className={`font-semibold text-[11px] ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>{isHe ? 'הסבר AI' : 'AI Explanation'}</span>
+                <div className={`mx-3 mb-3 rounded-xl border text-xs overflow-hidden ${isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-white/5 border-white/10'}`}>
+                    {/* Header */}
+                    <div className={`flex items-center justify-between px-3 py-2 border-b ${isLight ? 'bg-purple-50 border-purple-100' : 'bg-purple-500/10 border-purple-500/20'}`}>
+                        <div className="flex items-center gap-1.5">
+                            <Sparkles size={11} className={isLight ? 'text-purple-500' : 'text-purple-400'} />
+                            <span className={`font-semibold text-[11px] ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>{isHe ? 'הסבר AI' : 'AI Explanation'}</span>
+                        </div>
                         <button
                             onMouseDown={async (e) => {
                                 e.preventDefault(); e.stopPropagation();
@@ -1370,25 +1559,123 @@ function ChecklistItem({ item, isLight, language, isExpanded, onToggle, checked,
                             }}
                             disabled={aiExplainLoading}
                             title={isHe ? 'רענן' : 'Refresh'}
-                            className={`p-1 rounded transition-colors disabled:opacity-40 ${isLight ? 'text-purple-400 hover:text-purple-700 hover:bg-purple-100' : 'text-purple-500 hover:text-purple-300 hover:bg-purple-500/20'}`}
+                            className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 ${isLight ? 'text-purple-400 hover:text-purple-700 hover:bg-purple-100' : 'text-purple-500 hover:text-purple-300 hover:bg-purple-500/20'}`}
                         >
                             <RefreshCw size={11} className={aiExplainLoading ? 'animate-spin' : ''} />
                         </button>
                     </div>
+                    {/* Timing recommendation */}
+                    {(() => {
+                        const timingText = getTimingRecommendationText(item, inputs, language);
+                        if (!timingText) return null;
+                        return (
+                            <div className={`px-3 py-2 flex items-start gap-2 border-b border-l-2 border-l-blue-400 ${isLight ? 'bg-blue-50/70 border-b-blue-100' : 'bg-blue-500/8 border-b-blue-500/15'}`}>
+                                <Clock size={11} className={`mt-0.5 shrink-0 ${isLight ? 'text-blue-500' : 'text-blue-400'}`} />
+                                <div>
+                                    <span className={`font-semibold block mb-0.5 text-[11px] ${isLight ? 'text-blue-700' : 'text-blue-300'}`}>{isHe ? 'מתי לבצע' : 'When to act'}</span>
+                                    <span className={isLight ? 'text-blue-600' : 'text-blue-200/80'}>{timingText}</span>
+                                </div>
+                            </div>
+                        );
+                    })()}
+                    {/* Loading */}
                     {aiExplainLoading && (
-                        <div className="flex items-center gap-2 px-3 py-2">
+                        <div className="flex items-center gap-2 px-3 py-2.5">
                             <RefreshCw size={12} className="animate-spin text-purple-400" />
-                            <span className={isLight ? 'text-purple-600' : 'text-purple-300'}>{isHe ? 'מייצר הסבר…' : 'Generating explanation…'}</span>
+                            <span className={isLight ? 'text-slate-500' : 'text-gray-400'}>{isHe ? 'מייצר הסבר…' : 'Generating explanation…'}</span>
                         </div>
                     )}
+                    {/* Error */}
                     {aiExplainError && (
-                        <div className={`px-3 py-2 ${isLight ? 'text-red-600' : 'text-red-400'}`}>{aiExplainError}</div>
+                        <div className={`px-3 py-2.5 ${isLight ? 'text-red-600' : 'text-red-400'}`}>{aiExplainError}</div>
                     )}
+                    {/* Content */}
                     {aiExplanation && (
-                        <div className="px-3 py-2 text-xs leading-relaxed">
-                            <AiTextRenderer text={aiExplanation} isLight={isLight} />
-                        </div>
+                        <AiExplanationRenderer text={aiExplanation} isLight={isLight} language={language} />
                     )}
+                </div>
+            )}
+            {/* Per-item chat */}
+            {chatOpen && (
+                <div className={`mx-3 mb-3 rounded-xl border overflow-hidden ${isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-white/5 border-white/10'}`}>
+                    {/* Chat header */}
+                    <div className={`flex items-center justify-between px-3 py-2 border-b ${isLight ? 'bg-violet-50 border-violet-100' : 'bg-violet-500/10 border-violet-500/20'}`}>
+                        <div className="flex items-center gap-1.5">
+                            <MessageSquare size={11} className={isLight ? 'text-violet-500' : 'text-violet-400'} />
+                            <span className={`font-semibold text-[11px] ${isLight ? 'text-violet-700' : 'text-violet-300'}`}>
+                                {isHe ? 'שאל על הסעיף' : 'Ask about this item'}
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-0.5">
+                            {chatMessages.length > 0 && (
+                                <button
+                                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setChatMessages([]); setChatError(null); }}
+                                    title={isHe ? 'נקה שיחה' : 'Clear chat'}
+                                    className={`p-1.5 rounded-lg transition-colors ${isLight ? 'text-slate-400 hover:bg-slate-100 hover:text-slate-600' : 'text-gray-500 hover:bg-white/10 hover:text-gray-300'}`}
+                                >
+                                    <RotateCcw size={11} />
+                                </button>
+                            )}
+                            <button
+                                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setChatOpen(false); }}
+                                title={isHe ? 'סגור' : 'Close'}
+                                className={`p-1.5 rounded-lg transition-colors ${isLight ? 'text-slate-400 hover:bg-slate-100 hover:text-slate-600' : 'text-gray-500 hover:bg-white/10 hover:text-gray-300'}`}
+                            >
+                                <X size={12} />
+                            </button>
+                        </div>
+                    </div>
+                    {/* Messages */}
+                    <div className="max-h-52 overflow-y-auto custom-scrollbar px-3 py-2.5 space-y-2">
+                        {chatMessages.length === 0 && (
+                            <p className={`text-xs leading-relaxed ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                {isHe
+                                    ? `שאל כל שאלה על "${item.title}" — למשל: איך מתחילים? מה עדיף? מה הסיכון?`
+                                    : `Ask anything about "${item.title}" — e.g. how to start, what to prioritize, what's the risk?`}
+                            </p>
+                        )}
+                        {chatMessages.map((msg, i) => (
+                            <div key={i} className={`flex ${msg.role === 'user' ? (isHe ? 'justify-start' : 'justify-end') : (isHe ? 'justify-end' : 'justify-start')}`}>
+                                <div className={`max-w-[90%] rounded-xl px-3 py-2 text-xs whitespace-pre-wrap leading-relaxed ${
+                                    msg.role === 'user'
+                                        ? 'bg-violet-600 text-white'
+                                        : isLight ? 'bg-slate-100 text-slate-700' : 'bg-black/25 text-gray-200'
+                                }`}>
+                                    {msg.content}
+                                </div>
+                            </div>
+                        ))}
+                        {chatLoading && (
+                            <div className={`flex ${isHe ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs ${isLight ? 'bg-slate-100 text-slate-400' : 'bg-black/25 text-gray-500'}`}>
+                                    <RefreshCw size={11} className="animate-spin" />
+                                    {isHe ? 'חושב…' : 'Thinking…'}
+                                </div>
+                            </div>
+                        )}
+                        {chatError && (
+                            <p className={`text-xs ${isLight ? 'text-red-500' : 'text-red-400'}`}>{chatError}</p>
+                        )}
+                        <div ref={chatEndRef} />
+                    </div>
+                    {/* Input */}
+                    <div className={`flex gap-2 px-3 py-2 border-t ${isLight ? 'border-slate-100' : 'border-white/5'}`}>
+                        <input
+                            ref={chatInputRef}
+                            value={chatInput}
+                            onChange={e => setChatInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
+                            placeholder={isHe ? 'שאל שאלה…' : 'Ask a question…'}
+                            className={`flex-1 text-xs rounded-lg px-3 py-1.5 outline-none border ${isLight ? 'bg-slate-50 border-slate-200 text-slate-800 placeholder:text-slate-400 focus:border-violet-400' : 'bg-white/5 border-white/10 text-white placeholder:text-gray-500 focus:border-violet-400'}`}
+                        />
+                        <button
+                            onClick={sendChatMessage}
+                            disabled={!chatInput.trim() || chatLoading}
+                            className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${isLight ? 'bg-violet-600 text-white hover:bg-violet-700' : 'bg-violet-500 text-white hover:bg-violet-400'}`}
+                        >
+                            <Send size={12} />
+                        </button>
+                    </div>
                 </div>
             )}
         </div>
@@ -2314,7 +2601,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                     ].map(({ mode, icon: Icon, count, active, inactive, badge, tip }) => (
                         <button
                             key={mode}
-                            onClick={() => setFilterMode(f => f === mode ? null : mode)}
+                            onClick={() => { setFilterMode(f => f === mode ? null : mode); setTimingFilter(null); }}
                             title={`${tip}${count > 0 ? ` (${count})` : ''}`}
                             className={`relative p-1.5 rounded-lg transition-all ${filterMode === mode ? active : `${isLight ? 'bg-gray-100' : 'bg-white/5'} ${count === 0 ? 'opacity-30 cursor-default' : inactive}`}`}
                             disabled={count === 0 && filterMode !== mode}
@@ -2362,7 +2649,7 @@ export default function RetirementChecklist({ results, inputs, language, t, aiPr
                         return (
                             <button
                                 key={key}
-                                onClick={() => setTimingFilter(f => f === key ? null : key)}
+                                onClick={() => { setTimingFilter(f => f === key ? null : key); setFilterMode(null); }}
                                 className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-all ${color}`}
                             >
                                 {label}
