@@ -11,9 +11,7 @@ export const CONDITION_TYPES = {
         labelEn: 'Budget % of target',
         check({ threshold, operator }, { totalMonthly, target }) {
             if (!target) return false;
-            const pct = Math.round((totalMonthly / target) * 100);
-            const thresholdPct = Math.round(threshold * 100);
-            return compare(pct, operator, thresholdPct);
+            return compare(totalMonthly / target, operator, threshold);
         },
         statusHe({ threshold, operator }, { totalMonthly, target }) {
             if (!target) return 'אין יעד משיכה';

@@ -418,8 +418,13 @@ export function calculateIncomeAtAge(incomeSources, age, parameters = null) {
     const totalGross = activeIncome.reduce((sum, source) => sum + source.amount, 0);
 
     // Separate work vs non-work income for NI income test
+    // Per Israeli law, the income test (age 67-70) only applies to WORK income
     const nonWorkIncome = activeIncome
         .filter(s => s.type !== 'work' && s.type !== 'nationalInsurance')
+        .reduce((sum, source) => sum + source.amount, 0);
+
+    const workIncome = activeIncome
+        .filter(s => s.type === 'work')
         .reduce((sum, source) => sum + source.amount, 0);
 
     // Differentiate components for tax calculation
@@ -454,6 +459,7 @@ export function calculateIncomeAtAge(incomeSources, age, parameters = null) {
         otherTaxableIncome,
         taxExemptIncome,
         nonWorkIncome,
+        workIncome,
         tax: taxCalc.taxMonthly,
         totalNet: taxCalc.netMonthly + taxExemptIncome,
         effectiveTaxRate: totalGross > 0
@@ -549,7 +555,7 @@ export function calculateRetirementIncomeSummary({
             niBaseSource.details?.contributionYears || 35,
             parameters,
             parameters?.familyStatus || 'single',
-            incomeExcludingNIInitial.nonWorkIncome
+            incomeExcludingNIInitial.workIncome
         );
         niAmountInitial = niDetailsInitial.totalMonthly;
     }
@@ -572,7 +578,7 @@ export function calculateRetirementIncomeSummary({
 
     const milestones = sortedAges.map((age) => {
         // Calculate income from all sources *except* National Insurance first,
-        // as NI depends on other non-work income.
+        // as NI income test depends on work income at this age.
         const incomeExcludingNI = calculateIncomeAtAge(nonNISources, age, parameters);
 
         // Find NI source and recalculate with income test
@@ -585,7 +591,7 @@ export function calculateRetirementIncomeSummary({
                 niBaseSource.details?.contributionYears || 35,
                 parameters,
                 parameters?.familyStatus || 'single',
-                incomeExcludingNI.nonWorkIncome // Pass other non-work income for the NI income test
+                incomeExcludingNI.workIncome // Per Israeli law, income test only applies to work income (age 67-70)
             );
             niAmount = niDetails.totalMonthly;
         }
