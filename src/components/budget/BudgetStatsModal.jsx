@@ -741,10 +741,19 @@ export function BudgetStatsModal({
                                                 const withdrawalMonths = barData.target > 0 ? Math.floor(cumulative / barData.target) : 0;
                                                 const totalMonths = (barData.ages?.length ?? 0) * 12;
                                                 const withdrawalPct = totalMonths > 0 ? Math.round(withdrawalMonths / totalMonths * 100) : 0;
+                                                const monthlySaved = savingsDs ? (savingsDs.data[activeIdx] || 0) : 0;
+                                                const annualSaved = Math.round(monthlySaved * 12);
                                                 return (
                                                     <span className={`text-[11px] font-semibold flex items-baseline gap-1 ${isLight ? 'text-green-700' : 'text-green-400'}`}>
                                                         <span className="font-normal opacity-70">{isHe ? 'מצטבר:' : 'Cumulative:'}</span>
                                                         <span dir="ltr">+{currency}{cumulative.toLocaleString()}</span>
+                                                        {annualSaved > 0 && (
+                                                            <>
+                                                                <span className="opacity-40">·</span>
+                                                                <span className="font-normal opacity-70">{isHe ? 'שנתי:' : 'Annual:'}</span>
+                                                                <span dir="ltr">+{currency}{annualSaved.toLocaleString()}</span>
+                                                            </>
+                                                        )}
                                                         <span className="opacity-40">·</span>
                                                         {isHe ? (
                                                             <>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 const WARNING_SECONDS = 30;
-const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click', 'input'];
 
 export function useIdleTimer({ timeoutMinutes = 5, onLogout, enabled = true, trackActivity = true }) {
     const [warningActive, setWarningActive] = useState(false);
@@ -62,11 +62,11 @@ export function useIdleTimer({ timeoutMinutes = 5, onLogout, enabled = true, tra
             resetTimer();
         };
 
-        ACTIVITY_EVENTS.forEach(e => window.addEventListener(e, handleActivity, { passive: true }));
+        ACTIVITY_EVENTS.forEach(e => window.addEventListener(e, handleActivity, { capture: true, passive: true }));
         resetTimer(); // start timer on mount
 
         return () => {
-            ACTIVITY_EVENTS.forEach(e => window.removeEventListener(e, handleActivity));
+            ACTIVITY_EVENTS.forEach(e => window.removeEventListener(e, handleActivity, { capture: true }));
             if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
             clearCountdown();
         };

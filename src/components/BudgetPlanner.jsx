@@ -329,6 +329,9 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
     const [openCard, setOpenCard] = useState(null);
     const [tripRequest, setTripRequest] = useState('');
     const [plannedTrip, setPlannedTrip] = useState(null);
+    const [canTripUndo, setCanTripUndo] = useState(false);
+    const [canTripRedo, setCanTripRedo] = useState(false);
+    const tripHistoryRef = useRef({ past: [], future: [] });
     const [planLoading, setPlanLoading] = useState(false);
     const [planError, setPlanError] = useState(null);
     const [savedPlans, setSavedPlans] = useState([]);
@@ -488,7 +491,41 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         }
     }, [parsed, tier, replacingLocation, deletedLocations, fetchReplacementLocation, isHe]);
 
-    const fetchTripPlan = useCallback(async () => {
+    const pushTripHistory = useCallback((snapshot) => {
+        if (!snapshot) return;
+        const { past, future } = tripHistoryRef.current;
+        past.push(snapshot);
+        if (past.length > 50) past.shift();
+        future.length = 0;
+        setCanTripUndo(true);
+        setCanTripRedo(false);
+    }, []);
+
+    const handleTripUndo = useCallback(() => {
+        const { past, future } = tripHistoryRef.current;
+        if (!past.length) return;
+        setPlannedTrip(current => {
+            future.push(current);
+            const prev = past.pop();
+            setCanTripUndo(past.length > 0);
+            setCanTripRedo(true);
+            return prev;
+        });
+    }, []);
+
+    const handleTripRedo = useCallback(() => {
+        const { past, future } = tripHistoryRef.current;
+        if (!future.length) return;
+        setPlannedTrip(current => {
+            past.push(current);
+            const next = future.pop();
+            setCanTripUndo(true);
+            setCanTripRedo(future.length > 0);
+            return next;
+        });
+    }, []);
+
+    const fetchTripPlan = useCallback(async (preserveContent = false) => {
         if (!tripRequest.trim()) return;
         setPlanLoading(true);
         setPlannedTrip(null);
@@ -613,7 +650,12 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                 itinerary,
                 tips,
             };
-            setPlannedTrip(result);
+            pushTripHistory(plannedTrip);
+            setPlannedTrip(preserveContent && plannedTrip ? {
+                ...result,
+                itinerary: plannedTrip.itinerary?.length ? plannedTrip.itinerary : result.itinerary,
+                tips: plannedTrip.tips?.length ? plannedTrip.tips : result.tips,
+            } : result);
             setTripChatMessages([]);
             setTripChatInput('');
             setTripChatError(null);
@@ -627,7 +669,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         } finally {
             setPlanLoading(false);
         }
-    }, [tripRequest, isHe, aiProvider, aiModel, apiKeyOverride, loadedPlanId, savedPlans, monthlySavingsBudget, variableDailyCost, currency]);
+    }, [tripRequest, isHe, aiProvider, aiModel, apiKeyOverride, loadedPlanId, savedPlans, monthlySavingsBudget, variableDailyCost, currency, plannedTrip, pushTripHistory]);
 
     const savePlan = useCallback(async () => {
         if (!plannedTrip || !currentUser?.uid) return;
@@ -720,6 +762,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
             const { cleanReply, planAddition } = parseTripPlanChatReply(reply);
 
             if (planAddition) {
+                pushTripHistory(plannedTrip);
                 setPlannedTrip(currentPlan => {
                     if (!currentPlan) return currentPlan;
                     if (planAddition.type === 'itinerary') {
@@ -754,7 +797,7 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         } finally {
             setTripChatLoading(false);
         }
-    }, [tripChatInput, plannedTrip, tripChatLoading, tripChatMessages, tripRequest, currency, isHe, aiProvider, aiModel, apiKeyOverride]);
+    }, [tripChatInput, plannedTrip, tripChatLoading, tripChatMessages, tripRequest, currency, isHe, aiProvider, aiModel, apiKeyOverride, pushTripHistory]);
 
     const loadPlan = useCallback((plan) => {
         setTripRequest(plan.request);
@@ -934,6 +977,9 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
         setOpenCard(null);
         setTripRequest('');
         setPlannedTrip(null);
+        tripHistoryRef.current = { past: [], future: [] };
+        setCanTripUndo(false);
+        setCanTripRedo(false);
         setPlanError(null);
         setPlanSaved(false);
         setShowSavedPlans(false);
@@ -1029,6 +1075,12 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                             {isHe ? 'תכנן' : 'Plan'}
                         </button>
                     )}
+                    <button onClick={handleTripUndo} onMouseDown={e => e.stopPropagation()} disabled={!canTripUndo} title={isHe ? 'בטל שינוי' : 'Undo'} className={`p-1.5 rounded-lg transition-colors shrink-0 disabled:opacity-30 disabled:cursor-default ${isLight ? 'text-slate-400 hover:enabled:bg-slate-100 hover:enabled:text-slate-600' : 'text-gray-500 hover:enabled:bg-white/10 hover:enabled:text-gray-300'}`}>
+                        <Undo2 size={14} />
+                    </button>
+                    <button onClick={handleTripRedo} onMouseDown={e => e.stopPropagation()} disabled={!canTripRedo} title={isHe ? 'בצע שוב' : 'Redo'} className={`p-1.5 rounded-lg transition-colors shrink-0 disabled:opacity-30 disabled:cursor-default ${isLight ? 'text-slate-400 hover:enabled:bg-slate-100 hover:enabled:text-slate-600' : 'text-gray-500 hover:enabled:bg-white/10 hover:enabled:text-gray-300'}`}>
+                        <Redo2 size={14} />
+                    </button>
                     <button onClick={onClose} onMouseDown={e => e.stopPropagation()} className={`p-1.5 rounded-lg transition-colors shrink-0 ${isLight ? 'hover:bg-slate-100 text-slate-400' : 'hover:bg-white/10 text-gray-400'}`}><X size={16} /></button>
                 </div>
                 {/* Mode toggle + controls */}
@@ -1453,16 +1505,37 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                         className={`w-full rounded-xl px-4 py-3 text-sm resize-none outline-none border ${isLight ? 'bg-slate-50 border-slate-200 text-slate-800 placeholder:text-slate-400 focus:border-violet-400' : 'bg-white/5 border-white/10 text-white placeholder:text-gray-500 focus:border-violet-400'}`}
                     />
                     <div className="flex gap-2">
-                        <button
-                            onClick={fetchTripPlan}
-                            disabled={!tripRequest.trim() || planLoading}
-                            className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-45 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 ${isLight ? 'bg-violet-600 text-white hover:bg-violet-700' : 'bg-violet-500 text-white hover:bg-violet-400'}`}
-                        >
-                            {planLoading ? <Loader2 size={15} className="animate-spin" /> : <Route size={15} />}
-                            {plannedTrip
-                                ? (isHe ? 'חשב מחדש' : 'Recalculate')
-                                : (isHe ? 'חשב עלות נסיעה' : 'Calculate trip cost')}
-                        </button>
+                        {plannedTrip ? (
+                            <>
+                                <button
+                                    onClick={fetchTripPlan}
+                                    disabled={!tripRequest.trim() || planLoading}
+                                    title={isHe ? 'חשב מחדש — מאפס ומחשב הכל מחדש' : 'Recalculate — full reset'}
+                                    className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-45 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 ${isLight ? 'bg-violet-50 text-violet-600 hover:bg-violet-100 border border-violet-200' : 'bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 border border-violet-500/25'}`}
+                                >
+                                    {planLoading ? <Loader2 size={15} className="animate-spin" /> : <Route size={15} />}
+                                    {isHe ? 'חשב מחדש' : 'Recalculate'}
+                                </button>
+                                <button
+                                    onClick={() => fetchTripPlan(true)}
+                                    disabled={!tripRequest.trim() || planLoading}
+                                    title={isHe ? 'עדכן — מחשב מחדש ומאחד עם מה שיש' : 'Update — recalculate & merge existing content'}
+                                    className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-45 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 ${isLight ? 'bg-violet-600 text-white hover:bg-violet-700' : 'bg-violet-500 text-white hover:bg-violet-400'}`}
+                                >
+                                    {planLoading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+                                    {isHe ? 'עדכן' : 'Update'}
+                                </button>
+                            </>
+                        ) : (
+                            <button
+                                onClick={fetchTripPlan}
+                                disabled={!tripRequest.trim() || planLoading}
+                                className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-45 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 ${isLight ? 'bg-violet-600 text-white hover:bg-violet-700' : 'bg-violet-500 text-white hover:bg-violet-400'}`}
+                            >
+                                {planLoading ? <Loader2 size={15} className="animate-spin" /> : <Route size={15} />}
+                                {isHe ? 'חשב עלות נסיעה' : 'Calculate trip cost'}
+                            </button>
+                        )}
                         {plannedTrip && loadedPlanId && (() => { const lp = savedPlans.find(p => p.id === loadedPlanId); return lp && (tripRequest !== lp.request || JSON.stringify(plannedTrip) !== JSON.stringify(lp.result)); })() && (
                             <button
                                 onClick={updatePlan}
@@ -1472,8 +1545,8 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                     ? (isLight ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-green-500/15 text-green-300 border border-green-500/30')
                                     : (isLight ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-200' : 'bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 border border-indigo-500/30')}`}
                             >
-                                {savingPlan ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                                {planSaved ? (isHe ? '✓ עודכן' : '✓ Updated') : (isHe ? 'עדכן' : 'Update')}
+                                {savingPlan ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                                {planSaved ? (isHe ? '✓ נשמר' : '✓ Saved') : (isHe ? 'שמור שינויים' : 'Save changes')}
                             </button>
                         )}
                         {plannedTrip && (
@@ -1489,22 +1562,6 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                 {isHe ? 'שמור' : 'Save'}
                             </button>
                         )}
-                        {plannedTrip && (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setTripChatOpen(open => !open);
-                                    setShowSavedPlans(false);
-                                }}
-                                title={isHe ? 'צ׳אט על הנסיעה' : 'Chat about this trip'}
-                                aria-label={isHe ? 'צ׳אט על הנסיעה' : 'Chat about this trip'}
-                                className={`px-3 py-2 rounded-xl text-sm font-semibold transition-colors inline-flex items-center border ${tripChatOpen
-                                    ? (isLight ? 'bg-violet-100 text-violet-700 border-violet-300' : 'bg-violet-500/20 text-violet-200 border-violet-400/30')
-                                    : (isLight ? 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200' : 'bg-white/5 text-gray-300 hover:bg-white/10 border-white/10')}`}
-                            >
-                                <MessageSquare size={14} />
-                            </button>
-                        )}
                     </div>
                     {tripChatOpen && plannedTrip && (
                         <div className={`rounded-xl border flex-1 min-h-0 flex flex-col overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-white/5 border-white/10'}`}>
@@ -1515,19 +1572,29 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                                         {isHe ? 'צ׳אט על הנסיעה' : 'Trip chat'}
                                     </span>
                                 </div>
-                                {tripChatMessages.length > 0 && (
+                                <div className="flex items-center gap-0.5">
+                                    {tripChatMessages.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setTripChatMessages([]);
+                                                setTripChatError(null);
+                                            }}
+                                            title={isHe ? 'נקה צ׳אט' : 'Clear chat'}
+                                            className={`p-1.5 rounded-lg transition-colors ${isLight ? 'text-slate-400 hover:bg-slate-100 hover:text-slate-600' : 'text-gray-500 hover:bg-white/10 hover:text-gray-300'}`}
+                                        >
+                                            <RotateCcw size={12} />
+                                        </button>
+                                    )}
                                     <button
                                         type="button"
-                                        onClick={() => {
-                                            setTripChatMessages([]);
-                                            setTripChatError(null);
-                                        }}
-                                        title={isHe ? 'נקה צ׳אט' : 'Clear chat'}
-                                        className={`p-1 rounded transition-colors ${isLight ? 'text-slate-400 hover:bg-slate-100 hover:text-slate-600' : 'text-gray-500 hover:bg-white/10 hover:text-gray-300'}`}
+                                        onClick={() => setTripChatOpen(false)}
+                                        title={isHe ? 'סגור צ׳אט' : 'Close chat'}
+                                        className={`p-1.5 rounded-lg transition-colors ${isLight ? 'text-slate-400 hover:bg-slate-100 hover:text-slate-600' : 'text-gray-500 hover:bg-white/10 hover:text-gray-300'}`}
                                     >
-                                        <RotateCcw size={12} />
+                                        <X size={13} />
                                     </button>
-                                )}
+                                </div>
                             </div>
                             <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar scrollbar-right px-3 py-2.5 space-y-2">
                                 {tripChatMessages.length === 0 && (
@@ -1587,18 +1654,38 @@ function LocationSuggestModal({ isOpen, onClose, availableAmount, userMonthlyCos
                     )}
                     {!tripChatOpen && savedPlans.length > 0 && (
                         <div className={`rounded-xl border flex-1 min-h-0 flex flex-col overflow-hidden ${isLight ? 'bg-white border-slate-200' : 'bg-white/5 border-white/10'}`}>
-                            <button
-                                type="button"
-                                onClick={() => setShowSavedPlans(v => !v)}
-                                className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/5'}`}
-                            >
-                                <div className="flex items-center gap-2">
+                            <div className={`flex items-center justify-between px-4 py-2 ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/5'}`}>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowSavedPlans(v => !v)}
+                                    className="flex items-center gap-2 flex-1 min-w-0 py-0.5"
+                                >
                                     <History size={13} className={isLight ? 'text-indigo-500' : 'text-indigo-400'} />
                                     <span className={`text-xs font-semibold ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>{isHe ? 'תוכניות שמורות' : 'Saved plans'}</span>
                                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isLight ? 'bg-indigo-100 text-indigo-600' : 'bg-indigo-500/20 text-indigo-300'}`}>{savedPlans.length}</span>
+                                </button>
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                    {plannedTrip && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setTripChatOpen(open => !open)}
+                                            title={isHe ? 'צ׳אט על הנסיעה' : 'Chat about this trip'}
+                                            className={`p-1.5 rounded-lg transition-colors ${tripChatOpen
+                                                ? (isLight ? 'bg-violet-100 text-violet-600' : 'bg-violet-500/20 text-violet-300')
+                                                : (isLight ? 'text-slate-400 hover:bg-slate-100 hover:text-slate-600' : 'text-gray-500 hover:bg-white/10 hover:text-gray-300')}`}
+                                        >
+                                            <MessageSquare size={13} />
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowSavedPlans(v => !v)}
+                                        className={`p-1.5 rounded-lg transition-colors ${isLight ? 'text-slate-400 hover:bg-slate-100' : 'text-gray-500 hover:bg-white/10'}`}
+                                    >
+                                        {showSavedPlans ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                    </button>
                                 </div>
-                                {showSavedPlans ? <ChevronUp size={13} className={isLight ? 'text-slate-400' : 'text-gray-500'} /> : <ChevronDown size={13} className={isLight ? 'text-slate-400' : 'text-gray-500'} />}
-                            </button>
+                            </div>
                             {showSavedPlans && (<div className={`border-t flex flex-col flex-1 min-h-0 ${isLight ? 'border-slate-100' : 'border-white/10'}`}>
                             <div className={`px-3 pt-2 pb-1.5 border-b ${isLight ? 'border-slate-100 bg-slate-50' : 'border-white/5 bg-white/3'}`}>
                                 <label className={`relative flex items-center rounded-lg border ${isLight ? 'bg-white border-slate-200 text-slate-700 focus-within:border-indigo-300' : 'bg-black/20 border-white/10 text-gray-200 focus-within:border-indigo-400/50'}`}>
