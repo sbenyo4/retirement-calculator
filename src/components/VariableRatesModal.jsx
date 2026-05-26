@@ -225,10 +225,12 @@ export default function VariableRatesModal({
             const finalBal = projection.balanceAtEnd || 0;
 
             // 2. Average (Benchmark)
+            const averageRateKey = bucketType === 'accumulation' ? 'annualReturnRate' :
+                bucketType === 'safe' ? 'bucketSafeRate' : 'bucketSurplusRate';
             const avgScenarioInputs = {
                 ...inputs,
                 variableRatesEnabled: false,
-                annualReturnRate: calculatedAverage
+                [averageRateKey]: calculatedAverage
             };
             const avgProjection = calculateRetirementProjection(avgScenarioInputs);
             const avgBal = avgProjection.balanceAtEnd || 0;

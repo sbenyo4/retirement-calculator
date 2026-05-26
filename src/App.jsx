@@ -137,6 +137,7 @@ function MainApp() {
   const [screenLocked, setScreenLocked] = useState(false);
   const [startupDelayDone, setStartupDelayDone] = useState(false);
   const [splashRemoved, setSplashRemoved] = useState(false);
+  const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
 
   const [chatOpen, setChatOpen] = useState(false);
   const [triggeredSmartAlerts, setTriggeredSmartAlerts] = useState([]);
@@ -802,11 +803,25 @@ function MainApp() {
     Number.isFinite(startupRetirementEndAge) && startupRetirementEndAge >= 0 && startupRetirementEndAge <= 120 &&
     startupRetirementStartAge > startupCurrentAge &&
     startupRetirementEndAge > startupRetirementStartAge;
-  const startupCalculationReady = !hasCalculableStartupInputs || (!isCalculating && Boolean(results));
-  const isAppReady = settingsLoaded && inputsLoaded && startupDelayDone && startupCalculationReady;
+  const startupCalculationReady = !hasCalculableStartupInputs || (!isCalculating && (Boolean(results) || Boolean(validationError)));
+  const isAppReady = settingsLoaded && inputsLoaded && startupDelayDone && (hasCompletedInitialLoad || startupCalculationReady);
+
+  // Set hasCompletedInitialLoad to true once the app becomes ready for the first time
+  React.useEffect(() => {
+    if (isAppReady && !hasCompletedInitialLoad) {
+      setHasCompletedInitialLoad(true);
+    }
+  }, [isAppReady, hasCompletedInitialLoad]);
+
+  // Reset initial load status when inputs or settings are unloaded (e.g., on logout)
+  React.useEffect(() => {
+    if (!settingsLoaded || !inputsLoaded) {
+      setHasCompletedInitialLoad(false);
+      setSplashRemoved(false);
+    }
+  }, [settingsLoaded, inputsLoaded]);
 
   // Remove the splash overlay from the DOM only after its CSS fade-out completes.
-  // Reset it when the app becomes unready again (e.g. user logs out and back in).
   // Block body scroll while the overlay is present so the scrollbar never appears
   // during startup and causes a layout jump inside the fixed overlay.
   // Block body scroll synchronously (before paint) while the splash overlay is
@@ -824,9 +839,6 @@ function MainApp() {
     if (isAppReady && !splashRemoved) {
       const t = setTimeout(() => setSplashRemoved(true), 350);
       return () => clearTimeout(t);
-    }
-    if (!isAppReady && splashRemoved) {
-      setSplashRemoved(false);
     }
   }, [isAppReady, splashRemoved]);
 

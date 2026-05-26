@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { calculateRetirementProjection } from '../utils/calculator';
+import { applyChartScenarioInput } from '../utils/chartScenarioInputs';
 import { getProjectedYear } from '../utils/dateUtils';
 import { AmortizationTable, AmortizationTableButton, AmortizationTableModal } from './AmortizationTable';
 import { SensitivityRangeChart, SensitivityRangeButton, SensitivityRangeModal } from './SensitivityRangeChart';
@@ -244,13 +245,13 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
             let inputsMinus, inputsPlus, minusLabel, plusLabel, canShowMinus = true;
 
             if (showInterestSensitivity) {
-                inputsMinus = { ...baseInputs, annualReturnRate: parseFloat(baseInputs.annualReturnRate) - 1 };
-                inputsPlus = { ...baseInputs, annualReturnRate: parseFloat(baseInputs.annualReturnRate) + 1 };
+                inputsMinus = applyChartScenarioInput(baseInputs, 'annualReturnRate', parseFloat(baseInputs.annualReturnRate) - 1);
+                inputsPlus = applyChartScenarioInput(baseInputs, 'annualReturnRate', parseFloat(baseInputs.annualReturnRate) + 1);
                 minusLabel = t('returnMinus1');
                 plusLabel = t('returnPlus1');
             } else if (showIncomeSensitivity) {
-                inputsMinus = { ...baseInputs, monthlyNetIncomeDesired: parseFloat(baseInputs.monthlyNetIncomeDesired) - 1000 };
-                inputsPlus = { ...baseInputs, monthlyNetIncomeDesired: parseFloat(baseInputs.monthlyNetIncomeDesired) + 1000 };
+                inputsMinus = applyChartScenarioInput(baseInputs, 'monthlyNetIncomeDesired', parseFloat(baseInputs.monthlyNetIncomeDesired) - 1000);
+                inputsPlus = applyChartScenarioInput(baseInputs, 'monthlyNetIncomeDesired', parseFloat(baseInputs.monthlyNetIncomeDesired) + 1000);
                 minusLabel = t('incomeMinus1000');
                 plusLabel = t('incomePlus1000');
             } else if (showAgeSensitivity) {
@@ -395,7 +396,7 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
         const labels = results?.history?.map(h => `${language === 'he' ? 'גיל' : 'Age'} ${Math.floor(h.age)}`) || [];
         const datasets = STRATEGY_LINES.map(({ key, label, color }) => {
             try {
-                const res = calculateRetirementProjection({ ...inputs, withdrawalStrategy: key, variableRatesEnabled: false });
+                const res = calculateRetirementProjection({ ...inputs, withdrawalStrategy: key });
                 return {
                     label,
                     data: res.history?.map(h => h.balance) || [],

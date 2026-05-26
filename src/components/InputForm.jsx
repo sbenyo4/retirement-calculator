@@ -710,16 +710,25 @@ export default function InputForm({
                             }
                             richContent={goalSeekWithdrawal != null ? (() => {
                                 const desired = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
-                                const diff = goalSeekWithdrawal - desired;
+                                const effectiveGoalSeekWithdrawal = hasIncomeOverrides
+                                    ? Math.round(results?.goalSeekEffectiveWithdrawal ?? results?.averageNetWithdrawal ?? goalSeekWithdrawal)
+                                    : goalSeekWithdrawal;
+                                const baseGoalSeekWithdrawal = Math.round(results?.goalSeekBaseWithdrawal ?? goalSeekWithdrawal);
+                                const diff = effectiveGoalSeekWithdrawal - desired;
                                 const isPositive = diff >= 0;
                                 return (
                                     <div className="flex items-center gap-1 w-full text-xs truncate" style={{ direction: language === 'he' ? 'rtl' : 'ltr' }}>
-                                        <span className={isLight ? 'text-gray-900' : 'text-white'}>{formatCurrency(goalSeekWithdrawal)}</span>
+                                        <span className={isLight ? 'text-gray-900' : 'text-white'}>{formatCurrency(effectiveGoalSeekWithdrawal)}</span>
                                         <span className={isLight ? 'text-gray-400' : 'text-gray-500'}>→</span>
                                         <span className={isLight ? 'text-gray-400' : 'text-gray-500'}>{formatCurrency(desired)}</span>
                                         <span className={`font-medium ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
                                             ({isPositive ? '+' : ''}{formatCurrency(diff)})
                                         </span>
+                                        {hasIncomeOverrides && baseGoalSeekWithdrawal !== effectiveGoalSeekWithdrawal && (
+                                            <span className={isLight ? 'text-gray-500' : 'text-gray-400'}>
+                                                · {language === 'he' ? 'בסיס' : 'base'} {formatCurrency(baseGoalSeekWithdrawal)}
+                                            </span>
+                                        )}
                                     </div>
                                 );
                             })() : (hasIncomeOverrides && averageYearlyIncomeOverride != null ? (() => {

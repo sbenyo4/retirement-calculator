@@ -175,7 +175,7 @@ export function BudgetStatsModal({
     // ── Bar: monthly expenses per retirement year, stacked by category ──
     const barData = useMemo(() => {
         const { ages, yearsToRet, retYM } = yearGeom;
-        const baseTarget = Math.round(results?.initialNetWithdrawal ?? parseFloat(inputs.monthlyNetIncomeDesired) ?? 0);
+        const baseTarget = Math.round(results?.goalSeekBaseWithdrawal ?? parseFloat(inputs.monthlyNetIncomeDesired) ?? 0);
         const nowYear = new Date().getFullYear();
         const curAge  = parseFloat(inputs.currentAge) || 30;
         const years   = ages.map(a => nowYear + Math.round(a - curAge));

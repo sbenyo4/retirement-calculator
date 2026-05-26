@@ -12,6 +12,8 @@ import {
 } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 import { calculateRetirementProjection } from '../utils/calculator';
+import { applyChartScenarioInput, calculateChartScenarioProjection } from '../utils/chartScenarioInputs';
+import { findGoalSeekResultForTargetEndBalance } from '../utils/calculators/goalSeek';
 import { X, Sparkles, Loader2, ChevronDown, ChevronUp, AlertCircle, WifiOff, KeyRound, CreditCard, FileX } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 import { getRangeAIInsights, getGlobalRangeAIInsights, classifyAiError } from '../utils/ai-insights';
@@ -246,34 +248,9 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language, ai
 
         // Special handling for TARGET_END_BALANCE - find withdrawal needed for each target
         if (parameterType === PARAMETER_TYPES.TARGET_END_BALANCE) {
-            // Binary search to find withdrawal that gives target end balance
-            const findWithdrawalForTarget = (targetBalance) => {
-                let low = 1000;
-                let high = 100000;
-
-                // Binary search iterations
-                for (let i = 0; i < 25; i++) {
-                    const mid = (low + high) / 2;
-                    const testInputs = { ...inputs, monthlyNetIncomeDesired: mid };
-                    try {
-                        const result = calculateRetirementProjection(testInputs, t);
-                        if (result.balanceAtEnd > targetBalance) {
-                            // Can withdraw more
-                            low = mid;
-                        } else {
-                            // Need to withdraw less
-                            high = mid;
-                        }
-                    } catch {
-                        break;
-                    }
-                }
-                // Return the converged value
-                return Math.round((low + high) / 2);
-            };
-
             for (let targetBalance = effectiveMin; targetBalance <= effectiveMax; targetBalance += stepSize) {
-                const requiredWithdrawal = findWithdrawalForTarget(targetBalance);
+                const seekResult = findGoalSeekResultForTargetEndBalance(inputs, targetBalance);
+                const requiredWithdrawal = seekResult?.effectiveWithdrawal ?? 0;
                 const userTarget = parseFloat(inputs.targetEndBalance);
                 const hasTarget = !isNaN(userTarget) && inputs.targetEndBalance !== '';
                 const isCurrentTarget = hasTarget && Math.abs(targetBalance - userTarget) < stepSize / 2;
@@ -281,8 +258,8 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language, ai
                 results.push({
                     value: targetBalance,
                     label: config.format(targetBalance, language),
-                    balanceAtEnd: requiredWithdrawal, // Store withdrawal in balanceAtEnd for chart display
-                    withdrawal: requiredWithdrawal,
+                    balanceAtEnd: requiredWithdrawal ?? 0, // Store withdrawal in balanceAtEnd for chart display
+                    withdrawal: requiredWithdrawal ?? 0,
                     surplus: 0,
                     isCurrent: isCurrentTarget
                 });
@@ -290,33 +267,9 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language, ai
             return results;
         }
 
-        // Mapping from rate param type to the variable rates key it controls
-        const RATE_TO_VR_KEY = {
-            [PARAMETER_TYPES.INTEREST]: 'variableRates',
-            [PARAMETER_TYPES.ACCUMULATION_RATE]: 'variableRates',
-            [PARAMETER_TYPES.SAFE_RATE]: 'safeVariableRates',
-            [PARAMETER_TYPES.SURPLUS_RATE]: 'surplusVariableRates',
-        };
-        const vrKey = RATE_TO_VR_KEY[parameterType];
-
         // Standard parameter handling
         for (let value = effectiveMin; value <= effectiveMax; value += stepSize) {
-            const modifiedInputs = {
-                ...inputs,
-                [config.inputKey]: value
-            };
-
-            // When variable rates are enabled and we're sweeping a rate param, replace the
-            // corresponding variable rates with flat rates at the swept value so the chart
-            // reflects the actual impact of each rate level.
-            if (inputs.variableRatesEnabled && vrKey) {
-                const existingVR = inputs[vrKey];
-                if (existingVR && Object.keys(existingVR).length > 0) {
-                    const flatRates = {};
-                    Object.keys(existingVR).forEach(y => { flatRates[y] = value; });
-                    modifiedInputs[vrKey] = flatRates;
-                }
-            }
+            const modifiedInputs = applyChartScenarioInput(inputs, config.inputKey, value);
 
             // For retirement age, ensure it's valid
             if (parameterType === PARAMETER_TYPES.RETIREMENT_AGE) {
@@ -376,12 +329,9 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language, ai
                 if (val1 <= curAge) continue;
             }
 
-            const inputs1 = { ...baseInputs, [key]: val1 };
-            const inputs2 = { ...baseInputs, [key]: val2 };
-
             try {
-                const res1 = calculateRetirementProjection(inputs1);
-                const res2 = calculateRetirementProjection(inputs2);
+                const res1 = calculateChartScenarioProjection(baseInputs, key, val1);
+                const res2 = calculateChartScenarioProjection(baseInputs, key, val2);
                 totalDiff += Math.abs(res1.balanceAtEnd - res2.balanceAtEnd);
                 count++;
             } catch {
@@ -699,7 +649,7 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language, ai
             const effectiveMin = cfg.defaultRange[0], effectiveMax = cfg.defaultRange[1];
             for (let v = effectiveMin; v <= effectiveMax; v += cfg.step) {
                 try {
-                    const r = calculateRetirementProjection({ ...inputs, [cfg.inputKey]: v });
+                    const r = calculateChartScenarioProjection(inputs, cfg.inputKey, v);
                     results.push({ value: v, label: cfg.format(v, language), balanceAtEnd: r.balanceAtEnd, isCurrent: Math.abs(v - curVal) < cfg.step / 2 });
                 } catch { /* skip */ }
             }
