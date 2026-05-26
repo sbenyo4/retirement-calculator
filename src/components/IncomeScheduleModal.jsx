@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Calendar, RotateCcw, Save, X } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useDraggable } from '../hooks/useDraggable';
+import { getProjectedAgeDate } from '../utils/dateUtils';
 
 export function IncomeScheduleModal({ isOpen, onClose, inputs, setInputs, language, currency, startYear, endYear }) {
     const { theme } = useTheme();
@@ -23,6 +24,41 @@ export function IncomeScheduleModal({ isOpen, onClose, inputs, setInputs, langua
         const to = Number.isFinite(endYear) && endYear >= from ? endYear : from + 30;
         return Array.from({ length: to - from + 1 }, (_, idx) => from + idx);
     }, [startYear, endYear]);
+
+    const retirementMonthLabels = useMemo(() => {
+        const formatter = new Intl.DateTimeFormat(isHe ? 'he-IL' : 'en-US', { month: 'short' });
+        const markers = {};
+        const addMarker = (date, label) => {
+            if (!date) return;
+            const year = date.getFullYear();
+            const month = formatter.format(date);
+            markers[year] = markers[year] ? `${markers[year]}, ${label} ${month}` : `${label} ${month}`;
+        };
+
+        const startDate = getProjectedAgeDate(
+            inputs.retirementStartAge,
+            inputs.currentAge,
+            inputs.birthdate,
+            inputs.manualAge
+        );
+        const endDate = getProjectedAgeDate(
+            inputs.retirementEndAge,
+            inputs.currentAge,
+            inputs.birthdate,
+            inputs.manualAge
+        );
+
+        addMarker(startDate, isHe ? 'התחלה' : 'start');
+        addMarker(endDate, isHe ? 'סיום' : 'end');
+        return markers;
+    }, [
+        inputs.birthdate,
+        inputs.currentAge,
+        inputs.manualAge,
+        inputs.retirementEndAge,
+        inputs.retirementStartAge,
+        isHe
+    ]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -146,7 +182,14 @@ export function IncomeScheduleModal({ isOpen, onClose, inputs, setInputs, langua
                                         : (isLight ? 'bg-slate-50 border-transparent' : 'bg-white/5 border-transparent')
                                 }`}
                             >
-                                <span className="text-xs font-medium">{year}</span>
+                                <span className="text-xs font-medium">
+                                    {year}
+                                    {retirementMonthLabels[year] && (
+                                        <span className={`ms-1 font-normal ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                            ({retirementMonthLabels[year]})
+                                        </span>
+                                    )}
+                                </span>
                                 <span className={`text-xs ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>{format(baseIncome)}</span>
                                 <div className="relative">
                                     <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-xs ${isLight ? 'text-gray-400' : 'text-gray-400'}`}>{currency}</span>
