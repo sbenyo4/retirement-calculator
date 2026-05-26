@@ -105,6 +105,10 @@ input[type="number"] {
 }
 
 /* Fix Date Picker Icon Color for Dark Backgrounds */
+input[type="date"] {
+  position: relative;
+}
+
 input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(1);
   cursor: pointer;
@@ -114,6 +118,19 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 input[type="date"]::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
+}
+
+[dir="rtl"] input[type="date"] {
+  text-align: right;
+  padding-left: 24px !important;
+}
+
+[dir="rtl"] input[type="date"]::-webkit-calendar-picker-indicator {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
 }
 
 /* Optimize spin animations to prevent subpixel wobbling/jumping */

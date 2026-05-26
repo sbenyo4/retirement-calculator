@@ -1091,6 +1091,7 @@ function InputGroup({ label, name, value, onChange, icon, prefix, type = "text",
                         onChange={onChange}
                         disabled={disabled}
                         autoComplete="off"
+                        dir={language === 'he' ? 'rtl' : 'ltr'}
                         className={`w-full rounded-lg py-1 px-2 text-xs transition-all ${prefix ? 'pl-5' : ''} ${extraContent ? (language === 'he' ? '' : 'pr-16') : ''} ${error
                             ? 'border-red-500 focus:ring-red-500'
                             : ''
