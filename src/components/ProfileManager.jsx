@@ -63,7 +63,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     const stripComputedFields = (data) => {
         if (!data) return null;
         // eslint-disable-next-line no-unused-vars
-        const { pensionIncomeSources, ...rest } = data;
+        const { pensionIncomeSources, pensionMaslekaSummary, pensionAIInsight, ...rest } = data;
         
         // 1. Handle strategy/VR mutual exclusivity for comparison.
         // The UI treats strategies (Fixed, 4%, etc.) and Variable Rates as
@@ -151,7 +151,8 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     }, [profiles, selectedProfileId, normalizedCurrent, lastKnownDbSnapshot]);
 
     const buildProfileDataToSave = () => {
-        const { pensionIncomeSources, ...dataToSave } = currentInputs;
+        // Strip all global-pension fields — these live in the pension document, not the profile.
+        const { pensionIncomeSources, pensionMaslekaSummary: _masleka, pensionAIInsight: _ai, ...dataToSave } = currentInputs;
         return {
             dataToSave: normalizeInputs(dataToSave),
             pensionIncomeSources
@@ -248,6 +249,10 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
             if (currentInputs?.pensionInterestRate !== undefined) {
                 payload.pensionInterestRate = currentInputs.pensionInterestRate;
             }
+            // Masleka data lives in the pension document — preserve it across profile loads.
+            if (currentInputs?.pensionMaslekaSummary != null) {
+                payload.pensionMaslekaSummary = currentInputs.pensionMaslekaSummary;
+            }
             onLoad(payload, savedSnapshot ? (savedSnapshot.aiInsights ?? null) : (profile.aiInsights ?? null));
             showMessage(language === 'he' ? 'פרופיל נטען מחדש!' : 'Profile reloaded!');
         }
@@ -280,6 +285,10 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
             };
             if (currentInputs?.pensionInterestRate !== undefined) {
                 payload.pensionInterestRate = currentInputs.pensionInterestRate;
+            }
+            // Masleka data lives in the pension document — preserve it across profile loads.
+            if (currentInputs?.pensionMaslekaSummary != null) {
+                payload.pensionMaslekaSummary = currentInputs.pensionMaslekaSummary;
             }
             onLoad(payload, profile.aiInsights ?? null);
             setSelectedProfileId(id);

@@ -19,7 +19,25 @@ export function CustomSelect({ value, onChange, options, className = "", disable
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    useEffect(() => {
+        setIsOpen(false);
+    }, [value]);
+
     const selectedOption = options.find(opt => opt.value === value);
+
+    const selectOption = (optionValue, event) => {
+        event?.preventDefault();
+        event?.stopPropagation();
+        onChange(optionValue);
+        setIsOpen(false);
+    };
+
+    const renderOptionContent = (option) => (
+        <span className="flex min-w-0 items-center gap-2">
+            {option?.icon && <span className="shrink-0">{option.icon}</span>}
+            <span className="truncate">{option ? option.label : (placeholder || "")}</span>
+        </span>
+    );
 
     // Theme styles
     // Dark mode: using bg-black/20 and border-white/50 to match standard inputs exactly as requested
@@ -40,7 +58,14 @@ export function CustomSelect({ value, onChange, options, className = "", disable
             {/* TRIGGER BUTTON */}
             <button
                 type="button"
-                onClick={() => !disabled && setIsOpen(!isOpen)}
+                onMouseDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }}
+                onClick={(event) => {
+                    event.stopPropagation();
+                    if (!disabled) setIsOpen(!isOpen);
+                }}
                 disabled={disabled}
                 className={`w-full flex items-center justify-between rounded px-2 py-1.5 text-sm transition-all
                     ${bgColor} ${textColor} border ${borderColor}
@@ -48,15 +73,15 @@ export function CustomSelect({ value, onChange, options, className = "", disable
                     focus:outline-none focus:ring-2 focus:ring-blue-500
                 `}
             >
-                <span className="truncate">
-                    {selectedOption ? selectedOption.label : (placeholder || "")}
-                </span>
+                {renderOptionContent(selectedOption)}
                 <ChevronDown size={14} className={`opacity-70 flex-shrink-0 ml-1 ${isLight ? 'text-gray-500' : 'text-gray-400'}`} />
             </button>
 
             {/* DROPDOWN LIST */}
             {isOpen && (
                 <div
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
                     className={`absolute top-full left-0 right-0 mt-1 z-50 rounded-lg shadow-xl overflow-hidden max-h-40 overflow-y-auto
                     ${dropdownBg} ${dropdownBorder} text-xs animate-in fade-in zoom-in-95 duration-100
                     [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent
@@ -66,16 +91,17 @@ export function CustomSelect({ value, onChange, options, className = "", disable
                         {options.map((option) => (
                             <div
                                 key={option.value}
-                                onClick={() => {
-                                    onChange(option.value);
-                                    setIsOpen(false);
+                                onMouseDown={(event) => selectOption(option.value, event)}
+                                onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
                                 }}
-                                className={`px-3 py-2 cursor-pointer truncate transition-colors
+                                className={`px-3 py-2 cursor-pointer transition-colors
                                     ${textColor} ${hoverColor}
                                     ${option.value === value ? selectedItemBg : ''}
                                 `}
                             >
-                                {option.label}
+                                {renderOptionContent(option)}
                             </div>
                         ))}
                     </div>

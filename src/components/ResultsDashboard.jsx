@@ -1175,15 +1175,16 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
                             : activeResults
                     }
                     onClose={() => setShowPensionModal(false)}
-                    onSave={(newIncomeSources, newInterestRate, newAIInsight) => {
+                    onSave={(newIncomeSources, newInterestRate, newAIInsight, newMaslekaSummary) => {
                         setInputs(prev => ({
                             ...prev,
                             pensionIncomeSources: newIncomeSources,
                             pensionInterestRate: newInterestRate,
-                            ...(newAIInsight != null ? { pensionAIInsight: newAIInsight } : {})
+                            ...(newAIInsight != null ? { pensionAIInsight: newAIInsight } : {}),
+                            pensionMaslekaSummary: newMaslekaSummary ?? null
                         }));
                         if (saveGlobalPension) {
-                            saveGlobalPension(newIncomeSources, newInterestRate, newAIInsight);
+                            saveGlobalPension(newIncomeSources, newInterestRate, newAIInsight, newMaslekaSummary ?? null);
                         }
                     }}
                     onUpdateFiscalData={(data) => {

@@ -76,6 +76,9 @@ export function useRetirementData() {
                     if (pensionData.aiInsight != null) {
                         baseInputs.pensionAIInsight = pensionData.aiInsight;
                     }
+                    if (pensionData.maslekaSummary != null) {
+                        baseInputs.pensionMaslekaSummary = pensionData.maslekaSummary;
+                    }
                 }
 
                 // 2. Fetch the ID of the last active profile
@@ -93,6 +96,9 @@ export function useRetirementData() {
                             : {}),
                         ...(baseInputs.pensionAIInsight != null
                             ? { pensionAIInsight: baseInputs.pensionAIInsight }
+                            : {}),
+                        ...(baseInputs.pensionMaslekaSummary != null
+                            ? { pensionMaslekaSummary: baseInputs.pensionMaslekaSummary }
                             : {})
                     };
                 };
@@ -102,7 +108,7 @@ export function useRetirementData() {
                 if (lastProfileId) {
                     const profiles = await getProfiles(uid);
                     const lastProfile = profiles.find(p => p.id === lastProfileId);
-                    
+
                     if (lastProfile && lastProfile.data) {
                         applyInputData(selectLastProfileInputData(lastProfile, session));
                         loadedLastProfile = true;
@@ -137,7 +143,7 @@ export function useRetirementData() {
         if (!uid || !inputsLoaded) return;
 
         // Skip writing if inputs haven't actually changed since last auto-save
-        const { pensionIncomeSources, pensionAIInsight, ...inputsToSave } = inputs;
+        const { pensionIncomeSources, pensionAIInsight, pensionMaslekaSummary, ...inputsToSave } = inputs;
         const normalized = normalizeInputs(inputsToSave);
         const serialized = JSON.stringify(normalized);
         if (lastSavedInputsRef.current === serialized) return;
@@ -158,7 +164,7 @@ export function useRetirementData() {
     /**
      * Explicitly save global pension sources and optional interest rate.
      */
-    const saveGlobalPension = useCallback(async (sources, interestRate, aiInsight) => {
+    const saveGlobalPension = useCallback(async (sources, interestRate, aiInsight, maslekaSummary) => {
         if (!uid || !sources) return;
         try {
             const dataToSave = { sources };
@@ -167,6 +173,9 @@ export function useRetirementData() {
             }
             if (aiInsight != null) {
                 dataToSave.aiInsight = JSON.parse(JSON.stringify(aiInsight));
+            }
+            if (maslekaSummary !== undefined) {
+                dataToSave.maslekaSummary = maslekaSummary ? JSON.parse(JSON.stringify(maslekaSummary)) : null;
             }
             await setPensionSources(uid, dataToSave);
         } catch (err) {

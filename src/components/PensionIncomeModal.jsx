@@ -29,9 +29,14 @@ import {
     KeyRound,
     CreditCard,
     FileX,
-    Clock
+    Clock,
+    Upload,
+    BarChart3,
+    Undo2,
+    Redo2
 } from 'lucide-react';
 import { getPensionAIInsights, classifyAiError } from '../utils/ai-insights';
+import { addImpliedRatesToMaslekaSummary, getCompanyLogoUrl, parseMaslekaWorkbook } from '../utils/maslekaParser';
 import {
     calculateNationalInsurance,
     calculateIncomeAtAge,
@@ -41,6 +46,7 @@ import {
     PENSION_TAX_BRACKETS
 } from '../utils/pensionCalculator';
 import { FiscalUpdateModal } from './FiscalUpdateModal';
+import { CustomSelect } from './common/CustomSelect';
 
 /**
  * Pension Income Button - placed in toolbar
@@ -193,6 +199,50 @@ function buildCalculatedSourceDraft(source, defaultReturnRate, currentAge) {
     };
 }
 
+function formatPercentValue(value) {
+    if (value === null || value === undefined || isNaN(Number(value))) return '—';
+    return `${Number(value).toFixed(2)}%`;
+}
+
+
+function formatMaslekaCurrency(value, language) {
+    const amount = Number(value) || 0;
+    return new Intl.NumberFormat(language === 'he' ? 'he-IL' : 'en-US', {
+        style: 'currency',
+        currency: 'ILS',
+        maximumFractionDigits: 0
+    }).format(amount);
+}
+
+function _getCompanyLogoDomain(company = '') {
+    const normalized = String(company).trim();
+    const domains = [
+        { match: /מגדל|migdal/i, domain: 'migdal.co.il' },
+        { match: /כלל|clal/i, domain: 'clalbit.co.il' },
+        { match: /הראל|harel/i, domain: 'harel-group.co.il' },
+        { match: /מנורה|מבטחים|menora/i, domain: 'menoramivt.co.il' },
+        { match: /הפניקס|phoenix|fnx/i, domain: 'fnx.co.il' },
+        { match: /איילון|ayalon/i, domain: 'ayalon-ins.co.il' },
+        { match: /מיטב|meitav/i, domain: 'meitav.co.il' },
+        { match: /מור|more/i, domain: 'moreinvest.co.il' },
+        { match: /אנליסט|analyst/i, domain: 'analyst.co.il' },
+        { match: /אלטשולר|altshuler/i, domain: 'as-invest.co.il' },
+        { match: /ילין|לפידות|yelin/i, domain: 'yelin.co.il' },
+        { match: /הכשרה|hcsra/i, domain: 'hcsra.co.il' },
+        { match: /פסגות|psagot/i, domain: 'psagot.co.il' },
+        { match: /אינפיניטי|infinity/i, domain: 'infinity.co.il' },
+        { match: /איי\.?\s*די\.?\s*איי|IDI/i, domain: '555.co.il' },
+        { match: /\bibi\b|איביאי/i, domain: 'ibi.co.il' }
+    ];
+    return domains.find(config => config.match.test(normalized))?.domain || '';
+}
+
+function getMaslekaDisplaySummary(summary, currentAge, retirementAge) {
+    if (!summary) return null;
+    const yearsToRetirement = Math.max(0, (parseFloat(retirementAge) || 0) - (parseFloat(currentAge) || 0));
+    return addImpliedRatesToMaslekaSummary(summary, yearsToRetirement);
+}
+
 /**
  * Income Source Editor Row
  */
@@ -326,7 +376,7 @@ function IncomeSourceRow({ source, onUpdate, onEditCalculated, onDelete, t, lang
     );
 }
 
-function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRate, canSave, onUpdate, onAdd, onCancel, language, isLight }) {
+function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRate, canSave, onUpdate, onAdd, onCancel, maslekaCategories, maslekaAsOfDate, language, isLight }) {
     const isPension = source.currentAsset.kind === 'pension';
     const isProvident = source.currentAsset.kind === 'provident';
     const label = getCurrentAssetLabel(source.currentAsset.kind, language);
@@ -414,6 +464,30 @@ function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRa
                 </button>
             </div>
 
+            {maslekaCategories?.length > 0 && (
+                <div className={`rounded px-2 py-1.5 space-y-1 ${isLight ? 'bg-indigo-50 border border-indigo-100' : 'bg-indigo-500/10 border border-indigo-500/20'}`}>
+                    <div className={`text-[10px] font-medium ${isLight ? 'text-indigo-600' : 'text-indigo-300'}`}>
+                        {language === 'he' ? 'בחר יתרה מהמסלקה' : 'Pick balance from Masleka'}
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                        {maslekaCategories.map(cat => (
+                            <button
+                                key={cat.key}
+                                type="button"
+                                onClick={() => updateAsset({
+                                    balance: String(Math.round(cat.currentBalance)),
+                                    ...(maslekaAsOfDate ? { asOfDate: maslekaAsOfDate } : {})
+                                })}
+                                className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] transition-colors ${isLight ? 'bg-white border border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50' : 'bg-white/10 border border-white/10 text-gray-200 hover:bg-white/15'}`}
+                            >
+                                <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                                <span className="font-medium">{language === 'he' ? cat.labelHe : cat.labelEn}</span>
+                                <span className={`tabular-nums ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{formatCurrency(cat.currentBalance)}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
             <div className={`grid gap-2 ${isPension || isProvident ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-3'}`}>
                 <label className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                     <span className="block mb-1">{language === 'he' ? 'יתרה בתאריך' : 'Balance at date'}</span>
@@ -643,6 +717,41 @@ function MilestoneSummary({ milestone, t, language, isLight, isExpanded, onToggl
     );
 }
 
+const AVATAR_COLORS = ['#1D4ED8','#0891B2','#059669','#B91C1C','#D97706','#7C3AED','#BE185D','#0369A1','#047857','#92400E'];
+function companyAvatarColor(name) {
+    if (!name) return AVATAR_COLORS[0];
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xFFFF;
+    return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+
+function CompanyLogo({ company, className = 'w-6 h-6' }) {
+    const logoUrl = getCompanyLogoUrl(company);
+    const initial = company ? company.trim().charAt(0) : '?';
+    const color = companyAvatarColor(company);
+    const [failed, setFailed] = useState(false);
+    if (logoUrl && !failed) {
+        return (
+            <img
+                src={logoUrl}
+                alt=""
+                title={company}
+                className={`${className} rounded object-contain bg-white`}
+                onError={() => setFailed(true)}
+            />
+        );
+    }
+    return (
+        <span
+            className={`${className} inline-flex items-center justify-center rounded font-bold text-white text-[10px] shrink-0`}
+            style={{ backgroundColor: color }}
+            title={company}
+        >
+            {initial}
+        </span>
+    );
+}
+
 /**
  * Main Pension Income Modal
  */
@@ -659,6 +768,15 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const [isLoadingAI, setIsLoadingAI] = useState(false);
     const [aiError, setAiError] = useState(null);
     const aiAbortRef = useRef(null);
+    const maslekaFileInputRef = useRef(null);
+    const [maslekaAsOfDate, setMaslekaAsOfDate] = useState(() => inputs.pensionMaslekaSummary?.asOfDate || getTodayDateString());
+    const [maslekaSummary, setMaslekaSummary] = useState(() => inputs.pensionMaslekaSummary || null);
+    const [maslekaError, setMaslekaError] = useState(null);
+    const [maslekaProductTypeFilter, setMaslekaProductTypeFilter] = useState('all');
+    const [maslekaCompanyFilter, setMaslekaCompanyFilter] = useState('all');
+    const [maslekaStatusFilter, setMaslekaStatusFilter] = useState('all');
+    const [showMaslekaSummary, setShowMaslekaSummary] = useState(false);
+    const [maslekaOpenCategory, setMaslekaOpenCategory] = useState(null);
 
     // Helper to calculate NI with income test and 67 vs 70 logic
     const calculateEffectiveNI = useCallback((sources, currentRetirementStartAge, extraDeferralYears = 0) => {
@@ -749,7 +867,49 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         return sources;
     }, [inputs, calculateEffectiveNI]);
 
-    const [incomeSources, setIncomeSources] = useState(getSafeSources);
+    // Income-sources undo/redo history
+    const sourcesHistory = useRef([]);
+    const sourcesHistoryIdx = useRef(-1);
+    const [sourcesHistoryVersion, setSourcesHistoryVersion] = useState(0);
+
+    const [incomeSources, setIncomeSources] = useState(() => {
+        const initial = getSafeSources();
+        sourcesHistory.current = [initial];
+        sourcesHistoryIdx.current = 0;
+        return initial;
+    });
+
+    // Tracked setter: records a history snapshot for user-initiated mutations
+    const setIncomeSourcesTracked = useCallback((updater) => {
+        setIncomeSources(prev => {
+            const next = typeof updater === 'function' ? updater(prev) : updater;
+            const trimmed = sourcesHistory.current.slice(0, sourcesHistoryIdx.current + 1);
+            trimmed.push(next);
+            if (trimmed.length > 40) trimmed.shift();
+            sourcesHistory.current = trimmed;
+            sourcesHistoryIdx.current = trimmed.length - 1;
+            return next;
+        });
+        setSourcesHistoryVersion(v => v + 1);
+    }, []);
+
+    const undoSources = useCallback(() => {
+        if (sourcesHistoryIdx.current <= 0) return;
+        sourcesHistoryIdx.current--;
+        setIncomeSources(sourcesHistory.current[sourcesHistoryIdx.current]);
+        setSourcesHistoryVersion(v => v + 1);
+    }, []);
+
+    const redoSources = useCallback(() => {
+        if (sourcesHistoryIdx.current >= sourcesHistory.current.length - 1) return;
+        sourcesHistoryIdx.current++;
+        setIncomeSources(sourcesHistory.current[sourcesHistoryIdx.current]);
+        setSourcesHistoryVersion(v => v + 1);
+    }, []);
+
+    const canUndoSources = sourcesHistoryIdx.current > 0;
+    const canRedoSources = sourcesHistoryIdx.current < sourcesHistory.current.length - 1;
+    void sourcesHistoryVersion; // consumed only to trigger re-render
     const [showIncomeSources, setShowIncomeSources] = useState(false);
     const [expandedMilestone, setExpandedMilestone] = useState(null);
     const [pensionInterestRate, setPensionInterestRate] = useState(() => inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : 4);
@@ -763,6 +923,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const closeAllSections = () => {
         setShowIncomeSources(false);
         setShowDeferralPanel(false);
+        setShowMaslekaSummary(false);
         setExpandedMilestone(null);
         setAiPanelCollapsed(true);
     };
@@ -771,15 +932,62 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         closeAllSections();
         setShowIncomeSources(nextOpen);
     };
+
+    // Keyboard undo/redo scoped to the modal (only when income sources panel is open)
+    useEffect(() => {
+        if (!showIncomeSources) return;
+        const handler = (e) => {
+            if (!e.ctrlKey && !e.metaKey) return;
+            if (e.key === 'z' || e.key === 'Z') {
+                e.preventDefault();
+                if (e.shiftKey) redoSources(); else undoSources();
+            } else if (e.key === 'y' || e.key === 'Y') {
+                e.preventDefault();
+                redoSources();
+            }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [showIncomeSources, undoSources, redoSources]);
     const toggleDeferralPanel = () => {
         const nextOpen = !showDeferralPanel;
         closeAllSections();
         setShowDeferralPanel(nextOpen);
     };
+    const toggleMaslekaSummary = () => {
+        const nextOpen = !showMaslekaSummary;
+        closeAllSections();
+        setShowMaslekaSummary(nextOpen);
+    };
     const toggleMilestone = (idx) => {
         const nextExpanded = expandedMilestone === idx ? null : idx;
         closeAllSections();
         setExpandedMilestone(nextExpanded);
+    };
+
+    const updateMaslekaAsOfDate = (value) => {
+        setMaslekaAsOfDate(value);
+        setMaslekaSummary(prev => prev
+            ? { ...prev, asOfDate: value || prev.fileDataDates?.[0] || '', manualAsOfDate: value }
+            : prev);
+    };
+
+    const handleMaslekaFileChange = async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        try {
+            setMaslekaError(null);
+            const arrayBuffer = await file.arrayBuffer();
+            const parsed = parseMaslekaWorkbook(arrayBuffer, maslekaAsOfDate);
+            setMaslekaSummary({ ...parsed, fileName: file.name });
+            setShowMaslekaSummary(true);
+        } catch (err) {
+            setMaslekaSummary(null);
+            setMaslekaError(err?.message || (language === 'he' ? 'לא ניתן לקרוא את קובץ המסלקה' : 'Could not read Masleka file'));
+        } finally {
+            event.target.value = '';
+        }
     };
 
     // Lock body scroll when modal is open
@@ -795,6 +1003,27 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const monthlyExpenses = results?.averageNetWithdrawal || parseFloat(inputs.monthlyNetIncomeDesired) || 10000;
     const retirementStartAge = parseFloat(inputs.retirementStartAge) || 67;
     const retirementEndAge = parseFloat(inputs.retirementEndAge) || 90;
+    const maslekaDisplaySummary = useMemo(
+        () => getMaslekaDisplaySummary(maslekaSummary, inputs.currentAge, retirementEndAge),
+        [maslekaSummary, inputs.currentAge, retirementEndAge]
+    );
+    const maslekaCompanies = useMemo(() => {
+        if (!maslekaDisplaySummary) return [];
+        return [...new Set(maslekaDisplaySummary.products.map(product => product.company).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'he'));
+    }, [maslekaDisplaySummary]);
+    const filteredMaslekaProducts = useMemo(() => {
+        if (!maslekaDisplaySummary) return [];
+        const categoryOrder = Object.fromEntries(maslekaDisplaySummary.categories.map((c, i) => [c.key, i]));
+        return maslekaDisplaySummary.products
+            .filter(product => {
+                if (maslekaProductTypeFilter !== 'all' && product.categoryKey !== maslekaProductTypeFilter) return false;
+                if (maslekaCompanyFilter !== 'all' && product.company !== maslekaCompanyFilter) return false;
+                if (maslekaStatusFilter === 'active' && product.status !== 'פעיל') return false;
+                if (maslekaStatusFilter === 'inactive' && product.status === 'פעיל') return false;
+                return true;
+            })
+            .sort((a, b) => (categoryOrder[a.categoryKey] ?? 99) - (categoryOrder[b.categoryKey] ?? 99));
+    }, [maslekaDisplaySummary, maslekaProductTypeFilter, maslekaCompanyFilter, maslekaStatusFilter]);
 
     // Use Balance at End of Period as requested by user
     const capitalAtRetirement = useMemo(() => {
@@ -868,7 +1097,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
             enabled: true,
             isEditable: true
         };
-        setIncomeSources(prev => [...prev, newSource]);
+        setIncomeSourcesTracked(prev => [...prev, newSource]);
     };
 
     const createCurrentAssetDraft = (kind = 'pension') => {
@@ -947,7 +1176,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                 : {}),
             id: source.id.startsWith('current_asset_') ? `income_${Date.now()}` : source.id
         };
-        setIncomeSources(prev => source.id.startsWith('current_asset_')
+        setIncomeSourcesTracked(prev => source.id.startsWith('current_asset_')
             ? [...prev, calculatedSource]
             : prev.map(existing => existing.id === source.id ? calculatedSource : existing));
         setCurrentAssetDraft(null);
@@ -956,12 +1185,12 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
 
     // Update income source
     const updateIncomeSource = (id, updates) => {
-        setIncomeSources(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+        setIncomeSourcesTracked(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
     };
 
     // Delete income source
     const deleteIncomeSource = (id) => {
-        setIncomeSources(prev => prev.filter(s => s.id !== id));
+        setIncomeSourcesTracked(prev => prev.filter(s => s.id !== id));
     };
 
 
@@ -1060,8 +1289,9 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         const initialRate = inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : 4;
         const sourcesChanged = JSON.stringify(clean(incomeSources)) !== JSON.stringify(clean(initialIncomeSources)) || pensionInterestRate !== initialRate;
         const aiChanged = aiInsight !== null && JSON.stringify(aiInsight) !== JSON.stringify(inputs.pensionAIInsight ?? null);
-        return sourcesChanged || aiChanged;
-    }, [incomeSources, initialIncomeSources, pensionInterestRate, inputs, aiInsight]);
+        const maslekaChanged = JSON.stringify(maslekaSummary ?? null) !== JSON.stringify(inputs.pensionMaslekaSummary ?? null);
+        return sourcesChanged || aiChanged || maslekaChanged;
+    }, [incomeSources, initialIncomeSources, pensionInterestRate, inputs, aiInsight, maslekaSummary]);
 
     const pensionAIInputs = useMemo(() => {
         const { pensionAIInsight: _omit, ...restInputs } = inputs;
@@ -1148,7 +1378,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                 <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
                 {/* Modal */}
-                <div className={`relative w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl shadow-2xl ${isLight ? 'bg-white' : ''} ring-1 ${isLight ? 'ring-gray-300' : 'ring-white/30'}`} style={{ ...dragStyle, overflow: 'hidden' }}>
+                <div className={`relative w-full max-w-5xl max-h-[90vh] flex flex-col rounded-2xl shadow-2xl ${isLight ? 'bg-white' : ''} ring-1 ${isLight ? 'ring-gray-300' : 'ring-white/30'}`} style={{ ...dragStyle, overflow: 'hidden' }}>
                     {!isLight && (
                         <>
                             <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-blue-900" />
@@ -1285,6 +1515,413 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                 <div className={`text-xs ${isLight ? 'text-orange-600' : 'text-orange-400'}`}>{t('monthlyExpenses') || 'הוצאות חודשיות'}</div>
                                 <div className={`text-lg font-bold ${isLight ? 'text-orange-700' : 'text-orange-300'}`}>{formatCurrency(monthlyExpenses)}</div>
                             </div>
+                        </div>
+
+                        {/* Masleka Upload Summary */}
+                        <div className={`rounded-xl border ${isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-white/5 border-white/10'}`}>
+                            <div
+                                className={`flex flex-wrap items-center justify-between gap-3 p-3 cursor-pointer ${showMaslekaSummary && (maslekaSummary || maslekaError) ? (isLight ? 'border-b border-slate-200' : 'border-b border-white/10') : ''}`}
+                                onClick={toggleMaslekaSummary}
+                            >
+                                <div className="flex min-w-0 items-center gap-2">
+                                    <div className={`p-1 rounded ${isLight ? 'bg-cyan-100 text-cyan-700' : 'bg-cyan-500/20 text-cyan-300'}`}>
+                                        <BarChart3 size={14} />
+                                    </div>
+                                    <div>
+                                        <h3 className={`text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                                            {language === 'he' ? 'סיכום קובץ מסלקה' : 'Masleka file summary'}
+                                        </h3>
+                                        <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                            {language === 'he'
+                                                ? 'העלאת התמונה המלאה והצגת צבירה/קצבה לפי סוג מוצר'
+                                                : 'Upload the full picture file and summarize balances/annuities by product type'}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2" onClick={e => e.stopPropagation()}>
+                                    <label className={`text-[11px] ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                                        {language === 'he' ? 'נכון לתאריך' : 'As of'}
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={maslekaAsOfDate}
+                                        onChange={(e) => updateMaslekaAsOfDate(e.target.value)}
+                                        className={`rounded-lg border px-2 py-1 text-xs ${isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-black/20 border-white/20 text-white'}`}
+                                    />
+                                    <input
+                                        ref={maslekaFileInputRef}
+                                        type="file"
+                                        accept=".xls,.xlsx,.csv"
+                                        onChange={handleMaslekaFileChange}
+                                        className="hidden"
+                                    />
+                                    <button
+                                        onClick={() => maslekaFileInputRef.current?.click()}
+                                        className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${isLight ? 'bg-cyan-600 text-white hover:bg-cyan-700' : 'bg-cyan-500/20 text-cyan-200 hover:bg-cyan-500/30'}`}
+                                    >
+                                        <Upload size={14} />
+                                        {language === 'he' ? 'העלה קובץ' : 'Upload'}
+                                    </button>
+                                    <button
+                                        onClick={toggleMaslekaSummary}
+                                        className={`p-1 rounded-full transition-colors ${isLight ? 'hover:bg-slate-200 text-slate-500' : 'hover:bg-white/10 text-gray-400'}`}
+                                    >
+                                        {showMaslekaSummary ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {showMaslekaSummary && maslekaError && (
+                                <div className={`m-3 rounded-lg border px-3 py-2 text-xs ${isLight ? 'bg-red-50 border-red-200 text-red-700' : 'bg-red-500/10 border-red-500/30 text-red-300'}`}>
+                                    {maslekaError}
+                                </div>
+                            )}
+
+                            {showMaslekaSummary && maslekaDisplaySummary && (
+                                    <div className="p-3 space-y-3">
+                                        {/* Meta info row */}
+                                        <div className={`grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
+                                            <div className={`rounded-lg p-2 ${isLight ? 'bg-slate-50' : 'bg-white/5'}`}>
+                                                <div className={isLight ? 'text-slate-500' : 'text-gray-400'}>{language === 'he' ? 'קובץ' : 'File'}</div>
+                                                <div className="font-semibold truncate">{maslekaDisplaySummary.fileName}</div>
+                                            </div>
+                                            <div className={`rounded-lg p-2 ${isLight ? 'bg-slate-50' : 'bg-white/5'}`}>
+                                                <div className={isLight ? 'text-slate-500' : 'text-gray-400'}>{language === 'he' ? 'נכונות' : 'As of'}</div>
+                                                <div className="font-semibold">{maslekaDisplaySummary.asOfDate || '—'}</div>
+                                            </div>
+                                            <div className={`rounded-lg p-2 ${isLight ? 'bg-slate-50' : 'bg-white/5'}`}>
+                                                <div className={isLight ? 'text-slate-500' : 'text-gray-400'}>{language === 'he' ? 'מוצרים' : 'Products'}</div>
+                                                <div className="font-semibold">
+                                                    {maslekaDisplaySummary.total.productCount}
+                                                    {maslekaDisplaySummary.total.activeProductCount < maslekaDisplaySummary.total.productCount && (
+                                                        <span className={`ms-1 font-normal text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                                            ({maslekaDisplaySummary.total.activeProductCount} {language === 'he' ? 'פעילים' : 'active'})
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className={`rounded-lg p-2 ${isLight ? 'bg-slate-50' : 'bg-white/5'}`}>
+                                                <div className={isLight ? 'text-slate-500' : 'text-gray-400'}>{language === 'he' ? 'הפקדות חודשיות' : 'Monthly deposits'}</div>
+                                                <div className="font-semibold">{formatMaslekaCurrency(maslekaDisplaySummary.total.monthlyDeposits, language)}</div>
+                                            </div>
+                                        </div>
+
+                                        {/* Grand total summary card */}
+                                        <div className={`rounded-xl border overflow-hidden ${isLight ? 'border-indigo-200' : 'border-indigo-500/30'}`}>
+                                            {/* Header row: title + current balance */}
+                                            <div className={`flex items-center justify-between gap-4 px-4 py-2.5 ${isLight ? 'bg-indigo-50 border-b border-indigo-100' : 'bg-indigo-500/10 border-b border-indigo-500/20'}`}>
+                                                <span className={`text-sm font-bold ${isLight ? 'text-indigo-700' : 'text-indigo-300'}`}>
+                                                    {language === 'he' ? 'סיכום כולל' : 'Grand total'}
+                                                </span>
+                                                <span className="flex items-baseline gap-1.5 tabular-nums">
+                                                    <span className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{language === 'he' ? 'נוכחי' : 'Current'}</span>
+                                                    <span className={`text-base font-bold ${isLight ? 'text-slate-800' : 'text-white'}`}>{formatMaslekaCurrency(maslekaDisplaySummary.total.currentBalance, language)}</span>
+                                                </span>
+                                            </div>
+                                            {/* Two-column: no-dep | with-dep */}
+                                            <div className={`flex gap-2 p-2 ${isLight ? 'bg-white' : 'bg-indigo-500/5'}`}>
+                                                {/* No deposits */}
+                                                <div className={`flex-1 rounded-lg px-3 py-2.5 space-y-1.5 ${isLight ? 'bg-sky-50 border border-sky-100' : 'bg-sky-500/10 border border-sky-500/20'}`}>
+                                                    <div className={`text-[10px] font-semibold uppercase tracking-wide ${isLight ? 'text-sky-500' : 'text-sky-400'}`}>{language === 'he' ? 'ללא הפקדות' : 'No deposits'}</div>
+                                                    {maslekaDisplaySummary.total.projectedNoContribAnnuity > 0 ? (
+                                                        <div>
+                                                            <div className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{language === 'he' ? 'קצבה חודשית' : 'Monthly annuity'}</div>
+                                                            <div className={`text-2xl font-bold tabular-nums leading-tight ${isLight ? 'text-sky-700' : 'text-sky-300'}`}>{formatMaslekaCurrency(maslekaDisplaySummary.total.projectedNoContribAnnuity, language)}</div>
+                                                        </div>
+                                                    ) : null}
+                                                    <div className={`flex items-center gap-3 tabular-nums text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                        <span>{language === 'he' ? 'צבירה' : 'Balance'}: <span className={`font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{formatMaslekaCurrency(maslekaDisplaySummary.total.projectedNoContribBalance, language)}</span></span>
+                                                        {maslekaDisplaySummary.total.impliedNoDepositRate !== null && (
+                                                            <span>{language === 'he' ? 'ריבית' : 'Rate'}: <span className={`font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{formatPercentValue(maslekaDisplaySummary.total.impliedNoDepositRate)}</span></span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                {/* With deposits */}
+                                                <div className={`flex-1 rounded-lg px-3 py-2.5 space-y-1.5 ${isLight ? 'bg-emerald-50 border border-emerald-100' : 'bg-emerald-500/10 border border-emerald-500/20'}`}>
+                                                    <div className={`text-[10px] font-semibold uppercase tracking-wide ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>{language === 'he' ? 'עם הפקדות' : 'With deposits'}</div>
+                                                    {maslekaDisplaySummary.total.projectedWithContribAnnuity > 0 ? (
+                                                        <div>
+                                                            <div className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{language === 'he' ? 'קצבה חודשית' : 'Monthly annuity'}</div>
+                                                            <div className={`text-2xl font-bold tabular-nums leading-tight ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>{formatMaslekaCurrency(maslekaDisplaySummary.total.projectedWithContribAnnuity, language)}</div>
+                                                        </div>
+                                                    ) : null}
+                                                    <div className={`flex items-center gap-3 tabular-nums text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                        <span>{language === 'he' ? 'צבירה' : 'Balance'}: <span className={`font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{formatMaslekaCurrency(maslekaDisplaySummary.total.projectedWithContribBalance, language)}</span></span>
+                                                        {maslekaDisplaySummary.total.impliedWithDepositRate !== null && maslekaDisplaySummary.total.monthlyDeposits > 0 && (
+                                                            <span>{language === 'he' ? 'ריבית' : 'Rate'}: <span className={`font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{formatPercentValue(maslekaDisplaySummary.total.impliedWithDepositRate)}</span></span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Category breakdown — accordion, one open at a time */}
+                                        <div className="space-y-1.5">
+                                            {maslekaDisplaySummary.categories.map(category => {
+                                                const isOpen = maslekaOpenCategory === category.key;
+                                                return (
+                                                    <div key={category.key} className={`rounded-lg border overflow-hidden ${isLight ? 'border-slate-200 bg-white' : 'border-white/10 bg-white/5'}`}>
+                                                        {/* Clickable header — always visible */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setMaslekaOpenCategory(isOpen ? null : category.key)}
+                                                            className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-start transition-colors ${isOpen ? (isLight ? 'border-b border-slate-100 bg-slate-50' : 'border-b border-white/10 bg-white/5') : ''} ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/5'}`}
+                                                        >
+                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: category.color }} />
+                                                                <span className={`text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                                                                    {language === 'he' ? category.labelHe : category.labelEn}
+                                                                </span>
+                                                                <span className={`text-[10px] shrink-0 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                                    {category.productCount} {language === 'he' ? 'מוצרים' : 'products'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                {[...new Set(category.products.map(p => p.company))].slice(0, 4).map((company, i) => (
+                                                                    <CompanyLogo key={company} company={company} className={`w-5 h-5 ${i > 0 ? '-ms-1' : ''}`} />
+                                                                ))}
+                                                                {category.monthlyDeposits > 0 && (
+                                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${isLight ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-500/20 text-emerald-300'}`}>
+                                                                        +{formatMaslekaCurrency(category.monthlyDeposits, language)}/{language === 'he' ? 'חו׳' : 'mo'}
+                                                                    </span>
+                                                                )}
+                                                                <span className={`text-xs font-semibold tabular-nums ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
+                                                                    {formatMaslekaCurrency(category.currentBalance, language)}
+                                                                </span>
+                                                                <ChevronDown size={14} className={`shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''} ${isLight ? 'text-slate-400' : 'text-gray-500'}`} />
+                                                            </div>
+                                                        </button>
+
+                                                        {/* Expandable body */}
+                                                        {isOpen && (
+                                                            <>
+                                                                {/* 3-column data: current / no-dep / with-dep */}
+                                                                <div className={`grid grid-cols-3 text-xs divide-x ${isLight ? 'divide-slate-100' : 'divide-white/10'}`}>
+                                                                    <div className="px-3 py-2.5">
+                                                                        <div className={`text-[10px] mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{language === 'he' ? 'נוכחי' : 'Current'}</div>
+                                                                        <div className={`font-bold tabular-nums ${isLight ? 'text-slate-800' : 'text-white'}`}>{formatMaslekaCurrency(category.currentBalance, language)}</div>
+                                                                    </div>
+                                                                    <div className="px-3 py-2.5">
+                                                                        <div className={`text-[10px] mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{language === 'he' ? 'ללא הפקדות' : 'No deposits'}</div>
+                                                                        <div className={`font-bold tabular-nums ${isLight ? 'text-sky-700' : 'text-sky-300'}`}>{formatMaslekaCurrency(category.projectedNoContribBalance, language)}</div>
+                                                                        {category.projectedNoContribAnnuity > 0 && (
+                                                                            <div className={`text-[10px] mt-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{language === 'he' ? 'קצבה' : 'Ann.'}: <span className={`font-semibold ${isLight ? 'text-slate-800' : 'text-white'}`}>{formatMaslekaCurrency(category.projectedNoContribAnnuity, language)}</span></div>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="px-3 py-2.5">
+                                                                        <div className={`text-[10px] mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{language === 'he' ? 'עם הפקדות' : 'With deposits'}</div>
+                                                                        <div className="font-bold tabular-nums" style={{ color: category.color }}>{formatMaslekaCurrency(category.projectedWithContribBalance, language)}</div>
+                                                                        {category.projectedWithContribAnnuity > 0 && (
+                                                                            <div className={`text-[10px] mt-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{language === 'he' ? 'קצבה' : 'Ann.'}: <span className={`font-semibold ${isLight ? 'text-slate-800' : 'text-white'}`}>{formatMaslekaCurrency(category.projectedWithContribAnnuity, language)}</span></div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                                {/* Footer: rates & fees */}
+                                                                <div className={`px-3 py-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] border-t ${isLight ? 'border-slate-100 bg-slate-50/70 text-slate-500' : 'border-white/10 bg-black/10 text-gray-400'}`}>
+                                                                    {category.impliedNoDepositRate !== null && (
+                                                                        <span>{language === 'he' ? 'ריבית ללא הפקדות' : 'Rate (no dep.)'}: <span className={`font-medium ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{formatPercentValue(category.impliedNoDepositRate)}</span></span>
+                                                                    )}
+                                                                    {category.impliedWithDepositRate !== null && category.monthlyDeposits > 0 && (
+                                                                        <span>{language === 'he' ? 'עם הפקדות' : 'Rate (with dep.)'}: <span className={`font-medium ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{formatPercentValue(category.impliedWithDepositRate)}</span></span>
+                                                                    )}
+                                                                    {category.weightedYearlyReturn !== null && (
+                                                                        <span>{language === 'he' ? 'תשואה שנ"נ' : 'YTD'}: <span className={`font-medium ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{formatPercentValue(category.weightedYearlyReturn)}</span></span>
+                                                                    )}
+                                                                    {category.weightedFeesFromBalance !== null && (
+                                                                        <span>{language === 'he' ? 'דמי ניהול' : 'Mgmt fee'}: <span className={`font-medium ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{formatPercentValue(category.weightedFeesFromBalance)}</span></span>
+                                                                    )}
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Product details — expandable, with filters */}
+                                        <details className={`rounded-lg border ${isLight ? 'border-slate-200 bg-slate-50' : 'border-white/10 bg-white/5'}`}>
+                                            <summary className={`relative cursor-pointer px-3 py-2 text-xs font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
+                                                {language === 'he' ? 'פירוט מוצרים' : 'Product details'}
+                                                <span className={`ms-2 font-normal ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                                    {(maslekaProductTypeFilter !== 'all' || maslekaCompanyFilter !== 'all' || maslekaStatusFilter !== 'all')
+                                                        ? `(${filteredMaslekaProducts.length}/${maslekaDisplaySummary.products.length})`
+                                                        : `(${maslekaDisplaySummary.products.length})`}
+                                                </span>
+                                                {filteredMaslekaProducts.length > 0 && (
+                                                    <span className="absolute inset-y-0 end-3 flex items-center gap-3 tabular-nums pointer-events-none">
+                                                        <span className={`text-[10px] ${isLight ? 'text-sky-600' : 'text-sky-300'}`}>
+                                                            {language === 'he' ? 'ללא הפקדות' : 'No dep'}:{' '}
+                                                            <span className="font-semibold">{formatMaslekaCurrency(filteredMaslekaProducts.reduce((s, p) => s + p.projectedNoContribBalance, 0), language)}</span>
+                                                        </span>
+                                                        <span className={`text-[10px] ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>
+                                                            {language === 'he' ? 'עם הפקדות' : 'With dep'}:{' '}
+                                                            <span className="font-semibold">{formatMaslekaCurrency(filteredMaslekaProducts.reduce((s, p) => s + p.projectedWithContribBalance, 0), language)}</span>
+                                                        </span>
+                                                    </span>
+                                                )}
+                                            </summary>
+                                            <div className={`flex items-end gap-2 px-3 pt-2 pb-2 text-xs ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
+                                                <label className="flex flex-col gap-1 flex-1 min-w-0">
+                                                    <span className={isLight ? 'text-slate-500' : 'text-gray-400'}>{language === 'he' ? 'סוג' : 'Type'}</span>
+                                                    <CustomSelect
+                                                        value={maslekaProductTypeFilter}
+                                                        onChange={setMaslekaProductTypeFilter}
+                                                        options={[
+                                                            { value: 'all', label: language === 'he' ? 'הכל' : 'All' },
+                                                            ...maslekaDisplaySummary.categories.map(category => ({
+                                                                value: category.key,
+                                                                label: language === 'he' ? category.labelHe : category.labelEn
+                                                            }))
+                                                        ]}
+                                                    />
+                                                </label>
+                                                <label className="flex flex-col gap-1 flex-1 min-w-0">
+                                                    <span className={isLight ? 'text-slate-500' : 'text-gray-400'}>{language === 'he' ? 'חברה' : 'Company'}</span>
+                                                    <CustomSelect
+                                                        value={maslekaCompanyFilter}
+                                                        onChange={setMaslekaCompanyFilter}
+                                                        options={[
+                                                            { value: 'all', label: language === 'he' ? 'הכל' : 'All' },
+                                                            ...maslekaCompanies.map(company => ({
+                                                                value: company,
+                                                                label: company
+                                                            }))
+                                                        ]}
+                                                    />
+                                                </label>
+                                                <div className="flex flex-col gap-1 shrink-0">
+                                                    <span className={isLight ? 'text-slate-500' : 'text-gray-400'}>{language === 'he' ? 'סטטוס' : 'Status'}</span>
+                                                    <div className={`flex gap-1 rounded-lg p-0.5 ${isLight ? 'bg-slate-100' : 'bg-white/10'}`}>
+                                                        {[
+                                                            { value: 'all', label: language === 'he' ? 'הכל' : 'All' },
+                                                            { value: 'active', label: language === 'he' ? 'פעיל' : 'Active' },
+                                                            { value: 'inactive', label: language === 'he' ? 'לא פעיל' : 'Inactive' }
+                                                        ].map(opt => (
+                                                            <button
+                                                                key={opt.value}
+                                                                type="button"
+                                                                onClick={() => setMaslekaStatusFilter(opt.value)}
+                                                                className={`px-2.5 py-1 rounded-md text-[10px] font-medium transition-colors ${maslekaStatusFilter === opt.value
+                                                                    ? opt.value === 'active'
+                                                                        ? 'bg-emerald-500 text-white shadow-sm'
+                                                                        : opt.value === 'inactive'
+                                                                            ? (isLight ? 'bg-slate-400 text-white shadow-sm' : 'bg-slate-600 text-white shadow-sm')
+                                                                            : (isLight ? 'bg-white text-slate-700 shadow-sm' : 'bg-white/20 text-white shadow-sm')
+                                                                    : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-gray-400 hover:text-gray-200')
+                                                                }`}
+                                                            >
+                                                                {opt.label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                {(() => {
+                                                    const hasFilter = maslekaProductTypeFilter !== 'all' || maslekaCompanyFilter !== 'all' || maslekaStatusFilter !== 'all';
+                                                    return (
+                                                        <button
+                                                            disabled={!hasFilter}
+                                                            onClick={() => { setMaslekaProductTypeFilter('all'); setMaslekaCompanyFilter('all'); setMaslekaStatusFilter('all'); }}
+                                                            className={`self-end shrink-0 rounded-lg px-2 py-1.5 text-[10px] font-medium transition-colors ${hasFilter
+                                                                ? (isLight ? 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-100' : 'bg-white/10 text-gray-300 hover:bg-white/15')
+                                                                : (isLight ? 'border border-slate-200 text-slate-300 cursor-default' : 'border border-white/10 text-gray-600 cursor-default')
+                                                            }`}
+                                                        >
+                                                            {language === 'he' ? 'נקה' : 'Clear'}
+                                                        </button>
+                                                    );
+                                                })()}
+                                            </div>
+                                            <table className={`w-full text-[10px] table-fixed ${isLight ? 'text-slate-500 bg-slate-100' : 'text-gray-400 bg-black/40'}`}>
+                                                <colgroup>
+                                                    <col style={{ width: '30%' }} />
+                                                    <col style={{ width: '14%' }} />
+                                                    <col style={{ width: '12%' }} />
+                                                    <col style={{ width: '13%' }} />
+                                                    <col style={{ width: '13%' }} />
+                                                    <col style={{ width: '11%' }} />
+                                                    <col style={{ width: '7%' }} />
+                                                </colgroup>
+                                                <thead>
+                                                    <tr>
+                                                        <th className="px-3 py-2 text-start">{language === 'he' ? 'מוצר' : 'Product'}</th>
+                                                        <th className="px-3 py-2 text-start">{language === 'he' ? 'סוג' : 'Type'}</th>
+                                                        <th className="px-3 py-2 text-end">{language === 'he' ? 'נוכחי' : 'Current'}</th>
+                                                        <th className="px-3 py-2 text-end">{language === 'he' ? 'ללא הפקדות' : 'No dep.'}</th>
+                                                        <th className="px-3 py-2 text-end">{language === 'he' ? 'עם הפקדות' : 'With dep.'}</th>
+                                                        <th className="px-3 py-2 text-end">{language === 'he' ? 'קצבה' : 'Annuity'}</th>
+                                                        <th className="px-3 py-2 text-end">{language === 'he' ? 'ריבית' : 'Rate'}</th>
+                                                    </tr>
+                                                </thead>
+                                            </table>
+                                            <div className="max-h-64 overflow-auto custom-scrollbar scrollbar-right">
+                                                <table className="w-full text-[10px] table-fixed">
+                                                    <colgroup>
+                                                        <col style={{ width: '30%' }} />
+                                                        <col style={{ width: '14%' }} />
+                                                        <col style={{ width: '12%' }} />
+                                                        <col style={{ width: '13%' }} />
+                                                        <col style={{ width: '13%' }} />
+                                                        <col style={{ width: '11%' }} />
+                                                        <col style={{ width: '7%' }} />
+                                                    </colgroup>
+                                                    <tbody>
+                                                        {filteredMaslekaProducts.map(product => (
+                                                            <tr key={product.id} className={`border-t ${isLight ? 'border-slate-200 text-slate-700' : 'border-white/10 text-gray-200'}`}>
+                                                                <td className="px-3 py-2">
+                                                                    <div className="flex items-center gap-2 min-w-0">
+                                                                        <CompanyLogo company={product.company} className="w-5 h-5 shrink-0" />
+                                                                        <div className="min-w-0">
+                                                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                                                <span className="font-medium truncate">{product.productName}</span>
+                                                                                <span className={`shrink-0 inline-flex items-center px-1 py-0.5 rounded text-[9px] font-semibold leading-none ${product.status === 'פעיל' ? (isLight ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-500/20 text-emerald-300') : (isLight ? 'bg-slate-200 text-slate-500' : 'bg-white/10 text-gray-400')}`}>
+                                                                                    {product.status === 'פעיל' ? (language === 'he' ? 'פעיל' : 'Active') : (language === 'he' ? 'לא פעיל' : 'Inactive')}
+                                                                                </span>
+                                                                            </div>
+                                                                            <div className={`truncate ${isLight ? 'text-slate-500' : 'text-gray-400'}`} title={product.company}>{product.company}</div>
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-3 py-2">
+                                                                    <span className="inline-flex items-center gap-1.5">
+                                                                        <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ backgroundColor: maslekaDisplaySummary.categories.find(c => c.key === product.categoryKey)?.color || '#64748B' }} />
+                                                                        <span>{maslekaDisplaySummary.categories.find(c => c.key === product.categoryKey)?.[language === 'he' ? 'labelHe' : 'labelEn'] || product.categoryKey}</span>
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-3 py-2 text-end tabular-nums">{formatMaslekaCurrency(product.currentBalance, language)}</td>
+                                                                <td className="px-3 py-2 text-end tabular-nums">{formatMaslekaCurrency(product.projectedNoContribBalance, language)}</td>
+                                                                <td className="px-3 py-2 text-end tabular-nums">{formatMaslekaCurrency(product.projectedWithContribBalance, language)}</td>
+                                                                <td className="px-3 py-2 text-end">
+                                                                    <div className="tabular-nums">{formatMaslekaCurrency(product.projectedNoContribAnnuity, language)}</div>
+                                                                    {product.projectedWithContribAnnuity > 0 && product.projectedWithContribAnnuity !== product.projectedNoContribAnnuity && (
+                                                                        <div className={`tabular-nums ${isLight ? 'text-emerald-700' : 'text-emerald-300'}`}>{formatMaslekaCurrency(product.projectedWithContribAnnuity, language)}</div>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-3 py-2 text-end">
+                                                                    <div className="tabular-nums">{formatPercentValue(product.impliedNoDepositRate)}</div>
+                                                                    {product.impliedWithDepositRate !== null && product.monthlyDeposits > 0 && product.impliedWithDepositRate !== product.impliedNoDepositRate && (
+                                                                        <div className={`tabular-nums ${isLight ? 'text-emerald-700' : 'text-emerald-300'}`}>{formatPercentValue(product.impliedWithDepositRate)}</div>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                        {filteredMaslekaProducts.length === 0 && (
+                                                            <tr className={`border-t ${isLight ? 'border-slate-200 text-slate-500' : 'border-white/10 text-gray-400'}`}>
+                                                                <td colSpan={7} className="px-3 py-4 text-center">
+                                                                    {language === 'he' ? 'אין מוצרים התואמים לסינון' : 'No products match the filters'}
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </details>
+                                        <p className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                            {language === 'he'
+                                                ? 'הקובץ מציג "תשואה מתחילת השנה"; אם קיימת הנחת ריבית פנימית אחרת לתחזית, היא אינה מופיעה כשדה נפרד בקובץ ולכן אינה ניתנת לחילוץ ודאי.'
+                                                : 'The file exposes YTD return; if a separate projection interest assumption exists internally, it is not present as a dedicated field and cannot be extracted reliably.'}
+                                        </p>
+                                    </div>
+                            )}
                         </div>
 
                         {/* AI Analysis Panel */}
@@ -1448,7 +2085,23 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
 
                                 <div className="flex shrink-0 items-center gap-2">
                                     {showIncomeSources && (
-                                        <div className="flex gap-1 flex-wrap" onClick={e => e.stopPropagation()}>
+                                        <div className="flex gap-1 flex-wrap items-center" onClick={e => e.stopPropagation()}>
+                                        <button
+                                            onClick={undoSources}
+                                            disabled={!canUndoSources}
+                                            title="Undo (Ctrl+Z)"
+                                            className={`p-1.5 rounded transition-colors ${canUndoSources ? (isLight ? 'text-slate-600 hover:bg-slate-200' : 'text-gray-300 hover:bg-white/10') : (isLight ? 'text-slate-300 cursor-not-allowed' : 'text-gray-600 cursor-not-allowed')}`}
+                                        >
+                                            <Undo2 size={14} />
+                                        </button>
+                                        <button
+                                            onClick={redoSources}
+                                            disabled={!canRedoSources}
+                                            title="Redo (Ctrl+Y)"
+                                            className={`p-1.5 rounded transition-colors ${canRedoSources ? (isLight ? 'text-slate-600 hover:bg-slate-200' : 'text-gray-300 hover:bg-white/10') : (isLight ? 'text-slate-300 cursor-not-allowed' : 'text-gray-600 cursor-not-allowed')}`}
+                                        >
+                                            <Redo2 size={14} />
+                                        </button>
                                         <button
                                             onClick={() => addIncomeSource('pension')}
                                             className={`px-3 py-1.5 rounded text-xs flex items-center gap-1.5 ${isLight ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'}`}
@@ -1523,6 +2176,8 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                                         setCurrentAssetDraft(null);
                                                         setCurrentAssetEditBaseline(null);
                                                     }}
+                                                    maslekaCategories={maslekaDisplaySummary?.categories}
+                                                    maslekaAsOfDate={maslekaDisplaySummary?.asOfDate}
                                                     language={language}
                                                     isLight={isLight}
                                                 />
@@ -1689,7 +2344,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                         </button>
                         {onSave && (
                             <button
-                                onClick={() => onSave(incomeSources, pensionInterestRate, aiInsight)}
+                                onClick={() => onSave(incomeSources, pensionInterestRate, aiInsight, maslekaSummary)}
                                 disabled={!hasChanges}
                                 className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 relative
                                 ${hasChanges
