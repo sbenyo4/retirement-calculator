@@ -10,6 +10,8 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     const [newProfileName, setNewProfileName] = useState('');
     const [selectedProfileId, setSelectedProfileId] = useState('');
     const [saveMessage, setSaveMessage] = useState('');
+    const [savingAction, setSavingAction] = useState(null);
+    const [savedProfileSnapshot, setSavedProfileSnapshot] = useState(null);
     const [isRenaming, setIsRenaming] = useState(false);
     const [renameInput, setRenameInput] = useState('');
 
@@ -20,6 +22,10 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         }
     }, [lastLoadedProfileId]);
 
+    useEffect(() => {
+        setSavedProfileSnapshot(null);
+    }, [selectedProfileId]);
+
     const { theme } = useTheme();
     const isLight = theme === 'light';
 
@@ -27,6 +33,13 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     const inputClass = isLight
         ? "bg-white border border-slate-400 text-gray-900 placeholder-gray-500 shadow-sm focus:ring-blue-500"
         : "bg-black/20 border border-white/50 text-white placeholder-gray-500 focus:ring-blue-500";
+    const messages = {
+        saving: language === 'he' ? '\u05e9\u05d5\u05de\u05e8...' : 'Saving...',
+        profileSaved: language === 'he' ? '\u05d4\u05e4\u05e8\u05d5\u05e4\u05d9\u05dc \u05e0\u05e9\u05de\u05e8!' : 'Profile saved!',
+        profileUpdated: language === 'he' ? '\u05d4\u05e4\u05e8\u05d5\u05e4\u05d9\u05dc \u05e2\u05d5\u05d3\u05db\u05df!' : 'Profile updated!',
+        saveFailed: language === 'he' ? '\u05e9\u05de\u05d9\u05e8\u05ea \u05d4\u05e4\u05e8\u05d5\u05e4\u05d9\u05dc \u05e0\u05db\u05e9\u05dc\u05d4' : 'Profile save failed',
+        updateFailed: language === 'he' ? '\u05e2\u05d3\u05db\u05d5\u05df \u05d4\u05e4\u05e8\u05d5\u05e4\u05d9\u05dc \u05e0\u05db\u05e9\u05dc' : 'Profile update failed'
+    };
 
     // Track the last known database state of the currently selected profile.
     // This allows us to safely pull in background database updates (like latency-resolving Firebased syncs)
@@ -112,7 +125,9 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         return rest;
     };
     
-    // Auto-sync background updates from Firebase
+    // Track background updates from Firebase without overwriting the active form.
+    // Loading a profile is an explicit user action; passive snapshots must not
+    // roll back unsaved UI state during profile updates.
     useEffect(() => {
         if (!selectedProfileId || !profiles || !normalizedCurrent) return;
 
@@ -131,56 +146,70 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
         const isDbUpdated = !deepEqual(stripComputedFields(currentDbData), stripComputedFields(lastKnownDbSnapshot.data));
         
         if (isDbUpdated) {
-            // Did the user modify the inputs manually? (Does Current == Last Known DB)
-            const hasUserMadeChanges = !deepEqual(stripComputedFields(normalizedCurrent), stripComputedFields(lastKnownDbSnapshot.data));
-            
-            if (!hasUserMadeChanges) {
-                // The user hasn't touched the form, BUT the background database updated!
-                // This happens if a Firestore network request was delayed/reverted and just succeeded.
-                // We should silently pull these new DB changes into the active UI state.
-                const globalPension = getGlobalPensionSources();
-                onLoad({
-                    ...currentDbData,
-                    pensionIncomeSources: globalPension
-                }, dbProfile?.aiInsights ?? null);
-                
-                // Update our tracker so we don't loop
-                setLastKnownDbSnapshot({ id: selectedProfileId, data: currentDbData });
-            } else {
-                // User HAS made changes, AND the database changed.
-                // We shouldn't ruthlessly overwrite the user's manual work.
-                // However, we still update the baseline so the UI calculates "Unsaved Changes" against the newest truth.
-                setLastKnownDbSnapshot({ id: selectedProfileId, data: currentDbData });
-            }
+            setLastKnownDbSnapshot({ id: selectedProfileId, data: currentDbData });
         }
-    }, [profiles, selectedProfileId, normalizedCurrent, lastKnownDbSnapshot, getGlobalPensionSources, onLoad]);
+    }, [profiles, selectedProfileId, normalizedCurrent, lastKnownDbSnapshot]);
 
-    const saveProfile = () => {
-        if (!newProfileName.trim()) return;
-        // Decouple pension data: don't save it to profile
+    const buildProfileDataToSave = () => {
         const { pensionIncomeSources, ...dataToSave } = currentInputs;
-
-        const newProfile = onSaveProfile(newProfileName, dataToSave);
-        if (onSaveGlobalPension && pensionIncomeSources) {
-            onSaveGlobalPension(pensionIncomeSources);
-        }
-        
-        setNewProfileName('');
-        setSelectedProfileId(newProfile.id);
-        showMessage(language === 'he' ? 'פרופיל נשמר!' : 'Profile saved!');
+        return {
+            dataToSave: normalizeInputs(dataToSave),
+            pensionIncomeSources
+        };
     };
 
-    const updateProfile = () => {
-        if (!selectedProfileId) return;
-        // Decouple pension data: don't save it to profile
-        const { pensionIncomeSources, ...dataToSave } = currentInputs;
+    const saveProfile = async () => {
+        if (!newProfileName.trim()) return;
+        setSavingAction('save');
+        try {
+            const { dataToSave, pensionIncomeSources } = buildProfileDataToSave();
+            const newProfile = await onSaveProfile(newProfileName, dataToSave);
+            if (!newProfile) {
+                showMessage(messages.saveFailed);
+                return;
+            }
+            if (onSaveGlobalPension && pensionIncomeSources) {
+                await onSaveGlobalPension(pensionIncomeSources);
+            }
 
-        onUpdateProfile(selectedProfileId, dataToSave);
-        if (onSaveGlobalPension && pensionIncomeSources) {
-            onSaveGlobalPension(pensionIncomeSources);
+            setNewProfileName('');
+            setSelectedProfileId(newProfile.id);
+            setSavedProfileSnapshot({ id: newProfile.id, data: dataToSave });
+            if (onProfileLoad) {
+                await onProfileLoad(newProfile.id);
+            }
+            showMessage(messages.profileSaved);
+        } catch {
+            showMessage(messages.saveFailed);
+        } finally {
+            setSavingAction(null);
         }
-        
-        showMessage(language === 'he' ? 'פרופיל עודכן!' : 'Profile updated!');
+    };
+
+    const updateProfile = async () => {
+        if (!selectedProfileId) return;
+        setSavingAction('update');
+        try {
+            const { dataToSave, pensionIncomeSources } = buildProfileDataToSave();
+            const updatedProfile = await onUpdateProfile(selectedProfileId, dataToSave);
+            if (onSaveGlobalPension && pensionIncomeSources) {
+                await onSaveGlobalPension(pensionIncomeSources);
+            }
+            if (onProfileLoad) {
+                await onProfileLoad(selectedProfileId);
+            }
+            setSavedProfileSnapshot({
+                id: selectedProfileId,
+                data: updatedProfile?.data ? normalizeInputs(updatedProfile.data) : dataToSave,
+                aiInsights: updatedProfile?.aiInsights ?? null
+            });
+
+            showMessage(messages.profileUpdated);
+        } catch {
+            showMessage(messages.updateFailed);
+        } finally {
+            setSavingAction(null);
+        }
     };
 
     const handleStartRename = () => {
@@ -207,8 +236,9 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     const reloadProfile = () => {
         if (!selectedProfileId) return;
         const profile = profiles.find(p => p.id === selectedProfileId);
-        if (profile) {
-            const data = normalizeInputs(profile.data);
+        const savedSnapshot = savedProfileSnapshot?.id === selectedProfileId ? savedProfileSnapshot : null;
+        if (profile || savedSnapshot) {
+            const data = normalizeInputs(savedSnapshot?.data || profile.data);
             // MERGE: Keep current global pension sources and interest rate from storage
             const globalPension = getGlobalPensionSources();
             const payload = {
@@ -218,7 +248,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
             if (currentInputs?.pensionInterestRate !== undefined) {
                 payload.pensionInterestRate = currentInputs.pensionInterestRate;
             }
-            onLoad(payload, profile.aiInsights ?? null);
+            onLoad(payload, savedSnapshot ? (savedSnapshot.aiInsights ?? null) : (profile.aiInsights ?? null));
             showMessage(language === 'he' ? 'פרופיל נטען מחדש!' : 'Profile reloaded!');
         }
     };
@@ -275,7 +305,10 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     if (selectedProfileId && profiles && normalizedCurrent) {
         const dbProfile = profiles.find(p => p.id === selectedProfileId);
         if (dbProfile && dbProfile.data) {
-            const dbDataNormalized = normalizeInputs(dbProfile.data);
+            const baselineData = savedProfileSnapshot?.id === selectedProfileId
+                ? savedProfileSnapshot.data
+                : dbProfile.data;
+            const dbDataNormalized = normalizeInputs(baselineData);
             const normStripped = stripComputedFields(normalizedCurrent);
             const dbStripped = stripComputedFields(dbDataNormalized);
             hasChanges = !deepEqual(normStripped, dbStripped);
@@ -297,9 +330,10 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                     />
                     <button
                         onClick={saveProfile}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors text-sm"
+                        disabled={savingAction === 'save'}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-wait text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors text-sm"
                     >
-                        <Save className="w-4 h-4" /> {t('save')}
+                        <Save className="w-4 h-4" /> {savingAction === 'save' ? messages.saving : t('save')}
                     </button>
                 </div>
 
@@ -356,7 +390,8 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                                     onClick={() => {
                                         updateProfile();
                                     }}
-                                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors relative"
+                                    disabled={savingAction === 'update'}
+                                    className="bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-wait text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors relative"
                                     title={language === 'he' ? 'שמור שינויים לפרופיל' : 'Save changes to profile'}
                                 >
                                     <Upload className="w-4 h-4" />

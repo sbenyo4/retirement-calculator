@@ -131,6 +131,7 @@ export const normalizeInputs = (data) => {
             .filter(e => e && e.id)
             .map(e => ({
                 id: String(e.id),
+                description: typeof e.description === 'string' ? e.description : '',
                 startYear: parseInt(e.startYear) || new Date().getFullYear(),
                 endYear: e.endYear ? parseInt(e.endYear) : null,
                 monthlyAmount: parseFloat(e.monthlyAmount) || 0,

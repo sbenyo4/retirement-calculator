@@ -6,8 +6,10 @@ import {
     deleteProfileDoc,
     onProfilesSnapshot,
     getUserSettings,
-    setUserSettings
+    setUserSettings,
+    setCurrentSession
 } from '../utils/db';
+import { normalizeInputs } from '../utils/profileUtils';
 
 export function useProfiles() {
     const { currentUser } = useAuth();
@@ -44,47 +46,58 @@ export function useProfiles() {
         return () => unsubscribe();
     }, [uid]);
 
-    const saveProfile = useCallback((name, data) => {
+    const saveProfile = useCallback(async (name, data) => {
         if (!uid) return null;
 
+        const normalizedData = normalizeInputs(data || {});
         const newProfile = {
             id: crypto.randomUUID(),
             name,
-            data
+            data: normalizedData
         };
 
         // Optimistic update
         setProfiles(prev => [...prev, newProfile]);
 
-        // Write to Firestore
-        dbSaveProfile(uid, newProfile).catch(err => {
+        try {
+            await dbSaveProfile(uid, newProfile);
+            await setCurrentSession(uid, normalizedData, newProfile.id);
+            setSaveError(null);
+            return newProfile;
+        } catch (err) {
             console.error('Error saving profile:', err);
             setSaveError('Failed to save profile.');
             // Revert on error
             setProfiles(prev => prev.filter(p => p.id !== newProfile.id));
-        });
-
-        setSaveError(null);
-        return newProfile;
+            return null;
+        }
     }, [uid]);
 
-    const updateProfile = useCallback((id, data) => {
+    const updateProfile = useCallback(async (id, data) => {
         if (!uid) return;
+        const normalizedData = normalizeInputs(data || {});
 
         // Optimistic update — capture previous state for revert
         let prevProfiles;
         setProfiles(prev => {
             prevProfiles = prev;
-            return prev.map(p => p.id === id ? { ...p, data } : p);
+            return prev.map(p => p.id === id ? { ...p, data: normalizedData, aiInsights: null } : p);
         });
 
-        dbUpdateProfile(uid, id, { data }).catch(err => {
+        try {
+            const updatedProfile = await dbUpdateProfile(uid, id, { data: normalizedData, aiInsights: null });
+            if (updatedProfile) {
+                setProfiles(prev => prev.map(p => p.id === id ? updatedProfile : p));
+            }
+            await setCurrentSession(uid, normalizedData, id);
+            setSaveError(null);
+            return updatedProfile || { id, data: normalizedData, aiInsights: null };
+        } catch (err) {
             console.error('Error updating profile:', err);
             setSaveError('Failed to update profile.');
             if (prevProfiles) setProfiles(prevProfiles);
-        });
-
-        setSaveError(null);
+            throw err;
+        }
     }, [uid]);
 
     const renameProfile = useCallback((id, newName) => {
@@ -131,10 +144,10 @@ export function useProfiles() {
         setSaveError(null);
     }, [uid, lastLoadedProfileId]);
 
-    const markProfileAsLoaded = useCallback((id) => {
+    const markProfileAsLoaded = useCallback(async (id) => {
         if (!uid) return;
         setLastLoadedProfileId(id);
-        setUserSettings(uid, { lastLoadedProfileId: id }).catch(console.error);
+        await setUserSettings(uid, { lastLoadedProfileId: id });
     }, [uid]);
 
     const updateProfileInsights = useCallback((id, insights) => {

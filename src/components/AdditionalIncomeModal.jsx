@@ -39,6 +39,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                 .filter(e => e.startYear && parseFloat(e.monthlyAmount) > 0)
                 .map(e => ({
                     id: e.id,
+                    description: e.description || '',
                     startYear: parseInt(e.startYear),
                     endYear: e.endYear ? parseInt(e.endYear) : null,
                     monthlyAmount: parseFloat(e.monthlyAmount),
@@ -67,7 +68,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
 
     const hasChanges = useMemo(() => {
         const normalize = list => list.map(e => ({
-            id: e.id, startYear: String(e.startYear), endYear: e.endYear ?? null,
+            id: e.id, description: e.description || '', startYear: String(e.startYear), endYear: e.endYear ?? null,
             monthlyAmount: String(e.monthlyAmount), enabled: e.enabled !== false,
         }));
         return JSON.stringify(normalize(entries)) !== JSON.stringify(normalize(initialEntriesRef.current));
@@ -133,8 +134,9 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
     const addFromTemplate = (tpl) => {
         setEntries(prev => [...prev, {
             id: String(Date.now()),
+            description: isRTL ? tpl.labelHe : tpl.labelEn,
             startYear: retirementYear,
-            endYear: tpl.durationYears ? retirementYear + tpl.durationYears : '',
+            endYear: tpl.durationYears ? retirementYear + tpl.durationYears - 1 : '',
             monthlyAmount: tpl.amount,
             enabled: true,
         }]);
@@ -143,6 +145,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
     const addEntry = () => {
         setEntries(prev => [...prev, {
             id: String(Date.now()),
+            description: '',
             startYear: retirementYear,
             endYear: '',
             monthlyAmount: '',
@@ -162,6 +165,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                 .filter(e => e.startYear && parseFloat(e.monthlyAmount) > 0)
                 .map(e => ({
                     id: e.id,
+                    description: e.description || '',
                     startYear: parseInt(e.startYear),
                     endYear: e.endYear ? parseInt(e.endYear) : null,
                     monthlyAmount: parseFloat(e.monthlyAmount),
@@ -176,12 +180,13 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
             ? 'bg-white border border-gray-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500'
             : 'bg-black/20 border border-white/30 text-white focus:outline-none focus:ring-2 focus:ring-blue-500'
     }`;
+    const formatInlineCurrency = (value) => `${currency}${Math.round(value || 0).toLocaleString()}`;
 
     return createPortal(
         <div className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" style={overlayStyle}>
             <div
                 data-draggable-modal
-                className={`relative w-full max-w-md max-h-[85vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden ${
+                className={`relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden ${
                     isLight ? 'bg-white ring-1 ring-gray-300' : 'ring-1 ring-white/30'
                 }`}
                 style={dragStyle}
@@ -275,7 +280,21 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                     {entries.map((entry) => (
                         <div key={entry.id} className={`flex flex-col gap-1.5 p-2 rounded-xl transition-opacity ${entry.enabled === false ? 'opacity-40' : ''} ${isLight ? 'bg-slate-50 border border-slate-200' : 'bg-white/5 border border-white/10'}`}>
                             {/* Fields row — unchanged widths */}
-                            <div className="flex items-end gap-2">
+                            <div className="grid grid-cols-2 sm:grid-cols-[minmax(130px,1.35fr)_80px_auto_80px_minmax(120px,1fr)_auto_auto] items-end gap-2">
+                                {/* Description */}
+                                <div className="col-span-2 sm:col-span-1 flex flex-col gap-0.5 min-w-0">
+                                    <span className={`h-7 flex items-start text-[10px] leading-tight ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                                        {isRTL ? 'תיאור הכנסה' : 'Income description'}
+                                    </span>
+                                    <input
+                                        type="text"
+                                        className={inputCls}
+                                        value={entry.description || ''}
+                                        placeholder={isRTL ? 'לדוגמה: שכירות' : 'e.g. Rental'}
+                                        onChange={e => updateEntry(entry.id, 'description', e.target.value)}
+                                    />
+                                </div>
+
                                 {/* From year */}
                                 <div className="flex flex-col gap-0.5 w-20">
                                     <span className={`h-7 flex items-start text-[10px] leading-tight ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>{t('incomeEntryFrom')}</span>
@@ -297,7 +316,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                                     />
                                 </div>
 
-                                <span className={`pb-1.5 text-xs ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>–</span>
+                                <span className={`hidden sm:block pb-1.5 text-xs ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>–</span>
 
                                 {/* To year */}
                                 <div className="flex flex-col gap-0.5 w-20">
@@ -323,7 +342,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                                 </div>
 
                                 {/* Monthly amount */}
-                                <div className="flex flex-col gap-0.5 flex-1">
+                                <div className="col-span-2 sm:col-span-1 flex flex-col gap-0.5 min-w-0">
                                     <span className={`h-7 flex items-start text-[10px] leading-tight ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>{t('incomeEntryAmount')}</span>
                                     <div className="relative">
                                         <span className={`absolute ${isRTL ? 'right-2' : 'left-2'} top-1/2 -translate-y-1/2 text-xs ${isLight ? 'text-gray-400' : 'text-gray-500'}`}>
@@ -360,6 +379,40 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                             </div>
 
                             {/* Impact row */}
+                            {balanceImpacts[entry.id] != null && (() => {
+                                const impact = balanceImpacts[entry.id];
+                                const positive = impact >= 0;
+                                const start = parseInt(entry.startYear);
+                                const end = entry.endYear ? parseInt(entry.endYear) : start;
+                                const years = !isNaN(start) && !isNaN(end) && end >= start ? end - start + 1 : 0;
+                                const totalIncome = (parseFloat(entry.monthlyAmount) || 0) * 12 * years;
+                                const yearsLabel = language === 'he'
+                                    ? `${years} ${years === 1 ? 'שנה' : 'שנים'}`
+                                    : `${years} ${years === 1 ? 'year' : 'years'}`;
+                                const impactValue = `${positive ? '+' : ''}${formatInlineCurrency(impact)}`;
+
+                                return (
+                                    <div className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1 text-[10px] ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                                        <span className="inline-flex items-center gap-1" dir={language === 'he' ? 'rtl' : 'ltr'}>
+                                            <span>{language === 'he' ? 'סה״כ הכנסה:' : 'Total income:'}</span>
+                                            <span dir="ltr" className={`tabular-nums font-medium ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>{formatInlineCurrency(totalIncome)}</span>
+                                            <span className={isLight ? 'text-gray-400' : 'text-gray-500'}>·</span>
+                                            <span className={`font-semibold ${isLight ? 'text-slate-600' : 'text-gray-200'}`}>{yearsLabel}</span>
+                                        </span>
+                                        {language === 'he' ? (
+                                            <span className="inline-flex items-center gap-1" dir="rtl">
+                                                <span>השפעה על יתרה סופית:</span>
+                                                <span dir="ltr" className={`font-medium text-xs tabular-nums ${positive ? 'text-emerald-400' : 'text-red-400'}`}>{impactValue}</span>
+                                            </span>
+                                        ) : (
+                                            <span>
+                                                Impact on final balance: <span dir="ltr" className={`font-medium text-xs tabular-nums ${positive ? 'text-emerald-400' : 'text-red-400'}`}>{impactValue}</span>
+                                            </span>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+                            {/*
                             {balanceImpacts[entry.id] != null && (
                                 <div className={`flex items-center justify-between px-1 text-[10px] ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
                                     <span>{language === 'he' ? 'השפעה על יתרה סופית:' : 'Impact on final balance:'}</span>
@@ -374,6 +427,7 @@ export function AdditionalIncomeModal({ isOpen, onClose, inputs, setInputs, t, l
                                     })()}
                                 </div>
                             )}
+                            */}
                         </div>
                     ))}
                 </div>

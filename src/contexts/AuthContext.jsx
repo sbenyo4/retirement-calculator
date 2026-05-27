@@ -25,13 +25,6 @@ export function AuthProvider({ children }) {
         // Every explicit login starts a fresh reminder-popup session.
         resetReminderSession();
 
-        // One-time migration from localStorage to Firestore
-        try {
-            await migrateFromLocalStorage(result.user.uid);
-        } catch (err) {
-            console.error('Migration from localStorage failed:', err);
-        }
-
         return result;
     }
 
@@ -45,7 +38,7 @@ export function AuthProvider({ children }) {
             .then(() => signOut(auth))
             .catch(() => {})
             .finally(() => {
-                const unsubscribe = onAuthStateChanged(auth, (user) => {
+                const unsubscribe = onAuthStateChanged(auth, async (user) => {
                     const nextUid = user?.uid || null;
                     const becameAuthenticated = !wasAuthenticatedRef.current && !!user;
                     if (lastAuthUidRef.current !== nextUid || becameAuthenticated) {
@@ -54,6 +47,16 @@ export function AuthProvider({ children }) {
                         lastAuthUidRef.current = nextUid;
                     }
                     wasAuthenticatedRef.current = !!user;
+
+                    if (user) {
+                        setLoading(true);
+                        try {
+                            await migrateFromLocalStorage(user.uid);
+                        } catch (err) {
+                            console.error('Migration from localStorage failed:', err);
+                        }
+                    }
+
                     setCurrentUser(user);
                     setLoading(false);
                 });

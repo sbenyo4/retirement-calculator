@@ -11,7 +11,8 @@ import {
     collection,
     getDocs,
     onSnapshot,
-    writeBatch
+    writeBatch,
+    updateDoc
 } from 'firebase/firestore';
 
 // ─── Document References ───────────────────────────────────────────
@@ -130,8 +131,17 @@ export async function getCurrentSession(uid) {
     return snap.exists() ? snap.data().inputs : null;
 }
 
-export async function setCurrentSession(uid, inputs) {
-    await setDoc(currentSessionRef(uid), { inputs, updatedAt: Date.now() }, { merge: true });
+export async function getCurrentSessionData(uid) {
+    const snap = await getDoc(currentSessionRef(uid));
+    return snap.exists() ? snap.data() : null;
+}
+
+export async function setCurrentSession(uid, inputs, profileId) {
+    const payload = { inputs, updatedAt: Date.now() };
+    if (profileId !== undefined) {
+        payload.profileId = profileId;
+    }
+    await setDoc(currentSessionRef(uid), payload, { merge: true });
 }
 
 // ─── Pension Sources ───────────────────────────────────────────────
@@ -152,14 +162,27 @@ export async function getProfiles(uid) {
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+export async function getProfile(uid, profileId) {
+    const snap = await getDoc(profileRef(uid, profileId));
+    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
 export async function saveProfile(uid, profile) {
     const ref = profileRef(uid, profile.id);
     const { id, ...data } = profile;
-    await setDoc(ref, data);
+    const now = Date.now();
+    await setDoc(ref, { ...data, updatedAt: now, dataUpdatedAt: now });
+    return getProfile(uid, profile.id);
 }
 
 export async function updateProfile(uid, profileId, data) {
-    await setDoc(profileRef(uid, profileId), data, { merge: true });
+    const now = Date.now();
+    const payload = { ...data, updatedAt: now };
+    if (Object.prototype.hasOwnProperty.call(data, 'data')) {
+        payload.dataUpdatedAt = now;
+    }
+    await updateDoc(profileRef(uid, profileId), payload);
+    return getProfile(uid, profileId);
 }
 
 export async function deleteProfileDoc(uid, profileId) {
@@ -407,12 +430,12 @@ export async function migrateFromLocalStorage(uid) {
     const settingsData = {
         migrated: true,
         migratedAt: Date.now(),
-        theme: localStorage.getItem('theme') || 'dark',
-        zoomLevel: parseInt(localStorage.getItem('app_zoom_level') || '100', 10),
-        aiProvider: localStorage.getItem('aiProvider') || 'gemini',
-        aiModel: localStorage.getItem('aiModel') || 'gemini-2.5-flash',
-        simulationType: localStorage.getItem('simulationType') || 'monteCarlo',
-        familyStatus: localStorage.getItem('familyStatus') || 'single',
+        theme: settings?.theme ?? localStorage.getItem('theme') ?? 'dark',
+        zoomLevel: settings?.zoomLevel ?? parseInt(localStorage.getItem('app_zoom_level') || '100', 10),
+        aiProvider: settings?.aiProvider ?? localStorage.getItem('aiProvider') ?? 'gemini',
+        aiModel: settings?.aiModel ?? localStorage.getItem('aiModel') ?? 'gemini-2.5-flash',
+        simulationType: settings?.simulationType ?? localStorage.getItem('simulationType') ?? 'monteCarlo',
+        familyStatus: settings?.familyStatus ?? localStorage.getItem('familyStatus') ?? 'single',
     };
 
     // API key overrides per provider
@@ -426,24 +449,25 @@ export async function migrateFromLocalStorage(uid) {
     }
 
     // Fiscal parameters
-    const fiscal = getJSON('fiscalParameters');
+    const fiscal = settings?.fiscalParameters ? null : getJSON('fiscalParameters');
     if (fiscal) settingsData.fiscalParameters = fiscal;
 
     // AI models override
-    const modelsOverride = getJSON('ai_models_override');
+    const modelsOverride = settings?.aiModelsOverride ? null : getJSON('ai_models_override');
     if (modelsOverride) settingsData.aiModelsOverride = modelsOverride;
 
     // Last loaded profile — check uid key and guest key
     const lastProfile = localStorage.getItem(`lastLoadedProfile_${uid}`)
         || localStorage.getItem('lastLoadedProfile_guest');
-    if (lastProfile) settingsData.lastLoadedProfileId = lastProfile;
+    if (!settings?.lastLoadedProfileId && lastProfile) settingsData.lastLoadedProfileId = lastProfile;
 
     batch.set(settingsRef(uid), settingsData, { merge: true });
     hasData = true;
 
     // Migrate current session — check uid key and guest key
     const sessionInputs = getJSONWithFallback('retirementInputs_current');
-    if (sessionInputs) {
+    const existingSession = await getCurrentSession(uid);
+    if (!existingSession && sessionInputs) {
         batch.set(currentSessionRef(uid), { inputs: sessionInputs, updatedAt: Date.now() });
         hasData = true;
     }
@@ -465,8 +489,12 @@ export async function migrateFromLocalStorage(uid) {
     // Migrate profiles — check uid key and guest key, scan all matching keys
     const profiles = getJSONWithFallback('retirementProfiles');
     if (Array.isArray(profiles)) {
+        const existingProfiles = await getProfiles(uid);
+        const existingProfileIds = new Set(existingProfiles.map(profile => profile.id));
+
         profiles.forEach(profile => {
             const { id, ...data } = profile;
+            if (!id || existingProfileIds.has(id)) return;
             batch.set(profileRef(uid, id), data);
         });
         hasData = true;

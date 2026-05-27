@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { DEFAULT_INPUTS } from '../constants';
 import { normalizeInputs } from '../utils/profileUtils';
 import { createDefaultIncomeSources } from '../utils/pensionCalculator';
@@ -7,8 +7,20 @@ import {
     getPensionSources,
     setPensionSources,
     getProfiles,
-    getUserSettings
+    getUserSettings,
+    getCurrentSessionData,
+    setCurrentSession
 } from '../utils/db';
+
+export function selectLastProfileInputData(lastProfile, session) {
+    if (!lastProfile?.data) return null;
+
+    // Startup with a selected profile must hydrate from the saved profile data.
+    // currentSession is a draft/continuity cache; letting it win here can open
+    // stale inputs against a newer profile snapshot, which immediately shows
+    // "unsaved changes" and hides the profile's saved AI insight state.
+    return lastProfile.data;
+}
 
 export function useRetirementData() {
     const { currentUser } = useAuth();
@@ -69,25 +81,37 @@ export function useRetirementData() {
                 // 2. Fetch the ID of the last active profile
                 const settings = await getUserSettings(uid);
                 const lastProfileId = settings?.lastLoadedProfileId;
+                const session = await getCurrentSessionData(uid);
+
+                const applyInputData = (inputData) => {
+                    const normalizedData = normalizeInputs(inputData);
+                    baseInputs = {
+                        ...normalizedData,
+                        pensionIncomeSources: baseInputs.pensionIncomeSources,
+                        ...(baseInputs.pensionInterestRate !== undefined
+                            ? { pensionInterestRate: baseInputs.pensionInterestRate }
+                            : {}),
+                        ...(baseInputs.pensionAIInsight != null
+                            ? { pensionAIInsight: baseInputs.pensionAIInsight }
+                            : {})
+                    };
+                };
 
                 // 3. If there is a last loaded profile, apply it
+                let loadedLastProfile = false;
                 if (lastProfileId) {
                     const profiles = await getProfiles(uid);
                     const lastProfile = profiles.find(p => p.id === lastProfileId);
                     
                     if (lastProfile && lastProfile.data) {
-                        const profileData = normalizeInputs(lastProfile.data);
-                        // Merge the explicit data with the newly fetched global pension sources
-                        baseInputs = {
-                            ...profileData,
-                            pensionIncomeSources: baseInputs.pensionIncomeSources,
-                            ...(baseInputs.pensionInterestRate !== undefined
-                                ? { pensionInterestRate: baseInputs.pensionInterestRate }
-                                : {}),
-                            ...(baseInputs.pensionAIInsight != null
-                                ? { pensionAIInsight: baseInputs.pensionAIInsight }
-                                : {})
-                        };
+                        applyInputData(selectLastProfileInputData(lastProfile, session));
+                        loadedLastProfile = true;
+                    }
+                }
+
+                if (!loadedLastProfile) {
+                    if (session?.inputs) {
+                        applyInputData(session.inputs);
                     }
                 }
 
@@ -105,8 +129,31 @@ export function useRetirementData() {
         return () => { cancelled = true; };
     }, [uid]);
 
-    // The auto-save debounce effect was intentionally removed to prevent overwriting
-    // the user's manual changes on refresh or navigation.
+    // Auto-save the session whenever inputs change (after initial load).
+    // This ensures unsaved changes (e.g. income schedule edits) survive login
+    // even if the user never clicks "Update Profile".
+    const lastSavedInputsRef = useRef(null);
+    useEffect(() => {
+        if (!uid || !inputsLoaded) return;
+
+        // Skip writing if inputs haven't actually changed since last auto-save
+        const { pensionIncomeSources, pensionAIInsight, ...inputsToSave } = inputs;
+        const normalized = normalizeInputs(inputsToSave);
+        const serialized = JSON.stringify(normalized);
+        if (lastSavedInputsRef.current === serialized) return;
+
+        const timer = setTimeout(async () => {
+            if (!uid) return;
+            try {
+                lastSavedInputsRef.current = serialized;
+                await setCurrentSession(uid, normalized);
+            } catch (err) {
+                console.error('Session auto-save error:', err);
+            }
+        }, 1500);
+
+        return () => clearTimeout(timer);
+    }, [inputs, uid, inputsLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
     /**
      * Explicitly save global pension sources and optional interest rate.

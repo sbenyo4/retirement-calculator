@@ -124,4 +124,43 @@ describe('normalizeInputs', () => {
         expect(event.startDate.year).toBe(2030);
         expect(event.reminder).toEqual({ date: "2030-05-01", text: "Legacy reminder" });
     });
+
+    it('should preserve additional income descriptions', () => {
+        const normalized = normalizeInputs({
+            additionalYearlyIncome: [{
+                id: 1,
+                description: 'Rental income',
+                startYear: '2030',
+                endYear: '2035',
+                monthlyAmount: '4000',
+                enabled: true
+            }]
+        });
+
+        expect(normalized.additionalYearlyIncome[0]).toMatchObject({
+            id: '1',
+            description: 'Rental income',
+            startYear: 2030,
+            endYear: 2035,
+            monthlyAmount: 4000,
+            enabled: true
+        });
+    });
+
+    it('should preserve yearly income overrides that differ from the base income', () => {
+        const normalized = normalizeInputs({
+            monthlyNetIncomeDesired: '26000',
+            yearlyIncomeOverrides: {
+                2027: '26000',
+                2028: '30000',
+                2029: 18000,
+                bad: '31000'
+            }
+        });
+
+        expect(normalized.yearlyIncomeOverrides).toEqual({
+            2028: 30000,
+            2029: 18000
+        });
+    });
 });
