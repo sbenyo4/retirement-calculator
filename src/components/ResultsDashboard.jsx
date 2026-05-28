@@ -557,6 +557,9 @@ export const ResultsDashboard = React.memo(function ResultsDashboard({ results, 
             legend: {
                 display: false
             },
+            datalabels: {
+                display: false
+            },
             tooltip: {
                 mode: 'index',
                 intersect: false,

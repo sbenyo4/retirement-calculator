@@ -1,5 +1,15 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
+import { Bar } from 'react-chartjs-2';
+import {
+    Chart as ChartJS,
+    CategoryScale,
+    LinearScale,
+    BarElement,
+    Tooltip,
+    Legend
+} from 'chart.js';
+import ChartDataLabels from 'chartjs-plugin-datalabels';
 import { useDraggable } from '../hooks/useDraggable';
 import { useTheme } from '../contexts/ThemeContext';
 import { formatCurrency as formatCurrencyUtil } from '../utils/formatters';
@@ -47,6 +57,8 @@ import {
 } from '../utils/pensionCalculator';
 import { FiscalUpdateModal } from './FiscalUpdateModal';
 import { CustomSelect } from './common/CustomSelect';
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 /**
  * Pension Income Button - placed in toolbar
@@ -246,11 +258,15 @@ function getMaslekaDisplaySummary(summary, currentAge, retirementAge) {
 /**
  * Income Source Editor Row
  */
-function IncomeSourceRow({ source, onUpdate, onEditCalculated, onDelete, t, language, isLight }) {
+function IncomeSourceRow({ source, currentAge, defaultStartAge, defaultReturnRate, onUpdate, onEditCalculated, onDelete, onOpenStats, t, language, isLight }) {
     const [isEditing, setIsEditing] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
     const [editValues, setEditValues] = useState(source);
     const Icon = INCOME_TYPE_ICONS[source.type] || Coins;
     const displayedCoefficient = getDisplayedPensionCoefficient(source);
+    const projectedSource = source.currentAsset
+        ? projectCurrentPensionSource(source, currentAge, defaultStartAge, defaultReturnRate)
+        : null;
 
     const handleSave = () => {
         // Convert string values to numbers when saving
@@ -324,6 +340,7 @@ function IncomeSourceRow({ source, onUpdate, onEditCalculated, onDelete, t, lang
     }
 
     return (
+        <>
         <div className={`flex items-center gap-2 p-2 rounded-lg ${source.enabled !== false ? '' : 'opacity-50'} ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/5'} transition-colors group`}>
             <div className={`p-1.5 rounded ${isLight ? 'bg-emerald-100 text-emerald-600' : 'bg-emerald-500/20 text-emerald-400'}`}>
                 <Icon size={14} />
@@ -355,6 +372,11 @@ function IncomeSourceRow({ source, onUpdate, onEditCalculated, onDelete, t, lang
                 </div>
             </div>
             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                {source.currentAsset && (
+                    <button onClick={() => onOpenStats(source)} className={`p-1 rounded ${isLight ? 'hover:bg-slate-200 text-slate-600' : 'hover:bg-white/10 text-gray-400'}`} title={language === 'he' ? 'סטטיסטיקה' : 'Statistics'}>
+                        <BarChart3 size={12} />
+                    </button>
+                )}
                 {source.isEditable !== false && (
                     <>
                         <button onClick={() => source.currentAsset || source.calculated ? onEditCalculated(source) : setIsEditing(true)} className={`p-1 rounded ${isLight ? 'hover:bg-slate-200 text-slate-600' : 'hover:bg-white/10 text-gray-400'}`}>
@@ -372,7 +394,48 @@ function IncomeSourceRow({ source, onUpdate, onEditCalculated, onDelete, t, lang
                     {source.isTaxable !== false ? (language === 'he' ? '(ברוטו)' : '(Gross)') : ''}
                 </span>
             </div>
+            <button
+                onClick={() => projectedSource && setIsExpanded(prev => !prev)}
+                disabled={!projectedSource}
+                title={language === 'he' ? 'פרטי מקור' : 'Source details'}
+                className={`p-1 rounded ${projectedSource ? (isLight ? 'text-slate-500 hover:bg-slate-200' : 'text-gray-400 hover:bg-white/10') : 'text-transparent cursor-default'}`}
+            >
+                {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            </button>
         </div>
+        {isExpanded && projectedSource && (
+            <div className={`mx-2 mb-2 grid grid-cols-2 sm:grid-cols-4 gap-2 rounded-md p-2 text-[11px] ${isLight ? 'bg-white border border-slate-200 text-slate-600' : 'bg-black/20 border border-white/10 text-gray-300'}`}>
+                <div>
+                    <div className="opacity-70">{language === 'he' ? 'סכום נוכחי' : 'Current'}</div>
+                    <div className={`font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>{formatCurrency(projectedSource.currentAsset.balance)}</div>
+                </div>
+                <div>
+                    <div className="opacity-70">{language === 'he' ? 'נכון לתאריך' : 'As of'}</div>
+                    <div className={`font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>{formatCurrentAssetDate(projectedSource.currentAsset.asOfDate, language) || '—'}</div>
+                </div>
+                <div>
+                    <div className="opacity-70">{language === 'he' ? 'סכום סופי ללא הפקדות' : 'Final, no deposits'}</div>
+                    <div className={`font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>{formatCurrency(projectedSource.projectedBalance || 0)}</div>
+                </div>
+                <div>
+                    <div className="opacity-70">{language === 'he' ? 'ריבית' : 'Return'}</div>
+                    <div className={`font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>{projectedSource.appliedReturnRate ?? 0}%</div>
+                </div>
+                {(projectedSource.appliedCoefficient || projectedSource.providentAnnuityCoefficient) && (
+                    <div>
+                        <div className="opacity-70">{language === 'he' ? 'מקדם' : 'Coefficient'}</div>
+                        <div className={`font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>{projectedSource.appliedCoefficient || projectedSource.providentAnnuityCoefficient}</div>
+                    </div>
+                )}
+                {projectedSource.amount > 0 && !projectedSource.isLumpSum && (
+                    <div>
+                        <div className="opacity-70">{language === 'he' ? 'קצבה חודשית' : 'Monthly annuity'}</div>
+                        <div className={`font-semibold ${isLight ? 'text-emerald-700' : 'text-emerald-300'}`}>{formatCurrency(projectedSource.amount)}</div>
+                    </div>
+                )}
+            </div>
+        )}
+        </>
     );
 }
 
@@ -476,7 +539,9 @@ function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRa
                                 type="button"
                                 onClick={() => updateAsset({
                                     balance: String(Math.round(cat.currentBalance)),
-                                    ...(maslekaAsOfDate ? { asOfDate: maslekaAsOfDate } : {})
+                                    ...(maslekaAsOfDate ? { asOfDate: maslekaAsOfDate } : {}),
+                                    ...(cat.impliedNoDepositRate != null ? { returnRate: String(Math.round(cat.impliedNoDepositRate)) } : {}),
+                                    ...(isPension && cat.projectedNoContribAnnuity > 0 ? { coefficient: String(Math.round(cat.projectedNoContribBalance / cat.projectedNoContribAnnuity)) } : {})
                                 })}
                                 className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] transition-colors ${isLight ? 'bg-white border border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50' : 'bg-white/10 border border-white/10 text-gray-200 hover:bg-white/15'}`}
                             >
@@ -617,6 +682,474 @@ function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRa
     );
 }
 
+function SourceStatsModal({ source, sources = [], currentAge, defaultStartAge, defaultReturnRate, language, isLight, onSelectSource, onClose }) {
+    const { dragStyle, overlayStyle, onDragMouseDown, bringToFront } = useDraggable(true, { constrainToViewport: true });
+    const formatCurrency = (val) => formatCurrencyUtil(val, language);
+    const baseProjection = projectCurrentPensionSource(source, currentAge, defaultStartAge, defaultReturnRate);
+    const baseRate = Number(baseProjection.appliedReturnRate ?? defaultReturnRate) || 0;
+    const [rateStep, setRateStep] = useState(1);
+    const [rateMin, setRateMin] = useState(() => Math.round((baseRate - 4) * 10) / 10);
+    const [rateMax, setRateMax] = useState(() => Math.round((baseRate + 4) * 10) / 10);
+    const [activeMetric, setActiveMetric] = useState('balance');
+    const baseCoefficient = baseProjection.appliedCoefficient || baseProjection.providentAnnuityCoefficient || 240;
+    const coefficients = [...new Set([180, 200, 220, baseCoefficient, 240, 260, 280]
+        .map(coefficient => Math.round(Number(coefficient))))]
+        .filter(coefficient => coefficient > 0)
+        .sort((a, b) => a - b);
+    const displayName = language === 'he' ? source.name : (source.nameEn || source.name);
+    const hasManualCoefficient = parseFloat(source.currentAsset?.coefficient) > 0;
+    const showCoefficientSensitivity = source.currentAsset?.kind === 'pension' && !hasManualCoefficient;
+    const statsSources = sources.filter(item => item.currentAsset);
+    const isBaseRate = (rate) => Math.abs(Number(rate) - Number(baseProjection.appliedReturnRate ?? baseRate)) < 0.0001;
+    const isBaseCoefficient = (coefficient) => Math.abs(Number(coefficient) - Number(baseProjection.appliedCoefficient ?? baseCoefficient)) < 0.0001;
+
+    useEffect(() => {
+        setRateMin(Math.round((baseRate - 4) * 10) / 10);
+        setRateMax(Math.round((baseRate + 4) * 10) / 10);
+        setRateStep(1);
+        setActiveMetric('balance');
+    }, [source.id, baseRate]);
+
+    const rates = (() => {
+        const step = Math.max(0.1, Number(rateStep) || 1);
+        const min = Math.min(Number(rateMin), Number(rateMax));
+        const max = Math.max(Number(rateMin), Number(rateMax));
+        const values = [];
+        for (let value = min; value <= max + 0.0001 && values.length < 17; value += step) {
+            values.push(Math.round(value * 10) / 10);
+        }
+        values.push(Math.round(baseRate * 10) / 10);
+        return [...new Set(values)].sort((a, b) => a - b);
+    })();
+
+    const projectWith = (returnRate, coefficient) => projectCurrentPensionSource({
+        ...source,
+        currentAsset: {
+            ...source.currentAsset,
+            returnRate,
+            ...(coefficient ? { coefficient } : {})
+        }
+    }, currentAge, defaultStartAge, defaultReturnRate);
+    const formatCompact = (value) => {
+        const amount = Math.abs(Number(value) || 0);
+        const prefix = language === 'he' ? '₪' : '$';
+        if (amount >= 1000000) return `${prefix}${(Number(value) / 1000000).toFixed(amount >= 10000000 ? 1 : 2)}M`;
+        if (amount >= 1000) return `${prefix}${Math.round(Number(value) / 1000)}K`;
+        return `${prefix}${Math.round(Number(value)).toLocaleString()}`;
+    };
+    const rateRows = rates.map(rate => ({ rate, projected: projectWith(rate) }));
+    const heatmapRows = showCoefficientSensitivity
+        ? coefficients.map(coefficient => rates.map(rate => ({ rate, coefficient, projected: projectWith(rate, coefficient) })))
+        : [];
+    const heatValues = heatmapRows.flat().map(cell => cell.projected.amount || 0);
+    const heatMin = Math.min(...heatValues, 0);
+    const heatMax = Math.max(...heatValues, 1);
+    const heatColor = (value) => {
+        const ratio = heatMax === heatMin ? 0.6 : (value - heatMin) / (heatMax - heatMin);
+        const hue = 170 - ratio * 18;
+        const lightness = isLight ? 84 - ratio * 34 : 28 + ratio * 20;
+        return `hsl(${hue} 76% ${lightness}%)`;
+    };
+    const textColor = isLight ? '#475569' : '#cbd5e1';
+    const gridColor = isLight ? 'rgba(148, 163, 184, 0.28)' : 'rgba(148, 163, 184, 0.18)';
+    const chartLabelColor = isLight ? '#334155' : '#cbd5e1';
+    const makeBarData = (rows, label, valueGetter, highlightGetter) => ({
+        labels: rows.map(row => row.label),
+        datasets: [{
+            label,
+            data: rows.map(valueGetter),
+            backgroundColor: rows.map(row => highlightGetter(row) ? 'rgba(250, 204, 21, 0.82)' : 'rgba(45, 212, 191, 0.72)'),
+            borderColor: rows.map(row => highlightGetter(row) ? 'rgb(250, 204, 21)' : 'rgb(52, 211, 153)'),
+            borderWidth: rows.map(row => highlightGetter(row) ? 3 : 1),
+            borderRadius: 4,
+            categoryPercentage: 0.68,
+            barPercentage: 0.62
+        }]
+    });
+    const makeBarOptions = (rows, currentText) => ({
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        layout: { padding: { top: 32, left: 4, right: 4 } },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                rtl: language === 'he',
+                textDirection: language === 'he' ? 'rtl' : 'ltr',
+                callbacks: {
+                    label: (ctx) => `${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y || 0)}`,
+                    title: (items) => rows[items[0].dataIndex]?.isCurrent
+                        ? `${items[0].label} (${currentText})`
+                        : items[0].label
+                }
+            },
+            datalabels: {
+                anchor: 'end',
+                align: 'top',
+                offset: 6,
+                clamp: true,
+                clip: false,
+                textAlign: 'center',
+                color: (ctx) => rows[ctx.dataIndex]?.isCurrent ? '#facc15' : chartLabelColor,
+                font: { weight: '700', size: 10 },
+                formatter: (value) => formatCompact(value)
+            }
+        },
+        scales: {
+            x: {
+                ticks: {
+                    color: (ctx) => rows[ctx.index]?.isCurrent ? '#facc15' : textColor,
+                    font: (ctx) => rows[ctx.index]?.isCurrent ? { size: 12, weight: '900' } : { size: 12, weight: '700' }
+                },
+                grid: { display: false }
+            },
+            y: {
+                beginAtZero: true,
+                ticks: { color: textColor, callback: (value) => formatCompact(value) },
+                grid: { color: gridColor }
+            }
+        }
+    });
+    const balanceRows = rateRows.map(row => ({
+        ...row,
+        label: `${row.rate}%`,
+        isCurrent: isBaseRate(row.rate)
+    }));
+    const annuityRows = rateRows.map(row => ({
+        ...row,
+        label: `${row.rate}%`,
+        isCurrent: isBaseRate(row.rate)
+    }));
+    const coefficientRows = showCoefficientSensitivity
+        ? coefficients.map(coefficient => ({
+            coefficient,
+            label: String(coefficient),
+            isCurrent: isBaseCoefficient(coefficient),
+            projected: projectWith(baseProjection.appliedReturnRate ?? baseRate, coefficient)
+        }))
+        : [];
+    const chartData = {
+        labels: balanceRows.map(row => row.label),
+        datasets: [{
+            label: language === 'he' ? 'סכום סופי ללא הפקדות' : 'Final balance, no deposits',
+            data: balanceRows.map(row => row.projected.projectedBalance || 0),
+            backgroundColor: balanceRows.map(row => row.isCurrent ? 'rgba(250, 204, 21, 0.82)' : 'rgba(45, 212, 191, 0.72)'),
+            borderColor: balanceRows.map(row => row.isCurrent ? 'rgb(250, 204, 21)' : 'rgb(52, 211, 153)'),
+            borderWidth: balanceRows.map(row => row.isCurrent ? 3 : 1),
+            borderRadius: 4,
+            categoryPercentage: 0.68,
+            barPercentage: 0.62
+        }]
+    };
+    const chartOptions = makeBarOptions(balanceRows, language === 'he' ? 'נוכחי' : 'current');
+    const annuityChartData = makeBarData(
+        annuityRows,
+        language === 'he' ? 'קצבה חודשית' : 'Monthly annuity',
+        row => row.projected.amount || 0,
+        row => row.isCurrent
+    );
+    const annuityChartOptions = makeBarOptions(annuityRows, language === 'he' ? 'נוכחי' : 'current');
+    const coefficientChartData = makeBarData(
+        coefficientRows,
+        language === 'he' ? 'קצבה חודשית' : 'Monthly annuity',
+        row => row.projected.amount || 0,
+        row => row.isCurrent
+    );
+    const coefficientChartOptions = makeBarOptions(coefficientRows, language === 'he' ? 'מקדם בסיס' : 'base coefficient');
+
+    const canShowAnnuity = !baseProjection.isLumpSum && baseProjection.amount > 0;
+    const metricOptions = [
+        { value: 'balance', label: language === 'he' ? 'סכום סופי ללא הפקדות' : 'Final balance, no deposits' },
+        ...(canShowAnnuity ? [{ value: 'annuity', label: language === 'he' ? 'קצבה לפי ריבית' : 'Annuity by return' }] : []),
+        ...(showCoefficientSensitivity ? [{ value: 'coefficient', label: language === 'he' ? 'קצבה לפי מקדם' : 'Annuity by coefficient' }] : [])
+    ];
+    const selectedMetric = metricOptions.some(option => option.value === activeMetric) ? activeMetric : 'balance';
+    const activeRows = selectedMetric === 'coefficient' ? coefficientRows : selectedMetric === 'annuity' ? annuityRows : balanceRows;
+    const activeLabel = metricOptions.find(option => option.value === selectedMetric)?.label || metricOptions[0].label;
+    const activeValueGetter = selectedMetric === 'balance'
+        ? (row) => row.projected.projectedBalance || 0
+        : (row) => row.projected.amount || 0;
+    const activeChartData = makeBarData(activeRows, activeLabel, activeValueGetter, row => row.isCurrent);
+    const activeChartOptions = makeBarOptions(activeRows, language === 'he' ? 'נוכחי' : 'current');
+    const activeAvgChange = activeRows.slice(1).reduce((sum, row, index) => (
+        sum + Math.abs(activeValueGetter(row) - activeValueGetter(activeRows[index]))
+    ), 0) / Math.max(activeRows.length - 1, 1);
+    const activeCurrentValue = activeRows.find(row => row.isCurrent);
+
+    return ReactDOM.createPortal(
+        <div
+            className="fixed inset-0 flex items-center justify-center bg-black/85 p-4"
+            style={overlayStyle}
+            onMouseDown={bringToFront}
+            onClick={onClose}
+        >
+            <div
+                data-draggable-modal
+                className={`w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-2xl border shadow-2xl ${isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-gradient-to-br from-gray-900 to-blue-900 border-white/30 text-white'}`}
+                style={dragStyle}
+                onClick={e => e.stopPropagation()}
+                dir={language === 'he' ? 'rtl' : 'ltr'}
+            >
+                <div
+                    className={`flex items-center justify-between gap-3 p-3 border-b cursor-grab active:cursor-grabbing ${isLight ? 'bg-white border-slate-200' : 'bg-white/5 border-white/10'}`}
+                    onMouseDown={onDragMouseDown}
+                >
+                    <div className="min-w-0">
+                        <h3 className={`text-sm font-bold truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                            {language === 'he' ? 'סטטיסטיקת מקור צובר' : 'Accumulating Source Statistics'}
+                        </h3>
+                        <p className={`text-xs truncate ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{displayName}</p>
+                    </div>
+                    <button onClick={onClose} className={`p-1.5 rounded ${isLight ? 'hover:bg-slate-100 text-slate-500' : 'hover:bg-white/10 text-gray-300'}`}>
+                        <X size={16} />
+                    </button>
+                </div>
+                {statsSources.length > 1 && (
+                    <div className={`px-4 py-3 border-b overflow-x-auto custom-scrollbar ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'}`}>
+                        <div className="flex gap-2 min-w-max">
+                            {statsSources.map(item => {
+                                const itemName = language === 'he' ? item.name : (item.nameEn || item.name);
+                                const isActive = item.id === source.id;
+                                return (
+                                    <button
+                                        key={item.id}
+                                        onClick={() => onSelectSource?.(item)}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${isActive
+                                            ? (isLight ? 'bg-sky-100 border-sky-300 text-sky-800' : 'bg-sky-500/25 border-sky-400/40 text-sky-100')
+                                            : (isLight ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10')}`}
+                                    >
+                                        {itemName}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+                <div className={`px-4 py-3 border-b ${isLight ? 'bg-slate-100/70 border-slate-200' : 'bg-white/5 border-white/10'}`}>
+                    <div className="flex flex-wrap gap-4 items-end">
+                        <div className="flex-1 min-w-[190px]">
+                            <label className={`block text-xs font-semibold mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                {language === 'he' ? 'פרמטר' : 'Parameter'}
+                            </label>
+                            <CustomSelect
+                                value={selectedMetric}
+                                onChange={(value) => setActiveMetric(value)}
+                                options={metricOptions}
+                                className="w-full"
+                            />
+                        </div>
+                        <label className={`w-24 text-xs font-semibold ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                            <span className="block mb-1">{language === 'he' ? 'מינימום' : 'Minimum'}</span>
+                            <input
+                                type="number"
+                                value={rateMin}
+                                step={rateStep}
+                                onChange={(e) => setRateMin(parseFloat(e.target.value) || 0)}
+                                disabled={selectedMetric === 'coefficient'}
+                                className={`w-full rounded-lg border px-3 py-2 text-sm font-semibold text-end ${selectedMetric === 'coefficient' ? 'opacity-50 cursor-not-allowed' : ''} ${isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
+                            />
+                        </label>
+                        <label className={`w-24 text-xs font-semibold ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                            <span className="block mb-1">{language === 'he' ? 'מקסימום' : 'Maximum'}</span>
+                            <input
+                                type="number"
+                                value={rateMax}
+                                step={rateStep}
+                                onChange={(e) => setRateMax(parseFloat(e.target.value) || 0)}
+                                disabled={selectedMetric === 'coefficient'}
+                                className={`w-full rounded-lg border px-3 py-2 text-sm font-semibold text-end ${selectedMetric === 'coefficient' ? 'opacity-50 cursor-not-allowed' : ''} ${isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
+                            />
+                        </label>
+                        <label className={`w-24 text-xs font-semibold ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                            <span className="block mb-1">{language === 'he' ? 'צעד' : 'Step'}</span>
+                            <select
+                                value={rateStep}
+                                onChange={(e) => setRateStep(parseFloat(e.target.value))}
+                                disabled={selectedMetric === 'coefficient'}
+                                className={`w-full rounded-lg border px-3 py-2 text-sm font-semibold ${selectedMetric === 'coefficient' ? 'opacity-50 cursor-not-allowed' : ''} ${isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
+                            >
+                                <option value={0.5}>0.5%</option>
+                                <option value={1}>1%</option>
+                                <option value={2}>2%</option>
+                            </select>
+                        </label>
+                        <div className={`rounded-full border px-3 py-2 text-sm font-bold text-center ${isLight ? 'bg-sky-50 border-sky-200 text-sky-800' : 'bg-sky-500/15 border-sky-400/30 text-sky-100'}`}>
+                            {language === 'he' ? 'ריבית בסיס' : 'Base rate'}: {baseProjection.appliedReturnRate ?? baseRate}%
+                        </div>
+                    </div>
+                </div>
+                <div className={`p-3 overflow-y-auto custom-scrollbar max-h-[72vh] space-y-3 ${isLight ? 'bg-white' : 'bg-transparent'}`}>
+                    <div className={`grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                        <div className={`rounded-lg p-2 ${isLight ? 'bg-slate-50' : 'bg-white/5'}`}>
+                            <div className="opacity-70">{language === 'he' ? 'סכום נוכחי' : 'Current'}</div>
+                            <div className={`font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{formatCurrency(source.currentAsset.balance)}</div>
+                        </div>
+                        <div className={`rounded-lg p-2 ${isLight ? 'bg-slate-50' : 'bg-white/5'}`}>
+                            <div className="opacity-70">{language === 'he' ? 'גיל יעד' : 'Target age'}</div>
+                            <div className={`font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{source.startAge || defaultStartAge}</div>
+                        </div>
+                        <div className={`rounded-lg p-2 ${isLight ? 'bg-slate-50' : 'bg-white/5'}`}>
+                            <div className="opacity-70">{language === 'he' ? 'סכום בסיס ללא הפקדות' : 'Base final, no deposits'}</div>
+                            <div className={`font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{formatCurrency(baseProjection.projectedBalance || 0)}</div>
+                        </div>
+                        <div className={`rounded-lg p-2 ${isLight ? 'bg-slate-50' : 'bg-white/5'}`}>
+                            <div className="opacity-70">{language === 'he' ? 'ריבית בסיס' : 'Base return'}</div>
+                            <div className={`font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{baseProjection.appliedReturnRate ?? 0}%</div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className={`flex items-center justify-between text-sm ${isLight ? 'text-slate-500' : 'text-gray-400'} px-1 md:px-0`}>
+                            <div className="flex items-center gap-2">
+                                <div className={`flex items-center justify-center w-5 h-5 rounded-full ${isLight ? 'bg-blue-100 text-blue-600' : 'bg-blue-900/50 text-blue-400'}`}>
+                                    <span className="text-xs font-bold">Σ</span>
+                                </div>
+                                <span className="font-medium">
+                                    {language === 'he' ? 'ממוצע שינוי לצעד' : 'Average change'}: <span className="font-bold">{formatCompact(activeAvgChange)}</span>
+                                </span>
+                            </div>
+                            {activeCurrentValue && (
+                                <div className="flex items-center gap-2">
+                                    <span className="w-3 h-3 bg-yellow-400 rounded-sm"></span>
+                                    <span className="font-medium">
+                                        {language === 'he' ? 'ערך נוכחי' : 'Current value'}: <span className="font-bold">{activeCurrentValue.label}</span>
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                        <div className="h-72 mt-2" dir="ltr">
+                            <Bar data={activeChartData} options={activeChartOptions} plugins={[ChartDataLabels]} />
+                        </div>
+                    </div>
+
+                    {false && (
+                    <>
+                    <div className="hidden">
+                        <h4 className={`text-xs font-semibold mb-2 ${isLight ? 'text-slate-800' : 'text-gray-100'}`}>
+                            {language === 'he' ? 'השפעת ריבית על סכום סופי ללא הפקדות' : 'Return sensitivity, no deposits'}
+                        </h4>
+                        <div className={`mb-3 rounded-xl p-3 ${isLight ? 'bg-slate-50 border border-slate-200' : 'bg-white/5 border border-white/10'}`}>
+                            <div className="h-64" dir="ltr">
+                                <Bar data={chartData} options={chartOptions} plugins={[ChartDataLabels]} />
+                            </div>
+                        </div>
+                        {!baseProjection.isLumpSum && baseProjection.amount > 0 && (
+                            <div className={`mb-3 rounded-xl p-3 ${isLight ? 'bg-slate-50 border border-slate-200' : 'bg-white/5 border border-white/10'}`}>
+                                <h4 className={`text-xs font-semibold mb-2 ${isLight ? 'text-slate-800' : 'text-gray-100'}`}>
+                                    {language === 'he' ? 'השפעת ריבית על הקצבה החודשית' : 'Return impact on monthly annuity'}
+                                </h4>
+                                <div className="h-56" dir="ltr">
+                                    <Bar data={annuityChartData} options={annuityChartOptions} plugins={[ChartDataLabels]} />
+                                </div>
+                            </div>
+                        )}
+                        <div className={`hidden overflow-x-auto rounded-lg border ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
+                            <table className="w-full min-w-[420px] text-xs">
+                                <thead className={isLight ? 'bg-slate-50 text-slate-500' : 'bg-white/5 text-gray-400'}>
+                                    <tr>
+                                        <th className="p-2 text-start">{language === 'he' ? 'ריבית' : 'Return'}</th>
+                                        <th className="p-2 text-start">{language === 'he' ? 'סכום סופי ללא הפקדות' : 'Final balance, no deposits'}</th>
+                                        <th className="p-2 text-start">{language === 'he' ? 'קצבה/סכום חודשי' : 'Monthly amount'}</th>
+                                    </tr>
+                                </thead>
+                                <tbody className={isLight ? 'text-slate-700' : 'text-gray-200'}>
+                                    {rates.map(rate => {
+                                        const projected = projectWith(rate);
+                                        return (
+                                            <tr key={rate} className={isLight ? 'border-t border-slate-100' : 'border-t border-white/10'}>
+                                                <td className="p-2 font-semibold">{rate}%</td>
+                                                <td className="p-2">{formatCurrency(projected.projectedBalance || 0)}</td>
+                                                <td className="p-2">{projected.isLumpSum ? '—' : formatCurrency(projected.amount || 0)}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {showCoefficientSensitivity && (
+                        <div>
+                            <h4 className={`text-xs font-semibold mb-2 ${isLight ? 'text-slate-800' : 'text-gray-100'}`}>
+                                {language === 'he' ? 'השפעת מקדם על פנסיה ללא מקדם מובטח' : 'Coefficient sensitivity'}
+                            </h4>
+                            <div className={`mb-3 rounded-xl p-3 ${isLight ? 'bg-slate-50 border border-slate-200' : 'bg-white/5 border border-white/10'}`}>
+                                <h4 className={`text-xs font-semibold mb-2 ${isLight ? 'text-slate-800' : 'text-gray-100'}`}>
+                                    {language === 'he' ? 'גרף השפעת מקדם על הקצבה' : 'Coefficient impact on monthly annuity'}
+                                </h4>
+                                <div className="h-56" dir="ltr">
+                                    <Bar data={coefficientChartData} options={coefficientChartOptions} plugins={[ChartDataLabels]} />
+                                </div>
+                            </div>
+                            <div className={`mb-3 overflow-x-auto rounded-xl p-3 ${isLight ? 'bg-slate-50 border border-slate-200' : 'bg-white/5 border border-white/10'}`}>
+                                <div className="min-w-[560px]">
+                                    <div className="grid gap-1 mb-1" style={{ gridTemplateColumns: `72px repeat(${rates.length}, minmax(72px, 1fr))` }}>
+                                        <div />
+                                        {rates.map(rate => (
+                                            <div key={rate} className={`text-center text-xs font-bold ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{rate}%</div>
+                                        ))}
+                                    </div>
+                                    <div className="grid gap-1" style={{ gridTemplateColumns: `72px repeat(${rates.length}, minmax(72px, 1fr))` }}>
+                                        {heatmapRows.map((row, rowIndex) => (
+                                            <React.Fragment key={coefficients[rowIndex]}>
+                                                <div className={`flex items-center justify-center rounded-md text-xs font-bold ${isLight ? 'bg-slate-200 text-slate-700' : 'bg-slate-950 text-gray-300'}`}>
+                                                    {coefficients[rowIndex]}
+                                                </div>
+                                                {row.map(cell => {
+                                                    const isBaseCell = cell.rate === baseProjection.appliedReturnRate && cell.coefficient === baseProjection.appliedCoefficient;
+                                                    return (
+                                                        <div
+                                                            key={`${cell.rate}-${cell.coefficient}`}
+                                                            className={`min-h-14 rounded-md flex items-center justify-center text-sm font-bold ${isBaseCell ? 'ring-4 ring-blue-500' : ''}`}
+                                                            style={{ backgroundColor: heatColor(cell.projected.amount || 0), color: isLight ? '#0f172a' : '#f8fafc' }}
+                                                            title={`${cell.rate}% / ${cell.coefficient}: ${formatCurrency(cell.projected.amount || 0)}`}
+                                                        >
+                                                            {formatCompact(cell.projected.amount || 0)}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </React.Fragment>
+                                        ))}
+                                    </div>
+                                    <div className={`mt-2 text-xs text-center ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                        {language === 'he' ? 'שורות: מקדם | עמודות: ריבית שנתית' : 'Rows: coefficient | Columns: annual return'}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className={`hidden overflow-x-auto rounded-lg border ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
+                                <table className="w-full min-w-[420px] text-xs">
+                                    <thead className={isLight ? 'bg-slate-50 text-slate-500' : 'bg-white/5 text-gray-400'}>
+                                        <tr>
+                                            <th className="p-2 text-start">{language === 'he' ? 'מקדם' : 'Coefficient'}</th>
+                                            <th className="p-2 text-start">{language === 'he' ? 'סכום סופי ללא הפקדות' : 'Final balance, no deposits'}</th>
+                                            <th className="p-2 text-start">{language === 'he' ? 'קצבה חודשית' : 'Monthly annuity'}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className={isLight ? 'text-slate-700' : 'text-gray-200'}>
+                                        {coefficients.map(coefficient => {
+                                            const projected = projectWith(baseProjection.appliedReturnRate ?? 0, coefficient);
+                                            return (
+                                                <tr key={coefficient} className={isLight ? 'border-t border-slate-100' : 'border-t border-white/10'}>
+                                                    <td className="p-2 font-semibold">{coefficient}</td>
+                                                    <td className="p-2">{formatCurrency(projected.projectedBalance || 0)}</td>
+                                                    <td className="p-2">{formatCurrency(projected.amount || 0)}</td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+                    </>
+                    )}
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+}
+
 /**
  * Age Milestone Summary Card
  */
@@ -730,15 +1263,24 @@ function CompanyLogo({ company, className = 'w-6 h-6' }) {
     const initial = company ? company.trim().charAt(0) : '?';
     const color = companyAvatarColor(company);
     const [failed, setFailed] = useState(false);
+
+    useEffect(() => {
+        setFailed(false);
+    }, [logoUrl]);
+
     if (logoUrl && !failed) {
         return (
-            <img
-                src={logoUrl}
-                alt=""
+            <span
+                className={`${className} inline-flex shrink-0 items-center justify-center overflow-hidden rounded bg-white p-[2px] ring-1 ring-black/5`}
                 title={company}
-                className={`${className} rounded object-contain bg-white`}
-                onError={() => setFailed(true)}
-            />
+            >
+                <img
+                    src={logoUrl}
+                    alt=""
+                    className="block h-full w-full object-contain"
+                    onError={() => setFailed(true)}
+                />
+            </span>
         );
     }
     return (
@@ -1128,6 +1670,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     };
     const [currentAssetDraft, setCurrentAssetDraft] = useState(null);
     const [currentAssetEditBaseline, setCurrentAssetEditBaseline] = useState(null);
+    const [sourceStatsSource, setSourceStatsSource] = useState(null);
     const currentAssetFormRef = useRef(null);
     const shouldScrollToCurrentAssetFormRef = useRef(false);
     const currentAssetPreview = useMemo(() => currentAssetDraft
@@ -1678,7 +2221,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                                             </div>
                                                             <div className="flex items-center gap-2 shrink-0">
                                                                 {[...new Set(category.products.map(p => p.company))].slice(0, 4).map((company, i) => (
-                                                                    <CompanyLogo key={company} company={company} className={`w-5 h-5 ${i > 0 ? '-ms-1' : ''}`} />
+                                                                    <CompanyLogo key={company} company={company} className={`w-6 h-6 ${i > 0 ? '-ms-1' : ''}`} />
                                                                 ))}
                                                                 {category.monthlyDeposits > 0 && (
                                                                     <span className={`text-[10px] px-1.5 py-0.5 rounded ${isLight ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-500/20 text-emerald-300'}`}>
@@ -1705,14 +2248,20 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                                                         <div className={`text-[10px] mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{language === 'he' ? 'ללא הפקדות' : 'No deposits'}</div>
                                                                         <div className={`font-bold tabular-nums ${isLight ? 'text-sky-700' : 'text-sky-300'}`}>{formatMaslekaCurrency(category.projectedNoContribBalance, language)}</div>
                                                                         {category.projectedNoContribAnnuity > 0 && (
-                                                                            <div className={`text-[10px] mt-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{language === 'he' ? 'קצבה' : 'Ann.'}: <span className={`font-semibold ${isLight ? 'text-slate-800' : 'text-white'}`}>{formatMaslekaCurrency(category.projectedNoContribAnnuity, language)}</span></div>
+                                                                            <div className={`text-[10px] mt-0.5 flex items-center gap-2 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                                                <span>{language === 'he' ? 'קצבה' : 'Ann.'}: <span className={`font-semibold ${isLight ? 'text-slate-800' : 'text-white'}`}>{formatMaslekaCurrency(category.projectedNoContribAnnuity, language)}</span></span>
+                                                                                {category.projectedNoContribBalance > 0 && <span className={`${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{language === 'he' ? 'מקדם' : 'coef.'}: <span className={`font-semibold tabular-nums ${isLight ? 'text-slate-800' : 'text-white'}`}>{Math.round(category.projectedNoContribBalance / category.projectedNoContribAnnuity)}</span></span>}
+                                                                            </div>
                                                                         )}
                                                                     </div>
                                                                     <div className="px-3 py-2.5">
                                                                         <div className={`text-[10px] mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{language === 'he' ? 'עם הפקדות' : 'With deposits'}</div>
                                                                         <div className="font-bold tabular-nums" style={{ color: category.color }}>{formatMaslekaCurrency(category.projectedWithContribBalance, language)}</div>
                                                                         {category.projectedWithContribAnnuity > 0 && (
-                                                                            <div className={`text-[10px] mt-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{language === 'he' ? 'קצבה' : 'Ann.'}: <span className={`font-semibold ${isLight ? 'text-slate-800' : 'text-white'}`}>{formatMaslekaCurrency(category.projectedWithContribAnnuity, language)}</span></div>
+                                                                            <div className={`text-[10px] mt-0.5 flex items-center gap-2 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                                                <span>{language === 'he' ? 'קצבה' : 'Ann.'}: <span className={`font-semibold ${isLight ? 'text-slate-800' : 'text-white'}`}>{formatMaslekaCurrency(category.projectedWithContribAnnuity, language)}</span></span>
+                                                                                {category.projectedWithContribBalance > 0 && <span className={`${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{language === 'he' ? 'מקדם' : 'coef.'}: <span className={`font-semibold tabular-nums ${isLight ? 'text-slate-800' : 'text-white'}`}>{Math.round(category.projectedWithContribBalance / category.projectedWithContribAnnuity)}</span></span>}
+                                                                            </div>
                                                                         )}
                                                                     </div>
                                                                 </div>
@@ -1869,7 +2418,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                                             <tr key={product.id} className={`border-t ${isLight ? 'border-slate-200 text-slate-700' : 'border-white/10 text-gray-200'}`}>
                                                                 <td className="px-3 py-2">
                                                                     <div className="flex items-center gap-2 min-w-0">
-                                                                        <CompanyLogo company={product.company} className="w-5 h-5 shrink-0" />
+                                                                        <CompanyLogo company={product.company} className="w-6 h-6 shrink-0" />
                                                                         <div className="min-w-0">
                                                                             <div className="flex items-center gap-1.5 min-w-0">
                                                                                 <span className="font-medium truncate">{product.productName}</span>
@@ -2103,6 +2652,16 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                             <Redo2 size={14} />
                                         </button>
                                         <button
+                                            onClick={() => setSourceStatsSource(sortedIncomeSources.find(s => s.currentAsset) || null)}
+                                            disabled={!sortedIncomeSources.some(s => s.currentAsset)}
+                                            className={`px-2 py-1.5 rounded text-xs flex items-center gap-1.5 ${sortedIncomeSources.some(s => s.currentAsset)
+                                                ? (isLight ? 'bg-sky-100 text-sky-700 hover:bg-sky-200' : 'bg-sky-500/20 text-sky-300 hover:bg-sky-500/30')
+                                                : (isLight ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white/5 text-gray-500 cursor-not-allowed')}`}
+                                        >
+                                            <BarChart3 size={14} />
+                                            {language === 'he' ? 'סטטיסטיקה' : 'Stats'}
+                                        </button>
+                                        <button
                                             onClick={() => addIncomeSource('pension')}
                                             className={`px-3 py-1.5 rounded text-xs flex items-center gap-1.5 ${isLight ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'}`}
                                         >
@@ -2130,9 +2689,13 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                         <IncomeSourceRow
                                             key={source.id}
                                             source={source}
+                                            currentAge={inputs.currentAge}
+                                            defaultStartAge={retirementEndAge}
+                                            defaultReturnRate={pensionInterestRate}
                                             onUpdate={updateIncomeSource}
                                             onEditCalculated={editCurrentAssetSource}
                                             onDelete={deleteIncomeSource}
+                                            onOpenStats={setSourceStatsSource}
                                             t={t}
                                             language={language}
                                             isLight={isLight}
@@ -2192,6 +2755,20 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                 </div>
                             )}
                         </div>
+
+                        {sourceStatsSource && (
+                            <SourceStatsModal
+                                source={sourceStatsSource}
+                                sources={sortedIncomeSources}
+                                currentAge={inputs.currentAge}
+                                defaultStartAge={retirementEndAge}
+                                defaultReturnRate={pensionInterestRate}
+                                language={language}
+                                isLight={isLight}
+                                onSelectSource={setSourceStatsSource}
+                                onClose={() => setSourceStatsSource(null)}
+                            />
+                        )}
 
                         {/* NI Deferral Panel */}
                         {deferralCalc && (

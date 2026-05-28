@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Migdal">
+  <rect width="96" height="96" rx="12" fill="#fff"/>
+  <g fill="#28236F" transform="translate(20 8)">
+    <path d="M20 0h16v5H20z"/>
+    <path d="M23 6h10v7H23z"/>
+    <path d="M19 15h18v5H19z"/>
+    <path d="M16 23h24l-3 6H19z"/>
+    <path d="M21 32h14v5H21z"/>
+    <path d="M14 40h28v5H14z"/>
+    <path d="M11 49h34l-5 6H16z"/>
+    <path d="M24 1h3v53h-3z"/>
+    <path d="M29 1h3v53h-3z"/>
+    <path d="M13 57h30v4H13z"/>
+  </g>
+  <text x="48" y="85" text-anchor="middle" direction="rtl" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#28236F">מגדל</text>
+</svg>

@@ -49,6 +49,22 @@ const COMPANY_LOGO_DOMAINS = [
     { pattern: /הפניקס/,             domain: 'phoenix.co.il' },
 ];
 
+const LOCAL_COMPANY_LOGOS = [
+    { pattern: /מגדל|migdal/i, path: '/company-logos/migdal.svg?v=4' },
+    { pattern: /כלל|clal/i, path: '/company-logos/clal.svg?v=3' },
+    { pattern: /מיטב|meitav/i, path: '/company-logos/meitav.svg?v=3' },
+    { pattern: /מור|more/i, path: '/company-logos/more.svg?v=5' },
+    { pattern: /אנליסט|analyst/i, path: '/company-logos/analyst.svg?v=6' },
+    { pattern: /הפניקס|phoenix|fnx/i, path: '/company-logos/phoenix.svg?v=4' },
+];
+
+export function getLocalCompanyLogoUrl(companyName) {
+    if (!companyName) return null;
+    const normalized = String(companyName).trim();
+    const entry = LOCAL_COMPANY_LOGOS.find(e => e.pattern.test(normalized));
+    return entry ? entry.path : null;
+}
+
 export function getCompanyLogoDomain(companyName) {
     if (!companyName) return null;
     const entry = COMPANY_LOGO_DOMAINS.find(e => e.pattern.test(companyName));
@@ -56,6 +72,9 @@ export function getCompanyLogoDomain(companyName) {
 }
 
 export function getCompanyLogoUrl(companyName) {
+    const localLogoUrl = getLocalCompanyLogoUrl(companyName);
+    if (localLogoUrl) return localLogoUrl;
+
     const domain = getCompanyLogoDomain(companyName);
     if (!domain) return null;
     return `https://logo.clearbit.com/${domain}`;
