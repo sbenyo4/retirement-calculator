@@ -685,7 +685,9 @@ function CurrentAssetForm({ source, projectedSource, currentAge, defaultReturnRa
 function SourceStatsModal({ source, sources = [], currentAge, defaultStartAge, defaultReturnRate, language, isLight, onSelectSource, onClose }) {
     const { dragStyle, overlayStyle, onDragMouseDown, bringToFront } = useDraggable(true, { constrainToViewport: true });
     const formatCurrency = (val) => formatCurrencyUtil(val, language);
-    const baseProjection = projectCurrentPensionSource(source, currentAge, defaultStartAge, defaultReturnRate);
+    // Compute each source's own effective target age — falls back to global only when the source has no explicit startAge
+    const effectiveStartAge = parseFloat(source.startAge) || defaultStartAge;
+    const baseProjection = projectCurrentPensionSource({ ...source, startAge: effectiveStartAge }, currentAge, effectiveStartAge, defaultReturnRate);
     const baseRate = Number(baseProjection.appliedReturnRate ?? defaultReturnRate) || 0;
     const [rateStep, setRateStep] = useState(1);
     const [rateMin, setRateMin] = useState(() => Math.round((baseRate - 4) * 10) / 10);
@@ -708,7 +710,7 @@ function SourceStatsModal({ source, sources = [], currentAge, defaultStartAge, d
         setRateMax(Math.round((baseRate + 4) * 10) / 10);
         setRateStep(1);
         setActiveMetric('balance');
-    }, [source.id, baseRate]);
+    }, [source.id, baseRate, effectiveStartAge]);
 
     const rates = (() => {
         const step = Math.max(0.1, Number(rateStep) || 1);
@@ -724,12 +726,13 @@ function SourceStatsModal({ source, sources = [], currentAge, defaultStartAge, d
 
     const projectWith = (returnRate, coefficient) => projectCurrentPensionSource({
         ...source,
+        startAge: effectiveStartAge,
         currentAsset: {
             ...source.currentAsset,
             returnRate,
             ...(coefficient ? { coefficient } : {})
         }
-    }, currentAge, defaultStartAge, defaultReturnRate);
+    }, currentAge, effectiveStartAge, defaultReturnRate);
     const formatCompact = (value) => {
         const amount = Math.abs(Number(value) || 0);
         const prefix = language === 'he' ? '₪' : '$';
@@ -986,7 +989,7 @@ function SourceStatsModal({ source, sources = [], currentAge, defaultStartAge, d
                         </div>
                         <div className={`rounded-lg p-2 ${isLight ? 'bg-slate-50' : 'bg-white/5'}`}>
                             <div className="opacity-70">{language === 'he' ? 'גיל יעד' : 'Target age'}</div>
-                            <div className={`font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{source.startAge || defaultStartAge}</div>
+                            <div className={`font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{effectiveStartAge}</div>
                         </div>
                         <div className={`rounded-lg p-2 ${isLight ? 'bg-slate-50' : 'bg-white/5'}`}>
                             <div className="opacity-70">{language === 'he' ? 'סכום בסיס ללא הפקדות' : 'Base final, no deposits'}</div>

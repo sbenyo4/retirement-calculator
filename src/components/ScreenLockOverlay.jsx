@@ -140,6 +140,7 @@ export function ScreenLockOverlay({ uid, t, onUnlock, onLogout }) {
                                 type="password"
                                 value={pin}
                                 onChange={updatePin}
+                                onBlur={() => setTimeout(() => pinInputRef.current?.focus(), 100)}
                                 className={`w-full rounded-xl border px-4 py-3 text-center text-2xl tracking-[0.35em] outline-none focus:ring-2 focus:ring-blue-500 ${isLight ? 'border-slate-300 bg-slate-50 text-slate-900' : 'border-white/20 bg-white/10 text-white'}`}
                             />
                         </label>
