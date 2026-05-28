@@ -966,7 +966,7 @@ function SourceStatsModal({ source, sources = [], currentAge, defaultStartAge, d
                                 value={rateStep}
                                 onChange={(e) => setRateStep(parseFloat(e.target.value))}
                                 disabled={selectedMetric === 'coefficient'}
-                                className={`w-full rounded-lg border px-3 py-2 text-sm font-semibold ${selectedMetric === 'coefficient' ? 'opacity-50 cursor-not-allowed' : ''} ${isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-white/10 border-white/20 text-white'}`}
+                                className={`w-full rounded-lg border px-3 py-2 text-sm font-semibold ${selectedMetric === 'coefficient' ? 'opacity-50 cursor-not-allowed' : ''} ${isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-800 border-white/20 text-white'}`}
                             >
                                 <option value={0.5}>0.5%</option>
                                 <option value={1}>1%</option>
