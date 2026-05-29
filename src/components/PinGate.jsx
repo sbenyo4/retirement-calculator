@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { KeyRound, Loader2, LockKeyhole, LogOut } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { getPinLock, setPinLock } from '../utils/db';
@@ -13,7 +13,32 @@ export function PinGate({ uid, t, onLogout, children }) {
     const [confirmPin, setConfirmPin] = useState('');
     const [error, setError] = useState('');
     const [busy, setBusy] = useState(false);
+    const [failedAttempts, setFailedAttempts] = useState(0);
+    const [lockoutUntil, setLockoutUntil] = useState(null);
+    const [lockoutSecondsLeft, setLockoutSecondsLeft] = useState(0);
     const pinInputRef = useRef(null);
+
+    const MAX_ATTEMPTS = 5;
+    const LOCKOUT_MS = 30_000;
+
+    const isLockedOut = useCallback(() => lockoutUntil && Date.now() < lockoutUntil, [lockoutUntil]);
+
+    useEffect(() => {
+        if (!lockoutUntil) return;
+        const tick = () => {
+            const left = Math.ceil((lockoutUntil - Date.now()) / 1000);
+            if (left <= 0) {
+                setLockoutUntil(null);
+                setLockoutSecondsLeft(0);
+                setError('');
+            } else {
+                setLockoutSecondsLeft(left);
+            }
+        };
+        tick();
+        const id = setInterval(tick, 500);
+        return () => clearInterval(id);
+    }, [lockoutUntil]);
 
     useEffect(() => {
         let active = true;
@@ -21,6 +46,8 @@ export function PinGate({ uid, t, onLogout, children }) {
         setPin('');
         setConfirmPin('');
         setError('');
+        setFailedAttempts(0);
+        setLockoutUntil(null);
 
         getPinLock(uid)
             .then(lock => {
@@ -73,6 +100,7 @@ export function PinGate({ uid, t, onLogout, children }) {
 
     async function handleUnlock(event) {
         event.preventDefault();
+        if (isLockedOut()) return;
         if (!isValidPin(pin)) {
             setError(t('pinDigitsError'));
             return;
@@ -81,11 +109,21 @@ export function PinGate({ uid, t, onLogout, children }) {
         setBusy(true);
         try {
             if (await verifyPinLock(pin, pinLock)) {
+                setFailedAttempts(0);
                 setMode('unlocked');
                 return;
             }
+            const nextFailed = failedAttempts + 1;
+            setFailedAttempts(nextFailed);
             setPin('');
-            setError(t('pinIncorrectError'));
+            if (nextFailed >= MAX_ATTEMPTS) {
+                const until = Date.now() + LOCKOUT_MS;
+                setLockoutUntil(until);
+                setLockoutSecondsLeft(Math.ceil(LOCKOUT_MS / 1000));
+                setError(t('pinLockedError').replace('{seconds}', Math.ceil(LOCKOUT_MS / 1000)));
+            } else {
+                setError(t('pinIncorrectError'));
+            }
         } catch (err) {
             console.error('Failed to verify PIN lock:', err);
             setError(t('pinVerifyError'));
@@ -95,7 +133,7 @@ export function PinGate({ uid, t, onLogout, children }) {
     }
 
     useEffect(() => {
-        if (mode !== 'unlock' || !pinLock || !isValidPin(pin) || busy) return undefined;
+        if (mode !== 'unlock' || !pinLock || !isValidPin(pin) || busy || isLockedOut()) return undefined;
 
         let active = true;
         const timeoutId = setTimeout(async () => {
@@ -135,9 +173,10 @@ export function PinGate({ uid, t, onLogout, children }) {
 
     const isSetup = mode === 'setup';
     const isLoading = mode === 'loading';
+    const locked = isLockedOut();
     const canSubmit = isSetup
         ? isValidPin(pin) && pin === confirmPin && !busy
-        : isValidPin(pin) && !busy;
+        : isValidPin(pin) && !busy && !locked;
 
     return (
         <div className={`min-h-screen flex items-center justify-center p-4 ${isLight ? 'bg-slate-100' : 'bg-gradient-to-br from-gray-900 to-blue-900'}`}>
@@ -212,9 +251,34 @@ export function PinGate({ uid, t, onLogout, children }) {
                         )}
 
                         {error && (
-                            <p className={`rounded-lg border px-3 py-2 text-sm ${isLight ? 'border-red-200 bg-red-50 text-red-700' : 'border-red-500/30 bg-red-500/10 text-red-200'}`}>
-                                {error}
-                            </p>
+                            <div className={`rounded-lg border px-3 py-2 text-sm flex items-center justify-between gap-2 ${isLight ? 'border-red-200 bg-red-50 text-red-700' : 'border-red-500/30 bg-red-500/10 text-red-200'}`}>
+                                <span>
+                                    {locked
+                                        ? t('pinLockedError').replace('{seconds}', lockoutSecondsLeft)
+                                        : error}
+                                </span>
+                                {!locked && failedAttempts > 0 && (
+                                    <span className="flex items-center gap-1.5 shrink-0">
+                                        <span className={`text-xs font-medium whitespace-nowrap ${failedAttempts >= MAX_ATTEMPTS - 1 ? (isLight ? 'text-red-600' : 'text-red-300') : (isLight ? 'text-red-500' : 'text-red-400')}`}>
+                                            {failedAttempts >= MAX_ATTEMPTS - 1
+                                                ? t('pinLastAttempt')
+                                                : t('pinAttemptsLeft').replace('{remaining}', MAX_ATTEMPTS - failedAttempts)}
+                                        </span>
+                                        <span className="flex gap-0.5">
+                                            {Array.from({ length: MAX_ATTEMPTS }).map((_, i) => (
+                                                <span
+                                                    key={i}
+                                                    className={`inline-block h-2 w-2 rounded-full transition-colors ${
+                                                        i < failedAttempts
+                                                            ? (failedAttempts >= MAX_ATTEMPTS - 1 ? 'bg-red-500' : 'bg-red-400')
+                                                            : (isLight ? 'bg-red-200' : 'bg-red-900')
+                                                    }`}
+                                                />
+                                            ))}
+                                        </span>
+                                    </span>
+                                )}
+                            </div>
                         )}
 
                         <p className={`text-xs ${isLight ? 'text-slate-500' : 'text-blue-100/70'}`}>

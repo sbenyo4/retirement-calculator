@@ -3,6 +3,7 @@
  * All user data is stored under users/{uid}/...
  */
 import { db } from '../firebase';
+import { logger } from './logger';
 import {
     doc,
     getDoc,
@@ -14,6 +15,20 @@ import {
     writeBatch,
     updateDoc
 } from 'firebase/firestore';
+
+// ─── Error Wrapper ─────────────────────────────────────────────────
+
+async function dbCall(fn, context) {
+    try {
+        return await fn();
+    } catch (err) {
+        const message = `[DB:${context}] ${err?.message || err}`;
+        logger.error(message, err);
+        const wrapped = new Error(message);
+        wrapped.cause = err;
+        throw wrapped;
+    }
+}
 
 // ─── Document References ───────────────────────────────────────────
 
@@ -107,86 +122,104 @@ function profileRef(uid, profileId) {
 // ─── Settings ──────────────────────────────────────────────────────
 
 export async function getUserSettings(uid) {
-    const snap = await getDoc(settingsRef(uid));
-    return snap.exists() ? snap.data() : null;
+    return dbCall(async () => {
+        const snap = await getDoc(settingsRef(uid));
+        return snap.exists() ? snap.data() : null;
+    }, 'getUserSettings');
 }
 
 export async function setUserSettings(uid, data) {
-    await setDoc(settingsRef(uid), data, { merge: true });
+    return dbCall(() => setDoc(settingsRef(uid), data, { merge: true }), 'setUserSettings');
 }
 
 export async function getPinLock(uid) {
-    const snap = await getDoc(pinLockRef(uid));
-    return snap.exists() ? snap.data() : null;
+    return dbCall(async () => {
+        const snap = await getDoc(pinLockRef(uid));
+        return snap.exists() ? snap.data() : null;
+    }, 'getPinLock');
 }
 
 export async function setPinLock(uid, data) {
-    await setDoc(pinLockRef(uid), { ...data, updatedAt: Date.now() });
+    return dbCall(() => setDoc(pinLockRef(uid), { ...data, updatedAt: Date.now() }), 'setPinLock');
 }
 
 // ─── Current Session ───────────────────────────────────────────────
 
 export async function getCurrentSession(uid) {
-    const snap = await getDoc(currentSessionRef(uid));
-    return snap.exists() ? snap.data().inputs : null;
+    return dbCall(async () => {
+        const snap = await getDoc(currentSessionRef(uid));
+        return snap.exists() ? snap.data().inputs : null;
+    }, 'getCurrentSession');
 }
 
 export async function getCurrentSessionData(uid) {
-    const snap = await getDoc(currentSessionRef(uid));
-    return snap.exists() ? snap.data() : null;
+    return dbCall(async () => {
+        const snap = await getDoc(currentSessionRef(uid));
+        return snap.exists() ? snap.data() : null;
+    }, 'getCurrentSessionData');
 }
 
 export async function setCurrentSession(uid, inputs, profileId) {
-    const payload = { inputs, updatedAt: Date.now() };
-    if (profileId !== undefined) {
-        payload.profileId = profileId;
-    }
-    await setDoc(currentSessionRef(uid), payload, { merge: true });
+    return dbCall(() => {
+        const payload = { inputs, updatedAt: Date.now() };
+        if (profileId !== undefined) payload.profileId = profileId;
+        return setDoc(currentSessionRef(uid), payload, { merge: true });
+    }, 'setCurrentSession');
 }
 
 // ─── Pension Sources ───────────────────────────────────────────────
 
 export async function getPensionSources(uid) {
-    const snap = await getDoc(pensionSourcesRef(uid));
-    return snap.exists() ? snap.data() : null;
+    return dbCall(async () => {
+        const snap = await getDoc(pensionSourcesRef(uid));
+        return snap.exists() ? snap.data() : null;
+    }, 'getPensionSources');
 }
 
 export async function setPensionSources(uid, data) {
-    await setDoc(pensionSourcesRef(uid), { ...data, updatedAt: Date.now() }, { merge: true });
+    return dbCall(() => setDoc(pensionSourcesRef(uid), { ...data, updatedAt: Date.now() }, { merge: true }), 'setPensionSources');
 }
 
 // ─── Profiles (subcollection) ──────────────────────────────────────
 
 export async function getProfiles(uid) {
-    const snap = await getDocs(profilesCollection(uid));
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    return dbCall(async () => {
+        const snap = await getDocs(profilesCollection(uid));
+        return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }, 'getProfiles');
 }
 
 export async function getProfile(uid, profileId) {
-    const snap = await getDoc(profileRef(uid, profileId));
-    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+    return dbCall(async () => {
+        const snap = await getDoc(profileRef(uid, profileId));
+        return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+    }, 'getProfile');
 }
 
 export async function saveProfile(uid, profile) {
-    const ref = profileRef(uid, profile.id);
-    const { id, ...data } = profile;
-    const now = Date.now();
-    await setDoc(ref, { ...data, updatedAt: now, dataUpdatedAt: now });
-    return getProfile(uid, profile.id);
+    return dbCall(async () => {
+        const ref = profileRef(uid, profile.id);
+        const { id, ...data } = profile;
+        const now = Date.now();
+        await setDoc(ref, { ...data, updatedAt: now, dataUpdatedAt: now });
+        return getProfile(uid, profile.id);
+    }, 'saveProfile');
 }
 
 export async function updateProfile(uid, profileId, data) {
-    const now = Date.now();
-    const payload = { ...data, updatedAt: now };
-    if (Object.prototype.hasOwnProperty.call(data, 'data')) {
-        payload.dataUpdatedAt = now;
-    }
-    await updateDoc(profileRef(uid, profileId), payload);
-    return getProfile(uid, profileId);
+    return dbCall(async () => {
+        const now = Date.now();
+        const payload = { ...data, updatedAt: now };
+        if (Object.prototype.hasOwnProperty.call(data, 'data')) {
+            payload.dataUpdatedAt = now;
+        }
+        await updateDoc(profileRef(uid, profileId), payload);
+        return getProfile(uid, profileId);
+    }, 'updateProfile');
 }
 
 export async function deleteProfileDoc(uid, profileId) {
-    await deleteDoc(profileRef(uid, profileId));
+    return dbCall(() => deleteDoc(profileRef(uid, profileId)), 'deleteProfileDoc');
 }
 
 export function onProfilesSnapshot(uid, callback) {
@@ -221,116 +254,134 @@ export function onBudgetItemsSnapshot(uid, callback) {
 // ─── Budget Items ──────────────────────────────────────────────────
 
 export async function getBudgetItems(uid) {
-    const snap = await getDoc(budgetItemsRef(uid));
-    if (!snap.exists()) return null;
-    const data = snap.data();
-    return {
-        items: normalizeBudgetItemsStatus(data.items),
-        householdSize: data.householdSize ?? 2,
-        backupSlots: Array.isArray(data.backupSlots)
-            ? data.backupSlots.map(slot => ({
-                ...slot,
-                items: normalizeBudgetItemsStatus(slot?.items)
-            }))
-            : [],
-        yearAmounts: data.yearAmounts ?? null,
-        retirementModeByYear: data.retirementModeByYear ?? null,
-    };
+    return dbCall(async () => {
+        const snap = await getDoc(budgetItemsRef(uid));
+        if (!snap.exists()) return null;
+        const data = snap.data();
+        return {
+            items: normalizeBudgetItemsStatus(data.items),
+            householdSize: data.householdSize ?? 2,
+            backupSlots: Array.isArray(data.backupSlots)
+                ? data.backupSlots.map(slot => ({
+                    ...slot,
+                    items: normalizeBudgetItemsStatus(slot?.items)
+                }))
+                : [],
+            yearAmounts: data.yearAmounts ?? null,
+            retirementModeByYear: data.retirementModeByYear ?? null,
+        };
+    }, 'getBudgetItems');
 }
 
 // Dedicated isolated document — never touched by setBudgetItems
 export async function getBudgetAiInsight(uid) {
-    const snap = await getDoc(budgetAiInsightRef(uid));
-    if (!snap.exists()) return null;
-    const d = snap.data();
-    return d.insight ? { insight: d.insight } : null;
+    return dbCall(async () => {
+        const snap = await getDoc(budgetAiInsightRef(uid));
+        if (!snap.exists()) return null;
+        const d = snap.data();
+        return d.insight ? { insight: d.insight } : null;
+    }, 'getBudgetAiInsight');
 }
 
 export async function setBudgetAiInsight(uid, insight) {
-    await setDoc(budgetAiInsightRef(uid), { insight: insight ?? null, updatedAt: Date.now() });
+    return dbCall(() => setDoc(budgetAiInsightRef(uid), { insight: insight ?? null, updatedAt: Date.now() }), 'setBudgetAiInsight');
 }
 
 export async function setBudgetItems(uid, items, householdSize, backupSlots, yearAmounts, retirementModeByYear) {
-    const payload = {
-        items: stripUndefinedDeep(normalizeBudgetItemsStatus(items)),
-        updatedAt: Date.now()
-    };
-    if (householdSize !== undefined) payload.householdSize = householdSize;
-    if (backupSlots !== undefined) {
-        payload.backupSlots = stripUndefinedDeep(Array.isArray(backupSlots)
-            ? backupSlots.map(slot => ({
-                ...slot,
-                items: normalizeBudgetItemsStatus(slot?.items)
-            }))
-            : []);
-    }
-    if (yearAmounts !== undefined) payload.yearAmounts = stripUndefinedDeep(yearAmounts);
-    if (retirementModeByYear !== undefined) payload.retirementModeByYear = stripUndefinedDeep(retirementModeByYear);
-    await setDoc(budgetItemsRef(uid), payload, { merge: true });
+    return dbCall(() => {
+        const payload = {
+            items: stripUndefinedDeep(normalizeBudgetItemsStatus(items)),
+            updatedAt: Date.now()
+        };
+        if (householdSize !== undefined) payload.householdSize = householdSize;
+        if (backupSlots !== undefined) {
+            payload.backupSlots = stripUndefinedDeep(Array.isArray(backupSlots)
+                ? backupSlots.map(slot => ({
+                    ...slot,
+                    items: normalizeBudgetItemsStatus(slot?.items)
+                }))
+                : []);
+        }
+        if (yearAmounts !== undefined) payload.yearAmounts = stripUndefinedDeep(yearAmounts);
+        if (retirementModeByYear !== undefined) payload.retirementModeByYear = stripUndefinedDeep(retirementModeByYear);
+        return setDoc(budgetItemsRef(uid), payload, { merge: true });
+    }, 'setBudgetItems');
 }
 
 // Dedicated isolated document for checklist overview
 export async function getChecklistOverview(uid) {
-    const snap = await getDoc(checklistOverviewRef(uid));
-    if (!snap.exists()) return null;
-    const d = snap.data();
-    return d.overviewText ? { overviewText: d.overviewText } : null;
+    return dbCall(async () => {
+        const snap = await getDoc(checklistOverviewRef(uid));
+        if (!snap.exists()) return null;
+        const d = snap.data();
+        return d.overviewText ? { overviewText: d.overviewText } : null;
+    }, 'getChecklistOverview');
 }
 
 export async function setChecklistOverview(uid, overviewText) {
-    await setDoc(checklistOverviewRef(uid), { overviewText: overviewText ?? null, updatedAt: Date.now() });
+    return dbCall(() => setDoc(checklistOverviewRef(uid), { overviewText: overviewText ?? null, updatedAt: Date.now() }), 'setChecklistOverview');
 }
 
 // ─── Checklist State ───────────────────────────────────────────────
 
 export async function getChecklistState(uid) {
-    const snap = await getDoc(checklistStateRef(uid));
-    return snap.exists() ? snap.data() : null;
+    return dbCall(async () => {
+        const snap = await getDoc(checklistStateRef(uid));
+        return snap.exists() ? snap.data() : null;
+    }, 'getChecklistState');
 }
 
 export async function setChecklistState(uid, state) {
-    await setDoc(checklistStateRef(uid), stripUndefinedDeep({ ...state, updatedAt: Date.now() }), { merge: true });
+    return dbCall(() => setDoc(checklistStateRef(uid), stripUndefinedDeep({ ...state, updatedAt: Date.now() }), { merge: true }), 'setChecklistState');
 }
 
 // ─── General Reminders ─────────────────────────────────────────────
 
 export async function getGeneralReminders(uid) {
-    const snap = await getDoc(generalRemindersRef(uid));
-    return snap.exists() ? (snap.data().reminders || []) : [];
+    return dbCall(async () => {
+        const snap = await getDoc(generalRemindersRef(uid));
+        return snap.exists() ? (snap.data().reminders || []) : [];
+    }, 'getGeneralReminders');
 }
 
 export async function setGeneralReminders(uid, reminders) {
-    await setDoc(generalRemindersRef(uid), { reminders, updatedAt: Date.now() });
+    return dbCall(() => setDoc(generalRemindersRef(uid), { reminders, updatedAt: Date.now() }), 'setGeneralReminders');
 }
 
 // ─── Dismissed Reminders ───────────────────────────────────────────
 
 export async function getDismissedReminders(uid) {
-    const snap = await getDoc(dismissedRemindersRef(uid));
-    return snap.exists() ? (snap.data().ids || []) : [];
+    return dbCall(async () => {
+        const snap = await getDoc(dismissedRemindersRef(uid));
+        return snap.exists() ? (snap.data().ids || []) : [];
+    }, 'getDismissedReminders');
 }
 
 export async function dismissReminder(uid, id) {
-    const snap = await getDoc(dismissedRemindersRef(uid));
-    const currentIds = snap.exists() ? (snap.data().ids || []) : [];
-    if (!currentIds.includes(String(id))) {
-        await setDoc(dismissedRemindersRef(uid), { 
-            ids: [...currentIds, String(id)], 
-            updatedAt: Date.now() 
-        });
-    }
+    return dbCall(async () => {
+        const snap = await getDoc(dismissedRemindersRef(uid));
+        const currentIds = snap.exists() ? (snap.data().ids || []) : [];
+        if (!currentIds.includes(String(id))) {
+            await setDoc(dismissedRemindersRef(uid), {
+                ids: [...currentIds, String(id)],
+                updatedAt: Date.now()
+            });
+        }
+    }, 'dismissReminder');
 }
 
 export async function undismissReminder(uid, id) {
-    const snap = await getDoc(dismissedRemindersRef(uid));
-    const currentIds = snap.exists() ? (snap.data().ids || []) : [];
-    const nextIds = currentIds.filter(existingId => String(existingId) !== String(id));
-    if (nextIds.length !== currentIds.length) {
-        await setDoc(dismissedRemindersRef(uid), { 
-            ids: nextIds, 
-            updatedAt: Date.now() 
-        });
-    }
+    return dbCall(async () => {
+        const snap = await getDoc(dismissedRemindersRef(uid));
+        const currentIds = snap.exists() ? (snap.data().ids || []) : [];
+        const nextIds = currentIds.filter(existingId => String(existingId) !== String(id));
+        if (nextIds.length !== currentIds.length) {
+            await setDoc(dismissedRemindersRef(uid), {
+                ids: nextIds,
+                updatedAt: Date.now()
+            });
+        }
+    }, 'undismissReminder');
 }
 
 // ─── Smart Alerts ──────────────────────────────────────────────────
@@ -340,12 +391,14 @@ function smartAlertsRef(uid) {
 }
 
 export async function getSmartAlerts(uid) {
-    const snap = await getDoc(smartAlertsRef(uid));
-    return snap.exists() ? (snap.data().alerts || []) : [];
+    return dbCall(async () => {
+        const snap = await getDoc(smartAlertsRef(uid));
+        return snap.exists() ? (snap.data().alerts || []) : [];
+    }, 'getSmartAlerts');
 }
 
 export async function setSmartAlerts(uid, alerts) {
-    await setDoc(smartAlertsRef(uid), { alerts, updatedAt: Date.now() });
+    return dbCall(() => setDoc(smartAlertsRef(uid), { alerts, updatedAt: Date.now() }), 'setSmartAlerts');
 }
 
 // ─── Trip Plans ────────────────────────────────────────────────────
@@ -355,34 +408,42 @@ function tripPlansRef(uid) {
 }
 
 export async function getTripPlans(uid) {
-    const snap = await getDoc(tripPlansRef(uid));
-    return snap.exists() ? (snap.data().plans || []) : [];
+    return dbCall(async () => {
+        const snap = await getDoc(tripPlansRef(uid));
+        return snap.exists() ? (snap.data().plans || []) : [];
+    }, 'getTripPlans');
 }
 
 export async function saveTripPlan(uid, plan) {
-    const snap = await getDoc(tripPlansRef(uid));
-    const plans = snap.exists() ? (snap.data().plans || []) : [];
-    const idx = plans.findIndex(p => p.id === plan.id);
-    const updated = idx >= 0 ? plans.map(p => p.id === plan.id ? plan : p) : [...plans, plan];
-    await setDoc(tripPlansRef(uid), { plans: stripUndefinedDeep(updated), updatedAt: Date.now() });
+    return dbCall(async () => {
+        const snap = await getDoc(tripPlansRef(uid));
+        const plans = snap.exists() ? (snap.data().plans || []) : [];
+        const idx = plans.findIndex(p => p.id === plan.id);
+        const updated = idx >= 0 ? plans.map(p => p.id === plan.id ? plan : p) : [...plans, plan];
+        await setDoc(tripPlansRef(uid), { plans: stripUndefinedDeep(updated), updatedAt: Date.now() });
+    }, 'saveTripPlan');
 }
 
 export async function deleteTripPlan(uid, planId) {
-    const snap = await getDoc(tripPlansRef(uid));
-    if (!snap.exists()) return;
-    const plans = (snap.data().plans || []).filter(p => p.id !== planId);
-    await setDoc(tripPlansRef(uid), { plans, updatedAt: Date.now() });
+    return dbCall(async () => {
+        const snap = await getDoc(tripPlansRef(uid));
+        if (!snap.exists()) return;
+        const plans = (snap.data().plans || []).filter(p => p.id !== planId);
+        await setDoc(tripPlansRef(uid), { plans, updatedAt: Date.now() });
+    }, 'deleteTripPlan');
 }
 
 // ─── Rate Limit ────────────────────────────────────────────────────
 
 export async function getRateLimitData(uid) {
-    const snap = await getDoc(rateLimitRef(uid));
-    return snap.exists() ? snap.data() : { calls: [] };
+    return dbCall(async () => {
+        const snap = await getDoc(rateLimitRef(uid));
+        return snap.exists() ? snap.data() : { calls: [] };
+    }, 'getRateLimitData');
 }
 
 export async function setRateLimitData(uid, data) {
-    await setDoc(rateLimitRef(uid), data, { merge: true });
+    return dbCall(() => setDoc(rateLimitRef(uid), data, { merge: true }), 'setRateLimitData');
 }
 
 // ─── One-Time Migration from localStorage ──────────────────────────
@@ -501,14 +562,13 @@ export async function migrateFromLocalStorage(uid) {
     }
 
     if (hasData) {
-        await batch.commit();
-        // Clear localStorage after successful migration
+        await dbCall(() => batch.commit(), 'migrateFromLocalStorage:commit');
         localStorage.clear();
         return true;
     }
 
     // Even if no data, mark as migrated
-    await setDoc(settingsRef(uid), { migrated: true, migratedAt: Date.now() }, { merge: true });
+    await dbCall(() => setDoc(settingsRef(uid), { migrated: true, migratedAt: Date.now() }, { merge: true }), 'migrateFromLocalStorage:markMigrated');
     localStorage.clear();
     return true;
 }

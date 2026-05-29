@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { logger } from '../utils/logger';
 import { getBudgetItems, getChecklistState, getGeneralReminders, setBudgetItems, setChecklistState, setGeneralReminders, getDismissedReminders, dismissReminder, getSmartAlerts, setSmartAlerts } from '../utils/db';
 import { syncComponentReminders, syncMultipleSources, markInitialSyncDone } from '../hooks/useReminders';
 import { evaluateSmartAlerts } from '../utils/smartAlerts';
@@ -38,7 +39,7 @@ export function GlobalRemindersSync({ uid, lifeEvents: _lifeEvents = [], current
             const hasCategories = Array.isArray(snap?.categories) && snap.categories.length > 0;
             if (hasCategories) return snap;
             if (attempt >= 4) {
-                console.warn("[Sync] Checklist: no categories after 4 retries — checklist reminders may not sync");
+                logger.warn("[Sync] Checklist: no categories after 4 retries — checklist reminders may not sync");
                 return snap;
             }
             await new Promise(resolve => setTimeout(resolve, 300));
@@ -49,7 +50,7 @@ export function GlobalRemindersSync({ uid, lifeEvents: _lifeEvents = [], current
         setTimeout(() => {
             if (lastSyncedUidRef.current !== uid) return; 
             
-            console.log("%c[GlobalRemindersSync] Starting atomic sync for:", "color: #3b82f6; font-weight: bold", uid);
+            logger.log("%c[GlobalRemindersSync] Starting atomic sync for:", "color: #3b82f6; font-weight: bold", uid);
 
             getDismissedReminders(uid)
                 .then((dismissedIds) => {

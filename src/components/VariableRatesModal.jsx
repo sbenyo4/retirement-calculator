@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { logger } from '../utils/logger';
 import { useDraggable } from '../hooks/useDraggable';
 import { useDebouncedValue } from '../hooks/useDebounce';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
@@ -271,7 +272,7 @@ export default function VariableRatesModal({
                 spread: maxBal - minBal
             };
         } catch (error) {
-            console.warn("Calculation error (likely invalid inputs):", error.message);
+            logger.warn("Calculation error (likely invalid inputs):", error.message);
             return zeroResult;
         }
     }, [debouncedRates, inputs, calculatedAverage, startYear, endYear, bucketType]);

@@ -1,4 +1,5 @@
 import { getProviderEnvKey } from '../config/ai-models';
+import { logger } from './logger';
 
 // Re-export for backward compatibility
 export { getAvailableProviders, getAvailableModels } from '../config/ai-models';
@@ -194,7 +195,7 @@ export async function withRetry(fn, options = {}) {
             const jitter = delay * (Math.random() * 0.1);
             const actualDelay = Math.min(delay + jitter, maxDelayMs);
 
-            console.warn(`Retry attempt ${attempt + 1}/${maxRetries} after ${actualDelay}ms. Error: ${error.message}`);
+            logger.warn(`Retry attempt ${attempt + 1}/${maxRetries} after ${actualDelay}ms. Error: ${error.message}`);
 
             // Call onRetry callback if provided
             if (onRetry) {

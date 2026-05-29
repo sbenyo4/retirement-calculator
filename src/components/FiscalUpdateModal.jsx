@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { logger } from '../utils/logger';
 import { useDraggable } from '../hooks/useDraggable';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { calculateRetirementWithAI } from '../utils/ai-calculator';
@@ -321,7 +322,7 @@ Re-search the web and double-check:
 
                 // STEP 3: If validation failed and we have retries left, retry
                 if (!validationResult.isValid && retryCount < MAX_RETRIES) {
-                    console.warn(`Validation failed (attempt ${retryCount + 1}):`, validationResult.errors);
+                    logger.warn(`Validation failed (attempt ${retryCount + 1}):`, validationResult.errors);
                     setStatusMessage(language === 'he'
                         ? `אימות נכשל, מנסה שוב...`
                         : `Validation failed, retrying...`);
@@ -371,14 +372,14 @@ Re-search the web and double-check:
                 setStatusMessage('');
 
             } else {
-                console.warn('AI Fiscal Update - Invalid response structure:', result);
+                logger.warn('AI Fiscal Update - Invalid response structure:', result);
                 throw new Error(t ? t('invalidAiResponse') : 'Invalid AI response structure');
             }
 
         } catch (err) {
             // If error and retries left, try again
             if (retryCount < MAX_RETRIES) {
-                console.warn(`Error on attempt ${retryCount + 1}, retrying:`, err.message);
+                logger.warn(`Error on attempt ${retryCount + 1}, retrying:`, err.message);
                 await new Promise(resolve => setTimeout(resolve, 1000));
                 return handleAutoUpdate(retryCount + 1);
             }

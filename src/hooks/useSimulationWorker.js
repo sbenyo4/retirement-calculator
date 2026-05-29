@@ -44,6 +44,16 @@ export function useSimulationWorker() {
             worker.onerror = (e) => {
                 console.error('Simulation worker error:', e);
                 workerRef.current = null;
+                // Flush any in-flight callbacks so callers don't hang forever
+                const errorMessage = e?.message || 'Worker error';
+                if (projCallbackRef.current) {
+                    projCallbackRef.current.onError(errorMessage);
+                    projCallbackRef.current = null;
+                }
+                if (simCallbackRef.current) {
+                    simCallbackRef.current.onError(errorMessage);
+                    simCallbackRef.current = null;
+                }
             };
 
             workerRef.current = worker;

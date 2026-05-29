@@ -1,5 +1,6 @@
 
 import { getProviderEnvKey } from '../config/ai-models';
+import { logger } from './logger';
 
 function findMatchingBrace(str, startIdx) {
     let braceCount = 0;
@@ -205,7 +206,7 @@ export const generateInsightPrompt = (inputs, results, language) => {
         ).join('\n    ');
 
     } catch (err) {
-        console.warn("Failed to generate sensitivity data for AI:", err);
+        logger.warn("Failed to generate sensitivity data for AI:", err);
         sensitivityText = "Data unavailable";
     }
 
