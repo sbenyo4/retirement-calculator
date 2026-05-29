@@ -1332,7 +1332,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const [maslekaStatusFilter, setMaslekaStatusFilter] = useState('all');
     const [showMaslekaSummary, setShowMaslekaSummary] = useState(false);
     const [maslekaOpenCategory, setMaslekaOpenCategory] = useState(null);
-    const [maslekaProjectionYears, setMaslekaProjectionYears] = useState(0);
+    const [maslekaProjectionYears, setMaslekaProjectionYears] = useState(null);
 
     // Helper to calculate NI with income test and 67 vs 70 logic
     const calculateEffectiveNI = useCallback((sources, currentRetirementStartAge, extraDeferralYears = 0) => {
@@ -1571,7 +1571,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     );
     useEffect(() => {
         setMaslekaProjectionYears(prev => {
-            if (prev === null || prev === undefined) return 0;
+            if (prev === null || prev === undefined) return maslekaTargetYears;
             return Math.max(0, Math.min(prev, maslekaTargetYears));
         });
     }, [maslekaTargetYears]);
@@ -2191,7 +2191,10 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                             <div className={`flex gap-2 p-2 ${isLight ? 'bg-white' : 'bg-indigo-500/5'}`}>
                                                 {/* No deposits */}
                                                 <div className={`flex-1 rounded-lg px-3 py-2.5 space-y-1.5 ${isLight ? 'bg-sky-50 border border-sky-100' : 'bg-sky-500/10 border border-sky-500/20'}`}>
-                                                    <div className={`text-[10px] font-semibold uppercase tracking-wide ${isLight ? 'text-sky-500' : 'text-sky-400'}`}>{language === 'he' ? 'ללא הפקדות' : 'No deposits'}</div>
+                                                    <div className="flex items-center justify-between gap-1">
+                                                        <div className={`text-[10px] font-semibold uppercase tracking-wide ${isLight ? 'text-sky-500' : 'text-sky-400'}`}>{language === 'he' ? 'ללא הפקדות' : 'No deposits'}</div>
+                                                        {maslekaDisplaySummary.asOfDate && <div className={`text-[9px] tabular-nums ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{maslekaDisplaySummary.asOfDate}</div>}
+                                                    </div>
                                                     {maslekaDisplaySummary.total.projectedNoContribAnnuity > 0 ? (
                                                         <div>
                                                             <div className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{language === 'he' ? 'קצבה חודשית' : 'Monthly annuity'}</div>
