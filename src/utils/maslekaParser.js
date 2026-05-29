@@ -202,6 +202,101 @@ export function addImpliedRatesToMaslekaSummary(summary, yearsToRetirement) {
     };
 }
 
+function futureValueWithMonthlyDeposit(currentBalance, monthlyDeposit, annualRate, years) {
+    const pv = numberValue(currentBalance);
+    const pmt = numberValue(monthlyDeposit);
+    const projectedYears = numberValue(years);
+    const rate = Number.isFinite(annualRate) ? annualRate / 100 : 0;
+    const months = Math.max(0, Math.round(projectedYears * 12));
+
+    if (months <= 0) return pv;
+
+    const monthlyRate = Math.pow(1 + rate, 1 / 12) - 1;
+    if (Math.abs(monthlyRate) < 1e-10) return pv + pmt * months;
+
+    return pv * Math.pow(1 + monthlyRate, months) +
+        pmt * ((Math.pow(1 + monthlyRate, months) - 1) / monthlyRate);
+}
+
+function growBalance(currentBalance, annualRate, years) {
+    const balance = numberValue(currentBalance);
+    const projectedYears = numberValue(years);
+    const rate = Number.isFinite(annualRate) ? annualRate / 100 : 0;
+    if (projectedYears <= 0) return balance;
+    return balance * Math.pow(1 + rate, projectedYears);
+}
+
+function projectMaslekaEntryForDepositYears(entry, selectedDepositYears, targetYears) {
+    const depositYears = Math.max(0, Math.min(numberValue(selectedDepositYears), numberValue(targetYears)));
+    const remainingYears = Math.max(0, numberValue(targetYears) - depositYears);
+    const noDepositRate = Number.isFinite(entry.impliedNoDepositRate) ? entry.impliedNoDepositRate : 0;
+    const withDepositRate = Number.isFinite(entry.impliedWithDepositRate)
+        ? entry.impliedWithDepositRate
+        : noDepositRate;
+    const targetYearsValue = numberValue(targetYears);
+    const projectedNoContribBalance = numberValue(entry.projectedNoContribBalance);
+    const noContribAnnuityRatio = numberValue(entry.projectedNoContribBalance) > 0
+        ? numberValue(entry.projectedNoContribAnnuity) / numberValue(entry.projectedNoContribBalance)
+        : 0;
+    const withContribAnnuityRatio = numberValue(entry.projectedWithContribBalance) > 0
+        ? numberValue(entry.projectedWithContribAnnuity) / numberValue(entry.projectedWithContribBalance)
+        : noContribAnnuityRatio;
+
+    if (depositYears <= 0) {
+        return {
+            ...entry,
+            selectedDepositYears: 0,
+            projectedNoContribBalance,
+            projectedNoContribAnnuity: numberValue(entry.projectedNoContribAnnuity),
+            projectedWithContribBalance: projectedNoContribBalance,
+            projectedWithContribAnnuity: projectedNoContribBalance * noContribAnnuityRatio
+        };
+    }
+
+    if (depositYears >= targetYearsValue) {
+        return {
+            ...entry,
+            selectedDepositYears: targetYearsValue,
+            projectedNoContribBalance,
+            projectedNoContribAnnuity: numberValue(entry.projectedNoContribAnnuity),
+            projectedWithContribBalance: numberValue(entry.projectedWithContribBalance),
+            projectedWithContribAnnuity: numberValue(entry.projectedWithContribAnnuity)
+        };
+    }
+
+    const balanceAfterDepositYears = futureValueWithMonthlyDeposit(
+        entry.currentBalance,
+        entry.monthlyDeposits,
+        withDepositRate,
+        depositYears
+    );
+    const projectedWithContribBalance = growBalance(balanceAfterDepositYears, noDepositRate, remainingYears);
+
+    return {
+        ...entry,
+        selectedDepositYears: depositYears,
+        projectedNoContribBalance,
+        projectedNoContribAnnuity: projectedNoContribBalance * noContribAnnuityRatio,
+        projectedWithContribBalance,
+        projectedWithContribAnnuity: projectedWithContribBalance * withContribAnnuityRatio
+    };
+}
+
+export function projectMaslekaSummaryToYears(summary, selectedYears) {
+    if (!summary) return summary;
+    const targetYears = numberValue(summary.yearsToRetirement);
+    const years = Math.max(0, Math.min(numberValue(selectedYears), targetYears));
+
+    return {
+        ...summary,
+        selectedYearsToRetirement: years,
+        selectedDepositYears: years,
+        products: summary.products.map(entry => projectMaslekaEntryForDepositYears(entry, years, targetYears)),
+        categories: summary.categories.map(entry => projectMaslekaEntryForDepositYears(entry, years, targetYears)),
+        total: projectMaslekaEntryForDepositYears(summary.total, years, targetYears)
+    };
+}
+
 export function parseMaslekaWorkbook(arrayBuffer, manualAsOfDate = '') {
     const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: false });
     const sheetName = workbook.SheetNames.find(name => name === PRODUCTS_SHEET) || workbook.SheetNames[0];

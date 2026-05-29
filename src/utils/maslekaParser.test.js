@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
-import { addImpliedRatesToMaslekaSummary, parseMaslekaWorkbook } from './maslekaParser';
+import { addImpliedRatesToMaslekaSummary, parseMaslekaWorkbook, projectMaslekaSummaryToYears } from './maslekaParser';
 
 function createWorkbookBuffer() {
     const rows = [
@@ -55,5 +55,38 @@ describe('parseMaslekaWorkbook', () => {
         expect(pension.impliedNoDepositRate).toBeCloseTo(4.14, 1);
         expect(pension.impliedWithDepositRate).toBeGreaterThan(0);
         expect(parsed.products[0].impliedNoDepositRate).toBeCloseTo(pension.impliedNoDepositRate, 5);
+    });
+
+    it('projects retirement balances using a selected number of additional deposit years', () => {
+        const parsed = addImpliedRatesToMaslekaSummary(parseMaslekaWorkbook(createWorkbookBuffer()), 10);
+        const projected = projectMaslekaSummaryToYears(parsed, 5);
+
+        expect(projected.selectedYearsToRetirement).toBe(5);
+        expect(projected.selectedDepositYears).toBe(5);
+        expect(projected.total.projectedNoContribBalance).toBeCloseTo(parsed.total.projectedNoContribBalance, 0);
+        expect(projected.total.projectedWithContribBalance).toBeGreaterThan(projected.total.projectedNoContribBalance);
+        expect(projected.total.projectedWithContribBalance).toBeLessThan(parsed.total.projectedWithContribBalance);
+        expect(projected.categories[0].projectedWithContribAnnuity).toBeGreaterThan(0);
+    });
+
+    it('uses zero additional deposit years as stopping deposits today', () => {
+        const parsed = addImpliedRatesToMaslekaSummary(parseMaslekaWorkbook(createWorkbookBuffer()), 10);
+        const projected = projectMaslekaSummaryToYears(parsed, 0);
+
+        expect(projected.selectedYearsToRetirement).toBe(0);
+        expect(projected.selectedDepositYears).toBe(0);
+        expect(projected.total.projectedNoContribBalance).toBe(parsed.total.projectedNoContribBalance);
+        expect(projected.total.projectedWithContribBalance).toBe(parsed.total.projectedNoContribBalance);
+        expect(projected.total.projectedWithContribAnnuity).toBe(parsed.total.projectedNoContribAnnuity);
+    });
+
+    it('also recalculates the target year instead of returning raw file values', () => {
+        const parsed = addImpliedRatesToMaslekaSummary(parseMaslekaWorkbook(createWorkbookBuffer()), 10);
+        const projected = projectMaslekaSummaryToYears(parsed, 10);
+
+        expect(projected.total.selectedDepositYears).toBe(10);
+        expect(projected.total.projectedNoContribBalance).toBe(parsed.total.projectedNoContribBalance);
+        expect(projected.total.projectedWithContribBalance).toBe(parsed.total.projectedWithContribBalance);
+        expect(projected.total.projectedWithContribAnnuity).toBe(parsed.total.projectedWithContribAnnuity);
     });
 });
