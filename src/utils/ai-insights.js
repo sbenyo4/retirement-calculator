@@ -220,14 +220,53 @@ export const generateInsightPrompt = (inputs, results, language) => {
         crashScenarioText = `ACTIVE — Market crash scenario is enabled:\n    - Crash Start Year: ${s.startYear}\n    - Crash Depth: ${s.crashDepth}%\n    - Recovery Period: ${s.recoveryYears} years (${s.recoveryShape} recovery)\n    - Recovery Mode: ${s.recoveryMode === 'rate' ? `Target avg rate of ${s.targetAvgRate}% during recovery` : 'Recover to original value'}\n    -${bucketNote || ' No bucket strategy active.'}`;
     }
 
-    // Format Pension Sources
+    // Format Pension Sources — enriched
     let pensionText = "None";
     if (inputs.pensionIncomeSources && inputs.pensionIncomeSources.length > 0) {
         pensionText = inputs.pensionIncomeSources.map(s => {
-            const isNI = s.type === 'nationalInsurance';
-            const grossInfo = s.isTaxable !== false ? " (Gross)" : " (Net/Exempt)";
-            return `- ${s.name || (isNI ? 'National Insurance' : 'Annuity')}: ${currency}${s.amount}${grossInfo}, Start: ${s.startAge}${s.endAge ? `, End: ${s.endAge}` : ''}${s.autoCalculated ? ' (Auto-calculated)' : ''}`;
+            const grossInfo = s.isTaxable !== false ? " (taxable/Gross)" : " (tax-exempt/Net)";
+            const endInfo = s.endAge ? `, End: ${s.endAge}` : ' (lifetime)';
+            let line = `- ${s.name || s.type} [${s.type}]: ${currency}${s.amount}/mo${grossInfo}, Start: ${s.startAge}${endInfo}${s.autoCalculated ? ' (auto-calculated)' : ''}`;
+            const extras = [];
+            if (s.currentAsset?.balance) {
+                const bal = Math.round(parseFloat(s.currentAsset.balance));
+                const ageAt = s.currentAsset.ageAtDate ? ` at age ${s.currentAsset.ageAtDate}` : '';
+                extras.push(`fund balance: ${currency}${bal.toLocaleString()}${ageAt}`);
+                if (s.currentAsset.kind) extras.push(`kind: ${s.currentAsset.kind}`);
+                if (s.currentAsset.returnRate !== undefined && s.currentAsset.returnRate !== '') extras.push(`fund return: ${s.currentAsset.returnRate}%`);
+            }
+            if (s.calculationDetails) {
+                const d = s.calculationDetails;
+                if (d.totalMonthly) extras.push(`NI total: ${currency}${Math.round(d.totalMonthly)}/mo`);
+                if (d.baseAmount) extras.push(`NI base: ${currency}${Math.round(d.baseAmount)}/mo`);
+                if (d.dependentAddition) extras.push(`NI dependent add-on: ${currency}${Math.round(d.dependentAddition)}/mo`);
+            }
+            if (extras.length) line += `\n      (${extras.join(' | ')})`;
+            return line;
         }).join('\n    ');
+    }
+
+    // Pension interest rate
+    const pensionRate = inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : null;
+
+    // Masleka pension clearinghouse data
+    const fmtM = (v) => `${currency}${Math.round(v || 0).toLocaleString()}`;
+    let maslekaBlock = '';
+    const ms = inputs.pensionMaslekaSummary;
+    if (ms?.total) {
+        const tot = ms.total;
+        const catLines = (ms.categories || []).map(c => {
+            const label = isHebrew ? (c.labelHe || c.labelEn) : (c.labelEn || c.labelHe);
+            return `      • ${label}: current ${fmtM(c.currentBalance)} | w/contrib → ${fmtM(c.projectedWithContribBalance)} (${fmtM(c.projectedWithContribAnnuity)}/mo) | w/o contrib → ${fmtM(c.projectedNoContribBalance)} (${fmtM(c.projectedNoContribAnnuity)}/mo) | deposits: ${fmtM(c.monthlyDeposits)}/mo | return: ${c.weightedYearlyReturn?.toFixed(1) ?? '?'}% | fees: ${c.weightedFeesFromBalance?.toFixed(2) ?? '?'}%`;
+        }).join('\n');
+        maslekaBlock = `\n    Pension Fund Clearinghouse (Masleka${ms.asOfDate ? `, as of ${ms.asOfDate}` : ''}):\n    - Total current balance: ${fmtM(tot.currentBalance)}\n    - With contributions → balance: ${fmtM(tot.projectedWithContribBalance)} | annuity: ${fmtM(tot.projectedWithContribAnnuity)}/mo\n    - Without contributions → balance: ${fmtM(tot.projectedNoContribBalance)} | annuity: ${fmtM(tot.projectedNoContribAnnuity)}/mo\n    - Monthly deposits (employee+employer): ${fmtM(tot.monthlyDeposits)}\n    - Weighted return: ${tot.weightedYearlyReturn?.toFixed(1) ?? '?'}% | fees: ${tot.weightedFeesFromBalance?.toFixed(2) ?? '?'}%\n    - By category:\n${catLines}`;
+    }
+
+    // Stored pension AI insight
+    let pensionAiBlock = '';
+    const pai = inputs.pensionAIInsight;
+    if (pai?.summary) {
+        pensionAiBlock = `\n    Previous Pension AI Analysis:\n    ${pai.summary}${pai.recommendations?.length ? '\n    Recommendations: ' + pai.recommendations.join(' | ') : ''}`;
     }
 
     // National Insurance Context
@@ -271,8 +310,9 @@ export const generateInsightPrompt = (inputs, results, language) => {
     - Tax Rate on Capital Gains: ${inputs.taxRate ?? 25}%
     - Target End Balance: ${inputs.targetEndBalance ? `${currency}${inputs.targetEndBalance}` : 'Not set (no legacy/inheritance goal)'}
     
-    Pension Income Sources:
+    Pension Income Sources:${pensionRate !== null ? `\n    - Pension fund assumed return rate: ${pensionRate}%/yr` : ''}
     ${pensionText}
+    ${maslekaBlock}${pensionAiBlock}
 
     ${niContext}
     
@@ -780,16 +820,31 @@ export const generatePensionInsightPrompt = (incomeSources, summary, inputs, lan
     const pensionExemptionRate = Math.round((inputs.fiscalParameters?.pensionExemption?.rate ?? 0.575) * 100);
     const pensionExemptionMax = inputs.fiscalParameters?.pensionExemption?.maxMonthly ?? 5422;
 
+    // Pension interest rate and Masleka for pension prompt
+    const pensionReturnRate = inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : null;
+    const fmtP = (v) => `${currency}${Math.round(v || 0).toLocaleString()}`;
+    let maslekaBlockP = '';
+    const msP = inputs.pensionMaslekaSummary;
+    if (msP?.total) {
+        const totP = msP.total;
+        const catLinesP = (msP.categories || []).map(c => {
+            const label = isHebrew ? (c.labelHe || c.labelEn) : (c.labelEn || c.labelHe);
+            return `  • ${label}: current ${fmtP(c.currentBalance)} | w/contrib → ${fmtP(c.projectedWithContribBalance)} (${fmtP(c.projectedWithContribAnnuity)}/mo) | w/o → ${fmtP(c.projectedNoContribBalance)} (${fmtP(c.projectedNoContribAnnuity)}/mo) | deposits ${fmtP(c.monthlyDeposits)}/mo | return ${c.weightedYearlyReturn?.toFixed(1) ?? '?'}% | fees ${c.weightedFeesFromBalance?.toFixed(2) ?? '?'}%`;
+        }).join('\n');
+        maslekaBlockP = `\nPENSION FUND CLEARINGHOUSE DATA (Masleka${msP.asOfDate ? `, as of ${msP.asOfDate}` : ''}):\n- Total current balance: ${fmtP(totP.currentBalance)}\n- With contributions: balance ${fmtP(totP.projectedWithContribBalance)}, annuity ${fmtP(totP.projectedWithContribAnnuity)}/mo\n- Without contributions: balance ${fmtP(totP.projectedNoContribBalance)}, annuity ${fmtP(totP.projectedNoContribAnnuity)}/mo\n- Monthly deposits (employee+employer): ${fmtP(totP.monthlyDeposits)}\n- Weighted return: ${totP.weightedYearlyReturn?.toFixed(1) ?? '?'}% | fees: ${totP.weightedFeesFromBalance?.toFixed(2) ?? '?'}%\n- By category:\n${catLinesP}\n`;
+    }
+
     return `Act as a senior Israeli retirement financial advisor specializing in pension income.
 Analyze ONLY the pension income phase from age ${pensionStartAge} onwards. Do NOT mention or analyze any earlier period.
 CRITICAL: Every sentence MUST include specific numbers. No generic advice.
 
 PENSION PHASE (age ${pensionStartAge} to ${inputs.retirementEndAge || 90}, ${(inputs.retirementEndAge || 90) - pensionStartAge} years):
 - Desired monthly net income: ${currency}${monthlyExpenses}
-- Net pension income at age ${pensionStartAge}: ${currency}${netAtPensionStart} — covers ${coveragePct}% of desired
+- Net pension income at age ${pensionStartAge}: ${currency}${netAtPensionStart} — covers ${coveragePct}% of desired${pensionReturnRate !== null ? `\n- Pension fund assumed return rate: ${pensionReturnRate}%/yr` : ''}
 
 INCOME SOURCES (${activeSources.length} active):
 ${sourcesText || 'None'}
+${maslekaBlockP}
 
 INCOME BY AGE MILESTONE:
 ${milestonesText || 'No milestones'}

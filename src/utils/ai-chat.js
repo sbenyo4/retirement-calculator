@@ -13,11 +13,52 @@ export function buildChatSystemPrompt(inputs, results, language) {
     const yearsToRetirement = Math.max(0, Math.round(parseFloat(inputs.retirementStartAge) - parseFloat(inputs.currentAge)));
     const yearsInRetirement = Math.round(parseFloat(inputs.retirementEndAge) - parseFloat(inputs.retirementStartAge));
 
-    // Pension sources
+    // Pension sources — enriched per-source detail
     const pensionText = (inputs.pensionIncomeSources || [])
         .filter(s => s.enabled !== false)
-        .map(s => `${s.name || s.type}: ${currency}${s.amount}/mo from age ${s.startAge}${s.endAge ? ` to ${s.endAge}` : ''}${s.isTaxable === false ? ' (tax-exempt)' : ''}`)
+        .map(s => {
+            const base = `${s.name || s.type} [${s.type}]: ${currency}${s.amount}/mo from age ${s.startAge}${s.endAge ? ` to ${s.endAge}` : ' (lifetime)'}${s.isTaxable === false ? ' (tax-exempt)' : ' (taxable)'}`;
+            const extras = [];
+            if (s.currentAsset?.balance) {
+                const bal = Math.round(parseFloat(s.currentAsset.balance));
+                const ageAtDate = s.currentAsset.ageAtDate ? ` at age ${s.currentAsset.ageAtDate}` : '';
+                extras.push(`fund balance: ${currency}${bal.toLocaleString()}${ageAtDate}`);
+                if (s.currentAsset.kind) extras.push(`kind: ${s.currentAsset.kind}`);
+                if (s.currentAsset.returnRate !== undefined && s.currentAsset.returnRate !== '') extras.push(`fund return: ${s.currentAsset.returnRate}%`);
+            }
+            if (s.calculationDetails) {
+                const d = s.calculationDetails;
+                if (d.totalMonthly) extras.push(`NI total: ${currency}${Math.round(d.totalMonthly)}/mo`);
+                if (d.baseAmount) extras.push(`NI base: ${currency}${Math.round(d.baseAmount)}/mo`);
+                if (d.dependentAddition) extras.push(`NI dependent add-on: ${currency}${Math.round(d.dependentAddition)}/mo`);
+            }
+            if (s.providentAnnuityAmount) extras.push(`provident annuity: ${currency}${Math.round(s.providentAnnuityAmount)}/mo`);
+            return extras.length ? `${base}\n    (${extras.join(' | ')})` : base;
+        })
         .join('\n  ') || 'None';
+
+    // Pension interest rate
+    const pensionRate = inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : null;
+
+    // Masleka pension clearinghouse data
+    let maslekaSection = '';
+    const ms = inputs.pensionMaslekaSummary;
+    if (ms?.total) {
+        const t2 = ms.total;
+        const fmt = (v) => `${currency}${Math.round(v || 0).toLocaleString()}`;
+        const catLines = (ms.categories || []).map(c => {
+            const label = isHe ? (c.labelHe || c.labelEn) : (c.labelEn || c.labelHe);
+            return `    • ${label}: current ${fmt(c.currentBalance)} | projected w/contrib ${fmt(c.projectedWithContribBalance)} (${fmt(c.projectedWithContribAnnuity)}/mo) | w/o contrib ${fmt(c.projectedNoContribBalance)} (${fmt(c.projectedNoContribAnnuity)}/mo) | monthly deposits ${fmt(c.monthlyDeposits)} | return ${c.weightedYearlyReturn ? c.weightedYearlyReturn.toFixed(1) : '?'}% | fees ${c.weightedFeesFromBalance ? c.weightedFeesFromBalance.toFixed(2) : '?'}%`;
+        }).join('\n');
+        maslekaSection = `\nPENSION FUND CLEARINGHOUSE (Masleka${ms.asOfDate ? `, as of ${ms.asOfDate}` : ''}):\n- Total current balance: ${fmt(t2.currentBalance)}\n- Projected with contributions → balance: ${fmt(t2.projectedWithContribBalance)} | monthly annuity: ${fmt(t2.projectedWithContribAnnuity)}/mo\n- Projected without contributions → balance: ${fmt(t2.projectedNoContribBalance)} | monthly annuity: ${fmt(t2.projectedNoContribAnnuity)}/mo\n- Total monthly deposits (employee+employer): ${fmt(t2.monthlyDeposits)}\n- Weighted annual return: ${t2.weightedYearlyReturn ? t2.weightedYearlyReturn.toFixed(1) : '?'}% | Weighted fees: ${t2.weightedFeesFromBalance ? t2.weightedFeesFromBalance.toFixed(2) : '?'}%\n- By category:\n${catLines}\n`;
+    }
+
+    // Stored pension AI insight (if previously analysed)
+    let pensionAiSection = '';
+    const pai = inputs.pensionAIInsight;
+    if (pai?.summary) {
+        pensionAiSection = `\nPENSION AI ANALYSIS (previously generated):\n${pai.summary}${pai.recommendations?.length ? '\nRecommendations: ' + pai.recommendations.join(' | ') : ''}\n`;
+    }
 
     // Bucket strategy
     let bucketText = 'Single portfolio (no bucket strategy)';
@@ -153,9 +194,9 @@ USER PROFILE:
 - Withdrawal strategy: ${withdrawalStrategyText}
 - Portfolio strategy: ${bucketText}
 
-PENSION / INCOME SOURCES:
-${pensionText}
-
+PENSION / INCOME SOURCES:${pensionRate !== null ? `\n- Pension fund assumed return rate: ${pensionRate}%/yr` : ''}
+  ${pensionText}
+${maslekaSection}${pensionAiSection}
 LIFE EVENTS (one-time or recurring changes):
 ${eventsText}
 
