@@ -20,11 +20,21 @@ function AIInsightsView({ inputs, results, aiProvider, aiModel, apiKeyOverride, 
         abortRef.current?.abort();
         const controller = new AbortController();
         abortRef.current = controller;
+        let didTimeout = false;
+        const timeoutId = setTimeout(() => {
+            didTimeout = true;
+            controller.abort();
+            setLoading(false);
+            setError(isHebrew
+                ? 'בקשת ה-AI נמשכה יותר מדי זמן. נסה שוב או בחר מודל מהיר יותר.'
+                : 'The AI request took too long. Try again or choose a faster model.');
+        }, 45000);
 
         setLoading(true);
         setError(null);
         try {
             const data = await getAIInsights(inputs, results, aiProvider, aiModel, apiKeyOverride, language, { signal: controller.signal });
+            if (didTimeout || controller.signal.aborted) return;
             if (onInsightsChange) {
                 onInsightsChange(data);
             }
@@ -32,6 +42,7 @@ function AIInsightsView({ inputs, results, aiProvider, aiModel, apiKeyOverride, 
             if (err.name === 'AbortError') return;
             setError(err.message);
         } finally {
+            clearTimeout(timeoutId);
             setLoading(false);
         }
     };

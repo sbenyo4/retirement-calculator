@@ -783,8 +783,9 @@ function MainApp() {
     } catch (error) {
       if (error.name === 'AbortError') return;
       console.error("AI Error:", error);
-      // Error message is already translated by the AI calculator
-      setAiError(error.message || t('unknownError'));
+      const message = error.message || '';
+      const isRawJsonParseError = /Expected .+ in JSON at position|JSON\.parse|malformed JSON/i.test(message);
+      setAiError(isRawJsonParseError ? t('errorJsonParse') : (message || t('unknownError')));
     } finally {
       setAiLoading(false);
     }

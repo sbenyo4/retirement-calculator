@@ -41,6 +41,209 @@ function findMatchingBrace(str, startIdx) {
     return -1;
 }
 
+function cleanAiJsonText(responseText) {
+    return String(responseText || '')
+        .replace(/```json/gi, '')
+        .replace(/```/g, '')
+        .replace(/\[\d+\]/g, '')
+        .trim();
+}
+
+function extractJsonObject(responseText) {
+    let cleaned = cleanAiJsonText(responseText);
+    const firstBrace = cleaned.indexOf('{');
+    let lastBrace = -1;
+
+    if (firstBrace !== -1) {
+        lastBrace = findMatchingBrace(cleaned, firstBrace);
+    }
+    if (lastBrace === -1) {
+        lastBrace = cleaned.lastIndexOf('}');
+    }
+
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+    }
+
+    return cleaned;
+}
+
+function repairCommonJsonIssues(jsonText) {
+    return insertMissingJsonCommas(jsonText)
+        // Remove trailing commas before object/array endings.
+        .replace(/,\s*([}\]])/g, '$1');
+}
+
+function isJsonWhitespace(char) {
+    return /\s/.test(char);
+}
+
+function isNumberStart(char) {
+    return char === '-' || (char >= '0' && char <= '9');
+}
+
+function isLiteralStart(char) {
+    return char === 't' || char === 'f' || char === 'n';
+}
+
+function nextNonWhitespace(text, index) {
+    for (let i = index; i < text.length; i++) {
+        if (!isJsonWhitespace(text[i])) return text[i];
+    }
+    return '';
+}
+
+function shouldInsertComma(lastToken) {
+    return lastToken === 'value';
+}
+
+function insertMissingJsonCommas(jsonText) {
+    let repaired = '';
+    let lastToken = 'start';
+    let i = 0;
+
+    while (i < jsonText.length) {
+        const char = jsonText[i];
+
+        if (char === '"') {
+            if (shouldInsertComma(lastToken)) repaired += ',';
+            repaired += char;
+            i++;
+
+            let escaped = false;
+            while (i < jsonText.length) {
+                const current = jsonText[i];
+                repaired += current;
+
+                if (escaped) {
+                    escaped = false;
+                } else if (current === '\\') {
+                    escaped = true;
+                } else if (current === '"') {
+                    const next = nextNonWhitespace(jsonText, i + 1);
+                    lastToken = next === ':' ? 'key' : 'value';
+                    break;
+                }
+                i++;
+            }
+        } else if (char === '{' || char === '[') {
+            if (shouldInsertComma(lastToken)) repaired += ',';
+            repaired += char;
+            lastToken = 'open';
+        } else if (char === '}' || char === ']') {
+            repaired += char;
+            lastToken = 'value';
+        } else if (char === ':') {
+            repaired += char;
+            lastToken = 'colon';
+        } else if (char === ',') {
+            repaired += char;
+            lastToken = 'comma';
+        } else if (isNumberStart(char)) {
+            if (shouldInsertComma(lastToken)) repaired += ',';
+            const start = i;
+            i++;
+            while (i < jsonText.length && /[0-9.eE+-]/.test(jsonText[i])) i++;
+            repaired += jsonText.slice(start, i);
+            i--;
+            lastToken = 'value';
+        } else if (isLiteralStart(char)) {
+            if (shouldInsertComma(lastToken)) repaired += ',';
+            const start = i;
+            i++;
+            while (i < jsonText.length && /[A-Za-z]/.test(jsonText[i])) i++;
+            repaired += jsonText.slice(start, i);
+            i--;
+            lastToken = 'value';
+        } else {
+            repaired += char;
+        }
+
+        i++;
+    }
+
+    return repaired;
+}
+
+export function parseAiJsonObject(responseText) {
+    const jsonText = extractJsonObject(responseText);
+
+    try {
+        return JSON.parse(jsonText);
+    } catch (firstError) {
+        const repaired = repairCommonJsonIssues(jsonText);
+        if (repaired !== jsonText) {
+            try {
+                return JSON.parse(repaired);
+            } catch {
+                // Fall through and throw the original parse error below.
+            }
+        }
+
+        throw firstError;
+    }
+}
+
+const AI_RETIREMENT_RESULT_FIELDS = [
+    'balanceAtRetirement',
+    'balanceAtEnd',
+    'ranOutAtAge',
+    'requiredCapitalAtRetirement',
+    'requiredCapitalForPerpetuity',
+    'surplus',
+    'pvOfDeficit',
+    'pvOfCapitalPreservation',
+    'initialGrossWithdrawal',
+];
+
+function parseLooseNumberValue(value) {
+    if (value === undefined) return undefined;
+    const trimmed = String(value).trim().replace(/^"|"$/g, '');
+    if (trimmed === 'null') return null;
+
+    const normalized = trimmed.replace(/,/g, '');
+    const number = Number(normalized);
+    return Number.isFinite(number) ? number : undefined;
+}
+
+export function salvageAiRetirementResult(responseText) {
+    const text = cleanAiJsonText(responseText);
+    const result = {};
+
+    for (const field of AI_RETIREMENT_RESULT_FIELDS) {
+        const match = text.match(new RegExp(`"${field}"\\s*:\\s*("?-?\\d[\\d,.]*"?|null)`, 'i'));
+        const value = parseLooseNumberValue(match?.[1]);
+        if (value !== undefined) {
+            result[field] = value;
+        }
+    }
+
+    const hasCoreProjection =
+        Number.isFinite(result.balanceAtRetirement) &&
+        Number.isFinite(result.requiredCapitalAtRetirement);
+
+    if (!hasCoreProjection) return null;
+
+    for (const field of AI_RETIREMENT_RESULT_FIELDS) {
+        if (result[field] === undefined) {
+            result[field] = field === 'ranOutAtAge' ? null : 0;
+        }
+    }
+
+    return result;
+}
+
+function fallbackToMathematicalBaseline(mathematicalBaseline) {
+    if (!mathematicalBaseline || typeof mathematicalBaseline !== 'object') return null;
+    if (!Number.isFinite(mathematicalBaseline.balanceAtRetirement)) return null;
+
+    return {
+        ...mathematicalBaseline,
+        source: 'math-fallback',
+        aiFallbackReason: 'malformed-json',
+    };
+}
+
 /**
  * Strips raw API noise (URLs, SDK prefixes) from error messages and attaches
  * a stable `code` so callers can show localized UI messages.
@@ -527,25 +730,17 @@ export async function calculateRetirementWithAI(inputs, provider, model, apiKeyO
         // Check if aborted while waiting for response
         if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
-        // More robust JSON extraction:
-        // 1. Remove markdown blocks and Gemini grounding citation markers ([1], [2]...)
-        let cleaned = responseText.replace(/```json/g, '').replace(/```/g, '').replace(/\[\d+\]/g, '').trim();
-
-        // 2. Find the first '{' and the matching '}' to isolate the JSON object
-        const firstBrace = cleaned.indexOf('{');
-        let lastBrace = -1;
-        if (firstBrace !== -1) {
-            lastBrace = findMatchingBrace(cleaned, firstBrace);
+        let parsed;
+        try {
+            parsed = parseAiJsonObject(responseText);
+        } catch (parseError) {
+            parsed = salvageAiRetirementResult(responseText);
+            if (!parsed) {
+                const fallback = fallbackToMathematicalBaseline(mathematicalBaseline);
+                if (fallback) return fallback;
+                throw parseError;
+            }
         }
-        if (lastBrace === -1) {
-            lastBrace = cleaned.lastIndexOf('}');
-        }
-
-        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-            cleaned = cleaned.substring(firstBrace, lastBrace + 1);
-        }
-
-        const parsed = JSON.parse(cleaned);
 
         // Data Normalization (Crucial for different AI behaviors)
         // 1. Normalize tax rates: AI often returns 10 instead of 0.10
@@ -954,22 +1149,9 @@ ${earlyRetirementNote}
         responseText = message.content[0].text;
     }
 
-    const cleaned = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-    const firstBrace = cleaned.indexOf('{');
-    let lastBrace = -1;
-    if (firstBrace !== -1) {
-        lastBrace = findMatchingBrace(cleaned, firstBrace);
-    }
-    if (lastBrace === -1) {
-        lastBrace = cleaned.lastIndexOf('}');
-    }
-    const jsonStr = firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace
-        ? cleaned.substring(firstBrace, lastBrace + 1)
-        : cleaned;
-
     let parsed;
     try {
-        parsed = JSON.parse(jsonStr);
+        parsed = parseAiJsonObject(responseText);
     } catch {
         throw new Error('AI returned malformed JSON — could not parse response');
     }

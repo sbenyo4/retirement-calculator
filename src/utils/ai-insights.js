@@ -44,25 +44,7 @@ function findMatchingBrace(str, startIdx) {
  * Handles: markdown fences, BOM, control characters, trailing commas.
  */
 function parseAiJson(raw) {
-    const text = String(raw || '')
-        .replace(/^\uFEFF/, '')
-        .replace(/```json\s*/gi, '')
-        .replace(/```\s*/g, '')
-        .trim();
-    const start = text.indexOf('{');
-    let end = -1;
-    if (start >= 0) {
-        end = findMatchingBrace(text, start);
-    }
-    if (end < 0) {
-        end = text.lastIndexOf('}');
-    }
-    if (start < 0 || end <= start) throw new Error('AI response did not contain a JSON object');
-    const extracted = text.slice(start, end + 1)
-        .split('').filter(c => { const code = c.charCodeAt(0); return code === 0x09 || code === 0x0A || code === 0x0D || code >= 0x20; }).join('')
-        .replace(/[\r\n]/g, ' ')
-        .replace(/,\s*([}\]])/g, '$1');
-    return JSON.parse(extracted);
+    return parseAiJsonObject(raw);
 }
 
 /**
@@ -96,8 +78,13 @@ export function classifyAiError(err) {
     return { type, raw: err?.message || '' };
 }
 import { calculateRetirementProjection } from './calculator';
-import { withRetry, RETRY_CONFIG } from './ai-calculator';
+import { parseAiJsonObject, withRetry } from './ai-calculator';
 import { DEFAULT_TAX_BRACKETS } from './fiscalDefaults';
+
+const INSIGHT_RETRY_OPTIONS = {
+    maxRetries: 1,
+    timeoutMs: 30000,
+};
 
 /**
  * Generates a specialized prompt for AI qualitative analysis of retirement data.
@@ -812,7 +799,7 @@ export async function getAIInsights(inputs, results, provider, model, apiKeyOver
                 const result = await genModel.generateContent(prompt);
                 const response = await result.response;
                 return response.text();
-            }, { onRetry });
+            }, { onRetry, ...INSIGHT_RETRY_OPTIONS });
 
         } else if (provider === 'openai') {
             const { default: OpenAI } = await import("openai");
@@ -824,7 +811,7 @@ export async function getAIInsights(inputs, results, provider, model, apiKeyOver
                     model: model,
                     response_format: { type: "json_object" }
                 });
-            }, { onRetry });
+            }, { onRetry, ...INSIGHT_RETRY_OPTIONS });
 
             responseText = completion.choices[0].message.content;
 
@@ -838,7 +825,7 @@ export async function getAIInsights(inputs, results, provider, model, apiKeyOver
                     max_tokens: 4096,
                     messages: [{ role: "user", content: prompt }]
                 });
-            }, { onRetry });
+            }, { onRetry, ...INSIGHT_RETRY_OPTIONS });
 
             responseText = message.content[0].text;
         }
