@@ -82,6 +82,27 @@ export function buildChatSystemPrompt(inputs, results, language) {
         }
     }
 
+    // Additional yearly income (reduces savings burden during active years)
+    const activeAdditional = (inputs.additionalYearlyIncome || [])
+        .filter(e => e.enabled !== false && parseFloat(e.monthlyAmount) > 0 && e.startYear);
+    const additionalIncomeText = activeAdditional.length > 0
+        ? activeAdditional.map(e => {
+            const end = e.endYear ? `–${e.endYear}` : ' (ongoing)';
+            return `  - ${e.description || 'Additional income'}: ${currency}${Math.round(parseFloat(e.monthlyAmount))}/mo, years ${e.startYear}${end}`;
+        }).join('\n')
+        : '  None';
+
+    // Yearly income overrides (desired income target by year)
+    const overrideEntries = inputs.yearlyIncomeOverrides && typeof inputs.yearlyIncomeOverrides === 'object'
+        ? Object.entries(inputs.yearlyIncomeOverrides)
+            .filter(([, v]) => parseFloat(v) > 0)
+            .sort(([a], [b]) => parseInt(a) - parseInt(b))
+        : [];
+    const incomeScheduleText = overrideEntries.length > 0
+        ? overrideEntries.map(([yr, amt]) => `  - Year ${yr}: ${currency}${Math.round(parseFloat(amt))}/mo`).join('\n')
+          + `\n  - All other years: ${currency}${inputs.monthlyNetIncomeDesired}/mo (base)`
+        : null;
+
     // Life events
     const activeEvents = (inputs.lifeEvents || []).filter(e => e.enabled !== false);
     const eventsText = activeEvents.length
@@ -197,6 +218,9 @@ USER PROFILE:
 PENSION / INCOME SOURCES:${pensionRate !== null ? `\n- Pension fund assumed return rate: ${pensionRate}%/yr` : ''}
   ${pensionText}
 ${maslekaSection}${pensionAiSection}
+ADDITIONAL INCOME (reduces savings withdrawal during active periods):
+${additionalIncomeText}
+${incomeScheduleText ? `\nINCOME SCHEDULE (desired monthly target by year):\n${incomeScheduleText}` : ''}
 LIFE EVENTS (one-time or recurring changes):
 ${eventsText}
 

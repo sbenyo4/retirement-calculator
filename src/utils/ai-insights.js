@@ -269,6 +269,73 @@ export const generateInsightPrompt = (inputs, results, language) => {
         pensionAiBlock = `\n    Previous Pension AI Analysis:\n    ${pai.summary}${pai.recommendations?.length ? '\n    Recommendations: ' + pai.recommendations.join(' | ') : ''}`;
     }
 
+    // Pension phase coverage calculations
+    const retireAge = parseFloat(inputs.retirementStartAge) || 67;
+    const retireYear = new Date().getFullYear() + Math.max(0, Math.round(retireAge - (parseFloat(inputs.currentAge) || 0)));
+    const monthlyDesired = parseFloat(inputs.monthlyNetIncomeDesired) || 0;
+    const activePensionSources = (inputs.pensionIncomeSources || []).filter(s => s.enabled !== false);
+
+    const pensionAtAge = (age) => activePensionSources
+        .filter(s => parseFloat(s.startAge) <= age && (s.endAge == null || parseFloat(s.endAge) > age))
+        .reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
+
+    // Additional yearly income (reduces savings burden per year range)
+    const activeAdditional = (inputs.additionalYearlyIncome || [])
+        .filter(e => e.enabled !== false && parseFloat(e.monthlyAmount) > 0 && e.startYear);
+    const additionalIncomeText = activeAdditional.length > 0
+        ? activeAdditional.map(e => {
+            const end = e.endYear ? `–${e.endYear}` : ' (ongoing)';
+            return `  • ${e.description || 'Additional income'}: ${currency}${Math.round(parseFloat(e.monthlyAmount))}/mo, years ${e.startYear}${end}`;
+        }).join('\n')
+        : '  None';
+
+    // Yearly income overrides (desired income target changes by year)
+    const overrides = inputs.yearlyIncomeOverrides && typeof inputs.yearlyIncomeOverrides === 'object'
+        ? Object.entries(inputs.yearlyIncomeOverrides)
+            .filter(([, v]) => parseFloat(v) > 0)
+            .sort(([a], [b]) => parseInt(a) - parseInt(b))
+        : [];
+    const incomeScheduleText = overrides.length > 0
+        ? overrides.map(([yr, amt]) => `  • Year ${yr}: ${currency}${Math.round(parseFloat(amt))}/mo`).join('\n')
+          + `\n  • All other years: ${currency}${monthlyDesired}/mo (base)`
+        : `  None — fixed ${currency}${monthlyDesired}/mo throughout`;
+
+    // Helper: additional income active in a given calendar year
+    const additionalAtYear = (yr) => activeAdditional
+        .filter(e => parseInt(e.startYear) <= yr && (!e.endYear || parseInt(e.endYear) >= yr))
+        .reduce((sum, e) => sum + (parseFloat(e.monthlyAmount) || 0), 0);
+
+    // Helper: desired income for a given calendar year (override or base)
+    const targetAtYear = (yr) => {
+        const ov = inputs.yearlyIncomeOverrides?.[String(yr)];
+        return ov && parseFloat(ov) > 0 ? parseFloat(ov) : monthlyDesired;
+    };
+
+    // Compute effective gap at each key milestone
+    const keyAges = retireAge < 67
+        ? [{ age: retireAge, label: `retirement (age ${retireAge})` }, { age: 67, label: 'age 67 (NI starts)' }, { age: 70, label: 'age 70 (NI unconditional)' }]
+        : [{ age: 67, label: 'age 67 (NI + full pension)' }, { age: 70, label: 'age 70 (NI unconditional)' }];
+
+    const milestoneLines = keyAges.map(({ age, label }) => {
+        const yr = retireYear + Math.round(age - retireAge);
+        const pension = pensionAtAge(age);
+        const additional = additionalAtYear(yr);
+        const target = targetAtYear(yr);
+        const totalIncome = pension + additional;
+        const gap = target - totalIncome;
+        const covPct = target > 0 ? Math.round((totalIncome / target) * 100) : 0;
+        const addNote = additional > 0 ? ` + additional ${currency}${Math.round(additional)}/mo` : '';
+        const targetNote = target !== monthlyDesired ? ` [income target: ${currency}${Math.round(target)}/mo this year]` : '';
+        return `- At ${label}: pension ${currency}${Math.round(pension)}/mo${addNote} = total ${currency}${Math.round(totalIncome)}/mo → covers ${covPct}% of ${currency}${Math.round(target)} target${targetNote} | savings gap: ${currency}${Math.round(Math.abs(gap))}/mo ${gap > 0 ? '(from savings)' : '(surplus)'}`;
+    }).join('\n');
+
+    // Pension phase block
+    const pensionPhaseBlock = `
+POST-RETIREMENT INCOME ANALYSIS (pension + additional income vs savings gap):
+- Base desired monthly income: ${currency}${monthlyDesired.toLocaleString()}/mo
+${milestoneLines}
+`;
+
     // National Insurance Context
     const niSource = inputs.pensionIncomeSources?.find(s => s.type === 'nationalInsurance');
     const niThreshold = results.niThreshold || 20000; // Fallback or from results
@@ -315,7 +382,14 @@ export const generateInsightPrompt = (inputs, results, language) => {
     ${maslekaBlock}${pensionAiBlock}
 
     ${niContext}
-    
+
+    ${pensionPhaseBlock}
+    Additional Income Sources (reduce savings withdrawals during active years):
+    ${additionalIncomeText}
+
+    Income Schedule (desired monthly target overridden by year):
+    ${incomeScheduleText}
+
     Significant Life Events (One-time or recurring changes):
     ${lifeEventsText}
 
@@ -371,6 +445,16 @@ export const generateInsightPrompt = (inputs, results, language) => {
     }
     
     Guidance for Analysis:
+    - PENSION INCOME PHASE (mandatory — always analyze this even if pension is small):
+      1. Use "POST-RETIREMENT INCOME ANALYSIS" data. State the effective savings gap at each key age — pension + additional income combined, against the ACTUAL income target for that year (override if set, base otherwise). Never use the base income as the target if an override exists for that year.
+      2. Quantify the gap: how much must come from savings/portfolio each month, and for how long.
+      3. If the user retires before 67: highlight the "bridge period" — years with no NI, potentially reduced pension, fully relying on savings.
+      4. If pension fully covers desired income (gap ≤ 0): note that savings act as a buffer/legacy, not as income, and the plan is pension-driven.
+      5. If Masleka data is present: reference the projected annuity from actual fund data vs the income sources entered. Flag any discrepancy.
+    - VARIABLE INCOME (mandatory if present):
+      1. Additional income sources: for each active entry, state the monthly amount, the year range, and by how much it reduces the savings withdrawal during those years.
+      2. Income schedule overrides: if the desired income target changes by year, explicitly state the target for each override period — never assume the base income applies uniformly when overrides exist.
+      3. Factor both into the recommendations: e.g. "during 2026–2030 rental income covers ₪X/mo of the gap, reducing the savings draw to ₪Y/mo".
     - If there are significant life events, specifically mention their impact.
     - LOOK at the "Sensitivity Analysis" section. Use it to populate the 'sensitivityAnalysis' field.
       Quote the EXACT numbers from the data. Identify the TOP 2 most impactful factors.
