@@ -38,8 +38,7 @@ export const normalizeInputs = (data) => {
         'annualReturnRate', 'taxRate', 'retirementStartAge',
         'retirementEndAge', 'currentAge',
         'bucketSafeRate', 'bucketSurplusRate', 'withdrawalPercentage',
-        'inflationRate', 'contributionYears', 'targetEndBalance', 'pensionInterestRate',
-        'pensionOfficialRetirementAge', 'pensionManagerInsuranceAge'
+        'inflationRate', 'contributionYears', 'targetEndBalance'
     ];
 
     numericFields.forEach(field => {

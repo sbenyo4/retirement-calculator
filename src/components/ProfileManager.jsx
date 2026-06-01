@@ -63,7 +63,15 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
     const stripComputedFields = (data) => {
         if (!data) return null;
         // eslint-disable-next-line no-unused-vars
-        const { pensionIncomeSources, pensionMaslekaSummary, pensionAIInsight, ...rest } = data;
+        const {
+            pensionIncomeSources,
+            pensionInterestRate: _interestRate,
+            pensionMaslekaSummary,
+            pensionAIInsight,
+            pensionOfficialRetirementAge: _officialAge,
+            pensionManagerInsuranceAge: _managerAge,
+            ...rest
+        } = data;
         
         // 1. Handle strategy/VR mutual exclusivity for comparison.
         // The UI treats strategies (Fixed, 4%, etc.) and Variable Rates as
@@ -152,7 +160,15 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
 
     const buildProfileDataToSave = () => {
         // Strip all global-pension fields — these live in the pension document, not the profile.
-        const { pensionIncomeSources, pensionMaslekaSummary: _masleka, pensionAIInsight: _ai, ...dataToSave } = currentInputs;
+        const {
+            pensionIncomeSources,
+            pensionInterestRate: _interestRate,
+            pensionMaslekaSummary: _masleka,
+            pensionAIInsight: _ai,
+            pensionOfficialRetirementAge: _officialAge,
+            pensionManagerInsuranceAge: _managerAge,
+            ...dataToSave
+        } = currentInputs;
         return {
             dataToSave: normalizeInputs(dataToSave),
             pensionIncomeSources
@@ -249,6 +265,12 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
             if (currentInputs?.pensionInterestRate !== undefined) {
                 payload.pensionInterestRate = currentInputs.pensionInterestRate;
             }
+            if (currentInputs?.pensionOfficialRetirementAge !== undefined) {
+                payload.pensionOfficialRetirementAge = currentInputs.pensionOfficialRetirementAge;
+            }
+            if (currentInputs?.pensionManagerInsuranceAge !== undefined) {
+                payload.pensionManagerInsuranceAge = currentInputs.pensionManagerInsuranceAge;
+            }
             // Masleka data lives in the pension document — preserve it across profile loads.
             if (currentInputs?.pensionMaslekaSummary != null) {
                 payload.pensionMaslekaSummary = currentInputs.pensionMaslekaSummary;
@@ -285,6 +307,12 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
             };
             if (currentInputs?.pensionInterestRate !== undefined) {
                 payload.pensionInterestRate = currentInputs.pensionInterestRate;
+            }
+            if (currentInputs?.pensionOfficialRetirementAge !== undefined) {
+                payload.pensionOfficialRetirementAge = currentInputs.pensionOfficialRetirementAge;
+            }
+            if (currentInputs?.pensionManagerInsuranceAge !== undefined) {
+                payload.pensionManagerInsuranceAge = currentInputs.pensionManagerInsuranceAge;
             }
             // Masleka data lives in the pension document — preserve it across profile loads.
             if (currentInputs?.pensionMaslekaSummary != null) {

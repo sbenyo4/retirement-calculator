@@ -155,7 +155,15 @@ export function useRetirementData() {
         if (!uid || !inputsLoaded) return;
 
         // Skip writing if inputs haven't actually changed since last auto-save
-        const { pensionIncomeSources, pensionAIInsight, pensionMaslekaSummary, ...inputsToSave } = inputs;
+        const {
+            pensionIncomeSources,
+            pensionInterestRate: _interestRate,
+            pensionAIInsight,
+            pensionMaslekaSummary,
+            pensionOfficialRetirementAge: _officialAge,
+            pensionManagerInsuranceAge: _managerAge,
+            ...inputsToSave
+        } = inputs;
         const normalized = normalizeInputs(inputsToSave);
         const serialized = JSON.stringify(normalized);
         if (lastSavedInputsRef.current === serialized) return;
