@@ -24,6 +24,8 @@ export const DEFAULT_INPUTS = {
     enableBuckets: false,
     pensionIncomeSources: [],
     pensionInterestRate: 4,
+    pensionOfficialRetirementAge: 67,
+    pensionManagerInsuranceAge: 67,
     contributionYears: 35,
     bucketSafeRate: 0,
     bucketSurplusRate: 0,

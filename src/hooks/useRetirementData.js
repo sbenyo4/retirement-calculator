@@ -73,6 +73,12 @@ export function useRetirementData() {
                     if (pensionData.interestRate !== undefined) {
                         baseInputs.pensionInterestRate = pensionData.interestRate;
                     }
+                    if (pensionData.officialRetirementAge !== undefined) {
+                        baseInputs.pensionOfficialRetirementAge = pensionData.officialRetirementAge;
+                    }
+                    if (pensionData.managerInsuranceAge !== undefined) {
+                        baseInputs.pensionManagerInsuranceAge = pensionData.managerInsuranceAge;
+                    }
                     if (pensionData.aiInsight != null) {
                         baseInputs.pensionAIInsight = pensionData.aiInsight;
                     }
@@ -93,6 +99,12 @@ export function useRetirementData() {
                         pensionIncomeSources: baseInputs.pensionIncomeSources,
                         ...(baseInputs.pensionInterestRate !== undefined
                             ? { pensionInterestRate: baseInputs.pensionInterestRate }
+                            : {}),
+                        ...(baseInputs.pensionOfficialRetirementAge !== undefined
+                            ? { pensionOfficialRetirementAge: baseInputs.pensionOfficialRetirementAge }
+                            : {}),
+                        ...(baseInputs.pensionManagerInsuranceAge !== undefined
+                            ? { pensionManagerInsuranceAge: baseInputs.pensionManagerInsuranceAge }
                             : {}),
                         ...(baseInputs.pensionAIInsight != null
                             ? { pensionAIInsight: baseInputs.pensionAIInsight }
@@ -164,12 +176,18 @@ export function useRetirementData() {
     /**
      * Explicitly save global pension sources and optional interest rate.
      */
-    const saveGlobalPension = useCallback(async (sources, interestRate, aiInsight, maslekaSummary) => {
+    const saveGlobalPension = useCallback(async (sources, interestRate, aiInsight, maslekaSummary, settings = {}) => {
         if (!uid || !sources) return;
         try {
             const dataToSave = { sources };
             if (interestRate !== undefined) {
                 dataToSave.interestRate = interestRate;
+            }
+            if (settings.officialRetirementAge !== undefined) {
+                dataToSave.officialRetirementAge = settings.officialRetirementAge;
+            }
+            if (settings.managerInsuranceAge !== undefined) {
+                dataToSave.managerInsuranceAge = settings.managerInsuranceAge;
             }
             if (aiInsight != null) {
                 dataToSave.aiInsight = JSON.parse(JSON.stringify(aiInsight));

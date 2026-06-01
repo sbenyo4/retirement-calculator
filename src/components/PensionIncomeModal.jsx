@@ -46,7 +46,7 @@ import {
     Redo2
 } from 'lucide-react';
 import { getPensionAIInsights, classifyAiError } from '../utils/ai-insights';
-import { addImpliedRatesToMaslekaSummary, getCompanyLogoUrl, parseMaslekaWorkbook, projectMaslekaSummaryToYears } from '../utils/maslekaParser';
+import { addImpliedRatesToMaslekaSummary, getCompanyLogoUrl, MASLEKA_CATEGORIES, parseMaslekaWorkbook, projectMaslekaSummaryToYears } from '../utils/maslekaParser';
 import {
     calculateNationalInsurance,
     calculateIncomeAtAge,
@@ -55,7 +55,6 @@ import {
     projectCurrentPensionSource,
     PENSION_TAX_BRACKETS
 } from '../utils/pensionCalculator';
-import { getMonthsBetweenAges } from '../utils/dateUtils';
 import { FiscalUpdateModal } from './FiscalUpdateModal';
 import { CustomSelect } from './common/CustomSelect';
 
@@ -217,6 +216,11 @@ function formatPercentValue(value) {
     return `${Number(value).toFixed(2)}%`;
 }
 
+function formatYearsValue(value) {
+    const years = Number(value) || 0;
+    return Math.abs(years - Math.round(years)) < 0.05 ? String(Math.round(years)) : years.toFixed(1);
+}
+
 
 function formatMaslekaCurrency(value, language) {
     const amount = Number(value) || 0;
@@ -225,6 +229,180 @@ function formatMaslekaCurrency(value, language) {
         currency: 'ILS',
         maximumFractionDigits: 0
     }).format(amount);
+}
+
+const MASLEKA_RATE_OPTIONS = Array.from({ length: 8 }, (_, index) => String(index + 3));
+const DEFAULT_OFFICIAL_RETIREMENT_AGE = 67;
+const DEFAULT_MANAGER_INSURANCE_AGE = 67;
+
+const MASLEKA_COMPANY_GROUPS = [
+    { value: 'brand:migdal', labelHe: 'מגדל', labelEn: 'Migdal', pattern: /מגדל|migdal/i },
+    { value: 'brand:clal', labelHe: 'כלל', labelEn: 'Clal', pattern: /כלל|clal/i },
+    { value: 'brand:harel', labelHe: 'הראל', labelEn: 'Harel', pattern: /הראל|harel/i },
+    { value: 'brand:menora', labelHe: 'מנורה', labelEn: 'Menora', pattern: /מנורה|מבטחים|menora/i },
+    { value: 'brand:phoenix', labelHe: 'הפניקס', labelEn: 'Phoenix', pattern: /הפניקס|phoenix|fnx/i },
+    { value: 'brand:ayalon', labelHe: 'איילון', labelEn: 'Ayalon', pattern: /איילון|ayalon/i },
+    { value: 'brand:meitav', labelHe: 'מיטב', labelEn: 'Meitav', pattern: /מיטב|meitav/i },
+    { value: 'brand:more', labelHe: 'מור', labelEn: 'More', pattern: /מור|more/i },
+    { value: 'brand:analyst', labelHe: 'אנליסט', labelEn: 'Analyst', pattern: /אנליסט|analyst/i }
+];
+
+function getMaslekaCompanyFilterOption(company, language = 'he') {
+    const normalized = String(company || '').trim();
+    const group = MASLEKA_COMPANY_GROUPS.find(item => item.pattern.test(normalized));
+    if (group) {
+        return {
+            value: group.value,
+            label: language === 'he' ? group.labelHe : group.labelEn
+        };
+    }
+
+    return {
+        value: `company:${normalized}`,
+        label: normalized
+    };
+}
+
+function growMaslekaBalance(currentBalance, annualRate, years) {
+    const balance = Number(currentBalance) || 0;
+    const projectedYears = Number(years) || 0;
+    const rate = Number(annualRate) / 100;
+    if (projectedYears <= 0) return balance;
+    return balance * Math.pow(1 + rate, projectedYears);
+}
+
+function futureValueWithMaslekaDeposits(currentBalance, monthlyDeposits, annualRate, years) {
+    const balance = Number(currentBalance) || 0;
+    const deposit = Number(monthlyDeposits) || 0;
+    const months = Math.max(0, Math.round((Number(years) || 0) * 12));
+    const rate = Number(annualRate) / 100;
+    if (months <= 0) return balance;
+
+    const monthlyRate = Math.pow(1 + rate, 1 / 12) - 1;
+    if (Math.abs(monthlyRate) < 1e-10) return balance + deposit * months;
+
+    return balance * Math.pow(1 + monthlyRate, months) +
+        deposit * ((Math.pow(1 + monthlyRate, months) - 1) / monthlyRate);
+}
+
+function projectMaslekaProductAtCustomRate(product, annualRate, targetYears, selectedDepositYears) {
+    const rate = Number(annualRate);
+    if (!Number.isFinite(rate)) return product;
+
+    const years = Math.max(0, Number(targetYears) || 0);
+    const depositYears = Math.max(0, Math.min(Number(selectedDepositYears) || 0, years));
+    const remainingYears = Math.max(0, years - depositYears);
+    const projectedNoContribBalance = growMaslekaBalance(product.currentBalance, rate, years);
+    const balanceAfterDepositYears = depositYears > 0
+        ? futureValueWithMaslekaDeposits(product.currentBalance, product.monthlyDeposits, rate, depositYears)
+        : projectedNoContribBalance;
+    const projectedWithContribBalance = depositYears > 0
+        ? growMaslekaBalance(balanceAfterDepositYears, rate, remainingYears)
+        : projectedNoContribBalance;
+    const noContribAnnuityRatio = (Number(product.projectedNoContribBalance) || 0) > 0
+        ? (Number(product.projectedNoContribAnnuity) || 0) / (Number(product.projectedNoContribBalance) || 0)
+        : 0;
+    const withContribAnnuityRatio = (Number(product.projectedWithContribBalance) || 0) > 0
+        ? (Number(product.projectedWithContribAnnuity) || 0) / (Number(product.projectedWithContribBalance) || 0)
+        : noContribAnnuityRatio;
+
+    return {
+        ...product,
+        projectedNoContribBalance,
+        projectedNoContribAnnuity: projectedNoContribBalance * noContribAnnuityRatio,
+        projectedWithContribBalance,
+        projectedWithContribAnnuity: projectedWithContribBalance * withContribAnnuityRatio,
+        impliedNoDepositRate: rate,
+        impliedWithDepositRate: product.monthlyDeposits > 0 ? rate : null,
+        customProjectionRate: rate
+    };
+}
+
+function weightedMaslekaAverage(rows, valueKey, weightKey = 'currentBalance') {
+    const weightedRows = rows
+        .map(row => ({ value: Number(row[valueKey]), weight: Number(row[weightKey]) || 0 }))
+        .filter(row => Number.isFinite(row.value) && row.weight > 0);
+    const totalWeight = weightedRows.reduce((sum, row) => sum + row.weight, 0);
+    if (!totalWeight) return null;
+    return weightedRows.reduce((sum, row) => sum + row.value * row.weight, 0) / totalWeight;
+}
+
+function createMaslekaDisplaySummaryBucket(category) {
+    return {
+        ...category,
+        productCount: 0,
+        activeProductCount: 0,
+        currentBalance: 0,
+        projectedNoContribBalance: 0,
+        projectedNoContribAnnuity: 0,
+        projectedWithContribBalance: 0,
+        projectedWithContribAnnuity: 0,
+        monthlyDeposits: 0,
+        weightedYearlyReturn: null,
+        weightedFeesFromBalance: null,
+        impliedNoDepositRate: null,
+        impliedWithDepositRate: null,
+        products: []
+    };
+}
+
+function addMaslekaProductToBucket(bucket, product) {
+    bucket.productCount += 1;
+    if (product.status === 'פעיל') bucket.activeProductCount += 1;
+    bucket.currentBalance += Number(product.currentBalance) || 0;
+    bucket.projectedNoContribBalance += Number(product.projectedNoContribBalance) || 0;
+    bucket.projectedNoContribAnnuity += Number(product.projectedNoContribAnnuity) || 0;
+    bucket.projectedWithContribBalance += Number(product.projectedWithContribBalance) || 0;
+    bucket.projectedWithContribAnnuity += Number(product.projectedWithContribAnnuity) || 0;
+    bucket.monthlyDeposits += Number(product.monthlyDeposits) || 0;
+    bucket.products.push(product);
+}
+
+function finalizeMaslekaDisplaySummaryBucket(bucket) {
+    bucket.weightedYearlyReturn = weightedMaslekaAverage(bucket.products, 'yearlyReturn');
+    bucket.weightedFeesFromBalance = weightedMaslekaAverage(bucket.products, 'feesFromBalance');
+    bucket.impliedNoDepositRate = weightedMaslekaAverage(bucket.products, 'impliedNoDepositRate');
+    bucket.impliedWithDepositRate = weightedMaslekaAverage(
+        bucket.products.filter(product => product.impliedWithDepositRate !== null && product.impliedWithDepositRate !== undefined),
+        'impliedWithDepositRate'
+    );
+    return bucket;
+}
+
+function aggregateMaslekaProjectedProducts(baseSummary, products, selectedYears, maxTargetYears, officialRetirementAge, managerInsuranceAge) {
+    const categoryMeta = new Map([
+        ...MASLEKA_CATEGORIES.map(category => [category.key, category]),
+        ...(baseSummary?.categories || []).map(category => [category.key, category])
+    ]);
+    const categoriesByKey = new Map(
+        [...categoryMeta.values()].map(category => [category.key, createMaslekaDisplaySummaryBucket(category)])
+    );
+    const total = createMaslekaDisplaySummaryBucket({
+        key: 'total',
+        labelHe: 'סה"כ',
+        labelEn: 'Total',
+        color: '#0F172A'
+    });
+
+    products.forEach(product => {
+        const category = categoriesByKey.get(product.categoryKey) || categoriesByKey.get('other');
+        if (category) addMaslekaProductToBucket(category, product);
+        addMaslekaProductToBucket(total, product);
+    });
+
+    return {
+        ...baseSummary,
+        officialRetirementAge,
+        managerInsuranceAge,
+        yearsToRetirement: maxTargetYears,
+        selectedYearsToRetirement: selectedYears,
+        selectedDepositYears: selectedYears,
+        products,
+        categories: [...categoriesByKey.values()]
+            .filter(category => category.productCount > 0)
+            .map(finalizeMaslekaDisplaySummaryBucket),
+        total: finalizeMaslekaDisplaySummaryBucket(total)
+    };
 }
 
 function _getCompanyLogoDomain(company = '') {
@@ -257,12 +435,43 @@ function getMaslekaDisplaySummary(summary, currentAge, retirementAge, selectedYe
     return projectMaslekaSummaryToYears(summaryWithRates, selectedYears ?? yearsToRetirement);
 }
 
-function getAgeSpanYearsToMonth(currentAge, targetAge) {
-    const months = getMonthsBetweenAges(currentAge, targetAge);
-    if (months === null) {
-        return Math.max(0, (parseFloat(targetAge) || 0) - (parseFloat(currentAge) || 0));
-    }
-    return Math.max(0, months) / 12;
+function getMaslekaDisplaySummaryByTargetAges(summary, currentAge, officialRetirementAge, managerInsuranceAge, selectedYears = null) {
+    if (!summary) return null;
+    const officialYears = Math.max(0, (parseFloat(officialRetirementAge) || DEFAULT_OFFICIAL_RETIREMENT_AGE) - (parseFloat(currentAge) || 0));
+    const managerYears = Math.max(0, (parseFloat(managerInsuranceAge) || DEFAULT_MANAGER_INSURANCE_AGE) - (parseFloat(currentAge) || 0));
+    const maxTargetYears = Math.max(officialYears, managerYears);
+    const selected = Math.max(0, Math.min(
+        selectedYears === null || selectedYears === undefined ? maxTargetYears : Number(selectedYears) || 0,
+        maxTargetYears
+    ));
+    const officialSummary = getMaslekaDisplaySummary(summary, currentAge, officialRetirementAge, selected);
+    const managerSummary = getMaslekaDisplaySummary(summary, currentAge, managerInsuranceAge, selected);
+    if (!officialSummary || !managerSummary) return null;
+
+    const managerProductsById = new Map(managerSummary.products.map(product => [product.id, product]));
+    const products = officialSummary.products.map(product => {
+        const isManagerInsurance = product.categoryKey === 'insuranceCompanies';
+        const projectedProduct = isManagerInsurance
+            ? (managerProductsById.get(product.id) || product)
+            : product;
+        const targetAge = isManagerInsurance ? managerInsuranceAge : officialRetirementAge;
+        const targetYearsToRetirement = isManagerInsurance ? managerYears : officialYears;
+
+        return {
+            ...projectedProduct,
+            targetAge,
+            targetYearsToRetirement
+        };
+    });
+
+    return aggregateMaslekaProjectedProducts(
+        officialSummary,
+        products,
+        selected,
+        maxTargetYears,
+        officialRetirementAge,
+        managerInsuranceAge
+    );
 }
 
 /**
@@ -1329,6 +1538,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const [maslekaError, setMaslekaError] = useState(null);
     const [maslekaProductTypeFilter, setMaslekaProductTypeFilter] = useState('all');
     const [maslekaCompanyFilter, setMaslekaCompanyFilter] = useState('all');
+    const [maslekaProductRateFilter, setMaslekaProductRateFilter] = useState('masleka');
     const [maslekaStatusFilter, setMaslekaStatusFilter] = useState('all');
     const [showMaslekaSummary, setShowMaslekaSummary] = useState(false);
     const [maslekaOpenCategory, setMaslekaOpenCategory] = useState(null);
@@ -1371,7 +1581,7 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
         let sources = inputs.pensionIncomeSources || createDefaultIncomeSources(inputs);
         const pensionRate = inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : 4;
         const currentAge = parseFloat(inputs.currentAge) || 0;
-        const defaultPensionAge = parseFloat(inputs.retirementEndAge) || 67;
+        const defaultPensionAge = parseFloat(inputs.pensionOfficialRetirementAge) || parseFloat(inputs.retirementEndAge) || DEFAULT_OFFICIAL_RETIREMENT_AGE;
         sources = sources.map(source => {
             if (!source.currentAsset) return source;
             const projected = projectCurrentPensionSource(source, currentAge, defaultPensionAge, pensionRate);
@@ -1469,8 +1679,14 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const [showIncomeSources, setShowIncomeSources] = useState(false);
     const [expandedMilestone, setExpandedMilestone] = useState(null);
     const [pensionInterestRate, setPensionInterestRate] = useState(() => inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : 4);
+    const [pensionOfficialRetirementAge, setPensionOfficialRetirementAge] = useState(() => inputs.pensionOfficialRetirementAge !== undefined ? parseFloat(inputs.pensionOfficialRetirementAge) : DEFAULT_OFFICIAL_RETIREMENT_AGE);
+    const [pensionManagerInsuranceAge, setPensionManagerInsuranceAge] = useState(() => inputs.pensionManagerInsuranceAge !== undefined ? parseFloat(inputs.pensionManagerInsuranceAge) : DEFAULT_MANAGER_INSURANCE_AGE);
     const [showRateTooltip, setShowRateTooltip] = useState(false);
     const rateTooltipRef = useRef(null);
+    const clampPensionAge = (value, fallback) => Math.max(0, Math.min(120, parseFloat(value) || fallback));
+    const adjustPensionAge = (setter, fallback, delta) => {
+        setter(prev => clampPensionAge((parseFloat(prev) || fallback) + delta, fallback));
+    };
     const [deferralYears, setDeferralYears] = useState(() => {
         const savedNiSource = inputs.pensionIncomeSources?.find(source => source.type === 'nationalInsurance');
         return parseInt(savedNiSource?.niDeferralYears, 10) || 0;
@@ -1559,15 +1775,30 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const monthlyExpenses = results?.averageNetWithdrawal || parseFloat(inputs.monthlyNetIncomeDesired) || 10000;
     const retirementStartAge = parseFloat(inputs.retirementStartAge) || 67;
     const retirementEndAge = parseFloat(inputs.retirementEndAge) || 90;
-    const maslekaTargetYears = Math.max(0, Math.round(retirementEndAge - (parseFloat(inputs.currentAge) || 0)));
-    const maslekaRetirementStartYears = getAgeSpanYearsToMonth(inputs.currentAge, retirementStartAge);
+    const effectiveOfficialRetirementAge = parseFloat(pensionOfficialRetirementAge) || DEFAULT_OFFICIAL_RETIREMENT_AGE;
+    const effectiveManagerInsuranceAge = parseFloat(pensionManagerInsuranceAge) || DEFAULT_MANAGER_INSURANCE_AGE;
+    const maslekaOfficialYears = Math.max(0, effectiveOfficialRetirementAge - (parseFloat(inputs.currentAge) || 0));
+    const maslekaManagerYears = Math.max(0, effectiveManagerInsuranceAge - (parseFloat(inputs.currentAge) || 0));
+    const maslekaTargetYears = Math.max(0, Math.max(maslekaOfficialYears, maslekaManagerYears));
     const maslekaDisplaySummary = useMemo(
-        () => getMaslekaDisplaySummary(maslekaSummary, inputs.currentAge, retirementEndAge, maslekaProjectionYears ?? maslekaTargetYears),
-        [maslekaSummary, inputs.currentAge, retirementEndAge, maslekaProjectionYears, maslekaTargetYears]
+        () => getMaslekaDisplaySummaryByTargetAges(
+            maslekaSummary,
+            inputs.currentAge,
+            effectiveOfficialRetirementAge,
+            effectiveManagerInsuranceAge,
+            maslekaProjectionYears ?? maslekaTargetYears
+        ),
+        [maslekaSummary, inputs.currentAge, effectiveOfficialRetirementAge, effectiveManagerInsuranceAge, maslekaProjectionYears, maslekaTargetYears]
     );
     const maslekaFullDepositSummary = useMemo(
-        () => getMaslekaDisplaySummary(maslekaSummary, inputs.currentAge, retirementEndAge, maslekaRetirementStartYears),
-        [maslekaSummary, inputs.currentAge, retirementEndAge, maslekaRetirementStartYears]
+        () => getMaslekaDisplaySummaryByTargetAges(
+            maslekaSummary,
+            inputs.currentAge,
+            effectiveOfficialRetirementAge,
+            effectiveManagerInsuranceAge,
+            maslekaTargetYears
+        ),
+        [maslekaSummary, inputs.currentAge, effectiveOfficialRetirementAge, effectiveManagerInsuranceAge, maslekaTargetYears]
     );
     useEffect(() => {
         setMaslekaProjectionYears(prev => {
@@ -1577,21 +1808,37 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     }, [maslekaTargetYears]);
     const maslekaCompanies = useMemo(() => {
         if (!maslekaDisplaySummary) return [];
-        return [...new Set(maslekaDisplaySummary.products.map(product => product.company).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'he'));
-    }, [maslekaDisplaySummary]);
+        const optionsByValue = new Map();
+        maslekaDisplaySummary.products
+            .map(product => getMaslekaCompanyFilterOption(product.company, language))
+            .filter(option => option.label)
+            .forEach(option => {
+                if (!optionsByValue.has(option.value)) optionsByValue.set(option.value, option);
+            });
+        return [...optionsByValue.values()].sort((a, b) => a.label.localeCompare(b.label, language === 'he' ? 'he' : 'en'));
+    }, [maslekaDisplaySummary, language]);
     const filteredMaslekaProducts = useMemo(() => {
         if (!maslekaDisplaySummary) return [];
         const categoryOrder = Object.fromEntries(maslekaDisplaySummary.categories.map((c, i) => [c.key, i]));
+        const customRate = maslekaProductRateFilter === 'masleka' ? null : Number(maslekaProductRateFilter);
         return maslekaDisplaySummary.products
             .filter(product => {
                 if (maslekaProductTypeFilter !== 'all' && product.categoryKey !== maslekaProductTypeFilter) return false;
-                if (maslekaCompanyFilter !== 'all' && product.company !== maslekaCompanyFilter) return false;
+                if (maslekaCompanyFilter !== 'all' && getMaslekaCompanyFilterOption(product.company, language).value !== maslekaCompanyFilter) return false;
                 if (maslekaStatusFilter === 'active' && product.status !== 'פעיל') return false;
                 if (maslekaStatusFilter === 'inactive' && product.status === 'פעיל') return false;
                 return true;
             })
+            .map(product => customRate === null
+                ? product
+                : projectMaslekaProductAtCustomRate(
+                    product,
+                    customRate,
+                    product.targetYearsToRetirement ?? maslekaDisplaySummary.yearsToRetirement,
+                    product.selectedDepositYears ?? maslekaDisplaySummary.selectedDepositYears ?? maslekaDisplaySummary.selectedYearsToRetirement ?? maslekaDisplaySummary.yearsToRetirement
+                ))
             .sort((a, b) => (categoryOrder[a.categoryKey] ?? 99) - (categoryOrder[b.categoryKey] ?? 99));
-    }, [maslekaDisplaySummary, maslekaProductTypeFilter, maslekaCompanyFilter, maslekaStatusFilter]);
+    }, [maslekaDisplaySummary, maslekaProductTypeFilter, maslekaCompanyFilter, maslekaProductRateFilter, maslekaStatusFilter, language]);
 
     // Use Balance at End of Period as requested by user
     const capitalAtRetirement = useMemo(() => {
@@ -1676,8 +1923,8 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
             name: getCurrentAssetLabel(kind, language),
             nameEn: getCurrentAssetLabel(kind, 'en'),
             amount: 0,
-            startAge: retirementEndAge,
-            endAge: isPension ? Math.max(retirementEndAge + 20, 87) : null,
+            startAge: effectiveOfficialRetirementAge,
+            endAge: isPension ? Math.max(effectiveOfficialRetirementAge + 20, 87) : null,
             isTaxable: isPension,
             isLumpSum: !isPension,
             enabled: true,
@@ -1700,9 +1947,9 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
     const currentAssetFormRef = useRef(null);
     const shouldScrollToCurrentAssetFormRef = useRef(false);
     const currentAssetPreview = useMemo(() => currentAssetDraft
-        ? projectCurrentPensionSource(currentAssetDraft, inputs.currentAge, retirementEndAge, pensionInterestRate)
+        ? projectCurrentPensionSource(currentAssetDraft, inputs.currentAge, effectiveOfficialRetirementAge, pensionInterestRate)
         : null,
-    [currentAssetDraft, inputs.currentAge, retirementEndAge, pensionInterestRate]);
+    [currentAssetDraft, inputs.currentAge, effectiveOfficialRetirementAge, pensionInterestRate]);
     const currentAssetCanSave = useMemo(() => !currentAssetDraft || currentAssetDraft.id.startsWith('current_asset_') ||
         getCurrentAssetEditKey(currentAssetDraft) !== getCurrentAssetEditKey(currentAssetEditBaseline),
     [currentAssetDraft, currentAssetEditBaseline]);
@@ -1856,11 +2103,17 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
             return rest;
         });
         const initialRate = inputs.pensionInterestRate !== undefined ? parseFloat(inputs.pensionInterestRate) : 4;
-        const sourcesChanged = JSON.stringify(clean(incomeSources)) !== JSON.stringify(clean(initialIncomeSources)) || pensionInterestRate !== initialRate;
+        const initialOfficialAge = inputs.pensionOfficialRetirementAge !== undefined ? parseFloat(inputs.pensionOfficialRetirementAge) : DEFAULT_OFFICIAL_RETIREMENT_AGE;
+        const initialManagerAge = inputs.pensionManagerInsuranceAge !== undefined ? parseFloat(inputs.pensionManagerInsuranceAge) : DEFAULT_MANAGER_INSURANCE_AGE;
+        const sourcesChanged =
+            JSON.stringify(clean(incomeSources)) !== JSON.stringify(clean(initialIncomeSources)) ||
+            pensionInterestRate !== initialRate ||
+            pensionOfficialRetirementAge !== initialOfficialAge ||
+            pensionManagerInsuranceAge !== initialManagerAge;
         const aiChanged = aiInsight !== null && JSON.stringify(aiInsight) !== JSON.stringify(inputs.pensionAIInsight ?? null);
         const maslekaChanged = JSON.stringify(maslekaSummary ?? null) !== JSON.stringify(inputs.pensionMaslekaSummary ?? null);
         return sourcesChanged || aiChanged || maslekaChanged;
-    }, [incomeSources, initialIncomeSources, pensionInterestRate, inputs, aiInsight, maslekaSummary]);
+    }, [incomeSources, initialIncomeSources, pensionInterestRate, pensionOfficialRetirementAge, pensionManagerInsuranceAge, inputs, aiInsight, maslekaSummary]);
 
     const pensionAIInputs = useMemo(() => {
         const { pensionAIInsight: _omit, ...restInputs } = inputs;
@@ -2047,6 +2300,74 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                         </div>,
                                         document.body
                                     )}
+                                    <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full ${isLight ? 'bg-sky-50 border border-sky-200' : 'bg-sky-500/10 border border-sky-500/20'}`}>
+                                        <span className={`text-[10px] ${isLight ? 'text-sky-700' : 'text-sky-300'}`}>{language === 'he' ? 'פרישה רשמית' : 'Official age'}</span>
+                                        <span className={`inline-flex items-center rounded border overflow-hidden ${isLight ? 'border-sky-200' : 'border-sky-500/30'}`}>
+                                            <input
+                                                type="number"
+                                                value={pensionOfficialRetirementAge}
+                                                onChange={(e) => setPensionOfficialRetirementAge(clampPensionAge(e.target.value, DEFAULT_OFFICIAL_RETIREMENT_AGE))}
+                                                className={`w-10 px-1 py-0 text-xs text-center no-spinner bg-transparent font-bold border-0 focus:outline-none ${isLight ? 'text-sky-800' : 'text-sky-300'}`}
+                                                min="0"
+                                                max="120"
+                                                step="0.5"
+                                            />
+                                            <span className={`flex flex-col border-s ${isLight ? 'border-sky-200' : 'border-sky-500/30'}`}>
+                                                <button
+                                                    type="button"
+                                                    onMouseDown={(e) => e.preventDefault()}
+                                                    onClick={() => adjustPensionAge(setPensionOfficialRetirementAge, DEFAULT_OFFICIAL_RETIREMENT_AGE, 0.5)}
+                                                    className={`h-3 w-4 text-[9px] leading-none ${isLight ? 'text-sky-700 hover:bg-sky-100' : 'text-sky-300 hover:bg-white/10'}`}
+                                                    aria-label={language === 'he' ? 'הגדל גיל פרישה רשמית' : 'Increase official retirement age'}
+                                                >
+                                                    ▲
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onMouseDown={(e) => e.preventDefault()}
+                                                    onClick={() => adjustPensionAge(setPensionOfficialRetirementAge, DEFAULT_OFFICIAL_RETIREMENT_AGE, -0.5)}
+                                                    className={`h-3 w-4 text-[9px] leading-none ${isLight ? 'text-sky-700 hover:bg-sky-100' : 'text-sky-300 hover:bg-white/10'}`}
+                                                    aria-label={language === 'he' ? 'הקטן גיל פרישה רשמית' : 'Decrease official retirement age'}
+                                                >
+                                                    ▼
+                                                </button>
+                                            </span>
+                                        </span>
+                                    </div>
+                                    <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full ${isLight ? 'bg-fuchsia-50 border border-fuchsia-200' : 'bg-fuchsia-500/10 border border-fuchsia-500/20'}`}>
+                                        <span className={`text-[10px] ${isLight ? 'text-fuchsia-700' : 'text-fuchsia-300'}`}>{language === 'he' ? 'ביטוח מנהלים' : 'Managers age'}</span>
+                                        <span className={`inline-flex items-center rounded border overflow-hidden ${isLight ? 'border-fuchsia-200' : 'border-fuchsia-500/30'}`}>
+                                            <input
+                                                type="number"
+                                                value={pensionManagerInsuranceAge}
+                                                onChange={(e) => setPensionManagerInsuranceAge(clampPensionAge(e.target.value, DEFAULT_MANAGER_INSURANCE_AGE))}
+                                                className={`w-10 px-1 py-0 text-xs text-center no-spinner bg-transparent font-bold border-0 focus:outline-none ${isLight ? 'text-fuchsia-800' : 'text-fuchsia-300'}`}
+                                                min="0"
+                                                max="120"
+                                                step="0.5"
+                                            />
+                                            <span className={`flex flex-col border-s ${isLight ? 'border-fuchsia-200' : 'border-fuchsia-500/30'}`}>
+                                                <button
+                                                    type="button"
+                                                    onMouseDown={(e) => e.preventDefault()}
+                                                    onClick={() => adjustPensionAge(setPensionManagerInsuranceAge, DEFAULT_MANAGER_INSURANCE_AGE, 0.5)}
+                                                    className={`h-3 w-4 text-[9px] leading-none ${isLight ? 'text-fuchsia-700 hover:bg-fuchsia-100' : 'text-fuchsia-300 hover:bg-white/10'}`}
+                                                    aria-label={language === 'he' ? 'הגדל גיל ביטוח מנהלים' : 'Increase managers insurance age'}
+                                                >
+                                                    ▲
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onMouseDown={(e) => e.preventDefault()}
+                                                    onClick={() => adjustPensionAge(setPensionManagerInsuranceAge, DEFAULT_MANAGER_INSURANCE_AGE, -0.5)}
+                                                    className={`h-3 w-4 text-[9px] leading-none ${isLight ? 'text-fuchsia-700 hover:bg-fuchsia-100' : 'text-fuchsia-300 hover:bg-white/10'}`}
+                                                    aria-label={language === 'he' ? 'הקטן גיל ביטוח מנהלים' : 'Decrease managers insurance age'}
+                                                >
+                                                    ▼
+                                                </button>
+                                            </span>
+                                        </span>
+                                    </div>
                                 </div>
                                 <p className={`text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                                     {t('pensionIncomeDesc') || 'סיכום הכנסות בפרישה לפי גיל'}
@@ -2177,14 +2498,24 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
 
                                         {/* Grand total summary card */}
                                         <div className={`rounded-xl border overflow-hidden ${isLight ? 'border-indigo-200' : 'border-indigo-500/30'}`}>
-                                            {/* Header row: title + current balance */}
+                                            {/* Header row: title + key balances */}
                                             <div className={`flex items-center justify-between gap-4 px-4 py-2.5 ${isLight ? 'bg-indigo-50 border-b border-indigo-100' : 'bg-indigo-500/10 border-b border-indigo-500/20'}`}>
                                                 <span className={`text-sm font-bold ${isLight ? 'text-indigo-700' : 'text-indigo-300'}`}>
                                                     {language === 'he' ? 'סיכום כולל' : 'Grand total'}
                                                 </span>
-                                                <span className="flex items-baseline gap-1.5 tabular-nums">
-                                                    <span className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{language === 'he' ? 'נוכחי' : 'Current'}</span>
-                                                    <span className={`text-base font-bold ${isLight ? 'text-slate-800' : 'text-white'}`}>{formatMaslekaCurrency(maslekaDisplaySummary.total.currentBalance, language)}</span>
+                                                <span className="flex flex-wrap justify-end items-baseline gap-x-4 gap-y-1 tabular-nums">
+                                                    <span className="flex items-baseline gap-1.5">
+                                                        <span className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{language === 'he' ? 'נוכחי' : 'Current'}</span>
+                                                        <span className={`text-base font-bold ${isLight ? 'text-slate-800' : 'text-white'}`}>{formatMaslekaCurrency(maslekaDisplaySummary.total.currentBalance, language)}</span>
+                                                    </span>
+                                                    <span className="flex items-baseline gap-1.5">
+                                                        <span className={`text-[10px] ${isLight ? 'text-sky-600' : 'text-sky-300'}`}>{language === 'he' ? 'ללא הפקדות' : 'No dep'}</span>
+                                                        <span className={`text-base font-bold ${isLight ? 'text-sky-700' : 'text-sky-300'}`}>{formatMaslekaCurrency(maslekaDisplaySummary.total.projectedNoContribBalance, language)}</span>
+                                                    </span>
+                                                    <span className="flex items-baseline gap-1.5">
+                                                        <span className={`text-[10px] ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>{language === 'he' ? 'עם הפקדות' : 'With dep'}</span>
+                                                        <span className={`text-base font-bold ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>{formatMaslekaCurrency(maslekaDisplaySummary.total.projectedWithContribBalance, language)}</span>
+                                                    </span>
                                                 </span>
                                             </div>
                                             {/* Two-column: no-dep | with-dep */}
@@ -2246,8 +2577,8 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                                         </button>
                                                         <span className="w-12 text-center text-[10px] font-semibold tabular-nums">
                                                             {language === 'he'
-                                                                ? `${Math.min(maslekaProjectionYears ?? maslekaTargetYears, maslekaTargetYears)} שנים`
-                                                                : `${Math.min(maslekaProjectionYears ?? maslekaTargetYears, maslekaTargetYears)}y`}
+                                                                ? `${formatYearsValue(Math.min(maslekaProjectionYears ?? maslekaTargetYears, maslekaTargetYears))} שנים`
+                                                                : `${formatYearsValue(Math.min(maslekaProjectionYears ?? maslekaTargetYears, maslekaTargetYears))}y`}
                                                         </span>
                                                     </div>
                                                     <div className={`text-[10px] font-semibold uppercase tracking-wide ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>{language === 'he' ? 'עם הפקדות' : 'With deposits'}</div>
@@ -2361,12 +2692,16 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                             <summary className={`relative cursor-pointer px-3 py-2 text-xs font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
                                                 {language === 'he' ? 'פירוט מוצרים' : 'Product details'}
                                                 <span className={`ms-2 font-normal ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
-                                                    {(maslekaProductTypeFilter !== 'all' || maslekaCompanyFilter !== 'all' || maslekaStatusFilter !== 'all')
+                                                    {(maslekaProductTypeFilter !== 'all' || maslekaCompanyFilter !== 'all' || maslekaProductRateFilter !== 'masleka' || maslekaStatusFilter !== 'all')
                                                         ? `(${filteredMaslekaProducts.length}/${maslekaDisplaySummary.products.length})`
                                                         : `(${maslekaDisplaySummary.products.length})`}
                                                 </span>
                                                 {filteredMaslekaProducts.length > 0 && (
                                                     <span className="absolute inset-y-0 end-3 flex items-center gap-3 tabular-nums pointer-events-none">
+                                                        <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                            {language === 'he' ? 'צבור נוכחי' : 'Current'}:{' '}
+                                                            <span className="font-semibold">{formatMaslekaCurrency(filteredMaslekaProducts.reduce((s, p) => s + p.currentBalance, 0), language)}</span>
+                                                        </span>
                                                         <span className={`text-[10px] ${isLight ? 'text-sky-600' : 'text-sky-300'}`}>
                                                             {language === 'he' ? 'ללא הפקדות' : 'No dep'}:{' '}
                                                             <span className="font-semibold">{formatMaslekaCurrency(filteredMaslekaProducts.reduce((s, p) => s + p.projectedNoContribBalance, 0), language)}</span>
@@ -2400,9 +2735,20 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                                         onChange={setMaslekaCompanyFilter}
                                                         options={[
                                                             { value: 'all', label: language === 'he' ? 'הכל' : 'All' },
-                                                            ...maslekaCompanies.map(company => ({
-                                                                value: company,
-                                                                label: company
+                                                            ...maslekaCompanies
+                                                        ]}
+                                                    />
+                                                </label>
+                                                <label className="flex flex-col gap-1 w-28 shrink-0">
+                                                    <span className={isLight ? 'text-slate-500' : 'text-gray-400'}>{language === 'he' ? 'ריבית' : 'Rate'}</span>
+                                                    <CustomSelect
+                                                        value={maslekaProductRateFilter}
+                                                        onChange={setMaslekaProductRateFilter}
+                                                        options={[
+                                                            { value: 'masleka', label: language === 'he' ? 'מסלקה' : 'Masleka' },
+                                                            ...MASLEKA_RATE_OPTIONS.map(rate => ({
+                                                                value: rate,
+                                                                label: `${rate}%`
                                                             }))
                                                         ]}
                                                     />
@@ -2434,11 +2780,11 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                                                     </div>
                                                 </div>
                                                 {(() => {
-                                                    const hasFilter = maslekaProductTypeFilter !== 'all' || maslekaCompanyFilter !== 'all' || maslekaStatusFilter !== 'all';
+                                                    const hasFilter = maslekaProductTypeFilter !== 'all' || maslekaCompanyFilter !== 'all' || maslekaProductRateFilter !== 'masleka' || maslekaStatusFilter !== 'all';
                                                     return (
                                                         <button
                                                             disabled={!hasFilter}
-                                                            onClick={() => { setMaslekaProductTypeFilter('all'); setMaslekaCompanyFilter('all'); setMaslekaStatusFilter('all'); }}
+                                                            onClick={() => { setMaslekaProductTypeFilter('all'); setMaslekaCompanyFilter('all'); setMaslekaProductRateFilter('masleka'); setMaslekaStatusFilter('all'); }}
                                                             className={`self-end shrink-0 rounded-lg px-2 py-1.5 text-[10px] font-medium transition-colors ${hasFilter
                                                                 ? (isLight ? 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-100' : 'bg-white/10 text-gray-300 hover:bg-white/15')
                                                                 : (isLight ? 'border border-slate-200 text-slate-300 cursor-default' : 'border border-white/10 text-gray-600 cursor-default')
@@ -2990,7 +3336,10 @@ export function PensionIncomeModal({ inputs, results, onClose, onSave, t, langua
                         </button>
                         {onSave && (
                             <button
-                                onClick={() => onSave(incomeSources, pensionInterestRate, aiInsight, maslekaSummary)}
+                                onClick={() => onSave(incomeSources, pensionInterestRate, aiInsight, maslekaSummary, {
+                                    officialRetirementAge: pensionOfficialRetirementAge,
+                                    managerInsuranceAge: pensionManagerInsuranceAge
+                                })}
                                 disabled={!hasChanges}
                                 className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 relative
                                 ${hasChanges
