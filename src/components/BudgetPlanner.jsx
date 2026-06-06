@@ -2654,20 +2654,98 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const suggestedRetirementAdj = useMemo(() => {
         const base = retirementAdj || { additions: [], increases: [] };
         const additions = Array.isArray(base.additions) ? [...base.additions] : [];
-        const increases = Array.isArray(base.increases) ? [...base.increases] : [];
+        const policyForIncrease = (increase, matchedItems = []) => {
+            const label = String(increase?.itemLabel || matchedItems[0]?.label || '').toLowerCase();
+            const categoryId = increase?.categoryId;
+            const matchedBase = matchedItems.reduce((sum, item) => sum + toMonthly(item), 0);
+
+            if (categoryId === 'transport' && /דלק|טעינה|fuel|charging/.test(label)) {
+                return {
+                    increasePercent: Math.max(parseFloat(increase.increasePercent) || 0, 100),
+                    minIncreaseAmount: Math.max(300, matchedBase),
+                    note: isHe ? 'יותר נסיעות אישיות ודלק במימון מלא אחרי פרישה' : 'More personal driving and fully self-funded fuel after retirement',
+                };
+            }
+            if (categoryId === 'housing' && /חשמל|electric/.test(label)) {
+                return {
+                    increasePercent: Math.max(parseFloat(increase.increasePercent) || 0, 25),
+                    minIncreaseAmount: 150,
+                    note: isHe ? 'יותר שעות בבית: מיזוג/חימום, תאורה ומכשירים' : 'More hours at home: cooling/heating, lighting and appliances',
+                };
+            }
+            if (categoryId === 'food' && /סופר|קניות|מזון|grocery|food/.test(label)) {
+                return {
+                    increasePercent: Math.max(parseFloat(increase.increasePercent) || 0, 25),
+                    minIncreaseAmount: 500,
+                    note: isHe ? 'יותר ארוחות בבית, אירוח ואובדן הטבות מזון בעבודה' : 'More meals at home, hosting and loss of workplace food perks',
+                };
+            }
+            if (categoryId === 'health') {
+                return {
+                    increasePercent: Math.max(parseFloat(increase.increasePercent) || 0, 20),
+                    minIncreaseAmount: 250,
+                    annualGrowthPercent: Math.max(parseFloat(increase.annualGrowthPercent) || 0, 2),
+                    note: isHe ? 'התייקרות גיל, תרופות וטיפולים מחוץ לסל' : 'Age-related premiums, medicine and out-of-pocket care',
+                };
+            }
+            return null;
+        };
+        const resolveIncreaseAmount = (increase, matchedItems = []) => {
+            const fixedAmount = parseFloat(increase?.increaseAmount) || 0;
+            const percent = parseFloat(increase?.increasePercent) || 0;
+            const matchedBase = matchedItems.reduce((sum, item) => sum + toMonthly(item), 0);
+            return fixedAmount > 0 ? fixedAmount : matchedBase * (percent / 100);
+        };
+        const increases = Array.isArray(base.increases) ? base.increases.map(increase => {
+            let normalizedIncrease = { ...increase };
+            const label = String(normalizedIncrease.itemLabel || '').toLowerCase();
+            if (normalizedIncrease.categoryId === 'transport' && !/דלק|טעינה|fuel|charging/.test(label)) {
+                const fuelItem = displayItems.find(item => (
+                    item.enabled !== false &&
+                    item.categoryId === 'transport' &&
+                    /דלק|טעינה|fuel|charging/.test(String(item.label || '').toLowerCase()) &&
+                    toMonthly(item) > 0
+                ));
+                const currentAmount = resolveIncreaseAmount(normalizedIncrease, displayItems.filter(item => item.enabled !== false && item.categoryId === normalizedIncrease.categoryId && matchIncrease(item.label, normalizedIncrease.itemLabel || '')));
+                if (fuelItem && (normalizedIncrease.source === 'suggested' || currentAmount < 300)) {
+                    normalizedIncrease = {
+                        ...normalizedIncrease,
+                        itemLabel: fuelItem.label,
+                        source: normalizedIncrease.source || 'retargeted',
+                    };
+                }
+            }
+            const matchedItems = displayItems.filter(item => item.enabled !== false && item.categoryId === normalizedIncrease.categoryId && matchIncrease(item.label, normalizedIncrease.itemLabel || ''));
+            const policy = policyForIncrease(normalizedIncrease, matchedItems);
+            if (!policy) return normalizedIncrease;
+
+            const next = {
+                ...normalizedIncrease,
+                increasePercent: policy.increasePercent ?? normalizedIncrease.increasePercent,
+                annualGrowthPercent: policy.annualGrowthPercent ?? normalizedIncrease.annualGrowthPercent,
+                note: policy.note || normalizedIncrease.note,
+            };
+            const computedAmount = resolveIncreaseAmount(next, matchedItems);
+            if ((policy.minIncreaseAmount || 0) > computedAmount) {
+                next.increaseAmount = policy.minIncreaseAmount;
+            }
+            return next;
+        }) : [];
         const hasIncreaseFor = (categoryId, itemLabel) =>
             increases.some(inc => inc.categoryId === categoryId && matchIncrease(itemLabel, inc.itemLabel || ''));
-        const addSuggestedIncrease = ({ categoryId, patterns, increasePercent, annualGrowthPercent = 0, note }) => {
+        const addSuggestedIncrease = ({ categoryId, patterns, increasePercent, minIncreaseAmount, annualGrowthPercent = 0, note }) => {
             const categoryItems = displayItems.filter(item => item.categoryId === categoryId && item.enabled !== false && toMonthly(item) > 0);
-            const matched = categoryItems.find(item => {
-                const label = String(item.label || '').toLowerCase();
-                return patterns.some(pattern => label.includes(pattern));
-            });
+            const matched = patterns
+                .map(pattern => categoryItems.find(item => String(item.label || '').toLowerCase().includes(pattern)))
+                .find(Boolean);
             if (!matched || hasIncreaseFor(categoryId, matched.label)) return;
             increases.push({
                 categoryId,
                 itemLabel: matched.label,
                 increasePercent,
+                increaseAmount: minIncreaseAmount && minIncreaseAmount > toMonthly(matched) * (increasePercent / 100)
+                    ? minIncreaseAmount
+                    : undefined,
                 annualGrowthPercent,
                 note,
                 source: 'suggested',
@@ -2676,14 +2754,16 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
 
         addSuggestedIncrease({
             categoryId: 'housing',
-            patterns: ['חשמל', 'מים', 'גז', 'electric', 'water', 'gas'],
-            increasePercent: 10,
+            patterns: ['חשמל', 'electric', 'מים', 'גז', 'water', 'gas'],
+            increasePercent: 25,
+            minIncreaseAmount: 150,
             note: isHe ? 'יותר שהייה בבית: מיזוג, חימום, תאורה ומכשירים' : 'More time at home: cooling, heating, lighting and appliances',
         });
         addSuggestedIncrease({
             categoryId: 'food',
             patterns: ['מזון', 'סופר', 'קניות', 'מסעד', 'food', 'grocery', 'restaurant'],
-            increasePercent: 15,
+            increasePercent: 25,
+            minIncreaseAmount: 500,
             note: isHe ? 'יותר ארוחות בבית ואובדן הטבות/סבסוד עבודה' : 'More meals at home and loss of workplace benefits',
         });
         addSuggestedIncrease({
@@ -2694,14 +2774,16 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         });
         addSuggestedIncrease({
             categoryId: 'transport',
-            patterns: ['תחבורה', 'דלק', 'רכב', 'חניה', 'transport', 'fuel', 'car', 'parking'],
-            increasePercent: 25,
-            note: isHe ? 'יותר נסיעות אישיות או החלפת רכב/דלק ממעסיק' : 'More personal travel or replacing employer car/fuel',
+            patterns: ['דלק', 'טעינה', 'fuel', 'charging', 'חניה', 'parking', 'תחבורה', 'transport'],
+            increasePercent: 100,
+            minIncreaseAmount: 300,
+            note: isHe ? 'יותר נסיעות אישיות ודלק במימון מלא אחרי פרישה' : 'More personal driving and fully self-funded fuel after retirement',
         });
         addSuggestedIncrease({
             categoryId: 'health',
             patterns: ['בריאות', 'ביטוח', 'רופא', 'תרופות', 'health', 'insurance', 'doctor', 'medicine'],
-            increasePercent: 15,
+            increasePercent: 20,
+            minIncreaseAmount: 250,
             annualGrowthPercent: 2,
             note: isHe ? 'עלייה עם גיל וביטוחים/טיפולים מחוץ לסל' : 'Age-related increase in insurance and out-of-pocket care',
         });
@@ -2724,6 +2806,46 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const showRetirementMode = suggestedRetirementAdj
         ? (retirementModeByYear[selectedYear] ?? defaultShowRetirementMode)
         : false;
+    const yearsSinceRetirement = Math.max(0, selectedYear - defaultRetirementModeStartYear);
+    const categoryLabelById = useMemo(
+        () => Object.fromEntries(CATEGORIES.map(cat => [cat.id, isHe ? cat.labelHe : cat.labelEn])),
+        [isHe]
+    );
+    const retirementExpenseSummary = useMemo(() => {
+        if (!showRetirementMode || !effectiveRetirementAdj) return [];
+
+        const additions = (effectiveRetirementAdj.additions || []).map(addition => ({
+            type: 'addition',
+            categoryId: addition.categoryId || 'other',
+            categoryLabel: categoryLabelById[addition.categoryId] || addition.categoryId || (isHe ? 'אחר' : 'Other'),
+            label: addition.label || (isHe ? 'תוספת פרישה' : 'Retirement addition'),
+            note: addition.note || '',
+            amount: retirementAdditionMonthly(addition, yearsSinceRetirement),
+        }));
+
+        const increases = (effectiveRetirementAdj.increases || []).map(increase => {
+            const matchedItems = displayItems.filter(item => item.enabled !== false && matchIncrease(item.label, increase.itemLabel));
+            const matchedLabels = matchedItems.map(item => item.label).filter(Boolean);
+            return {
+                type: 'increase',
+                categoryId: increase.categoryId || 'other',
+                categoryLabel: categoryLabelById[increase.categoryId] || increase.categoryId || (isHe ? 'אחר' : 'Other'),
+                label: increase.itemLabel || matchedLabels[0] || (isHe ? 'גידול בסעיף קיים' : 'Existing item increase'),
+                note: increase.note || '',
+                amount: retirementIncreaseMonthly(increase, matchedItems, yearsSinceRetirement),
+                matchedLabels,
+                increasePercent: increase.increasePercent,
+            };
+        });
+
+        return [...additions, ...increases]
+            .filter(item => item.amount > 0)
+            .sort((a, b) => b.amount - a.amount);
+    }, [showRetirementMode, effectiveRetirementAdj, displayItems, yearsSinceRetirement, categoryLabelById, isHe]);
+    const retirementDeltaTotal = useMemo(
+        () => retirementExpenseSummary.reduce((sum, item) => sum + item.amount, 0),
+        [retirementExpenseSummary]
+    );
 
     const startRetirementAdjEdit = useCallback(() => {
         const adj = suggestedRetirementAdj || { additions: [], increases: [] };
@@ -2904,14 +3026,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         if (!loaded) return;
         try {
             const monthlyBase = displayItems.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0);
-            const yearsSinceRetirement = Math.max(0, selectedYear - defaultRetirementModeStartYear);
-            const retDelta = showRetirementMode && effectiveRetirementAdj
-                ? (effectiveRetirementAdj.additions || []).reduce((s, a) => s + retirementAdditionMonthly(a, yearsSinceRetirement), 0)
-                  + (effectiveRetirementAdj.increases || []).reduce((s, inc) => {
-                      const matchedItems = displayItems.filter(i => i.enabled !== false && matchIncrease(i.label, inc.itemLabel));
-                      return s + retirementIncreaseMonthly(inc, matchedItems, yearsSinceRetirement);
-                  }, 0)
-                : 0;
+            const retDelta = retirementDeltaTotal;
             const monthly = monthlyBase + retDelta;
             const incomeBaseTarget = Math.round(results?.initialNetWithdrawal ?? parseFloat(inputs.monthlyNetIncomeDesired) ?? 0);
             const incomeYearOverride = parseFloat(inputs.yearlyIncomeOverrides?.[selectedYear]);
@@ -2956,6 +3071,16 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                 perPerson,
                 selectedYear,
                 categories,
+                retirementExpenses: retirementExpenseSummary.length ? retirementExpenseSummary.map(item => ({
+                    type: item.type,
+                    categoryId: item.categoryId,
+                    categoryLabel: item.categoryLabel,
+                    label: item.label,
+                    amount: Math.round(item.amount),
+                    note: item.note || undefined,
+                    matchedLabels: item.matchedLabels?.length ? item.matchedLabels : undefined,
+                    increasePercent: item.increasePercent || undefined,
+                })) : undefined,
                 loanTracks: loanTracks.length ? loanTracks : undefined,
                 inflation: showInflation ? {
                     rate: inflationRate,
@@ -2966,7 +3091,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             }));
             window.dispatchEvent(new Event('rc-budget-updated'));
         } catch {}
-    }, [displayItems, loaded, inputs.monthlyNetIncomeDesired, inputs.yearlyIncomeOverrides, results, householdSize, showInflation, inflationRate, projFactor, projYears, showRetirementMode, effectiveRetirementAdj, selectedYear, defaultRetirementModeStartYear]);
+    }, [displayItems, loaded, inputs.monthlyNetIncomeDesired, inputs.yearlyIncomeOverrides, results, householdSize, showInflation, inflationRate, projFactor, projYears, showRetirementMode, retirementDeltaTotal, retirementExpenseSummary, selectedYear]);
 
     // Keep budget reminders in sync immediately from local state (before DB debounce/save).
     useEffect(() => {
@@ -2986,16 +3111,6 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         () => displayItems.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0),
         [displayItems]
     );
-    const yearsSinceRetirement = Math.max(0, selectedYear - defaultRetirementModeStartYear);
-    const retirementDeltaTotal = useMemo(() => {
-        if (!showRetirementMode || !effectiveRetirementAdj) return 0;
-        const additions = (effectiveRetirementAdj.additions || []).reduce((s, a) => s + retirementAdditionMonthly(a, yearsSinceRetirement), 0);
-        const increases = (effectiveRetirementAdj.increases || []).reduce((s, inc) => {
-            const matchedItems = displayItems.filter(i => i.enabled !== false && matchIncrease(i.label, inc.itemLabel));
-            return s + retirementIncreaseMonthly(inc, matchedItems, yearsSinceRetirement);
-        }, 0);
-        return additions + increases;
-    }, [showRetirementMode, effectiveRetirementAdj, displayItems, yearsSinceRetirement]);
     const totalMonthly = showRetirementMode ? totalMonthlyBase + retirementDeltaTotal : totalMonthlyBase;
     const fullMonthly = useMemo(
         () => displayItems.reduce((s, i) => s + toMonthly(i), 0),
@@ -3247,6 +3362,11 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                     ? `\nשינויים עתידיים בהוצאות (מסלולי הלוואה שייגמרו):\n${futureSavings.join('\n')}`
                     : `\nFuture expense reductions (loan tracks ending):\n${futureSavings.join('\n')}`)
                 : '';
+            const retirementExpenseSection = retirementExpenseSummary.length
+                ? (isHe
+                    ? `\nהוצאות שנוספו בגיל פרישה (כלולות בסה"כ):\n${retirementExpenseSummary.map(item => `- ${item.categoryLabel} · ${item.label}: ${cur}${Math.round(item.amount).toLocaleString()}/חודש`).join('\n')}`
+                    : `\nRetirement expense additions (included in total):\n${retirementExpenseSummary.map(item => `- ${item.categoryLabel} · ${item.label}: ${cur}${Math.round(item.amount).toLocaleString()}/mo`).join('\n')}`)
+                : '';
 
             const perPerson = householdSize > 0 ? Math.round(totalMonthly / householdSize) : 0;
 
@@ -3382,8 +3502,8 @@ Gap vs target and what can be optimized.`;
                 })();
 
             const userMsg = isHe
-                ? `${householdLine}${ageContext}${calcContext}\nיעד הכנסה חודשית: ${cur}${Math.round(target)}\nסה"כ הוצאות: ${cur}${Math.round(totalMonthly)}\nפער: ${cur}${Math.round(target - totalMonthly)}\n\nפירוט:\n${lines || 'אין הוצאות מוזנות'}${missingSection}${futureSavingsSection}`
-                : `${householdLine}${ageContext}${calcContext}\nMonthly income target: ${cur}${Math.round(target)}\nTotal expenses: ${cur}${Math.round(totalMonthly)}\nGap: ${cur}${Math.round(target - totalMonthly)}\n\nBreakdown:\n${lines || 'No expenses entered'}${missingSection}${futureSavingsSection}`;
+                ? `${householdLine}${ageContext}${calcContext}\nיעד הכנסה חודשית: ${cur}${Math.round(target)}\nסה"כ הוצאות: ${cur}${Math.round(totalMonthly)}\nפער: ${cur}${Math.round(target - totalMonthly)}\n\nפירוט:\n${lines || 'אין הוצאות מוזנות'}${retirementExpenseSection}${missingSection}${futureSavingsSection}`
+                : `${householdLine}${ageContext}${calcContext}\nMonthly income target: ${cur}${Math.round(target)}\nTotal expenses: ${cur}${Math.round(totalMonthly)}\nGap: ${cur}${Math.round(target - totalMonthly)}\n\nBreakdown:\n${lines || 'No expenses entered'}${retirementExpenseSection}${missingSection}${futureSavingsSection}`;
 
             const reply = await getChatResponse(
                 [{ role: 'user', content: userMsg }],
@@ -3412,6 +3532,7 @@ Gap vs target and what can be optimized.`;
         isHe,
         uid,
         selectedYear,
+        retirementExpenseSummary,
         inputs.currentAge,
         inputs.retirementStartAge,
         inputs.retirementEndAge,
@@ -3705,6 +3826,33 @@ Gap vs target and what can be optimized.`;
                         </div>
                     </div>
                 </div>
+                {showRetirementMode && retirementExpenseSummary.length > 0 && (
+                    <div className={`mb-2 rounded-lg border px-3 py-2 ${isLight ? 'bg-amber-50/80 border-amber-200 text-amber-800' : 'bg-amber-500/10 border-amber-500/30 text-amber-200'}`} dir={isHe ? 'rtl' : 'ltr'}>
+                        <div className="flex items-center justify-between gap-3 text-xs font-semibold mb-1.5">
+                            <span>{isHe ? 'סיכום הוצאות שנוספו בגיל פרישה' : 'Retirement expense additions'}</span>
+                            <span dir="ltr">+{currency}{Math.round(retirementDeltaTotal).toLocaleString()}{isHe ? '/חודש' : '/mo'}</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+                            {retirementExpenseSummary.slice(0, 6).map((item, idx) => (
+                                <div key={`${item.type}-${item.categoryId}-${item.label}-${idx}`} className="flex items-center justify-between gap-2 text-[11px]">
+                                    <span className="min-w-0 truncate">
+                                        <span className="opacity-70">{item.categoryLabel}</span>
+                                        <span className="mx-1 opacity-50">·</span>
+                                        <span>{item.label}</span>
+                                    </span>
+                                    <span className="font-bold shrink-0" dir="ltr">+{currency}{Math.round(item.amount).toLocaleString()}</span>
+                                </div>
+                            ))}
+                        </div>
+                        {retirementExpenseSummary.length > 6 && (
+                            <div className={`mt-1 text-[10px] ${isLight ? 'text-amber-700/75' : 'text-amber-200/70'}`}>
+                                {isHe
+                                    ? `ועוד ${retirementExpenseSummary.length - 6} סעיפים מוצגים בתוך הקטגוריות`
+                                    : `Plus ${retirementExpenseSummary.length - 6} more shown inside categories`}
+                            </div>
+                        )}
+                    </div>
+                )}
                 {/* Household size + inflation controls */}
                 <div className={`flex items-center gap-3 mb-2 text-xs ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
                     <span>👥</span>

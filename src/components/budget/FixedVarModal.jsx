@@ -142,6 +142,7 @@ export function FixedVarModal({
 
     const total = fixedTotal + variableTotal;
     const fixedPct = total > 0 ? Math.round(fixedTotal / total * 100) : 0;
+    const spare = activeIncome > 0 ? activeIncome - total : null;
     const fmt = v => {
         const abs = Math.abs(v);
         if (abs >= 1_000_000) return `${currency}${(abs / 1_000_000).toFixed(1)}M`;
@@ -194,7 +195,6 @@ export function FixedVarModal({
         </div>
     );
 
-    const available = activeIncome - fixedTotal;
     return (
       <>
         {createPortal(
@@ -259,43 +259,44 @@ export function FixedVarModal({
                                         <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'משתנה' : 'Variable'}</span>
                                         <Unlock size={11} className={isLight ? 'text-blue-500' : 'text-blue-400'} />
                                     </div>
-                                    {(() => {
-                                        const spare = activeIncome > 0 ? activeIncome - fixedTotal - variableTotal : null;
-                                        const spareOk = spare !== null && spare >= 0;
-                                        const varSpan = (
-                                            <span className={`text-xl font-bold leading-tight ${isLight ? 'text-slate-800' : 'text-white'}`} dir={isHe ? 'rtl' : 'ltr'}>
-                                                {fmt(variableTotal)}<span className={`text-[10px] font-normal ms-1 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? '/חו׳' : '/mo'}</span>
-                                            </span>
-                                        );
-                                        const spareSpan = spare !== null ? (
-                                            <span className={`text-sm font-bold ${spareOk ? (isLight ? 'text-green-600' : 'text-green-400') : (isLight ? 'text-red-500' : 'text-red-400')}`} dir={isHe ? 'rtl' : 'ltr'}>
-                                                {spareOk ? '+' : ''}{fmt(spare)}<span className={`text-[10px] font-normal ms-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? '/חו׳' : '/mo'}</span>
-                                            </span>
-                                        ) : null;
-                                        return (
-                                            <div className="flex items-baseline justify-end gap-2">
-                                                {isHe ? <>{spareSpan}{varSpan}</> : <>{varSpan}{spareSpan}</>}
-                                            </div>
-                                        );
-                                    })()}
-                                    {activeIncome > 0 && (() => {
-                                        const avail = activeIncome - fixedTotal;
-                                        const label = <span className={`text-[10px] ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? 'פנוי למחיה' : 'Available'}</span>;
-                                        const amount = <span className={`text-base font-bold ${isLight ? 'text-sky-600' : 'text-sky-400'}`} dir={isHe ? 'rtl' : 'ltr'}>{fmt(avail)}<span className={`text-[10px] font-normal ms-0.5 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? '/חו׳' : '/mo'}</span></span>;
-                                        const globeBtn = (
-                                            <button onClick={() => setShowLocations(true)} title={isHe ? 'המלצות מגורים' : 'Living suggestions'}
-                                                className={`p-0.5 rounded transition-colors shrink-0 ${isLight ? 'text-indigo-400 hover:text-indigo-600' : 'text-indigo-400 hover:text-indigo-300'}`}>
-                                                <Globe size={13} />
-                                            </button>
-                                        );
-                                        return (
-                                            <div className={`mt-2 pt-2 border-t flex items-center justify-end gap-1.5 ${isLight ? 'border-slate-200' : 'border-white/10'}`}>
-                                                {isHe ? <>{globeBtn}{amount}{label}</> : <>{amount}{label}{globeBtn}</>}
-                                            </div>
-                                        );
-                                    })()}
+                                    <div className="flex items-baseline justify-end gap-2">
+                                        <span className={`text-xl font-bold leading-tight ${isLight ? 'text-slate-800' : 'text-white'}`} dir={isHe ? 'rtl' : 'ltr'}>
+                                            {fmt(variableTotal)}<span className={`text-[10px] font-normal ms-1 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{isHe ? '/חו׳' : '/mo'}</span>
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
+                            {activeIncome > 0 && (
+                                <div className={`mt-3 pt-2 border-t space-y-1.5 text-xs ${isLight ? 'border-slate-200 text-slate-500' : 'border-white/10 text-gray-400'}`} dir={isHe ? 'rtl' : 'ltr'}>
+                                    <div className="flex items-center justify-between gap-3">
+                                        <span>{isHe ? 'יעד הכנסה' : 'Income target'}</span>
+                                        <span className={`font-bold ${isLight ? 'text-slate-700' : 'text-gray-200'}`} dir="ltr">{fmt(activeIncome)}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-3">
+                                        <span>{isHe ? 'סה"כ הוצאות' : 'Total expenses'}</span>
+                                        <span className={`font-bold ${isLight ? 'text-slate-700' : 'text-gray-200'}`} dir="ltr">{fmt(total)}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-3">
+                                        <span>{spare >= 0 ? (isHe ? 'עודף' : 'Surplus') : (isHe ? 'פער' : 'Gap')}</span>
+                                        <span className="inline-grid grid-cols-[auto_1.25rem] items-center gap-1.5" dir="ltr">
+                                            <span className={`font-bold text-right ${spare >= 0 ? (isLight ? 'text-green-600' : 'text-green-400') : (isLight ? 'text-red-500' : 'text-red-400')}`}>
+                                                {spare >= 0 ? '+' : ''}{fmt(spare ?? 0)}
+                                            </span>
+                                            <span className="w-5 flex items-center justify-center">
+                                                {spare !== null && spare > 0 && LocationSuggestModal && (
+                                                <button
+                                                    onClick={() => setShowLocations(true)}
+                                                    title={isHe ? 'המלצות מקומות לפי העודף' : 'Location suggestions based on surplus'}
+                                                    className={`p-0.5 rounded transition-colors shrink-0 ${isLight ? 'text-indigo-400 hover:text-indigo-600' : 'text-indigo-400 hover:text-indigo-300'}`}
+                                                >
+                                                    <Globe size={13} />
+                                                </button>
+                                                )}
+                                            </span>
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {fixedGroups.length > 0 && renderSection({
@@ -322,21 +323,23 @@ export function FixedVarModal({
         </div>,
         document.body
     )}
-    <LocationSuggestModal
-        isOpen={showLocations}
-        onClose={() => setShowLocations(false)}
-        availableAmount={available}
-        userMonthlyCost={total}
-        monthlySavingsAmount={Math.max(0, activeIncome - total)}
-        withdrawalMonthlyAmount={activeIncome}
-        year={selectedYear}
-        currency={currency}
-        isHe={isHe}
-        isLight={isLight}
-        aiProvider={aiProvider}
-        aiModel={aiModel}
-        apiKeyOverride={apiKeyOverride}
-    />
-  </>
-);
+    {LocationSuggestModal && (
+        <LocationSuggestModal
+            isOpen={showLocations}
+            onClose={() => setShowLocations(false)}
+            availableAmount={Math.max(0, spare ?? 0)}
+            userMonthlyCost={total}
+            monthlySavingsAmount={Math.max(0, spare ?? 0)}
+            withdrawalMonthlyAmount={activeIncome}
+            year={selectedYear}
+            currency={currency}
+            isHe={isHe}
+            isLight={isLight}
+            aiProvider={aiProvider}
+            aiModel={aiModel}
+            apiKeyOverride={apiKeyOverride}
+        />
+    )}
+    </>
+    );
 }
