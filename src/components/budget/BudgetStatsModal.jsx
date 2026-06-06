@@ -15,7 +15,7 @@ import {
     Legend
 } from 'chart.js';
 import { useDraggable } from '../../hooks/useDraggable';
-import { getNowYM, matchIncrease } from './budgetUtils';
+import { getNowYM, matchIncrease, monthlyOfBudgetItem, retirementAdditionMonthly, retirementIncreaseMonthly } from './budgetUtils';
 import { CATEGORIES, CAT_COLORS } from './constants';
 
 ChartJS.register(
@@ -57,6 +57,7 @@ export function BudgetStatsModal({
     const [localShowInflation, setLocalShowInflation] = useState(showInflationProp);
     const [selectedYearIdx, setSelectedYearIdx] = useState(null);
     const [showSavings, setShowSavings] = useState(false);
+    const [showExpenseDetails, setShowExpenseDetails] = useState(false);
     const barDivRef = useRef(null);
     // Each time isOpen transitions false→true, increment this counter during render
     // so the <Doughnut> and <Bar> receive a new key and React creates fresh canvas
@@ -72,6 +73,7 @@ export function BudgetStatsModal({
             setLocalShowInflation(showInflationProp);
             setSelectedYearIdx(null);
             setShowSavings(false);
+            setShowExpenseDetails(false);
         }
     }, [isOpen, showInflationProp]);
 
@@ -133,14 +135,15 @@ export function BudgetStatsModal({
 
             let retDelta = 0;
             if (showRetMode && retirementAdj) {
+                const yearsSinceRetirement = Math.max(0, targetYear - defaultRetirementModeStartYear);
                 const additions = (retirementAdj.additions || [])
                     .filter(a => a.categoryId === cat.id)
-                    .reduce((s, a) => s + (a.monthlyAmount || 0), 0);
+                    .reduce((s, a) => s + retirementAdditionMonthly(a, yearsSinceRetirement), 0);
                 const increases = (retirementAdj.increases || [])
                     .filter(inc => inc.categoryId === cat.id)
                     .reduce((s, inc) => {
-                        const matched = catItems.some(i => matchIncrease(i.label, inc.itemLabel));
-                        return s + (matched ? (inc.increaseAmount || 0) : 0);
+                        const matchedItems = catItems.filter(i => matchIncrease(i.label, inc.itemLabel));
+                        return s + (matchedItems.length ? retirementIncreaseMonthly(inc, matchedItems, yearsSinceRetirement) : 0);
                     }, 0);
                 retDelta = (additions + increases) * inflFactor;
             }
@@ -206,14 +209,15 @@ export function BudgetStatsModal({
 
                 let retDelta = 0;
                 if (showRetMode && retirementAdj) {
+                    const yearsSinceRetirement = Math.max(0, targetYear - defaultRetirementModeStartYear);
                     const additions = (retirementAdj.additions || [])
                         .filter(a => a.categoryId === cat.id)
-                        .reduce((s, a) => s + (a.monthlyAmount || 0), 0);
+                        .reduce((s, a) => s + retirementAdditionMonthly(a, yearsSinceRetirement), 0);
                     const increases = (retirementAdj.increases || [])
                         .filter(inc => inc.categoryId === cat.id)
                         .reduce((s, inc) => {
-                            const matched = catItems.some(i => matchIncrease(i.label, inc.itemLabel));
-                            return s + (matched ? (inc.increaseAmount || 0) : 0);
+                            const matchedItems = catItems.filter(i => matchIncrease(i.label, inc.itemLabel));
+                            return s + (matchedItems.length ? retirementIncreaseMonthly(inc, matchedItems, yearsSinceRetirement) : 0);
                         }, 0);
                     retDelta = (additions + increases) * inflFactor;
                 }
@@ -239,9 +243,11 @@ export function BudgetStatsModal({
         const yearlyIncomeOverrides = inputs.yearlyIncomeOverrides && typeof inputs.yearlyIncomeOverrides === 'object'
             ? inputs.yearlyIncomeOverrides
             : {};
-        const targets = years.map(year => {
+        const targets = years.map((year, yi) => {
             const override = parseFloat(yearlyIncomeOverrides[year]);
-            return !isNaN(override) && override > 0 ? override : baseTarget;
+            const realTarget = !isNaN(override) && override > 0 ? override : baseTarget;
+            const targetInflFactor = localShowInflation ? Math.pow(1 + inflationRate, yearsToRet + yi) : 1;
+            return realTarget * targetInflFactor;
         });
         const expenseTotals = ages.map((_, yi) =>
             datasets.filter(ds => ds.stack === 'total').reduce((s, ds) => s + (ds.data[yi] || 0), 0)
@@ -501,6 +507,226 @@ export function BudgetStatsModal({
         },
     }), [barData.expenseTotals, barData.targets, currency, gridColor, isHe, targetPercentData, textColor]);
 
+    const expenseGrowthSummary = useMemo(() => {
+        const totals = barData.expenseTotals || [];
+        const years = barData.years || [];
+        const ages = barData.ages || [];
+        if (totals.length === 0) return null;
+
+        const currentYear = new Date().getFullYear();
+        const todayItems = getResolvedItemsForYear ? getResolvedItemsForYear(currentYear) : items;
+        const today = (todayItems || [])
+            .filter(item => item.enabled !== false)
+            .reduce((sum, item) => sum + monthlyOfBudgetItem(item), 0);
+        const first = totals[0] || 0;
+        const last = totals[totals.length - 1] || 0;
+        const delta = last - first;
+        const deltaPct = first > 0 ? (delta / first) * 100 : 0;
+        const retirementDelta = first - today;
+        const retirementDeltaPct = today > 0 ? (retirementDelta / today) * 100 : (first > 0 ? 100 : 0);
+        const peakIdx = totals.reduce((bestIdx, value, idx) => value > (totals[bestIdx] || 0) ? idx : bestIdx, 0);
+
+        const savingsLabels = new Set(['חיסכון', 'Savings']);
+        const categoryChanges = (barData.datasets || [])
+            .filter(ds => ds.stack === 'total' && !savingsLabels.has(ds.label))
+            .map(ds => {
+                const start = ds.data?.[0] || 0;
+                const end = ds.data?.[totals.length - 1] || 0;
+                const change = end - start;
+                return {
+                    label: ds.label,
+                    start,
+                    end,
+                    change,
+                    pct: start > 0 ? (change / start) * 100 : (end > 0 ? 100 : 0),
+                };
+            })
+            .filter(row => Math.abs(row.change) >= 1)
+            .sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
+
+        return {
+            today,
+            first,
+            last,
+            delta,
+            deltaPct,
+            retirementDelta,
+            retirementDeltaPct,
+            peak: {
+                total: totals[peakIdx] || 0,
+                year: years[peakIdx],
+                age: ages[peakIdx],
+            },
+            changes: categoryChanges.slice(0, 5),
+        };
+    }, [barData.datasets, barData.expenseTotals, barData.years, barData.ages, getResolvedItemsForYear, items]);
+
+    const expenseDetailSummary = useMemo(() => {
+        const years = barData.years || [];
+        if (!years.length || !getResolvedItemsForYear) return null;
+
+        const currentYear = new Date().getFullYear();
+        const yearFactorForYear = (year) => {
+            if (!localShowInflation) return 1;
+            return Math.pow(1 + inflationRate, Math.max(0, (year || currentYear) - currentYear));
+        };
+
+        const itemMapForYear = (year, includeRetirementAdjustments = true) => {
+            const factor = yearFactorForYear(year);
+            const map = new Map();
+            (getResolvedItemsForYear(year) || [])
+                .filter(item => item.enabled !== false)
+                .forEach(item => {
+                    const key = item.id || `${item.categoryId}:${item.label}`;
+                    map.set(key, {
+                        label: item.label || key,
+                        categoryId: item.categoryId,
+                        amount: monthlyOfBudgetItem(item) * factor,
+                    });
+                });
+
+            const defaultShowRet = year >= defaultRetirementModeStartYear && year <= retirementEndYear;
+            const showRetMode = retirementAdj
+                ? (retirementModeByYear?.[year] ?? defaultShowRet)
+                : false;
+            if (includeRetirementAdjustments && showRetMode && retirementAdj) {
+                const yearsSinceRetirement = Math.max(0, year - defaultRetirementModeStartYear);
+                (retirementAdj.additions || []).forEach((addition, additionIdx) => {
+                    const key = `ret-add-${additionIdx}-${addition.label || addition.categoryId}`;
+                    map.set(key, {
+                        label: addition.label || (isHe ? 'תוספת פרישה' : 'Retirement addition'),
+                        categoryId: addition.categoryId,
+                        amount: retirementAdditionMonthly(addition, yearsSinceRetirement) * factor,
+                    });
+                });
+
+                (retirementAdj.increases || []).forEach((increase, increaseIdx) => {
+                    const matchedEntries = [...map.entries()].filter(([, row]) =>
+                        row.categoryId === increase.categoryId && matchIncrease(row.label, increase.itemLabel)
+                    );
+                    const matchedKey = matchedEntries[0]?.[0];
+                    const matchedItems = matchedEntries.map(([, row]) => ({ amount: row.amount / factor, frequency: 'monthly', enabled: true }));
+                    const amount = retirementIncreaseMonthly(increase, matchedItems, yearsSinceRetirement) * factor;
+                    if (matchedKey) {
+                        const current = map.get(matchedKey);
+                        map.set(matchedKey, { ...current, amount: current.amount + amount });
+                    } else {
+                        map.set(`ret-inc-${increaseIdx}-${increase.itemLabel}`, {
+                            label: increase.itemLabel || (isHe ? 'גידול בפרישה' : 'Retirement increase'),
+                            categoryId: increase.categoryId,
+                            amount,
+                        });
+                    }
+                });
+            }
+
+            return map;
+        };
+
+        const todayMap = itemMapForYear(currentYear, false);
+        const startMap = itemMapForYear(years[0], true);
+        const endMap = itemMapForYear(years[years.length - 1], true);
+        const keys = new Set([...todayMap.keys(), ...startMap.keys(), ...endMap.keys()]);
+        const rows = [...keys].map(key => {
+            const today = todayMap.get(key);
+            const start = startMap.get(key);
+            const end = endMap.get(key);
+            const todayAmount = today?.amount || 0;
+            const startAmount = start?.amount || 0;
+            const endAmount = end?.amount || 0;
+            const retirementChange = startAmount - todayAmount;
+            const periodChange = endAmount - startAmount;
+            return {
+                key,
+                label: end?.label || start?.label || today?.label || key,
+                today: todayAmount,
+                start: startAmount,
+                end: endAmount,
+                retirementChange,
+                periodChange,
+                change: retirementChange,
+                pct: todayAmount > 0 ? (retirementChange / todayAmount) * 100 : (startAmount > 0 ? 100 : 0),
+            };
+        }).filter(row => Math.abs(row.change) >= 1)
+          .sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
+
+        const summarizePatterns = (patterns) => {
+            const matches = [...keys].map(key => {
+                const today = todayMap.get(key);
+                const start = startMap.get(key);
+                const end = endMap.get(key);
+                const label = end?.label || start?.label || today?.label || key;
+                const lowerLabel = String(label || '').toLowerCase();
+                if (!patterns.some(pattern => lowerLabel.includes(pattern))) return null;
+                return {
+                    key,
+                    label,
+                    today: today?.amount || 0,
+                    start: start?.amount || 0,
+                    end: end?.amount || 0,
+                };
+            }).filter(Boolean);
+
+            const today = matches.reduce((sum, row) => sum + row.today, 0);
+            const start = matches.reduce((sum, row) => sum + row.start, 0);
+            const end = matches.reduce((sum, row) => sum + row.end, 0);
+            const retirementChange = start - today;
+            return {
+                today,
+                start,
+                end,
+                retirementChange,
+                retirementPct: today > 0 ? (retirementChange / today) * 100 : (start > 0 ? 100 : 0),
+                periodChange: end - start,
+                change: retirementChange,
+                items: matches
+                    .sort((a, b) => (b.end || b.start) - (a.end || a.start))
+                    .slice(0, 3)
+                    .map(row => row.label),
+            };
+        };
+
+        const checks = [
+            {
+                label: isHe ? 'חשמל / מים / גז בבית' : 'Home utilities',
+                detail: isHe ? 'שהייה בבית מעלה מיזוג, חימום, תאורה ומכשירי חשמל.' : 'More time at home raises cooling, heating, lighting and appliance use.',
+                ...summarizePatterns(['חשמל', 'מים', 'גז', 'electric', 'water', 'gas', 'utilit']),
+            },
+            {
+                label: isHe ? 'אוכל וקניות במקום הטבות עבודה' : 'Food replacing work benefits',
+                detail: isHe ? 'ארוחות בבית, קפה, אירוח ואובדן סבסוד/חדר אוכל.' : 'Meals at home, coffee, hosting and loss of subsidized meals.',
+                ...summarizePatterns(['מזון', 'סופר', 'קניות', 'מסעד', 'food', 'grocery', 'restaurant']),
+            },
+            {
+                label: isHe ? 'טלפון / אינטרנט / הטבות מעסיק' : 'Phone / internet / employer benefits',
+                detail: isHe ? 'טלפון חברה, חבילת סלולר, אינטרנט או ציוד שכבר לא ממומנים.' : 'Company phone, mobile plan, internet or equipment no longer covered.',
+                ...summarizePatterns(['טלפון', 'סלולר', 'אינטרנט', 'תקשורת', 'phone', 'mobile', 'internet', 'communication']),
+            },
+            {
+                label: isHe ? 'תחבורה אחרי פרישה' : 'Post-retirement transport',
+                detail: isHe ? 'יותר נסיעות אישיות, טיפולים, משפחה, פנאי, או החלפת רכב חברה.' : 'More personal trips, care, family, leisure, or replacing a company car.',
+                ...summarizePatterns(['תחבורה', 'דלק', 'רכב', 'חניה', 'transport', 'fuel', 'car', 'parking']),
+            },
+            {
+                label: isHe ? 'בריאות וביטוחים פרטיים' : 'Health and private insurance',
+                detail: isHe ? 'פרמיות עולות עם גיל, תרופות, בדיקות וטיפולים מחוץ לסל.' : 'Premiums rise with age, plus medicine, tests and out-of-pocket care.',
+                ...summarizePatterns(['בריאות', 'רופא', 'תרופות', 'ביטוח', 'health', 'doctor', 'medicine', 'insurance']),
+            },
+        ].map(check => ({ ...check, ok: check.today > 0 || check.start > 0 || check.end > 0 }));
+
+        return { rows: rows.slice(0, 8), checks };
+    }, [
+        barData.years,
+        getResolvedItemsForYear,
+        localShowInflation,
+        inflationRate,
+        retirementAdj,
+        retirementModeByYear,
+        defaultRetirementModeStartYear,
+        retirementEndYear,
+        isHe
+    ]);
+
     // ── Savings slider ─────────────────────────────────────────────────────────
 
     const savingsSliderData = useMemo(() => {
@@ -719,6 +945,210 @@ export function BudgetStatsModal({
                             </div>
                         </div>
                     </div>
+
+                    {expenseGrowthSummary && (
+                        <div className={`rounded-lg border p-3 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'}`}>
+                            <div className="flex items-center justify-between gap-2 mb-3">
+                                <h3 className={`text-sm font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
+                                    {isHe ? 'סיכום גידול בהוצאות' : 'Expense Growth Summary'}
+                                </h3>
+                                <span className={`text-[11px] ${localShowInflation ? (isLight ? 'text-amber-700' : 'text-amber-300') : (isLight ? 'text-slate-500' : 'text-gray-400')}`}>
+                                    {localShowInflation
+                                        ? (isHe ? 'נומינלי, כולל אינפלציה' : 'Nominal, includes inflation')
+                                        : (isHe ? 'ריאלי, במחירי היום' : 'Real, today\'s prices')}
+                                </span>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                                {[
+                                    {
+                                        label: isHe ? 'היום' : 'Today',
+                                        value: expenseGrowthSummary.today,
+                                        sub: `${new Date().getFullYear()}`,
+                                        color: isLight ? 'text-slate-700' : 'text-white',
+                                    },
+                                    {
+                                        label: isHe ? 'תחילת פרישה' : 'Retirement start',
+                                        value: expenseGrowthSummary.first,
+                                        sub: barData.years?.[0] ? `${barData.years[0]}` : '',
+                                        color: expenseGrowthSummary.retirementDelta >= 0 ? (isLight ? 'text-red-600' : 'text-red-300') : (isLight ? 'text-green-700' : 'text-green-300'),
+                                    },
+                                    {
+                                        label: isHe ? 'תוספת בפרישה' : 'Retirement add',
+                                        value: Math.abs(expenseGrowthSummary.retirementDelta),
+                                        prefix: expenseGrowthSummary.retirementDelta >= 0 ? '+' : '-',
+                                        sub: `${expenseGrowthSummary.retirementDelta >= 0 ? '+' : ''}${Math.round(expenseGrowthSummary.retirementDeltaPct)}%`,
+                                        color: expenseGrowthSummary.retirementDelta >= 0 ? (isLight ? 'text-red-600' : 'text-red-300') : (isLight ? 'text-green-700' : 'text-green-300'),
+                                    },
+                                    {
+                                        label: isHe ? 'סוף פרישה' : 'Retirement end',
+                                        value: expenseGrowthSummary.last,
+                                        sub: barData.years?.[barData.years.length - 1] ? `${barData.years[barData.years.length - 1]}` : '',
+                                        color: isLight ? 'text-indigo-700' : 'text-indigo-300',
+                                    },
+                                ].map(card => (
+                                    <div key={card.label} className={`rounded-md px-2 py-2 ${isLight ? 'bg-white border border-slate-100' : 'bg-black/10 border border-white/5'}`}>
+                                        <div className={`text-[10px] mb-0.5 ${isHe ? 'text-right' : 'text-left'} ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{card.label}</div>
+                                        <div className={`text-sm font-bold tabular-nums ${isHe ? 'text-right' : 'text-left'} ${card.color}`} dir="ltr">
+                                            {card.prefix || ''}{currency}{Math.round(card.value).toLocaleString()}
+                                        </div>
+                                        {card.sub && <div className={`text-[10px] mt-0.5 ${isHe ? 'text-right' : 'text-left'} ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>{card.sub}</div>}
+                                    </div>
+                                ))}
+                            </div>
+                            {expenseGrowthSummary.changes.length > 0 && (
+                                <div>
+                                    <div className={`text-[11px] font-semibold mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                        {isHe ? 'מה בעיקר השתנה' : 'Main drivers'}
+                                    </div>
+                                    <div className="space-y-1">
+                                        {expenseGrowthSummary.changes.map(row => {
+                                            const up = row.change >= 0;
+                                            return (
+                                                <div key={row.label} className="flex items-center justify-between gap-3 text-xs">
+                                                    <span className={`truncate ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>{row.label}</span>
+                                                    <span dir="ltr" className={`shrink-0 font-semibold ${up ? (isLight ? 'text-red-600' : 'text-red-300') : (isLight ? 'text-green-700' : 'text-green-300')}`}>
+                                                        {up ? '+' : '-'}{currency}{Math.abs(Math.round(row.change)).toLocaleString()}
+                                                        <span className={`font-normal ms-1 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                                            ({up ? '+' : ''}{Math.round(row.pct)}%)
+                                                        </span>
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                            {(expenseDetailSummary?.rows?.length > 0 || expenseDetailSummary?.checks?.length > 0) && (
+                                <div className="mt-3 pt-3 border-t border-white/10">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowExpenseDetails(v => !v)}
+                                        className={`w-full flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors ${isLight ? 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200' : 'bg-black/10 hover:bg-white/10 text-gray-300 border border-white/10'}`}
+                                    >
+                                        <span>
+                                            {showExpenseDetails
+                                                ? (isHe ? 'הסתר פירוט הוצאות' : 'Hide expense details')
+                                                : (isHe ? 'פתח פירוט הוצאות ובדיקות חובה' : 'Open expense details and checks')}
+                                        </span>
+                                        <span className={`text-[11px] font-normal ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                            {expenseDetailSummary.rows.length + expenseDetailSummary.checks.length}
+                                            {' '}
+                                            {isHe ? 'שורות' : 'rows'}
+                                            {' '}
+                                            {showExpenseDetails ? '▲' : '▼'}
+                                        </span>
+                                    </button>
+
+                                    {showExpenseDetails && (
+                                        <div className="mt-3 space-y-3">
+                                            {expenseDetailSummary?.rows?.length > 0 && (
+                                                <div>
+                                                    <div className={`text-[11px] font-semibold mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                        {isHe ? 'שורות הוצאה שהשתנו בפועל' : 'Changed line items'}
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        {expenseDetailSummary.rows.map(row => {
+                                                            const up = row.retirementChange >= 0;
+                                                            return (
+                                                                <div key={row.key} className="flex items-center justify-between gap-3 text-xs">
+                                                                    <span className={`truncate ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>{row.label}</span>
+                                                                    <span dir="ltr" className={`shrink-0 font-semibold ${up ? (isLight ? 'text-red-600' : 'text-red-300') : (isLight ? 'text-green-700' : 'text-green-300')}`}>
+                                                                        {up ? '+' : '-'}{currency}{Math.abs(Math.round(row.retirementChange)).toLocaleString()}
+                                                                        <span className={`font-normal ms-1 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                                                            ({up ? '+' : ''}{Math.round(row.pct)}%)
+                                                                        </span>
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {expenseDetailSummary?.checks?.length > 0 && (
+                                                <div>
+                                                    <div className={`text-[11px] font-semibold mb-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                        {isHe ? 'בדיקות חובה לתקופה שבה אתה מממן את עצמך' : 'Self-funded retirement checks'}
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        {expenseDetailSummary.checks.map(check => {
+                                                            const up = check.retirementChange >= 0;
+                                                            return (
+                                                            <div key={check.label} className={`rounded-md px-2 py-1.5 border ${check.ok
+                                                                ? (isLight ? 'bg-green-50 border-green-200' : 'bg-green-900/10 border-green-700/30')
+                                                                : (isLight ? 'bg-amber-50 border-amber-200' : 'bg-amber-900/10 border-amber-700/30')
+                                                            }`}>
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <span className={`text-xs font-semibold ${check.ok ? (isLight ? 'text-green-700' : 'text-green-300') : (isLight ? 'text-amber-700' : 'text-amber-300')}`}>
+                                                                        {check.label}
+                                                                    </span>
+                                                                    <span className={`text-[10px] shrink-0 ${check.ok ? (isLight ? 'text-slate-500' : 'text-gray-400') : (isLight ? 'text-amber-600' : 'text-amber-400')}`}>
+                                                                        {check.ok ? (isHe ? 'נמצא בתקציב' : 'Found') : (isHe ? 'לא נמצא סכום' : 'No amount found')}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-1.5">
+                                                                    <div className={`rounded px-1.5 py-1 ${isLight ? 'bg-white/70' : 'bg-black/10'}`}>
+                                                                        <div className={`text-[9px] ${isHe ? 'text-right' : 'text-left'} ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                                                            {isHe ? 'היום' : 'Today'}
+                                                                        </div>
+                                                                        <div className={`text-[11px] font-semibold ${isHe ? 'text-right' : 'text-left'} ${isLight ? 'text-slate-700' : 'text-gray-200'}`} dir="ltr">
+                                                                            {currency}{Math.round(check.today).toLocaleString()}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className={`rounded px-1.5 py-1 ${isLight ? 'bg-white/70' : 'bg-black/10'}`}>
+                                                                        <div className={`text-[9px] ${isHe ? 'text-right' : 'text-left'} ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                                                            {isHe ? 'תחילת פרישה' : 'Start'}
+                                                                        </div>
+                                                                        <div className={`text-[11px] font-semibold ${isHe ? 'text-right' : 'text-left'} ${isLight ? 'text-slate-700' : 'text-gray-200'}`} dir="ltr">
+                                                                            {currency}{Math.round(check.start).toLocaleString()}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className={`rounded px-1.5 py-1 ${isLight ? 'bg-white/70' : 'bg-black/10'}`}>
+                                                                        <div className={`text-[9px] ${isHe ? 'text-right' : 'text-left'} ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                                                            {isHe ? 'תוספת בפרישה' : 'At retirement'}
+                                                                        </div>
+                                                                        <div className={`text-[11px] font-semibold ${isHe ? 'text-right' : 'text-left'} ${up ? (isLight ? 'text-red-600' : 'text-red-300') : (isLight ? 'text-green-700' : 'text-green-300')}`} dir="ltr">
+                                                                            {up ? '+' : '-'}{currency}{Math.abs(Math.round(check.retirementChange)).toLocaleString()}
+                                                                            <span className={`font-normal ms-1 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                                                                ({up ? '+' : ''}{Math.round(check.retirementPct)}%)
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className={`rounded px-1.5 py-1 ${isLight ? 'bg-white/70' : 'bg-black/10'}`}>
+                                                                        <div className={`text-[9px] ${isHe ? 'text-right' : 'text-left'} ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                                                            {isHe ? 'סוף פרישה' : 'End'}
+                                                                        </div>
+                                                                        <div className={`text-[11px] font-semibold ${isHe ? 'text-right' : 'text-left'} ${isLight ? 'text-slate-700' : 'text-gray-200'}`} dir="ltr">
+                                                                            {currency}{Math.round(check.end).toLocaleString()}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                                {Math.abs(check.periodChange || 0) >= 1 && (
+                                                                    <div className={`text-[10px] mt-1 ${isLight ? 'text-slate-500' : 'text-gray-400'}`} dir={isHe ? 'rtl' : 'ltr'}>
+                                                                        {isHe ? 'שינוי נוסף במהלך הפרישה: ' : 'Additional change during retirement: '}
+                                                                        <span dir="ltr">{check.periodChange >= 0 ? '+' : '-'}{currency}{Math.abs(Math.round(check.periodChange)).toLocaleString()}</span>
+                                                                    </div>
+                                                                )}
+                                                                <div className={`text-[10px] mt-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                                    {check.detail}
+                                                                </div>
+                                                                {check.items?.length > 0 && (
+                                                                    <div className={`text-[10px] mt-1 truncate ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                                                                        {isHe ? 'שורות שנכללו: ' : 'Included: '}{check.items.join(', ')}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* ── Bar section ── */}
                     {barData.datasets.length > 0 && (

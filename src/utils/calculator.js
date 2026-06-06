@@ -53,11 +53,14 @@ export function calculateRetirementProjection(inputs, t = null) {
         inflationRate = 0
     } = parsedInputs;
 
-    // Adjust all return rates for inflation (real return = nominal - inflation)
-    // This makes all results expressed in today's purchasing power
-    const realReturnRate = annualReturnRate - inflationRate;
-    const realBucketSafeRate = (parsedInputs.bucketSafeRate || 0) - inflationRate;
-    const realBucketSurplusRate = (parsedInputs.bucketSurplusRate || 0) - inflationRate;
+    // Adjust all return rates for inflation using the exact Fisher real-return formula.
+    // Spending inputs stay in today's purchasing power; inflation is reflected by lowering returns.
+    const toRealAnnualRate = (nominalRate, inflation) => (
+        ((1 + (nominalRate || 0) / 100) / (1 + (inflation || 0) / 100) - 1) * 100
+    );
+    const realReturnRate = toRealAnnualRate(annualReturnRate, inflationRate);
+    const realBucketSafeRate = toRealAnnualRate(parsedInputs.bucketSafeRate || 0, inflationRate);
+    const realBucketSurplusRate = toRealAnnualRate(parsedInputs.bucketSurplusRate || 0, inflationRate);
 
     // Adjust variable rates for inflation
     const adjustVariableRates = (rates) => {
@@ -66,7 +69,7 @@ export function calculateRetirementProjection(inputs, t = null) {
         for (const [year, rate] of Object.entries(rates)) {
             const parsed = parseFloat(rate);
             // Non-numeric entries are left out; downstream NaN guards fall back to the default rate
-            if (!isNaN(parsed)) adjusted[year] = parsed - inflationRate;
+            if (!isNaN(parsed)) adjusted[year] = toRealAnnualRate(parsed, inflationRate);
         }
         return adjusted;
     };

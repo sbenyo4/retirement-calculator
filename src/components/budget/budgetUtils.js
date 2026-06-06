@@ -40,6 +40,34 @@ export function matchIncrease(itemLabel, incLabel) {
     return a === b || a.includes(b) || b.includes(a);
 }
 
+export function monthlyOfBudgetItem(item) {
+    if (!item || item.enabled === false) return 0;
+    if (item.type === 'loan') {
+        return (item.tracks || []).reduce((sum, track) => sum + (track.amount || 0), 0);
+    }
+    return item.frequency === 'annual' ? (item.amount || 0) / 12 : (item.amount || 0);
+}
+
+export function annualGrowthFactor(entry, yearsSinceRetirement = 0) {
+    const pct = parseFloat(entry?.annualGrowthPercent ?? entry?.yearlyGrowthPercent ?? 0) || 0;
+    if (!pct || yearsSinceRetirement <= 0) return 1;
+    return Math.pow(1 + pct / 100, yearsSinceRetirement);
+}
+
+export function retirementAdditionMonthly(addition, yearsSinceRetirement = 0) {
+    const base = parseFloat(addition?.monthlyAmount) || 0;
+    return base * annualGrowthFactor(addition, yearsSinceRetirement);
+}
+
+export function retirementIncreaseMonthly(increase, matchedItems = [], yearsSinceRetirement = 0) {
+    const fixedAmount = parseFloat(increase?.increaseAmount) || 0;
+    const percent = parseFloat(increase?.increasePercent) || 0;
+    const matchedBase = matchedItems.reduce((sum, item) => sum + monthlyOfBudgetItem(item), 0);
+    const percentAmount = percent > 0 ? matchedBase * (percent / 100) : 0;
+    const base = fixedAmount > 0 ? fixedAmount : percentAmount;
+    return base * annualGrowthFactor(increase, yearsSinceRetirement);
+}
+
 export function backupAge(savedAt, isHe) {
     const mins = Math.round((Date.now() - savedAt) / 60000);
     if (mins < 1) return isHe ? 'עכשיו' : 'just now';

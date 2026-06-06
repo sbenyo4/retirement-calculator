@@ -7,6 +7,7 @@ import { InsightRenderer } from './budget/InsightRenderer';
 import { BudgetStatsModal } from './budget/BudgetStatsModal';
 import { CategorySection } from './budget/CategorySection';
 import { FixedVarModal } from './budget/FixedVarModal';
+import { retirementAdditionMonthly, retirementIncreaseMonthly } from './budget/budgetUtils';
 import {
     normalizeTripDays, normalizeCarRentalDays, fetchIlsRates, ratesLineFor,
     REGION_PROMPT, WORLD_REGIONS, TIER_META, DEFAULT_TRIP_DAYS, numberOrZero,
@@ -2177,13 +2178,12 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const [items, setItems] = useState(() => DEFAULT_ITEMS.map(normalizeBudgetItem));
     const [householdSize, setHouseholdSize] = useState(2);
     const [showInflation, setShowInflation] = useState(false);
-    const [projYears, setProjYears] = useState(5);
 
     // Effective annual inflation rate: use inputs if set, else country default
     const inflationRate = inputs.inflationRate > 0
         ? inputs.inflationRate / 100
         : (isHe ? 0.035 : 0.025);
-    const projFactor = Math.pow(1 + inflationRate, projYears);
+    const currentYear = new Date().getFullYear();
     const [loaded, setLoaded] = useState(false);
     const saveAllowedRef = useRef(false); // only true after successful Firestore load
     const saveTimerRef = useRef(null);
@@ -2202,6 +2202,10 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const [aiLoading, setAiLoading] = useState(false);
     const showAiLoadingSpinner = useDelayedFlag(aiLoading);
     const [aiError, setAiError] = useState(null);
+    const [aiSuggestedInsight, setAiSuggestedInsight] = useState(null);
+    const [editingRetirementAdj, setEditingRetirementAdj] = useState(false);
+    const [retirementAdjDraft, setRetirementAdjDraft] = useState('');
+    const [retirementAdjDraftError, setRetirementAdjDraftError] = useState(null);
     const [retirementModeByYear, setRetirementModeByYear] = useState({});
     const aiInsightRef = useRef(null);      // cached insight text (survives modal close)
     const aiInsightStaleRef = useRef(false); // mirror of aiInsightStale for use inside callbacks
@@ -2220,7 +2224,6 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     const [showFixedVar, setShowFixedVar] = useState(false);
     const [sliderConsumed, setSliderConsumed] = useState(0);
     const [includeRetirementEntertainment, setIncludeRetirementEntertainment] = useState(false);
-    const currentYear = new Date().getFullYear();
     const retirementStartDate = useMemo(
         () => getProjectedAgeDate(inputs.retirementStartAge, inputs.currentAge, inputs.birthdate, inputs.manualAge),
         [inputs.retirementStartAge, inputs.currentAge, inputs.birthdate, inputs.manualAge]
@@ -2236,6 +2239,8 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         return monthsInStartYear > 6 ? retirementStartDate.getFullYear() : retirementStartDate.getFullYear() + 1;
     }, [retirementStartDate, retirementEndYear]);
     const [selectedYear, setSelectedYear] = useState(currentYear);
+    const projYears = Math.max(0, selectedYear - currentYear);
+    const projFactor = Math.pow(1 + inflationRate, projYears);
     // Per-year income target: use yearlyIncomeOverrides for the selected year if set, else fall back to baseTarget
     const yearIncomeOverride = parseFloat(inputs.yearlyIncomeOverrides?.[selectedYear]);
     const target = (!isNaN(yearIncomeOverride) && yearIncomeOverride > 0) ? Math.round(yearIncomeOverride) : baseTarget;
@@ -2340,21 +2345,36 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     // Derive clean display text and structured retirement adjustments from raw AI insight
     const insightText    = useMemo(() => stripRetirementJson(aiInsight), [aiInsight]);
     const retirementAdj  = useMemo(() => parseRetirementAdj(aiInsight),  [aiInsight]);
-    const effectiveRetirementAdj = useMemo(() => {
-        if (!retirementAdj || includeRetirementEntertainment) return retirementAdj;
-        return {
-            ...retirementAdj,
-            mutedCategoryIds: ['entertainment'],
-            mutedAdditions: (retirementAdj.additions || []).filter(a => a.categoryId === 'entertainment'),
-            mutedIncreases: (retirementAdj.increases || []).filter(inc => inc.categoryId === 'entertainment'),
-            additions: (retirementAdj.additions || []).filter(a => a.categoryId !== 'entertainment'),
-            increases: (retirementAdj.increases || []).filter(inc => inc.categoryId !== 'entertainment'),
-        };
-    }, [retirementAdj, includeRetirementEntertainment]);
+    const saveRetirementAdjEdit = useCallback(() => {
+        try {
+            const parsed = JSON.parse(retirementAdjDraft);
+            const normalized = {
+                ...parsed,
+                additions: Array.isArray(parsed.additions) ? parsed.additions : [],
+                increases: Array.isArray(parsed.increases) ? parsed.increases : [],
+            };
+            const baseText = stripRetirementJson(aiInsight || insightText || '').trim();
+            const nextInsight = `${baseText}\n\n${RET_JSON_START}\n${JSON.stringify(normalized, null, 2)}\n${RET_JSON_END}`.trim();
+            aiInsightRef.current = nextInsight;
+            setAiInsight(nextInsight);
+            setAiInsightStale(false);
+            setEditingRetirementAdj(false);
+            setRetirementAdjDraftError(null);
+            if (uid) setBudgetAiInsight(uid, nextInsight).catch(err => console.error('[Budget AI insight save error]', err));
+        } catch (err) {
+            setRetirementAdjDraftError(err.message || (isHe ? 'JSON לא תקין' : 'Invalid JSON'));
+        }
+    }, [aiInsight, insightText, retirementAdjDraft, uid, isHe]);
+    const restoreAiRetirementAdj = useCallback(() => {
+        if (!aiSuggestedInsight) return;
+        aiInsightRef.current = aiSuggestedInsight;
+        setAiInsight(aiSuggestedInsight);
+        setAiInsightStale(false);
+        setEditingRetirementAdj(false);
+        setRetirementAdjDraftError(null);
+        if (uid) setBudgetAiInsight(uid, aiSuggestedInsight).catch(err => console.error('[Budget AI insight save error]', err));
+    }, [aiSuggestedInsight, uid]);
     const defaultShowRetirementMode = selectedYear >= defaultRetirementModeStartYear && selectedYear <= retirementEndYear;
-    const showRetirementMode = retirementAdj
-        ? (retirementModeByYear[selectedYear] ?? defaultShowRetirementMode)
-        : false;
     const setShowRetirementMode = useCallback((updater) => {
         setRetirementModeByYear(prev => {
             if (prev[selectedYear] === undefined) return prev;
@@ -2631,6 +2651,110 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     // Per-year display items: base items with yearAmounts[selectedYear] overrides and loan tracks filtered by year
     const displayItems = useMemo(() => getResolvedItemsForYear(selectedYear), [selectedYear, getResolvedItemsForYear]);
 
+    const suggestedRetirementAdj = useMemo(() => {
+        const base = retirementAdj || { additions: [], increases: [] };
+        const additions = Array.isArray(base.additions) ? [...base.additions] : [];
+        const increases = Array.isArray(base.increases) ? [...base.increases] : [];
+        const hasIncreaseFor = (categoryId, itemLabel) =>
+            increases.some(inc => inc.categoryId === categoryId && matchIncrease(itemLabel, inc.itemLabel || ''));
+        const addSuggestedIncrease = ({ categoryId, patterns, increasePercent, annualGrowthPercent = 0, note }) => {
+            const categoryItems = displayItems.filter(item => item.categoryId === categoryId && item.enabled !== false && toMonthly(item) > 0);
+            const matched = categoryItems.find(item => {
+                const label = String(item.label || '').toLowerCase();
+                return patterns.some(pattern => label.includes(pattern));
+            });
+            if (!matched || hasIncreaseFor(categoryId, matched.label)) return;
+            increases.push({
+                categoryId,
+                itemLabel: matched.label,
+                increasePercent,
+                annualGrowthPercent,
+                note,
+                source: 'suggested',
+            });
+        };
+
+        addSuggestedIncrease({
+            categoryId: 'housing',
+            patterns: ['חשמל', 'מים', 'גז', 'electric', 'water', 'gas'],
+            increasePercent: 10,
+            note: isHe ? 'יותר שהייה בבית: מיזוג, חימום, תאורה ומכשירים' : 'More time at home: cooling, heating, lighting and appliances',
+        });
+        addSuggestedIncrease({
+            categoryId: 'food',
+            patterns: ['מזון', 'סופר', 'קניות', 'מסעד', 'food', 'grocery', 'restaurant'],
+            increasePercent: 15,
+            note: isHe ? 'יותר ארוחות בבית ואובדן הטבות/סבסוד עבודה' : 'More meals at home and loss of workplace benefits',
+        });
+        addSuggestedIncrease({
+            categoryId: 'misc',
+            patterns: ['טלפון', 'סלולר', 'אינטרנט', 'תקשורת', 'phone', 'mobile', 'internet', 'communication'],
+            increasePercent: 20,
+            note: isHe ? 'טלפון/אינטרנט/ציוד שכבר לא ממומנים על ידי מעסיק' : 'Phone/internet/equipment no longer employer-funded',
+        });
+        addSuggestedIncrease({
+            categoryId: 'transport',
+            patterns: ['תחבורה', 'דלק', 'רכב', 'חניה', 'transport', 'fuel', 'car', 'parking'],
+            increasePercent: 25,
+            note: isHe ? 'יותר נסיעות אישיות או החלפת רכב/דלק ממעסיק' : 'More personal travel or replacing employer car/fuel',
+        });
+        addSuggestedIncrease({
+            categoryId: 'health',
+            patterns: ['בריאות', 'ביטוח', 'רופא', 'תרופות', 'health', 'insurance', 'doctor', 'medicine'],
+            increasePercent: 15,
+            annualGrowthPercent: 2,
+            note: isHe ? 'עלייה עם גיל וביטוחים/טיפולים מחוץ לסל' : 'Age-related increase in insurance and out-of-pocket care',
+        });
+
+        return { ...base, additions, increases };
+    }, [retirementAdj, displayItems, isHe]);
+
+    const effectiveRetirementAdj = useMemo(() => {
+        if (!suggestedRetirementAdj || includeRetirementEntertainment) return suggestedRetirementAdj;
+        return {
+            ...suggestedRetirementAdj,
+            mutedCategoryIds: ['entertainment'],
+            mutedAdditions: (suggestedRetirementAdj.additions || []).filter(a => a.categoryId === 'entertainment'),
+            mutedIncreases: (suggestedRetirementAdj.increases || []).filter(inc => inc.categoryId === 'entertainment'),
+            additions: (suggestedRetirementAdj.additions || []).filter(a => a.categoryId !== 'entertainment'),
+            increases: (suggestedRetirementAdj.increases || []).filter(inc => inc.categoryId !== 'entertainment'),
+        };
+    }, [suggestedRetirementAdj, includeRetirementEntertainment]);
+
+    const showRetirementMode = suggestedRetirementAdj
+        ? (retirementModeByYear[selectedYear] ?? defaultShowRetirementMode)
+        : false;
+
+    const startRetirementAdjEdit = useCallback(() => {
+        const adj = suggestedRetirementAdj || { additions: [], increases: [] };
+        setRetirementAdjDraft(JSON.stringify(adj, null, 2));
+        setRetirementAdjDraftError(null);
+        setEditingRetirementAdj(true);
+    }, [suggestedRetirementAdj]);
+
+    const draftRetirementAdj = useMemo(() => {
+        if (!editingRetirementAdj) return null;
+        try {
+            const parsed = JSON.parse(retirementAdjDraft || '{}');
+            return {
+                additions: Array.isArray(parsed.additions) ? parsed.additions : [],
+                increases: Array.isArray(parsed.increases) ? parsed.increases : [],
+            };
+        } catch {
+            return null;
+        }
+    }, [editingRetirementAdj, retirementAdjDraft]);
+
+    const updateRetirementAdjDraft = useCallback((section, idx, field, value) => {
+        setRetirementAdjDraft(prev => {
+            const parsed = JSON.parse(prev || '{}');
+            const list = Array.isArray(parsed[section]) ? [...parsed[section]] : [];
+            list[idx] = { ...list[idx], [field]: value };
+            return JSON.stringify({ ...parsed, [section]: list }, null, 2);
+        });
+        setRetirementAdjDraftError(null);
+    }, []);
+
     const searchResults = useMemo(() => {
         const q = searchQuery.trim().toLowerCase();
         if (!q) return null;
@@ -2722,6 +2846,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         getBudgetAiInsight(uid).then(saved => {
             if (saved?.insight) {
                 aiInsightRef.current = saved.insight;
+                setAiSuggestedInsight(saved.insight);
                 setAiInsight(saved.insight);
                 setAiInsightStale(false);
             }
@@ -2779,11 +2904,12 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         if (!loaded) return;
         try {
             const monthlyBase = displayItems.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0);
+            const yearsSinceRetirement = Math.max(0, selectedYear - defaultRetirementModeStartYear);
             const retDelta = showRetirementMode && effectiveRetirementAdj
-                ? (effectiveRetirementAdj.additions || []).reduce((s, a) => s + (a.monthlyAmount || 0), 0)
+                ? (effectiveRetirementAdj.additions || []).reduce((s, a) => s + retirementAdditionMonthly(a, yearsSinceRetirement), 0)
                   + (effectiveRetirementAdj.increases || []).reduce((s, inc) => {
-                      const matched = displayItems.filter(i => i.enabled !== false).some(i => matchIncrease(i.label, inc.itemLabel));
-                      return s + (matched ? (inc.increaseAmount || 0) : 0);
+                      const matchedItems = displayItems.filter(i => i.enabled !== false && matchIncrease(i.label, inc.itemLabel));
+                      return s + retirementIncreaseMonthly(inc, matchedItems, yearsSinceRetirement);
                   }, 0)
                 : 0;
             const monthly = monthlyBase + retDelta;
@@ -2818,7 +2944,8 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
                     return { loan: i.label, track: tr.label, amount: tr.amount, endDate: tr.endDate, monthsLeft: ml, active: ml >= 0 };
                 }));
 
-            const projectedMonthly = displayItems.filter(i => i.enabled !== false).reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0);
+            const projectedMonthly = displayItems.filter(i => i.enabled !== false).reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0)
+                + (showRetirementMode ? retDelta * projFactor : 0);
 
             sessionStorage.setItem('rc-budget-summary', JSON.stringify({
                 totalMonthly: Math.round(monthly),
@@ -2839,7 +2966,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
             }));
             window.dispatchEvent(new Event('rc-budget-updated'));
         } catch {}
-    }, [displayItems, loaded, inputs.monthlyNetIncomeDesired, inputs.yearlyIncomeOverrides, results, householdSize, showInflation, inflationRate, projFactor, projYears, showRetirementMode, effectiveRetirementAdj, selectedYear]);
+    }, [displayItems, loaded, inputs.monthlyNetIncomeDesired, inputs.yearlyIncomeOverrides, results, householdSize, showInflation, inflationRate, projFactor, projYears, showRetirementMode, effectiveRetirementAdj, selectedYear, defaultRetirementModeStartYear]);
 
     // Keep budget reminders in sync immediately from local state (before DB debounce/save).
     useEffect(() => {
@@ -2859,16 +2986,16 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
         () => displayItems.filter(i => i.enabled !== false).reduce((s, i) => s + toMonthly(i), 0),
         [displayItems]
     );
+    const yearsSinceRetirement = Math.max(0, selectedYear - defaultRetirementModeStartYear);
     const retirementDeltaTotal = useMemo(() => {
         if (!showRetirementMode || !effectiveRetirementAdj) return 0;
-        const additions = (effectiveRetirementAdj.additions || []).reduce((s, a) => s + (a.monthlyAmount || 0), 0);
+        const additions = (effectiveRetirementAdj.additions || []).reduce((s, a) => s + retirementAdditionMonthly(a, yearsSinceRetirement), 0);
         const increases = (effectiveRetirementAdj.increases || []).reduce((s, inc) => {
-            // only count increase if there's a matching enabled item
-            const matched = displayItems.filter(i => i.enabled !== false).some(i => matchIncrease(i.label, inc.itemLabel));
-            return s + (matched ? (inc.increaseAmount || 0) : 0);
+            const matchedItems = displayItems.filter(i => i.enabled !== false && matchIncrease(i.label, inc.itemLabel));
+            return s + retirementIncreaseMonthly(inc, matchedItems, yearsSinceRetirement);
         }, 0);
         return additions + increases;
-    }, [showRetirementMode, effectiveRetirementAdj, displayItems]);
+    }, [showRetirementMode, effectiveRetirementAdj, displayItems, yearsSinceRetirement]);
     const totalMonthly = showRetirementMode ? totalMonthlyBase + retirementDeltaTotal : totalMonthlyBase;
     const fullMonthly = useMemo(
         () => displayItems.reduce((s, i) => s + toMonthly(i), 0),
@@ -2876,8 +3003,9 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
     );
     const pausedMonthly = fullMonthly - totalMonthly;
     const totalProjectedMonthly = useMemo(
-        () => displayItems.filter(i => i.enabled !== false).reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0),
-        [displayItems, projFactor, projYears]
+        () => displayItems.filter(i => i.enabled !== false).reduce((s, i) => s + toProjectedMonthly(i, projFactor, projYears), 0)
+            + (showRetirementMode ? retirementDeltaTotal * projFactor : 0),
+        [displayItems, projFactor, projYears, showRetirementMode, retirementDeltaTotal]
     );
 
 
@@ -3161,12 +3289,12 @@ ${isRetirementBeforeNI ? `
 - תקשורת, טלוויזיה ואינטרנט (צריכת מדינה, טלוויזיה וסטרימינג מוגברת בבית).
 - תחזוקת בית ובלאי (עקב שהייה ממושכת בבית ושימוש מוגבר במתקנים).
 - תחבורה, דלק וטלפון נייד (במידה והיו מסובסדים או ממומנים על ידי המעסיק בעבר וכעת הם במימון מלא שלך).
-ציין את אחוז הגידול הצפוי לכל סעיף ואת התוספת החודשית המשוערת.
+ציין את אחוז הגידול הצפוי לכל סעיף ואת התוספת החודשית המשוערת. הסכומים חייבים להיות ריאליים במחירי היום, לפני אינפלציה כללית. אם סעיף צפוי לגדול בכל שנה מעבר לאינפלציה (למשל בריאות/ביטוחים עם גיל), הוסף annualGrowthPercent. אם הגידול הוא רק קפיצה חד-פעמית בפרישה, השאר annualGrowthPercent כ-0 או אל תכלול אותו. אל תכפיל: אם נתת increaseAmount, הוא התוספת החודשית; increasePercent הוא הסבר. אם אין לך סכום מדויק, אפשר לתת increasePercent בלבד והמערכת תחשב אותו מתוך הסעיף הקיים.
 
 בסוף תשובתך (אחרי הסיכום) הוסף בלוק JSON בפורמט המדויק הזה ואל תשנה את המבנה. categoryId חייב להיות אחד מ: housing, food, health, transport, entertainment, personal, family, misc. itemLabel חייב להיות זהה לשם הפריט בתקציב שהוזן. ${isRetirementBeforeNI ? 'השתמש בסכום המתאים לתקופה לפני גיל 67 (דמי ביטוח לאומי כ"מי שאינו עובד"), לא לגמלאי.' : ''}
 
 ---RETIREMENT_JSON_START---
-{"additions":[{"categoryId":"health","label":"ביטוח לאומי ובריאות (לא עובד)","monthlyAmount":210,"note":"דמי ביטוח לאומי ובריאות כמי שאינו עובד, לפני גיל 67"}],"increases":[{"categoryId":"food","itemLabel":"קניות וסופר","increaseAmount":500,"increasePercent":20,"note":"יותר ארוחות בבית"}]}
+{"additions":[{"categoryId":"health","label":"ביטוח לאומי ובריאות (לא עובד)","monthlyAmount":210,"annualGrowthPercent":0,"note":"דמי ביטוח לאומי ובריאות כמי שאינו עובד, לפני גיל 67"}],"increases":[{"categoryId":"food","itemLabel":"קניות וסופר","increaseAmount":500,"increasePercent":20,"annualGrowthPercent":0,"note":"יותר ארוחות בבית"},{"categoryId":"health","itemLabel":"ביטוח בריאות משלים","increasePercent":15,"annualGrowthPercent":2,"note":"התייקרות גיל מעבר לאינפלציה"}]}
 ---RETIREMENT_JSON_END---` : ''}
 
 📊 סיכום:
@@ -3202,12 +3330,12 @@ b) Existing expenses that will increase: being home all day instead of working, 
 - Communication, TV & internet: increased media/streaming consumption at home.
 - Home maintenance & wear-and-tear (due to much higher utilization of the home).
 - Transportation & mobile: if previously subsidized or provided by an employer (like a company car/phone) and now self-funded.
-Estimate the percentage increase and additional monthly cost for each.
+Estimate the percentage increase and additional monthly cost for each. Amounts must be real, in today's prices, before general inflation. If a line is expected to grow every year beyond inflation (for example health/insurance with age), add annualGrowthPercent. If the change is only a one-time retirement step-up, set annualGrowthPercent to 0 or omit it. Do not double count: if increaseAmount is present, it is the monthly addition; increasePercent is explanatory. If the amount is uncertain, you may provide only increasePercent and the app will calculate it from the existing item.
 
 At the end of your response (after the summary) include a JSON block in exactly this format. categoryId must be one of: housing, food, health, transport, entertainment, personal, family, misc. itemLabel must match the budget item name exactly as entered. ${isRetirementBeforeNI ? 'Use the amount applicable to a non-worker before age 67, not the pensioner rate.' : ''}
 
 ---RETIREMENT_JSON_START---
-{"additions":[{"categoryId":"health","label":"NI & Health (non-worker)","monthlyAmount":210,"note":"NI and health insurance as non-worker, before age 67"}],"increases":[{"categoryId":"food","itemLabel":"קניות וסופר","increaseAmount":500,"increasePercent":20,"note":"more meals at home"}]}
+{"additions":[{"categoryId":"health","label":"NI & Health (non-worker)","monthlyAmount":210,"annualGrowthPercent":0,"note":"NI and health insurance as non-worker, before age 67"}],"increases":[{"categoryId":"food","itemLabel":"קניות וסופר","increaseAmount":500,"increasePercent":20,"annualGrowthPercent":0,"note":"more meals at home"},{"categoryId":"health","itemLabel":"ביטוח בריאות משלים","increasePercent":15,"annualGrowthPercent":2,"note":"age-related increase beyond inflation"}]}
 ---RETIREMENT_JSON_END---` : ''}
 
 📊 Summary:
@@ -3263,6 +3391,7 @@ Gap vs target and what can be optimized.`;
                 aiProvider, aiModel, apiKeyOverride
             );
             aiInsightRef.current = reply;
+            setAiSuggestedInsight(reply);
             setAiInsight(reply);
             setAiInsightStale(false);
             if (uid) setBudgetAiInsight(uid, reply).catch(err => console.error('[Budget AI insight save error]', err));
@@ -3295,12 +3424,14 @@ Gap vs target and what can be optimized.`;
     ]);
 
     const pct = target > 0 ? Math.min(totalMonthly / target, 1.5) : 0;
-    const projectedPct = target > 0 ? Math.min(totalProjectedMonthly / target, 1.5) : 0;
+    const projectedTarget = target * projFactor;
+    const projectedPct = projectedTarget > 0 ? Math.min(totalProjectedMonthly / projectedTarget, 1.5) : 0;
     const gap = target - totalMonthly;
+    const projectedGap = projectedTarget - totalProjectedMonthly;
     const statusColor = pct > 1 ? 'text-red-500' : pct > 0.9 ? 'text-amber-500' : 'text-emerald-500';
     const barColor   = pct > 1 ? 'bg-red-500'   : pct > 0.9 ? 'bg-amber-500'   : 'bg-emerald-500';
     const pctColor   = pct > 0.9 ? 'text-red-500' : pct > 0.8 ? 'text-amber-400' : 'text-emerald-500';
-    const retirementModeLabel = retirementAdj
+    const retirementModeLabel = suggestedRetirementAdj
         ? (showRetirementMode
             ? (isHe
                 ? `תצוגת פרישה +${currency}${Math.round(retirementDeltaTotal).toLocaleString()}/חודש`
@@ -3313,9 +3444,9 @@ Gap vs target and what can be optimized.`;
         <div className="space-y-3" dir={isHe ? 'rtl' : 'ltr'}>
 
             {/* ── Retirement mode banner ── */}
-            {false && showRetirementMode && retirementAdj && (() => {
-                const totalDelta = (retirementAdj.additions || []).reduce((s, a) => s + (a.monthlyAmount || 0), 0)
-                    + (retirementAdj.increases || []).reduce((s, inc) => s + (inc.increaseAmount || 0), 0);
+            {false && showRetirementMode && suggestedRetirementAdj && (() => {
+                const totalDelta = (suggestedRetirementAdj.additions || []).reduce((s, a) => s + (a.monthlyAmount || 0), 0)
+                    + (suggestedRetirementAdj.increases || []).reduce((s, inc) => s + (inc.increaseAmount || 0), 0);
                 return (
                     <div className={`flex items-center justify-between gap-3 px-3 py-2 rounded-xl text-xs font-medium border mb-1 ${isLight ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-amber-500/10 border-amber-500/40 text-amber-300'}`} dir={isHe ? 'rtl' : 'ltr'}>
                         <span className="flex items-center gap-1.5">
@@ -3558,7 +3689,7 @@ Gap vs target and what can be optimized.`;
                             </span>
                             {showInflation && (
                                 <span className={`text-xs ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
-                                    → {(() => { const pg = target - Math.round(totalProjectedMonthly); return `${pg >= 0 ? '+' : ''}${currency}${Math.abs(pg).toLocaleString()}`; })()}
+                                    → {`${projectedGap >= 0 ? '+' : ''}${currency}${Math.abs(Math.round(projectedGap)).toLocaleString()}`}
                                 </span>
                             )}
                         </div>
@@ -3566,11 +3697,11 @@ Gap vs target and what can be optimized.`;
                             <span className={`text-xs ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
                                 {currency}{Math.round(Math.abs(gap * 12)).toLocaleString()}{gap >= 0 ? '+' : '-'} {isHe ? '/ שנה' : '/ yr'}
                             </span>
-                            {showInflation && (() => { const pg = target - Math.round(totalProjectedMonthly); return (
+                            {showInflation && (
                                 <span className={`text-xs ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
-                                    → {currency}{Math.round(Math.abs(pg * 12)).toLocaleString()}{pg >= 0 ? '+' : '-'}
+                                    → {currency}{Math.round(Math.abs(projectedGap * 12)).toLocaleString()}{projectedGap >= 0 ? '+' : '-'}
                                 </span>
-                            ); })()}
+                            )}
                         </div>
                     </div>
                 </div>
@@ -3584,7 +3715,7 @@ Gap vs target and what can be optimized.`;
                         <button onClick={() => setHouseholdSize(s => Math.min(10, s + 1))} className={`w-5 h-5 rounded flex items-center justify-center font-bold transition-colors ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}>+</button>
                     </div>
                     <div className="flex-1" />
-                    {retirementAdj && (
+                    {suggestedRetirementAdj && (
                         <button
                             onClick={() => setIncludeRetirementEntertainment(v => !v)}
                             className={`shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded-lg border transition-colors ${
@@ -3619,12 +3750,10 @@ Gap vs target and what can be optimized.`;
                             ? <ToggleRight size={18} className="text-blue-500" />
                             : <ToggleLeft size={18} className={isLight ? 'text-slate-400' : 'text-gray-400'} />}
                     </button>
-                    <span className={`shrink-0 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>📈 {isHe ? 'אינפלציה' : 'Inflation'} {(inflationRate * 100).toFixed(1)}%</span>
-                    <div className="flex items-center gap-1 shrink-0">
-                        <button onClick={() => setProjYears(y => Math.max(1, y - 1))} className={`w-5 h-5 rounded flex items-center justify-center font-bold transition-colors ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}>−</button>
-                        <span className={`w-7 text-center font-semibold tabular-nums ${isLight ? 'text-slate-700' : 'text-white'}`}>{projYears}{isHe ? 'ש' : 'y'}</span>
-                        <button onClick={() => setProjYears(y => Math.min(30, y + 1))} className={`w-5 h-5 rounded flex items-center justify-center font-bold transition-colors ${isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-600' : 'bg-white/10 hover:bg-white/20 text-gray-300'}`}>+</button>
-                    </div>
+                    <span className={`shrink-0 ${isLight ? 'text-slate-400' : 'text-gray-500'}`}>
+                        📈 {isHe ? 'אינפלציה' : 'Inflation'} {(inflationRate * 100).toFixed(1)}%
+                        {showInflation && projYears > 0 ? ` · +${projYears}${isHe ? 'ש' : 'y'}` : ''}
+                    </span>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -3761,6 +3890,7 @@ Gap vs target and what can be optimized.`;
                         retirementOverlay={showRetirementMode ? effectiveRetirementAdj : null}
                         currentAge={parseFloat(inputs.currentAge) || 30}
                         retirementEndAge={parseFloat(inputs.retirementEndAge) || 90}
+                        yearsSinceRetirement={yearsSinceRetirement}
                     />
                 );
             })}
@@ -3946,7 +4076,153 @@ Gap vs target and what can be optimized.`;
                             </div>
                         )}
                         {insightText && !aiLoading && (
-                            <InsightRenderer text={insightText} isLight={isLight} />
+                            <>
+                                <InsightRenderer text={insightText} isLight={isLight} />
+                                {suggestedRetirementAdj && (
+                                    <div className={`mt-4 rounded-xl border p-3 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-white/5 border-white/10'}`}>
+                                        <div className="flex items-center justify-between gap-2 mb-2">
+                                            <div>
+                                                <div className={`text-xs font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
+                                                    {isHe ? 'התאמות פרישה שה-AI ממלא' : 'AI retirement adjustments'}
+                                                </div>
+                                                <div className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                    {isHe ? 'סכומים ריאליים במחירי היום. אינפלציה מוצגת בנפרד לפי שנה.' : 'Real amounts in today prices. Inflation is shown separately by year.'}
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-1 shrink-0">
+                                                {aiSuggestedInsight && aiSuggestedInsight !== aiInsight && (
+                                                    <button
+                                                        onClick={restoreAiRetirementAdj}
+                                                        className={`px-2 py-1 rounded-md text-[10px] font-semibold border ${isLight ? 'border-purple-200 text-purple-700 hover:bg-purple-50' : 'border-purple-500/30 text-purple-300 hover:bg-purple-500/10'}`}
+                                                    >
+                                                        {isHe ? 'החזר AI' : 'Restore AI'}
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={editingRetirementAdj ? () => setEditingRetirementAdj(false) : startRetirementAdjEdit}
+                                                    className={`px-2 py-1 rounded-md text-[10px] font-semibold border ${isLight ? 'border-slate-200 text-slate-600 hover:bg-white' : 'border-white/20 text-gray-300 hover:bg-white/10'}`}
+                                                >
+                                                    {editingRetirementAdj ? (isHe ? 'סגור' : 'Close') : (isHe ? 'ערוך ידנית' : 'Edit')}
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {editingRetirementAdj && draftRetirementAdj && (
+                                            <div className="space-y-3">
+                                                {draftRetirementAdj.additions.length > 0 && (
+                                                    <div>
+                                                        <div className={`text-[11px] font-semibold mb-1 ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                                                            {isHe ? 'הוצאות חדשות בפרישה' : 'New retirement expenses'}
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            {draftRetirementAdj.additions.map((addition, idx) => (
+                                                                <div key={`add-${idx}`} className={`rounded-lg border p-2 ${isLight ? 'bg-white border-slate-200' : 'bg-black/10 border-white/10'}`}>
+                                                                    <div className={`text-xs font-semibold mb-2 ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
+                                                                        {addition.label || (isHe ? 'תוספת פרישה' : 'Retirement addition')}
+                                                                    </div>
+                                                                    <div className="grid grid-cols-2 gap-2">
+                                                                        <label className="block">
+                                                                            <span className={`block text-[10px] mb-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'סכום חודשי' : 'Monthly amount'}</span>
+                                                                            <input
+                                                                                type="number"
+                                                                                value={addition.monthlyAmount ?? 0}
+                                                                                onChange={e => updateRetirementAdjDraft('additions', idx, 'monthlyAmount', Number(e.target.value))}
+                                                                                className={`w-full rounded-md border px-2 py-1 text-xs text-right ${isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-black/20 border-white/15 text-gray-100'}`}
+                                                                            />
+                                                                        </label>
+                                                                        <label className="block">
+                                                                            <span className={`block text-[10px] mb-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'גידול שנתי מעבר לאינפלציה' : 'Annual growth beyond inflation'}</span>
+                                                                            <input
+                                                                                type="number"
+                                                                                value={addition.annualGrowthPercent ?? 0}
+                                                                                onChange={e => updateRetirementAdjDraft('additions', idx, 'annualGrowthPercent', Number(e.target.value))}
+                                                                                className={`w-full rounded-md border px-2 py-1 text-xs text-right ${isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-black/20 border-white/15 text-gray-100'}`}
+                                                                            />
+                                                                        </label>
+                                                                    </div>
+                                                                    {addition.note && <div className={`text-[10px] mt-1.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{addition.note}</div>}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {draftRetirementAdj.increases.length > 0 && (
+                                                    <div>
+                                                        <div className={`text-[11px] font-semibold mb-1 ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                                                            {isHe ? 'הגדלות של סעיפים קיימים' : 'Existing expense increases'}
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            {draftRetirementAdj.increases.map((increase, idx) => (
+                                                                <div key={`inc-${idx}`} className={`rounded-lg border p-2 ${increase.source === 'suggested'
+                                                                    ? (isLight ? 'bg-amber-50 border-amber-200' : 'bg-amber-500/10 border-amber-500/25')
+                                                                    : (isLight ? 'bg-white border-slate-200' : 'bg-black/10 border-white/10')
+                                                                }`}>
+                                                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                                                        <div className={`text-xs font-semibold ${isLight ? 'text-slate-700' : 'text-gray-200'}`}>
+                                                                            {increase.itemLabel || (isHe ? 'סעיף קיים' : 'Existing item')}
+                                                                        </div>
+                                                                        {increase.source === 'suggested' && (
+                                                                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-300'}`}>
+                                                                                {isHe ? 'השלמה מומלצת' : 'Suggested'}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="grid grid-cols-3 gap-2">
+                                                                        <label className="block">
+                                                                            <span className={`block text-[10px] mb-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'תוספת ₪' : 'Amount'}</span>
+                                                                            <input
+                                                                                type="number"
+                                                                                value={increase.increaseAmount ?? ''}
+                                                                                placeholder="0"
+                                                                                onChange={e => updateRetirementAdjDraft('increases', idx, 'increaseAmount', e.target.value === '' ? undefined : Number(e.target.value))}
+                                                                                className={`w-full rounded-md border px-2 py-1 text-xs text-right ${isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-black/20 border-white/15 text-gray-100'}`}
+                                                                            />
+                                                                        </label>
+                                                                        <label className="block">
+                                                                            <span className={`block text-[10px] mb-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'אחוז מהסעיף' : 'Percent'}</span>
+                                                                            <input
+                                                                                type="number"
+                                                                                value={increase.increasePercent ?? 0}
+                                                                                onChange={e => updateRetirementAdjDraft('increases', idx, 'increasePercent', Number(e.target.value))}
+                                                                                className={`w-full rounded-md border px-2 py-1 text-xs text-right ${isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-black/20 border-white/15 text-gray-100'}`}
+                                                                            />
+                                                                        </label>
+                                                                        <label className="block">
+                                                                            <span className={`block text-[10px] mb-0.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{isHe ? 'גידול שנתי' : 'Annual growth'}</span>
+                                                                            <input
+                                                                                type="number"
+                                                                                value={increase.annualGrowthPercent ?? 0}
+                                                                                onChange={e => updateRetirementAdjDraft('increases', idx, 'annualGrowthPercent', Number(e.target.value))}
+                                                                                className={`w-full rounded-md border px-2 py-1 text-xs text-right ${isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-black/20 border-white/15 text-gray-100'}`}
+                                                                            />
+                                                                        </label>
+                                                                    </div>
+                                                                    {increase.note && <div className={`text-[10px] mt-1.5 ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>{increase.note}</div>}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {retirementAdjDraftError && (
+                                                    <div className="text-[10px] text-red-400">{retirementAdjDraftError}</div>
+                                                )}
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                        {isHe ? 'אם יש תוספת ₪ היא קובעת. אם היא ריקה, האחוז יחושב מהסעיף.' : 'Amount wins. If empty, percent is calculated from the item.'}
+                                                    </div>
+                                                    <button
+                                                        onClick={saveRetirementAdjEdit}
+                                                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 text-white hover:bg-purple-700"
+                                                    >
+                                                        {isHe ? 'שמור התאמות' : 'Save'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </>
                         )}
                         {!aiLoading && !aiError && !aiInsight && (
                             <div className="flex flex-col items-center justify-center py-10 text-center space-y-4">

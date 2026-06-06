@@ -1,10 +1,10 @@
 import { ChevronDown, ChevronUp, Plus, ToggleLeft, ToggleRight, MessageSquare, Bell, Calculator } from 'lucide-react';
-import { toMonthly, toProjectedMonthly, matchIncrease } from './budgetUtils';
+import { toMonthly, toProjectedMonthly, matchIncrease, retirementAdditionMonthly, retirementIncreaseMonthly } from './budgetUtils';
 import { BudgetItemRow } from './BudgetItemRow';
 import { LoanItemRow } from './LoanItemRow';
 import { MaintenanceCalcItemRow } from './MaintenanceCalcItemRow';
 
-export function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onToggleItemEnabled, onAddItem, onAddLoanItem, onAddMaintenanceItem, onToggleAll, projFactor, projYears, showInflation, totalMonthly, householdSize, aiProvider, aiModel, apiKeyOverride, retirementOverlay, currentAge, retirementEndAge }) {
+export function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onToggleItemEnabled, onAddItem, onAddLoanItem, onAddMaintenanceItem, onToggleAll, projFactor, projYears, showInflation, totalMonthly, householdSize, aiProvider, aiModel, apiKeyOverride, retirementOverlay, currentAge, retirementEndAge, yearsSinceRetirement = 0 }) {
     const label = isHe ? category.labelHe : category.labelEn;
     const enabledItems = items.filter(i => i.enabled !== false);
     const categoryTotal = enabledItems.reduce((s, i) => s + toMonthly(i), 0);
@@ -17,12 +17,18 @@ export function CategorySection({ category, items, isHe, isLight, currency, t, o
     const mutedRetAdditions = retirementOverlay?.mutedAdditions?.filter(a => a.categoryId === category.id) ?? [];
     const mutedRetIncreases = retirementOverlay?.mutedIncreases?.filter(inc => inc.categoryId === category.id) ?? [];
     const retDelta = retirementOverlay
-        ? retAdditions.reduce((s, a) => s + (a.monthlyAmount || 0), 0) +
-          retIncreases.reduce((s, inc) => s + (inc.increaseAmount || 0), 0)
+        ? retAdditions.reduce((s, a) => s + retirementAdditionMonthly(a, yearsSinceRetirement), 0) +
+          retIncreases.reduce((s, inc) => {
+              const matchedItems = enabledItems.filter(item => matchIncrease(item.label, inc.itemLabel));
+              return s + retirementIncreaseMonthly(inc, matchedItems, yearsSinceRetirement);
+          }, 0)
         : 0;
     const mutedRetDelta = retirementOverlay
-        ? mutedRetAdditions.reduce((s, a) => s + (a.monthlyAmount || 0), 0) +
-          mutedRetIncreases.reduce((s, inc) => s + (inc.increaseAmount || 0), 0)
+        ? mutedRetAdditions.reduce((s, a) => s + retirementAdditionMonthly(a, yearsSinceRetirement), 0) +
+          mutedRetIncreases.reduce((s, inc) => {
+              const matchedItems = enabledItems.filter(item => matchIncrease(item.label, inc.itemLabel));
+              return s + retirementIncreaseMonthly(inc, matchedItems, yearsSinceRetirement);
+          }, 0)
         : 0;
     const disabledCount = items.length - enabledItems.length;
     const allDisabled = items.length > 0 && enabledItems.length === 0;
@@ -106,15 +112,19 @@ export function CategorySection({ category, items, isHe, isLight, currency, t, o
                     {items.map(item => {
                         const inc = retIncreases.find(r => matchIncrease(item.label, r.itemLabel));
                         const mutedInc = mutedRetIncreases.find(r => matchIncrease(item.label, r.itemLabel));
+                        const incAmount = inc ? retirementIncreaseMonthly(inc, [item], yearsSinceRetirement) : 0;
+                        const mutedIncAmount = mutedInc ? retirementIncreaseMonthly(mutedInc, [item], yearsSinceRetirement) : 0;
                         const retBadge = inc && item.enabled !== false ? (
                             <span className={`shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${isLight ? 'bg-amber-100 text-amber-700 border border-amber-300' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'}`} dir="ltr">
-                                🔮 +{currency}{(inc.increaseAmount || 0).toLocaleString()}
+                                🔮 +{currency}{Math.round(incAmount).toLocaleString()}
                                 {inc.increasePercent ? ` (+${inc.increasePercent}%)` : ''}
+                                {inc.annualGrowthPercent ? ` · ${inc.annualGrowthPercent}%/שנה` : ''}
                             </span>
                         ) : mutedInc && item.enabled !== false ? (
                             <span className={`shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold border ${isLight ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-white/5 text-gray-500 border-white/10'}`} title={isHe ? 'נשאר בפער לחלוקה ידנית' : 'Kept in the gap for manual allocation'} dir="ltr">
-                                ðŸ”® +{currency}{(mutedInc.increaseAmount || 0).toLocaleString()}
+                                🔮 +{currency}{Math.round(mutedIncAmount).toLocaleString()}
                                 {mutedInc.increasePercent ? ` (+${mutedInc.increasePercent}%)` : ''}
+                                {mutedInc.annualGrowthPercent ? ` · ${mutedInc.annualGrowthPercent}%/שנה` : ''}
                             </span>
                         ) : null;
                         if (item.type === 'loan') return (
@@ -178,7 +188,7 @@ export function CategorySection({ category, items, isHe, isLight, currency, t, o
                                 <span className="font-medium truncate">{a.label}</span>
                                 {a.note && <span className="text-[10px] opacity-60 truncate hidden sm:inline">{a.note}</span>}
                             </span>
-                            <span className="font-bold shrink-0 ms-2" dir="ltr">+{currency}{(a.monthlyAmount || 0).toLocaleString()}</span>
+                            <span className="font-bold shrink-0 ms-2" dir="ltr">+{currency}{Math.round(retirementAdditionMonthly(a, yearsSinceRetirement)).toLocaleString()}</span>
                         </div>
                     ))}
                     <div className="flex items-center gap-2 mt-1 flex-wrap" dir={isHe ? 'rtl' : 'ltr'}>

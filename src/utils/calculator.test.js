@@ -362,10 +362,10 @@ describe('calculateRetirementProjection', () => {
                 variableRates: rates
             });
 
-            // 7% nominal - 2% inflation = 5% real — should match fixed 5% real
+            // Exact real return: (1.07 / 1.02) - 1 = 4.90196%.
             const fixedRealResult = calculateRetirementProjection({
                 ...baseInputs,
-                annualReturnRate: 5
+                annualReturnRate: ((1.07 / 1.02) - 1) * 100
             });
 
             expect(result.balanceAtRetirement).toBeCloseTo(fixedRealResult.balanceAtRetirement, 0);

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronUp, X, Lock, Unlock, Globe } from 'lucide-react';
 import { useDraggable } from '../../hooks/useDraggable';
-import { effectiveIsFixed, trackActiveInYear, matchIncrease } from './budgetUtils';
+import { effectiveIsFixed, trackActiveInYear, matchIncrease, retirementAdditionMonthly, retirementIncreaseMonthly } from './budgetUtils';
 import { CATEGORIES } from './constants';
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -78,8 +78,9 @@ export function FixedVarModal({
         });
 
         if (showRetMode && retirementAdj) {
+            const yearsSinceRetirement = Math.max(0, selectedYear - defaultRetirementModeStartYear);
             (retirementAdj.additions || []).forEach(a => {
-                const monthly = a.monthlyAmount || 0;
+                const monthly = retirementAdditionMonthly(a, yearsSinceRetirement);
                 if (monthly <= 0) return;
                 variable.push({
                     id: `ret-add-${a.label}`,
@@ -90,10 +91,11 @@ export function FixedVarModal({
             });
 
             (retirementAdj.increases || []).forEach(inc => {
-                const monthly = inc.increaseAmount || 0;
-                if (monthly <= 0) return;
                 const catItems = categoryItemsMap[inc.categoryId] || [];
-                const matchedItem = catItems.find(i => matchIncrease(i.label, inc.itemLabel));
+                const matchedItems = catItems.filter(i => matchIncrease(i.label, inc.itemLabel));
+                const monthly = retirementIncreaseMonthly(inc, matchedItems, yearsSinceRetirement);
+                if (monthly <= 0) return;
+                const matchedItem = matchedItems[0];
                 if (matchedItem) {
                     const isFixed = effectiveIsFixed(matchedItem);
                     (isFixed ? fixed : variable).push({
