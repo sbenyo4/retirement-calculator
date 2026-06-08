@@ -4,7 +4,7 @@ import { BudgetItemRow } from './BudgetItemRow';
 import { LoanItemRow } from './LoanItemRow';
 import { MaintenanceCalcItemRow } from './MaintenanceCalcItemRow';
 
-export function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onToggleItemEnabled, onAddItem, onAddLoanItem, onAddMaintenanceItem, onToggleAll, projFactor, projYears, showInflation, totalMonthly, householdSize, aiProvider, aiModel, apiKeyOverride, retirementOverlay, currentAge, retirementEndAge, yearsSinceRetirement = 0 }) {
+export function CategorySection({ category, items, isHe, isLight, currency, t, open, onToggle, onChangeItem, onDeleteItem, onToggleItemEnabled, onAddItem, onAddLoanItem, onAddMaintenanceItem, onToggleAll, projFactor, projYears, showInflation, totalMonthly, currentSavings, inputs, results, householdSize, aiProvider, aiModel, apiKeyOverride, retirementOverlay, currentAge, retirementEndAge, yearsSinceRetirement = 0 }) {
     const label = isHe ? category.labelHe : category.labelEn;
     const enabledItems = items.filter(i => i.enabled !== false);
     const categoryTotal = enabledItems.reduce((s, i) => s + toMonthly(i), 0);
@@ -141,6 +141,10 @@ export function CategorySection({ category, items, isHe, isLight, currency, t, o
                                 projFactor={projFactor}
                                 projYears={projYears}
                                 showInflation={showInflation}
+                                totalMonthly={totalMonthly}
+                                currentSavings={currentSavings}
+                                inputs={inputs}
+                                results={results}
                             />
                         );
                         if (item.type === 'maintenance-calc') return (

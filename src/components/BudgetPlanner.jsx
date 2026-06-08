@@ -3228,7 +3228,7 @@ export default function BudgetPlanner({ inputs, setInputs, results, t, language,
 
     const handleAddLoanItem = useCallback((categoryId) => {
         pushHistoryNow();
-        const firstTrack = { id: genId(), label: t('budgetTrack'), amount: 0, endDate: '' };
+        const firstTrack = { id: genId(), label: t('budgetTrack'), amount: 0, endDate: '', payoffBalance: 0 };
         const newItem = { id: genId(), categoryId, label: t('budgetAddLoan'), type: 'loan', tracks: [firstTrack], enabled: true };
         updateItems(prev => [...prev, newItem]);
         setOpenCategoryId(categoryId);
@@ -4031,6 +4031,9 @@ Gap vs target and what can be optimized.`;
                         projYears={projYears}
                         showInflation={showInflation}
                         totalMonthly={totalMonthly}
+                        currentSavings={parseFloat(inputs.currentSavings) || 0}
+                        inputs={inputs}
+                        results={results}
                         householdSize={householdSize}
                         aiProvider={aiProvider}
                         aiModel={aiModel}
