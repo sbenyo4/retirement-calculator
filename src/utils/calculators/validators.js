@@ -37,8 +37,8 @@ export function validateInputs(inputs, t = null) {
     }
 
     // Age sequence validations
-    if (!isNaN(currentAge) && !isNaN(retirementStartAge) && retirementStartAge <= currentAge) {
-        errors.push(getText('validationRetirementStartGreater', 'Retirement start age must be greater than current age'));
+    if (!isNaN(currentAge) && !isNaN(retirementStartAge) && retirementStartAge < currentAge) {
+        errors.push(getText('validationRetirementStartGreater', 'Retirement start age must be greater than or equal to current age'));
     }
     if (!isNaN(retirementStartAge) && !isNaN(retirementEndAge) && retirementEndAge <= retirementStartAge) {
         errors.push(getText('validationRetirementEndGreater', 'Retirement end age must be greater than retirement start age'));

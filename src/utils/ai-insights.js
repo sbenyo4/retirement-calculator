@@ -796,7 +796,8 @@ export async function getAIInsights(inputs, results, provider, model, apiKeyOver
                     model: model,
                     generationConfig: { responseMimeType: "application/json" }
                 });
-                const result = await genModel.generateContent(prompt);
+                // Pass the abort signal so aborting actually cancels the in-flight request.
+                const result = await genModel.generateContent(prompt, { signal });
                 const response = await result.response;
                 return response.text();
             }, { onRetry, ...INSIGHT_RETRY_OPTIONS });
@@ -810,7 +811,7 @@ export async function getAIInsights(inputs, results, provider, model, apiKeyOver
                     messages: [{ role: "user", content: prompt }],
                     model: model,
                     response_format: { type: "json_object" }
-                });
+                }, { signal });
             }, { onRetry, ...INSIGHT_RETRY_OPTIONS });
 
             responseText = completion.choices[0].message.content;
@@ -824,7 +825,7 @@ export async function getAIInsights(inputs, results, provider, model, apiKeyOver
                     model: model,
                     max_tokens: 4096,
                     messages: [{ role: "user", content: prompt }]
-                });
+                }, { signal });
             }, { onRetry, ...INSIGHT_RETRY_OPTIONS });
 
             responseText = message.content[0].text;

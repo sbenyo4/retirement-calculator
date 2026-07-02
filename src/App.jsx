@@ -248,7 +248,7 @@ function MainApp() {
       const inp = memoizedDebouncedInputs || {};
       const currentAge = parseFloat(inp.currentAge) || null;
       const retirementStartAge = parseFloat(inp.retirementStartAge) || null;
-      const retirementTargetDate = (currentAge && retirementStartAge && retirementStartAge > currentAge)
+      const retirementTargetDate = (currentAge && retirementStartAge && retirementStartAge >= currentAge)
         ? getProjectedAgeDate(retirementStartAge, currentAge, inp.birthdate, inp.manualAge)
         : null;
       const retirementDate = retirementTargetDate ? retirementTargetDate.toISOString() : null;

@@ -57,7 +57,7 @@ export function useCalculation(inputs, settings) {
             !isNaN(age) && age >= 0 && age <= 120 &&
             !isNaN(retirementStart) && retirementStart >= 0 && retirementStart <= 120 &&
             !isNaN(retirementEnd) && retirementEnd >= 0 && retirementEnd <= 120 &&
-            retirementStart > age && retirementEnd > retirementStart
+            retirementStart >= age && retirementEnd > retirementStart
         ) {
             setValidationError(null);
             setIsCalculating(true);

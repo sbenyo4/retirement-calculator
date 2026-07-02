@@ -21,6 +21,9 @@ function AIInsightsView({ inputs, results, aiProvider, aiModel, apiKeyOverride, 
         const controller = new AbortController();
         abortRef.current = controller;
         let didTimeout = false;
+        // 65s: leaves room for the internal retry budget (30s x 2 attempts + backoff
+        // in getAIInsights) to complete before this hard cutoff fires. Aborting now
+        // truly cancels the in-flight request since the signal is passed to the SDK.
         const timeoutId = setTimeout(() => {
             didTimeout = true;
             controller.abort();
@@ -28,7 +31,7 @@ function AIInsightsView({ inputs, results, aiProvider, aiModel, apiKeyOverride, 
             setError(isHebrew
                 ? 'בקשת ה-AI נמשכה יותר מדי זמן. נסה שוב או בחר מודל מהיר יותר.'
                 : 'The AI request took too long. Try again or choose a faster model.');
-        }, 45000);
+        }, 65000);
 
         setLoading(true);
         setError(null);
@@ -39,7 +42,10 @@ function AIInsightsView({ inputs, results, aiProvider, aiModel, apiKeyOverride, 
                 onInsightsChange(data);
             }
         } catch (err) {
-            if (err.name === 'AbortError') return;
+            // An intentional abort (timeout cutoff or a newer request) surfaces as a
+            // provider-specific error whose name isn't always 'AbortError'. Bail out so
+            // we don't clobber the friendly timeout message with a raw SDK abort error.
+            if (didTimeout || controller.signal.aborted || err.name === 'AbortError') return;
             setError(err.message);
         } finally {
             clearTimeout(timeoutId);

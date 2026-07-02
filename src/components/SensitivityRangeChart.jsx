@@ -239,7 +239,7 @@ export function SensitivityRangeModal({ isOpen, onClose, inputs, t, language, ai
         const retirementEndAge = parseFloat(inputs.retirementEndAge);
 
         if (isNaN(currentAge) || isNaN(retirementStartAge) || isNaN(retirementEndAge) ||
-            currentAge < 0 || retirementStartAge <= currentAge || retirementEndAge <= retirementStartAge) {
+            currentAge < 0 || retirementStartAge < currentAge || retirementEndAge <= retirementStartAge) {
             return results; // Return empty results if basic logic is violated
         }
 

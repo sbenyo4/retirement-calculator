@@ -5,7 +5,7 @@ import { calculateAgeFromDate, getProjectedYear as getProjectedYearUtil } from '
 import { generateBalancedVariableRates, computeAverageRate } from '../utils/variableRatesUtils';
 import { SIMULATION_TYPES } from '../utils/simulation-calculator';
 import { WITHDRAWAL_STRATEGIES } from '../constants';
-import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, TrendingDown, Coins, BarChart3, Landmark, PiggyBank, Wallet, Activity, Layers, ShieldCheck, Gem, Target, ClipboardList, PlusCircle } from 'lucide-react';
+import { Calculator, Sparkles, Split, Dices, Cpu, Server, Bot, Eye, Settings, X, Check, Calendar, TrendingUp, TrendingDown, Coins, BarChart3, Landmark, PiggyBank, Wallet, Activity, Layers, ShieldCheck, Gem, Target, ClipboardList, PlusCircle, Clock } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 import LifeEventsManager from './LifeEventsManager';
 import VariableRatesModal from './VariableRatesModal';
@@ -111,8 +111,8 @@ export default function InputForm({
         const retirementStart = parseFloat(inputs.retirementStartAge);
         const retirementEnd = parseFloat(inputs.retirementEndAge);
 
-        if (!isNaN(currentAge) && !isNaN(retirementStart) && retirementStart <= currentAge) {
-            errors.retirementStartAge = t ? t('validationRetirementStartGreater') : 'Must be greater than current age';
+        if (!isNaN(currentAge) && !isNaN(retirementStart) && retirementStart < currentAge) {
+            errors.retirementStartAge = t ? t('validationRetirementStartGreater') : 'Must be greater than or equal to current age';
         }
         if (!isNaN(retirementStart) && !isNaN(retirementEnd) && retirementEnd <= retirementStart) {
             errors.retirementEndAge = t ? t('validationRetirementEndGreater') : 'Must be greater than start age';
@@ -573,6 +573,20 @@ export default function InputForm({
                             icon={<TrendingUp size={14} />}
                             error={validationErrors.retirementStartAge}
                             extraLabel={startYear ? `(${startYear})` : null}
+                            titleActions={
+                                <button
+                                    onClick={() => {
+                                        setInputs(prev => ({
+                                            ...prev,
+                                            retirementStartAge: prev.currentAge
+                                        }));
+                                    }}
+                                    className="p-0.5 hover:bg-white/10 rounded transition-colors text-blue-400 hover:text-blue-300"
+                                    title={language === 'he' ? 'קבע לגיל הנוכחי (היום)' : 'Set to current age (today)'}
+                                >
+                                    <Clock size={12} />
+                                </button>
+                            }
                         />
                         <InputGroup language={language}
                             label={t('endAge')}
@@ -1075,13 +1089,13 @@ function InputGroup({ label, name, value, onChange, icon, prefix, type = "text",
                 <label className={`text-xs font-medium flex items-center gap-1 h-4 whitespace-nowrap ${isLight ? 'text-gray-700' : 'text-gray-200'}`}>
                     {icon} {label}
                 </label>
-                {extraLabel && (
-                    <span className="text-[10px] text-yellow-400 font-medium">
-                        {extraLabel}
-                    </span>
-                )}
-                {titleActions && (
+                {(extraLabel || titleActions) && (
                     <div className="flex items-center gap-1">
+                        {extraLabel && (
+                            <span className="text-[10px] text-yellow-400 font-medium">
+                                {extraLabel}
+                            </span>
+                        )}
                         {titleActions}
                     </div>
                 )}
