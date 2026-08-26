@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
-import { Save, Trash2, Upload, RotateCcw, Pencil, Check, X } from 'lucide-react';
+import { Save, Trash2, Upload, RotateCcw, Pencil, Check, X, History } from 'lucide-react';
 import { CustomSelect } from './common/CustomSelect';
 import { DEFAULT_INPUTS } from '../constants';
 import { deepEqual } from '../hooks/useDeepCompare';
@@ -368,14 +368,14 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                     <button
                         onClick={saveProfile}
                         disabled={savingAction === 'save'}
-                        className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-wait text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors text-sm"
+                        className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-wait text-white px-2 py-1.5 rounded-lg flex items-center gap-2 shrink-0 transition-colors text-sm"
                     >
                         <Save className="w-4 h-4" /> {savingAction === 'save' ? messages.saving : t('save')}
                     </button>
                 </div>
 
                 {profiles.length > 0 && (
-                    <div className="flex gap-2 items-center">
+                    <div className="flex gap-1.5 items-center">
                         {isRenaming ? (
                             <div className="flex-1 flex items-center gap-1">
                                 <input
@@ -408,7 +408,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                                     { value: "", label: `${t('loadProfile')}...` },
                                     ...profiles.map(p => ({ value: p.id, label: p.name }))
                                 ]}
-                                className="flex-1"
+                                className="flex-1 min-w-0"
                             />
                         )}
 
@@ -417,7 +417,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                                 {/* Reload profile (discard changes) */}
                                 <button
                                     onClick={reloadProfile}
-                                    className="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors"
+                                    className="bg-yellow-600 hover:bg-yellow-700 text-white px-2 py-1.5 rounded-lg flex items-center gap-2 shrink-0 transition-colors"
                                     title={language === 'he' ? 'טען מחדש (בטל שינויים)' : 'Reload (discard changes)'}
                                 >
                                     <RotateCcw className="w-4 h-4" />
@@ -428,7 +428,7 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                                         updateProfile();
                                     }}
                                     disabled={savingAction === 'update'}
-                                    className="bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-wait text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors relative"
+                                    className="bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-wait text-white px-2 py-1.5 rounded-lg flex items-center gap-2 shrink-0 transition-colors relative"
                                     title={language === 'he' ? 'שמור שינויים לפרופיל' : 'Save changes to profile'}
                                 >
                                     <Upload className="w-4 h-4" />
@@ -443,15 +443,24 @@ export function ProfileManager({ currentInputs, onLoad, t, language, profiles, o
                                 {/* Rename Profile */}
                                 <button
                                     onClick={handleStartRename}
-                                    className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors"
+                                    className="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1.5 rounded-lg flex items-center gap-2 shrink-0 transition-colors"
                                     title={t('rename')}
                                 >
                                     <Pencil className="w-4 h-4" />
                                 </button>
 
+                                {/* Change history (opens the same dialog as the command palette) */}
+                                <button
+                                    onClick={() => window.dispatchEvent(new CustomEvent('app:command', { detail: 'open:profileHistory' }))}
+                                    className="bg-purple-600 hover:bg-purple-700 text-white px-2 py-1.5 rounded-lg flex items-center gap-2 shrink-0 transition-colors"
+                                    title={language === 'he' ? 'היסטוריית שינויים' : 'Change history'}
+                                >
+                                    <History className="w-4 h-4" />
+                                </button>
+
                                 <button
                                     onClick={() => deleteProfile(selectedProfileId)}
-                                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors"
+                                    className="bg-red-600 hover:bg-red-700 text-white px-2 py-1.5 rounded-lg flex items-center gap-2 shrink-0 transition-colors"
                                     title={t('delete')}
                                 >
                                     <Trash2 className="w-4 h-4" />

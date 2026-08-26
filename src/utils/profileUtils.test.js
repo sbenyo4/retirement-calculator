@@ -1,5 +1,43 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeInputs } from './profileUtils';
+import { normalizeInputs, diffProfileData } from './profileUtils';
+
+describe('diffProfileData', () => {
+    it('reports a scalar change with from/to values', () => {
+        const changes = diffProfileData({ currentSavings: 500000 }, { currentSavings: 550000 });
+        expect(changes).toEqual([{ field: 'currentSavings', from: 500000, to: 550000 }]);
+    });
+
+    it('ignores numeric changes below the float tolerance', () => {
+        const changes = diffProfileData({ annualReturnRate: 5 }, { annualReturnRate: 5.00001 });
+        expect(changes).toEqual([]);
+    });
+
+    it('treats numeric-equal string vs number as unchanged', () => {
+        const changes = diffProfileData({ taxRate: '25' }, { taxRate: 25 });
+        expect(changes).toEqual([]);
+    });
+
+    it('flags nested object/array changes generically without from/to', () => {
+        const changes = diffProfileData(
+            { lifeEvents: [{ id: 'a' }] },
+            { lifeEvents: [{ id: 'a' }, { id: 'b' }] }
+        );
+        expect(changes).toEqual([{ field: 'lifeEvents', nested: true }]);
+    });
+
+    it('excludes global-pension fields from the diff', () => {
+        const changes = diffProfileData(
+            { pensionInterestRate: 3, pensionIncomeSources: [] },
+            { pensionInterestRate: 4, pensionIncomeSources: [{ id: 'x' }] }
+        );
+        expect(changes).toEqual([]);
+    });
+
+    it('treats a brand-new profile (no prev) as all fields added', () => {
+        const changes = diffProfileData(null, { currentSavings: 100000 });
+        expect(changes).toEqual([{ field: 'currentSavings', from: null, to: 100000 }]);
+    });
+});
 
 describe('normalizeInputs', () => {
     it('should convert top-level numeric strings to numbers but allow empty targetEndBalance', () => {

@@ -119,6 +119,14 @@ function profileRef(uid, profileId) {
     return doc(db, 'users', uid, 'profiles', profileId);
 }
 
+function profileHistoryCollection(uid, profileId) {
+    return collection(db, 'users', uid, 'profiles', profileId, 'history');
+}
+
+function profileHistoryRef(uid, profileId, versionId) {
+    return doc(db, 'users', uid, 'profiles', profileId, 'history', versionId);
+}
+
 // ─── Settings ──────────────────────────────────────────────────────
 
 export async function getUserSettings(uid) {
@@ -219,7 +227,69 @@ export async function updateProfile(uid, profileId, data) {
 }
 
 export async function deleteProfileDoc(uid, profileId) {
-    return dbCall(() => deleteDoc(profileRef(uid, profileId)), 'deleteProfileDoc');
+    return dbCall(async () => {
+        // Firestore does not cascade — remove the history subcollection before the profile doc.
+        const histSnap = await getDocs(profileHistoryCollection(uid, profileId));
+        if (!histSnap.empty) {
+            const batch = writeBatch(db);
+            histSnap.docs.forEach(d => batch.delete(d.ref));
+            await batch.commit();
+        }
+        await deleteDoc(profileRef(uid, profileId));
+    }, 'deleteProfileDoc');
+}
+
+// ─── Profile Change History (per-profile subcollection) ────────────
+// Each doc is one saved version: { createdAt, data, changes, source }.
+// `limit` (a positive number) caps retained versions; null/undefined = unlimited.
+
+export async function appendProfileHistory(uid, profileId, entry, limit = null) {
+    return dbCall(async () => {
+        const id = entry.id || crypto.randomUUID();
+        const payload = stripUndefinedDeep({
+            ...entry,
+            createdAt: entry.createdAt ?? Date.now(),
+        });
+        await setDoc(profileHistoryRef(uid, profileId, id), payload);
+
+        // Prune oldest versions beyond the cap (only when a positive numeric limit is set).
+        if (typeof limit === 'number' && limit > 0) {
+            const snap = await getDocs(profileHistoryCollection(uid, profileId));
+            if (snap.size > limit) {
+                const ordered = snap.docs
+                    .map(d => ({ ref: d.ref, createdAt: d.data().createdAt || 0 }))
+                    .sort((a, b) => b.createdAt - a.createdAt); // newest first
+                const batch = writeBatch(db);
+                ordered.slice(limit).forEach(d => batch.delete(d.ref));
+                await batch.commit();
+            }
+        }
+
+        return { id, ...payload };
+    }, 'appendProfileHistory');
+}
+
+export async function getProfileHistory(uid, profileId) {
+    return dbCall(async () => {
+        const snap = await getDocs(profileHistoryCollection(uid, profileId));
+        return snap.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); // newest first
+    }, 'getProfileHistory');
+}
+
+export async function deleteProfileHistoryEntry(uid, profileId, versionId) {
+    return dbCall(() => deleteDoc(profileHistoryRef(uid, profileId, versionId)), 'deleteProfileHistoryEntry');
+}
+
+// Edit an existing version (e.g. correct its timestamp or values). `patch` is
+// merged into the doc; callers pass a recomputed `changes` array when data changes.
+export async function updateProfileHistoryEntry(uid, profileId, versionId, patch) {
+    return dbCall(async () => {
+        await updateDoc(profileHistoryRef(uid, profileId, versionId), stripUndefinedDeep(patch));
+        const snap = await getDoc(profileHistoryRef(uid, profileId, versionId));
+        return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+    }, 'updateProfileHistoryEntry');
 }
 
 export function onProfilesSnapshot(uid, callback) {

@@ -10,6 +10,7 @@ const COMMANDS = [
     { id: 'mode:ai',                  en: 'AI Analysis Mode',        he: 'מצב ניתוח AI',             kw: 'ai mode מצב בינה מלאכותית analysis ניתוח' },
     { id: 'mode:simulations',         en: 'Monte Carlo Simulations', he: 'סימולציות מונטה קרלו',     kw: 'simulations סימולציות monte carlo probability הסתברות' },
     { id: 'mode:compare',             en: 'Compare Profiles',        he: 'השוואת פרופילים',          kw: 'compare השוואה profiles פרופילים' },
+    { id: 'open:profileHistory',      en: 'Profile Change History',  he: 'היסטוריית שינויים בפרופיל', kw: 'history היסטוריה changes שינויים versions גרסאות trend מגמה graph גרף timeline ציר זמן' },
     // ── Results tabs ───────────────────────────────────────────────────────────
     { id: 'tab:results',              en: 'Numerical Results',       he: 'תוצאות מספריות',           kw: 'results תוצאות מספרים numerical dashboard' },
     { id: 'tab:insights',             en: 'AI Insights',             he: 'תובנות AI',                kw: 'ai insights תובנות ניתוח בינה מלאכותית score readiness' },

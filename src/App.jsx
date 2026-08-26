@@ -26,6 +26,7 @@ import { getProjectedAgeDate } from './utils/dateUtils';
 const ResultsDashboard = React.lazy(() => import('./components/ResultsDashboard').then(m => ({ default: m.ResultsDashboard })));
 const ModelsManager = React.lazy(() => import('./components/ModelsManager').then(m => ({ default: m.ModelsManager })));
 const RetirementChecklist = React.lazy(() => import('./components/RetirementChecklist'));
+const ProfileHistoryModal = React.lazy(() => import('./components/ProfileHistoryModal'));
 
 // Preload ResultsDashboard chunk on first user interaction
 let _preloaded = false;
@@ -294,7 +295,7 @@ function MainApp() {
 
   // Custom hooks (must be called unconditionally at top level)
   // Note: profilesLoaded is available but not currently used
-  const { profiles, saveProfile, updateProfile, renameProfile, deleteProfile, lastLoadedProfileId, markProfileAsLoaded, updateProfileInsights } = useProfiles();
+  const { profiles, saveProfile, updateProfile, renameProfile, deleteProfile, lastLoadedProfileId, markProfileAsLoaded, updateProfileInsights, getHistory, deleteHistoryEntry, updateHistoryEntry, getHistoryLimit, setHistoryLimit } = useProfiles();
   const [activeProfileId, setActiveProfileId] = useState(lastLoadedProfileId || null);
 
   useEffect(() => {
@@ -314,6 +315,7 @@ function MainApp() {
 
   // UI State
   const [showModelsManager, setShowModelsManager] = useState(false);
+  const [showProfileHistory, setShowProfileHistory] = useState(false);
   // Close settings when user session changes (login/logout)
   useEffect(() => { setShowModelsManager(false); }, [currentUser?.uid]);
 
@@ -384,6 +386,7 @@ function MainApp() {
       // App-level
       if (id === 'open:models')       setShowModelsManager(true);
       if (id === 'open:chat')         setChatOpen(true);
+      if (id === 'open:profileHistory') setShowProfileHistory(true);
     };
     window.addEventListener('app:command', handler);
     return () => window.removeEventListener('app:command', handler);
@@ -608,6 +611,21 @@ function MainApp() {
     }
     setInputs(profileInputs);
   }, [setInputs, language, settings.fourPercentMode]);
+
+  // Restore a past profile version into the form (from ProfileHistoryModal).
+  // Loads the historical snapshot but preserves the current global-pension context,
+  // mirroring how ProfileManager merges pension data on profile load. The restored
+  // values show as unsaved changes until the user updates the profile.
+  const handleRestoreVersion = useCallback((versionData) => {
+    if (!versionData) return;
+    const payload = { ...versionData };
+    payload.pensionIncomeSources = inputs?.pensionIncomeSources || [];
+    if (inputs?.pensionInterestRate !== undefined) payload.pensionInterestRate = inputs.pensionInterestRate;
+    if (inputs?.pensionOfficialRetirementAge !== undefined) payload.pensionOfficialRetirementAge = inputs.pensionOfficialRetirementAge;
+    if (inputs?.pensionManagerInsuranceAge !== undefined) payload.pensionManagerInsuranceAge = inputs.pensionManagerInsuranceAge;
+    if (inputs?.pensionMaslekaSummary != null) payload.pensionMaslekaSummary = inputs.pensionMaslekaSummary;
+    handleLoad(payload, null);
+  }, [inputs, handleLoad]);
 
   // Save insights to the active profile, update state, and populate the cache.
   const handleSetAiInsights = useCallback((data) => {
@@ -1168,6 +1186,32 @@ function MainApp() {
           onStayLoggedIn={handleStayLoggedIn}
           language={language}
         />
+      )}
+
+      {/* Profile Change History Modal */}
+      {showProfileHistory && (
+        <ErrorBoundary t={t}>
+          <Suspense fallback={
+            <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+            </div>
+          }>
+            <ProfileHistoryModal
+              isOpen={showProfileHistory}
+              onClose={() => setShowProfileHistory(false)}
+              profileId={activeProfileId}
+              profileName={profiles.find(p => p.id === activeProfileId)?.name}
+              getHistory={getHistory}
+              deleteHistoryEntry={deleteHistoryEntry}
+              updateHistoryEntry={updateHistoryEntry}
+              getHistoryLimit={getHistoryLimit}
+              setHistoryLimit={setHistoryLimit}
+              onRestore={handleRestoreVersion}
+              language={language}
+              t={t}
+            />
+          </Suspense>
+        </ErrorBoundary>
       )}
 
       {/* Models Manager Modal */}

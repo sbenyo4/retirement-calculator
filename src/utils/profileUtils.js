@@ -168,6 +168,77 @@ export const normalizeInputs = (data) => {
     return normalized;
 };
 
+// Global-pension fields live in a separate document, not the profile snapshot —
+// exclude them from change diffs so they never appear as profile edits.
+const HISTORY_DIFF_IGNORE_KEYS = new Set([
+    'pensionIncomeSources',
+    'pensionInterestRate',
+    'pensionMaslekaSummary',
+    'pensionAIInsight',
+    'pensionOfficialRetirementAge',
+    'pensionManagerInsuranceAge',
+]);
+
+/**
+ * Numeric input fields exposed in the history "trend" chart. `key` matches the
+ * field in the normalized inputs snapshot; `labelKey` resolves via translations.
+ */
+export const HISTORY_TRACKED_FIELDS = [
+    { key: 'currentSavings', labelKey: 'currentSavings' },
+    { key: 'monthlyContribution', labelKey: 'monthlyContribution' },
+    { key: 'monthlyNetIncomeDesired', labelKey: 'monthlyIncome' },
+    { key: 'annualReturnRate', labelKey: 'annualReturnRate' },
+    { key: 'taxRate', labelKey: 'taxRate' },
+    { key: 'retirementStartAge', labelKey: 'retirementAge' },
+    { key: 'retirementEndAge', labelKey: 'endAge' },
+    { key: 'inflationRate', labelKey: 'inflationRate' },
+];
+
+const isPlainObjectOrArray = (v) => v !== null && typeof v === 'object';
+
+/**
+ * Structured diff between two normalized profile snapshots.
+ * Returns an array of changes:
+ *   scalar change → { field, from, to }
+ *   nested (object/array) change → { field, nested: true }
+ * Numeric values are compared with a small tolerance to avoid float-noise entries.
+ */
+export const diffProfileData = (prev, next) => {
+    const a = prev || {};
+    const b = next || {};
+    const changes = [];
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+
+    keys.forEach((key) => {
+        if (HISTORY_DIFF_IGNORE_KEYS.has(key)) return;
+
+        const v1 = a[key];
+        const v2 = b[key];
+
+        if (isPlainObjectOrArray(v1) || isPlainObjectOrArray(v2)) {
+            if (JSON.stringify(v1 ?? null) !== JSON.stringify(v2 ?? null)) {
+                changes.push({ field: key, nested: true });
+            }
+            return;
+        }
+
+        const n1 = parseFloat(v1);
+        const n2 = parseFloat(v2);
+        const bothNumeric = !isNaN(n1) && !isNaN(n2)
+            && v1 !== '' && v2 !== '' && v1 !== null && v2 !== null && v1 !== undefined && v2 !== undefined;
+
+        const equal = bothNumeric
+            ? Math.abs(n1 - n2) < 0.0001
+            : (v1 ?? null) === (v2 ?? null);
+
+        if (!equal) {
+            changes.push({ field: key, from: v1 ?? null, to: v2 ?? null });
+        }
+    });
+
+    return changes;
+};
+
 export const getDetailedDiff = (obj1, obj2) => {
     if (!obj1 || !obj2) return ['One object is missing'];
     const diffs = [];
